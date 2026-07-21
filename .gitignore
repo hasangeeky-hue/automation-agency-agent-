@@ -1,0 +1,23 @@
+# The WordPress theme lives in its own repo (automation-agency)
+anthropos-design/
+# Design assets, not code
+Brand design/
+# Local editor/launch config
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Secrets & local state — NEVER commit (the .env.example IS committed)
+deploy/.env
+.env
+*.sql
+fixtures/
+
+# OS / editor
+.DS_Store
+Thumbs.db

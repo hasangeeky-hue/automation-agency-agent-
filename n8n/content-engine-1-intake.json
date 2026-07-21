@@ -1,0 +1,36 @@
+{
+  "name": "Content Engine 1 - Intake & Approval Request",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "content-intake",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "node-intake-webhook",
+      "name": "Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-260, 300],
+      "webhookId": "content-intake-hook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ENGINE = $env.ENGINE_URL;\nconst SLACK = $env.SLACK_WEBHOOK_URL;\nconst APPROVE = $env.APPROVE_WEBHOOK_URL;\nconst body = ($input.first().json.body) || {};\nconst create = await this.helpers.httpRequest({ method: 'POST', url: ENGINE + '/jobs', body: { type: body.type || 'content_piece', brand: body.brand || {}, payload: body.payload || {} }, json: true });\nconst jobId = create.job_id;\nconst TERMINAL = ['optimized', 'failed', 'revision_needed', 'halted_budget'];\nlet status = create.status;\nfor (let i = 0; i < 60; i++) {\n  const t = await this.helpers.httpRequest({ method: 'POST', url: ENGINE + '/tick', json: true });\n  const j = await this.helpers.httpRequest({ method: 'GET', url: ENGINE + '/jobs/' + jobId, json: true });\n  status = j.status;\n  if (status === 'AWAITING_APPROVAL' || TERMINAL.includes(status)) break;\n  if (!t.advanced) break;\n  await new Promise(r => setTimeout(r, 300));\n}\nif (status === 'AWAITING_APPROVAL' && SLACK) {\n  await this.helpers.httpRequest({ method: 'POST', url: SLACK, body: { text: 'Content job ' + jobId + ' is ready for approval. Approve: ' + APPROVE + '?job_id=' + jobId }, json: true });\n}\nreturn [{ json: { job_id: jobId, status: status } }];"
+      },
+      "id": "node-intake-code",
+      "name": "Create -> Drive to Gate -> Notify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-20, 300]
+    }
+  ],
+  "connections": {
+    "Intake Webhook": { "main": [ [ { "node": "Create -> Drive to Gate -> Notify", "type": "main", "index": 0 } ] ] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": { "description": "POST /webhook/content-intake with {type, brand, payload}. Creates a job, drives it to the human approval gate via POST /tick, then posts a Slack approval link. Needs env: ENGINE_URL, SLACK_WEBHOOK_URL, APPROVE_WEBHOOK_URL." }
+}

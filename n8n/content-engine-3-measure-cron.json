@@ -1,0 +1,32 @@
+{
+  "name": "Content Engine 3 - Daily Measurement Drain",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "hours", "hoursInterval": 6 } ] }
+      },
+      "id": "node-schedule",
+      "name": "Every 6h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-260, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ENGINE = $env.ENGINE_URL;\n// The engine opens each measurement gate by ELAPSED TIME (MEASURE_AFTER_DAYS),\n// so we just drain: /tick advances any job whose window has opened, through\n// analytics -> optimizer -> learn. Jobs still inside their window stay put.\nlet steps = 0;\nfor (let i = 0; i < 500; i++) {\n  const t = await this.helpers.httpRequest({ method: 'POST', url: ENGINE + '/tick', json: true });\n  if (!t.advanced) break;\n  steps++;\n  await new Promise(r => setTimeout(r, 150));\n}\nconst m = await this.helpers.httpRequest({ method: 'GET', url: ENGINE + '/jobs/measurable', json: true });\nreturn [{ json: { drained: true, advanced_steps: steps, still_measurable: (m.jobs || []).length } }];"
+      },
+      "id": "node-drain-code",
+      "name": "Drain Runnable Jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-20, 300]
+    }
+  ],
+  "connections": {
+    "Every 6h": { "main": [ [ { "node": "Drain Runnable Jobs", "type": "main", "index": 0 } ] ] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": { "description": "Runs every 6h and drains the engine: POST /tick advances every runnable job, including measurement-ready ones whose MEASURE_AFTER_DAYS window has elapsed (analytics -> optimizer -> learn). The real 'wait N days' lives in the engine, not this schedule, so ticking often is safe. Needs env: ENGINE_URL." }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "Content Engine 2 - Approve Callback",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "content-approve",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "node-approve-webhook",
+      "name": "Approve Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-260, 300],
+      "webhookId": "content-approve-hook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ENGINE = $env.ENGINE_URL;\nconst SLACK = $env.SLACK_WEBHOOK_URL;\nconst jobId = ($input.first().json.query || {}).job_id;\nif (!jobId) { return [{ json: { error: 'missing job_id query param' } }]; }\nawait this.helpers.httpRequest({ method: 'POST', url: ENGINE + '/jobs/' + jobId + '/approve', json: true });\nconst DONE = ['published', 'sent'];\nconst TERMINAL = ['optimized', 'failed', 'revision_needed', 'halted_budget'];\nlet status = '';\nfor (let i = 0; i < 30; i++) {\n  const t = await this.helpers.httpRequest({ method: 'POST', url: ENGINE + '/tick', json: true });\n  const j = await this.helpers.httpRequest({ method: 'GET', url: ENGINE + '/jobs/' + jobId, json: true });\n  status = j.status;\n  if (DONE.includes(status) || TERMINAL.includes(status)) break;\n  if (!t.advanced) break;\n  await new Promise(r => setTimeout(r, 300));\n}\nif (SLACK) {\n  await this.helpers.httpRequest({ method: 'POST', url: SLACK, body: { text: 'Job ' + jobId + ' is now ' + status + '. Measurement runs automatically after the configured window (MEASURE_AFTER_DAYS).' }, json: true });\n}\nreturn [{ json: { ok: true, job_id: jobId, status: status } }];"
+      },
+      "id": "node-approve-code",
+      "name": "Approve -> Drive to Live -> Notify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-20, 300]
+    }
+  ],
+  "connections": {
+    "Approve Webhook": { "main": [ [ { "node": "Approve -> Drive to Live -> Notify", "type": "main", "index": 0 } ] ] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": { "description": "GET /webhook/content-approve?job_id=... (the link from workflow 1). Flips the human gate (POST /approve), drives the job to published/sent, notifies Slack, and returns the status as the webhook response. Copy this webhook's production URL into APPROVE_WEBHOOK_URL." }
+}
