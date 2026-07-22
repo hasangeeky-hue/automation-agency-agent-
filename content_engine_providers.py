@@ -150,7 +150,15 @@ class SkillResult:
 # ---------------------------------------------------------------------------
 def _render_brand(job: dict) -> str:
     brand = {**BRAND_DEFAULTS, **(job.get("brand") or {})}
-    return BRAND_CONTEXT_TEMPLATE.format(**brand)
+    text = BRAND_CONTEXT_TEMPLATE.format(**brand)
+    try:  # append the founder's CI / brand-identity guidance if configured
+        import content_engine_brand as _brand
+        ci = _brand.get_ci_block()
+        if ci:
+            text += "\n\n" + ci
+    except Exception:
+        pass
+    return text
 
 
 def build_prompt(skill_name: str, job: dict) -> PromptSpec:

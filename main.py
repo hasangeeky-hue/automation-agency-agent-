@@ -66,8 +66,9 @@ def run(store) -> None:
 
     while not _stop:
         try:
-            status = orch.tick(store)   # claim + advance one job, or None
-        except Exception:               # never let one bad job kill the worker
+            orch.auto_approve_stale(store)   # autonomy: release stale gates if ON
+            status = orch.tick(store)        # claim + advance one job, or None
+        except Exception:                    # never let one bad job kill the worker
             log.exception("tick failed; continuing")
             time.sleep(busy)
             continue

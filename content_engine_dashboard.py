@@ -141,6 +141,22 @@ _DIAG = [
      "no Facebook page token",
      "Content won't post to Facebook automatically.",
      "META_PAGE_ID + META_PAGE_TOKEN"),
+    ("social_instagram", "Post to Instagram",
+     "no Instagram account + token",
+     "Content won't post to Instagram automatically.",
+     "IG_USER_ID + META_PAGE_TOKEN"),
+    ("social_tiktok", "Post to TikTok",
+     "no TikTok token",
+     "Content won't post to TikTok automatically.",
+     "TIKTOK_ACCESS_TOKEN"),
+    ("image_gen", "Generate images",
+     "no image provider key",
+     "Posts go out as text only — no generated images.",
+     "IMAGE_PROVIDER + IMAGE_API_KEY"),
+    ("video_gen", "Generate video",
+     "no video provider key",
+     "No AI video is produced (the pricey one — use selectively).",
+     "VIDEO_PROVIDER + VIDEO_API_KEY + VIDEO_API_URL"),
 ]
 
 

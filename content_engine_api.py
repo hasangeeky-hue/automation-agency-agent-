@@ -256,6 +256,22 @@ def api_record_outcome(job_id: str, leads: int = 0, revenue: float = 0.0,
     return {"job_id": job_id, "outcome": oc}
 
 
+def api_schedule_run(force: bool = False) -> dict:
+    """Create today's production batch (cold-email-first). Call from an n8n daily
+    cron. Idempotent per day unless force=True."""
+    import content_engine_scheduler as scheduler
+    return scheduler.plan_today(get_store(), force=force)
+
+
+def api_auto_run() -> dict:
+    """Autonomy beat: release pieces that waited too long at the human gate (only
+    if Autonomy is ON), then advance one job. Call from an n8n cron."""
+    store = get_store()
+    released = orch.auto_approve_stale(store)
+    status = orch.tick(store)
+    return {"auto_approved": released, "advanced": status is not None, "status": status}
+
+
 def _esc(s) -> str:
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
@@ -525,6 +541,14 @@ def build_app():
     @app.post("/jobs/{job_id}/outcome")
     def outcome(job_id: str, leads: int = 0, revenue: float = 0.0, customers: int = 0):
         return api_record_outcome(job_id, leads, revenue, customers)
+
+    @app.post("/schedule/run")
+    def schedule_run(force: bool = False):
+        return api_schedule_run(force)
+
+    @app.post("/control/auto-run")
+    def auto_run():
+        return api_auto_run()
 
     return app
 

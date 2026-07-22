@@ -499,6 +499,39 @@ def approve(job_id: str, store: JobStore) -> None:
     store.save(job)
 
 
+# How long a piece waits for a human before autonomy releases it (Phase 2:
+# "if I don't respond, the agent runs the plan on its own").
+AUTONOMY_GRACE_HOURS = float(os.getenv("AUTONOMY_GRACE_HOURS", "24"))
+
+
+def auto_approve_stale(store: JobStore) -> int:
+    """When the dashboard's Autonomy switch is ON, auto-approve pieces that have
+    waited at the human gate longer than AUTONOMY_GRACE_HOURS — so the machine
+    keeps moving if the founder doesn't respond. Off by default (autonomy=False).
+    Returns how many were released."""
+    getset = getattr(store, "get_setting", None)
+    if not (callable(getset) and getset("autonomy", False)):
+        return 0
+    if not hasattr(store, "list_jobs"):
+        return 0
+    cutoff = _now() - timedelta(hours=AUTONOMY_GRACE_HOURS)
+    released = 0
+    for j in store.list_jobs("AWAITING_APPROVAL"):
+        if j.get("approved"):
+            continue   # already released; a tick will advance it
+        ua = j.get("updated_at")
+        try:
+            stale = bool(ua) and datetime.fromisoformat(ua) <= cutoff
+        except ValueError:
+            stale = False
+        if stale:
+            j["approved"] = True
+            j["auto_approved"] = True
+            store.save(j)
+            released += 1
+    return released
+
+
 # ---------------------------------------------------------------------------
 # Self-check: drive a content job through the full state machine with the LLM
 # layer stubbed (no API, no cost surprises). Verifies:

@@ -568,6 +568,102 @@ class MetaPoster:
         return "facebook:" + str(j.get("id", "posted"))
 
 
+class InstagramPoster:
+    """Post an image to Instagram via the Graph API (2-step container flow).
+    Needs IG_USER_ID + META_PAGE_TOKEN, and a publicly reachable image_url."""
+
+    def __init__(self) -> None:
+        self.user_id = _env("IG_USER_ID")
+        self.token = _env("META_PAGE_TOKEN")
+
+    def available(self) -> bool:
+        return bool(self.user_id and self.token and _requests())
+
+    def post(self, caption: str, image_url: str = "") -> str:
+        if not image_url:
+            return "instagram_needs_image_url"
+        base = f"https://graph.facebook.com/v21.0/{self.user_id}"
+        j = _post_json(f"{base}/media",
+                       {"image_url": image_url, "caption": caption, "access_token": self.token})
+        if not j or "id" not in j:
+            return "instagram_error"
+        pub = _post_json(f"{base}/media_publish",
+                         {"creation_id": j["id"], "access_token": self.token})
+        return "instagram:" + str((pub or {}).get("id", "posted"))
+
+
+class TikTokPoster:
+    """Post a video to TikTok via the Content Posting API. Needs
+    TIKTOK_ACCESS_TOKEN and a publicly reachable video_url."""
+
+    def __init__(self) -> None:
+        self.token = _env("TIKTOK_ACCESS_TOKEN")
+
+    def available(self) -> bool:
+        return bool(self.token and _requests())
+
+    def post(self, caption: str, video_url: str = "") -> str:
+        if not video_url:
+            return "tiktok_needs_video_url"
+        j = _post_json(
+            "https://open.tiktokapis.com/v2/post/publish/video/init/",
+            {"post_info": {"title": caption[:150], "privacy_level": "SELF_ONLY"},
+             "source_info": {"source": "PULL_FROM_URL", "video_url": video_url}},
+            headers={"Authorization": f"Bearer {self.token}"})
+        if not j:
+            return "tiktok_error"
+        return "tiktok:" + str((j.get("data") or {}).get("publish_id", "posted"))
+
+
+# ---------------------------------------------------------------------------
+# Media generation (Phase 2) — turn a text prompt into an image or a video.
+# Provider seams: IMAGE_PROVIDER=openai|generic (+IMAGE_API_KEY[/IMAGE_API_URL]),
+# VIDEO_PROVIDER=generic (+VIDEO_API_KEY+VIDEO_API_URL). Returns a hosted URL or
+# "" when not configured. Video is the pricey one — call it selectively.
+# ---------------------------------------------------------------------------
+def image_available() -> bool:
+    return bool(_env("IMAGE_API_KEY") and _requests())
+
+
+def video_available() -> bool:
+    return bool(_env("VIDEO_API_KEY") and _env("VIDEO_API_URL") and _requests())
+
+
+def generate_image(prompt: str, size: str = "1024x1024") -> str:
+    """Generate one image from a prompt; returns a URL (or '' if unconfigured)."""
+    key = _env("IMAGE_API_KEY")
+    if not key or not _requests():
+        return ""
+    provider = _env("IMAGE_PROVIDER", "openai").lower()
+    if provider == "openai":
+        j = _post_json("https://api.openai.com/v1/images/generations",
+                       {"model": _env("IMAGE_MODEL", "gpt-image-1"), "prompt": prompt,
+                        "size": size, "n": 1},
+                       headers={"Authorization": f"Bearer {key}"})
+        if not j:
+            return ""
+        data = (j.get("data") or [{}])[0]
+        return data.get("url") or data.get("b64_json", "")[:0] or ""
+    url = _env("IMAGE_API_URL")
+    if not url:
+        return ""
+    j = _post_json(url, {"prompt": prompt, "size": size},
+                   headers={"Authorization": f"Bearer {key}"})
+    return (j or {}).get("url", "") if j else ""
+
+
+def generate_video(prompt: str) -> str:
+    """Generate a short video from a prompt via a generic provider (async-style
+    providers return a job id/URL). Returns a URL/ref or '' when unconfigured."""
+    if not video_available():
+        return ""
+    j = _post_json(_env("VIDEO_API_URL"), {"prompt": prompt},
+                   headers={"Authorization": f"Bearer {_env('VIDEO_API_KEY')}"})
+    if not j:
+        return ""
+    return j.get("url") or j.get("id", "") or "video_pending"
+
+
 def _piece_to_social_text(piece: dict, limit: int = 1000) -> str:
     """Turn a produced piece into a social caption, trimmed to the platform limit,
     with up to 5 hashtags appended."""
@@ -597,16 +693,25 @@ def post_social(job: dict, piece: dict, channel: str) -> str:
         p = TwitterPoster()
         return p.post(_piece_to_social_text(piece, 280)) if p.available() \
             else f"twitter_not_configured:{jid}"
-    if ch in ("facebook", "meta", "instagram"):
+    if ch in ("facebook", "meta"):
         p = MetaPoster()
         return p.post(_piece_to_social_text(piece, 2000), ch) if p.available() \
             else f"{ch}_not_configured:{jid}"
+    if ch in ("instagram", "ig"):
+        p = InstagramPoster()
+        return p.post(_piece_to_social_text(piece, 2000), piece.get("image_url", "")) \
+            if p.available() else f"instagram_not_configured:{jid}"
+    if ch in ("tiktok", "tt"):
+        p = TikTokPoster()
+        return p.post(_piece_to_social_text(piece, 150), piece.get("video_url", "")) \
+            if p.available() else f"tiktok_not_configured:{jid}"
     return f"social_{ch}_unknown:{jid}"
 
 
 def _any_social_available() -> bool:
     return (LinkedInPoster().available() or TwitterPoster().available()
-            or MetaPoster().available())
+            or MetaPoster().available() or InstagramPoster().available()
+            or TikTokPoster().available())
 
 
 # ---------------------------------------------------------------------------
@@ -884,6 +989,10 @@ def status() -> dict:
         "social_linkedin": LinkedInPoster().available(),
         "social_twitter": TwitterPoster().available(),
         "social_facebook": MetaPoster().available(),
+        "social_instagram": InstagramPoster().available(),
+        "social_tiktok": TikTokPoster().available(),
+        "image_gen": image_available(),
+        "video_gen": video_available(),
         "email_send": Emailer().available(),
         "email_reply_inbound": InboundEmail().available(),
         "email_verify": True,  # always on (degrades to syntactic)
