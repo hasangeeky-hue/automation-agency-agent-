@@ -28,6 +28,7 @@ Dev with zero API cost: USE_FIXTURES=1 (after RECORD_FIXTURES=1 capture).
 
 from __future__ import annotations
 
+import hashlib
 import os
 from typing import Optional
 
@@ -204,69 +205,327 @@ def _esc(s) -> str:
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
+# ---------------------------------------------------------------------------
+# Dashboard login (Phase 1). A single password (DASHBOARD_PASSWORD) gates the
+# control center. No password set = open (localhost/dev behind an SSH tunnel).
+# ---------------------------------------------------------------------------
+def _dash_password() -> str:
+    return os.getenv("DASHBOARD_PASSWORD", "")
+
+
+def _dash_token() -> str:
+    pw = _dash_password()
+    return hashlib.sha256(("aa-dash|" + pw).encode()).hexdigest() if pw else ""
+
+
+def dash_authed(cookies: dict) -> bool:
+    """True if the request may see the dashboard."""
+    if not _dash_password():
+        return True
+    return (cookies or {}).get("aa_dash") == _dash_token()
+
+
+_STATUS_COLOR = {"working": "#46E08B", "live": "#46E08B",
+                 "partial": "#2FE3D2", "needs key": "#F5B14C"}
+
+
+def _connectors_status() -> dict:
+    try:
+        import content_engine_connectors as C
+        return C.status()
+    except Exception:
+        return {}
+
+
+def _eighteen(st: dict) -> list:
+    """The 18 capabilities + a live status derived from the connector map."""
+    def L(k):
+        return bool(st.get(k))
+    social = L("social_linkedin") or L("social_twitter") or L("social_facebook")
+    gsc = L("google_gsc_ga4")
+    return [
+        ("1 · Content agents", "working"),
+        ("2 · Deploy content", "live" if L("wordpress_publish") else "needs key"),
+        ("3 · Create content", "working"),
+        ("4 · Social channels", "live" if social else "needs key"),
+        ("5 · Deploy method", "live" if L("wordpress_publish") else "needs key"),
+        ("6 · Store content (Drive)", "live" if L("google_drive") else "needs key"),
+        ("7 · SEO technical", "live" if gsc else "partial"),
+        ("8 · Keyword strategy", "working"),
+        ("9 · Agent hub (Sheets)", "live" if L("google_sheets") else "partial"),
+        ("10 · Web search", "live" if L("web_search") else "needs key"),
+        ("11 · Tracking (GA4)", "live" if gsc else "needs key"),
+        ("12 · Categorise", "working"),
+        ("13 · Web scrape", "live" if L("web_search") else "needs key"),
+        ("14 · LinkedIn leads", "live" if L("linkedin_leads") else "needs key"),
+        ("15 · Lead scoring", "working"),
+        ("16 · Customer groups", "working"),
+        ("17 · Cold emails", "working"),
+        ("18 · Send + reply email", "live" if L("email_send") else "needs key"),
+    ]
+
+
+def _blueprint_svg(st: dict) -> str:
+    """A simple 'circuit board' wiring map. Destination nodes turn green when
+    their connector is live, amber when the key is still missing."""
+    def col(k):
+        return "#46E08B" if st.get(k) else "#F5B14C"
+
+    def node(x, y, w, label, color, sub=""):
+        return (
+            f'<rect x="{x}" y="{y}" width="{w}" height="46" rx="9" '
+            f'fill="#0F1626" stroke="{color}" stroke-width="1.6"/>'
+            f'<text x="{x + w/2}" y="{y + (20 if sub else 28)}" fill="#EAF0FF" '
+            f'font-size="12" font-weight="600" text-anchor="middle">{label}</text>'
+            + (f'<text x="{x + w/2}" y="{y + 35}" fill="{color}" font-size="10" '
+               f'text-anchor="middle">{sub}</text>' if sub else ""))
+
+    def wire(x1, y1, x2, y2):
+        return (f'<path d="M{x1} {y1} C {(x1+x2)/2} {y1}, {(x1+x2)/2} {y2}, {x2} {y2}" '
+                f'stroke="#2FE3D2" stroke-width="1.4" fill="none" opacity="0.55"/>')
+
+    parts = ['<svg viewBox="0 0 900 470" width="100%" xmlns="http://www.w3.org/2000/svg" '
+             'style="max-width:100%;height:auto">']
+    # sources (left)
+    parts.append(node(20, 40, 150, "Web / Search", col("web_search"), "search + scrape"))
+    parts.append(node(20, 120, 150, "LinkedIn", col("linkedin_leads"), "leads"))
+    parts.append(node(20, 350, 150, "n8n", "#8B7CFF", "triggers / cron"))
+    # center: VPS
+    parts.append('<rect x="330" y="150" width="240" height="150" rx="14" fill="#0C1120" '
+                 'stroke="#2FE3D2" stroke-width="2"/>')
+    parts.append('<text x="450" y="185" fill="#2FE3D2" font-size="14" font-weight="700" '
+                 'text-anchor="middle">VPS — Agents + Engine</text>')
+    parts.append('<text x="450" y="210" fill="#9AA6C6" font-size="11" '
+                 'text-anchor="middle">orchestrator · blackboard · dashboard</text>')
+    parts.append('<text x="450" y="232" fill="#9AA6C6" font-size="11" '
+                 'text-anchor="middle">Postgres (source of truth)</text>')
+    parts.append('<text x="450" y="270" fill="#46E08B" font-size="11" '
+                 'text-anchor="middle">Claude (Opus / Haiku)</text>')
+    # Google hub (right top)
+    ghue = "#46E08B" if (st.get("google_sheets") or st.get("google_drive")) else "#F5B14C"
+    parts.append('<rect x="700" y="30" width="180" height="120" rx="12" fill="#0F1626" '
+                 f'stroke="{ghue}" stroke-width="1.8"/>')
+    parts.append('<text x="790" y="55" fill="#EAF0FF" font-size="12" font-weight="700" '
+                 'text-anchor="middle">Google Workspace</text>')
+    parts.append(f'<text x="790" y="78" fill="{col("google_sheets")}" font-size="11" '
+                 'text-anchor="middle">Sheets · dashboard</text>')
+    parts.append(f'<text x="790" y="98" fill="{col("google_drive")}" font-size="11" '
+                 'text-anchor="middle">Drive · content JSON</text>')
+    parts.append(f'<text x="790" y="118" fill="{col("email_send")}" font-size="11" '
+                 'text-anchor="middle">Gmail · sending</text>')
+    # destinations (right)
+    parts.append(node(700, 190, 180, "WordPress", col("wordpress_publish"), "publish"))
+    social_live = st.get("social_linkedin") or st.get("social_twitter") or st.get("social_facebook")
+    parts.append(node(700, 260, 180, "Social channels",
+                      "#46E08B" if social_live else "#F5B14C", "LI · X · FB · IG · TT"))
+    parts.append(node(700, 330, 180, "Email out + replies", col("email_send"), "Gmail / IMAP"))
+    # wires
+    parts.append(wire(170, 63, 330, 200))
+    parts.append(wire(170, 143, 330, 220))
+    parts.append(wire(170, 373, 330, 260))
+    parts.append(wire(570, 200, 700, 90))     # VPS <-> Google
+    parts.append(wire(570, 230, 700, 215))    # -> WordPress
+    parts.append(wire(570, 250, 700, 290))    # -> Social
+    parts.append(wire(570, 270, 700, 355))    # -> Email
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+_DASH_CSS = """
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;background:#080B14;color:#EAF0FF;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:22px 16px 60px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+h1{font-size:20px;margin:0} .sub{color:#9AA6C6;font-size:13px;margin:0 0 18px}
+.logout{color:#9AA6C6;font-size:12px;border:1px solid #1b2540;border-radius:8px;padding:5px 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:14px}
+.card{background:#0F1626;border:1px solid #1b2540;border-radius:14px;padding:16px}
+.card h2{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9AA6C6;margin:0 0 10px}
+.kpi b{font-size:26px;display:block} .kpi span{color:#9AA6C6;font-size:12px}
+.bar{height:10px;border-radius:99px;background:#141d33;overflow:hidden;margin:8px 0 6px}
+.bar i{display:block;height:100%;border-radius:99px}
+.mut{color:#9AA6C6;font-size:12px}
+.eight{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:7px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:99px;margin-right:7px;vertical-align:middle}
+.li{font-size:12.5px;padding:5px 0;border-bottom:1px solid #101a2e}
+table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #141d33;font-size:12.5px}
+th{color:#9AA6C6;font-weight:600;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#9AA6C6}
+.pill{border:1px solid;border-radius:99px;padding:2px 8px;font-size:10.5px;font-family:ui-monospace,monospace}
+.full{grid-column:1/-1}
+select,textarea,input,button{font:inherit;background:#0C1120;color:#EAF0FF;border:1px solid #1b2540;border-radius:9px;padding:9px 11px}
+textarea{width:100%;min-height:74px;font-family:ui-monospace,monospace;font-size:12px}
+button{background:#2FE3D2;color:#04121a;font-weight:700;border:none;cursor:pointer}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+pre{background:#0C1120;border:1px solid #1b2540;border-radius:9px;padding:10px;overflow:auto;font-size:11.5px;color:#B9C4E0;max-height:280px}
+a{color:#2FE3D2;text-decoration:none} .links{margin-top:12px;font-size:12px;color:#9AA6C6}
+@media(max-width:520px){h1{font-size:18px}.kpi b{font-size:22px}}
+"""
+
+
+def _login_html(error: str = "") -> str:
+    err = f'<p style="color:#FF5C8A;font-size:13px;margin:0 0 10px">{_esc(error)}</p>' if error else ""
+    return ("<!doctype html><html><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Sign in · Content Engine</title><style>" + _DASH_CSS +
+            "body{display:flex;align-items:center;justify-content:center;min-height:100vh}"
+            ".box{background:#0F1626;border:1px solid #1b2540;border-radius:16px;padding:26px;width:320px;max-width:90vw}"
+            "input{width:100%;margin-bottom:12px}button{width:100%}</style></head><body>"
+            "<form class='box' method='post' action='/login'>"
+            "<h1 style='font-size:18px'>Content Engine</h1>"
+            "<p class='sub'>Sign in to your control center</p>" + err +
+            "<input type='password' name='password' placeholder='Password' autofocus>"
+            "<button type='submit'>Sign in</button></form></body></html>")
+
+
 def api_dashboard_html() -> str:
-    """A single self-contained HTML page: the job list + statuses + cost. This
-    is the 'show me the list' view — open http://<host>:8000/ in a browser."""
+    """The Phase-1 control center: budget vs the $200/month cap, the 18
+    capabilities, agent health, the wiring blueprint, a command board, and the
+    job list. Responsive (phone/tablet/desktop). Rendered server-side."""
     store = get_store()
     jobs = store.list_jobs() if hasattr(store, "list_jobs") else []
-    # newest-ish first isn't guaranteed by in-memory; sort by status grouping
+    st = _connectors_status()
+
+    # --- budget ---
+    month_cap = getattr(orch, "PER_MONTH_BUDGET_USD", 200.0)
+    day_cap = getattr(orch, "PER_DAY_BUDGET_USD", 50.0)
+    month_spent = store.monthly_cost() if hasattr(store, "monthly_cost") else \
+        sum(float(j.get("cost_so_far_usd", 0)) for j in jobs)
+    day_spent = store.daily_cost() if hasattr(store, "daily_cost") else 0.0
+    pct = min(100, round((month_spent / month_cap) * 100)) if month_cap else 0
+    bar_col = "#46E08B" if pct < 70 else ("#F5B14C" if pct < 90 else "#FF5C8A")
+
+    # --- health ---
+    try:
+        h = run_health()
+    except Exception as e:
+        h = {"healthy": False, "anthropic": {"status": "fail", "detail": str(e)},
+             "postgres": {"status": "skipped"}, "connectors": {"status": "skipped"}}
+
+    def hrow(name, r):
+        s = (r or {}).get("status", "skipped")
+        c = {"ok": "#46E08B", "fail": "#FF5C8A", "skipped": "#9AA6C6"}.get(s, "#9AA6C6")
+        return (f"<div class='li'><span class='dot' style='background:{c}'></span>"
+                f"{_esc(name)} <span class='mut'>· {_esc((r or {}).get('detail',''))[:46]}</span></div>")
+
+    health_rows = (hrow("Claude API", h.get("anthropic")) +
+                   hrow("Postgres (memory)", h.get("postgres")) +
+                   hrow("Connectors", h.get("connectors")))
+
+    # --- 18 ---
+    eight_parts = []
+    for lbl, sv in _eighteen(st):
+        c = _STATUS_COLOR.get(sv, "#9AA6C6")
+        eight_parts.append(
+            f"<div class='li'><span class='dot' style='background:{c}'></span>"
+            f"{_esc(lbl)} <span class='mut'>{sv}</span></div>")
+    eight = "".join(eight_parts)
+
+    # --- connectors (live vs off) ---
+    live = [k for k, v in st.items() if v and k not in ("requests_installed", "email_verify")]
+    off = [k for k, v in st.items() if not v and k != "requests_installed"]
+    conn = ("<div class='mut' style='margin-bottom:6px'>Live: " +
+            (", ".join(live) if live else "none yet") + "</div>"
+            "<div class='mut'>Off (add key): " + (", ".join(off) if off else "—") + "</div>")
+
+    # --- jobs ---
     gate = {"AWAITING_APPROVAL"}
-    term = {"optimized", "failed", "revision_needed", "halted_budget"}
-    total_cost = sum(float(j.get("cost_so_far_usd", 0)) for j in jobs)
     rows = []
-    for j in jobs:
-        st = j.get("status", "")
-        color = "#FF5C8A" if st in gate else ("#46E08B" if st == "optimized"
-                 else ("#9AA6C6" if st in term else "#2FE3D2"))
-        rows.append(
-            f"<tr><td class='mono'>{_esc(j.get('job_id'))}</td>"
-            f"<td>{_esc(j.get('type'))}</td>"
-            f"<td><span class='pill' style='color:{color};border-color:{color}'>{_esc(st)}</span></td>"
-            f"<td>{'yes' if j.get('approved') else ''}</td>"
-            f"<td class='mono'>${float(j.get('cost_so_far_usd', 0)):.4f}</td></tr>")
-    body = "".join(rows) or "<tr><td colspan='5' style='color:#8891B8'>No jobs yet. Create one via POST /jobs or the intake webhook.</td></tr>"
-    return f"""<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Content Engine</title><style>
-:root{{color-scheme:dark}}
-body{{margin:0;background:#080B14;color:#EAF0FF;font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}}
-.wrap{{max-width:1000px;margin:0 auto;padding:28px 20px}}
-h1{{font-size:20px;margin:0 0 4px}} .sub{{color:#9AA6C6;font-size:13px;margin-bottom:20px}}
-.cards{{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}}
-.card{{background:#0F1626;border:1px solid #1b2540;border-radius:12px;padding:14px 18px;min-width:120px}}
-.card b{{font-size:22px;display:block}} .card span{{color:#9AA6C6;font-size:12px}}
-table{{width:100%;border-collapse:collapse;background:#0C1120;border:1px solid #1b2540;border-radius:12px;overflow:hidden}}
-th,td{{text-align:left;padding:10px 14px;border-bottom:1px solid #141d33;font-size:13px}}
-th{{color:#9AA6C6;font-weight:600;font-size:11px;letter-spacing:.05em;text-transform:uppercase}}
-.mono{{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#9AA6C6}}
-.pill{{border:1px solid;border-radius:99px;padding:2px 9px;font-size:11px;font-family:ui-monospace,monospace}}
-a{{color:#2FE3D2;text-decoration:none}} .links{{margin-top:18px;font-size:13px;color:#9AA6C6}}
-</style></head><body><div class="wrap">
-<h1>Content Engine</h1><div class="sub">job list · statuses · spend</div>
-<div class="cards">
-  <div class="card"><b>{len(jobs)}</b><span>jobs</span></div>
-  <div class="card"><b>{sum(1 for j in jobs if j.get('status') in gate)}</b><span>awaiting approval</span></div>
-  <div class="card"><b>{sum(1 for j in jobs if j.get('status')=='optimized')}</b><span>completed</span></div>
-  <div class="card"><b>${total_cost:.2f}</b><span>total spend</span></div>
-</div>
-<table><thead><tr><th>Job</th><th>Type</th><th>Status</th><th>Approved</th><th>Cost</th></tr></thead>
-<tbody>{body}</tbody></table>
-<div class="links"><a href="/health">/health</a> &nbsp;·&nbsp; <a href="/skills">/skills</a> &nbsp;·&nbsp; <a href="/jobs">/jobs (json)</a></div>
-</div></body></html>"""
+    for j in jobs[:40]:
+        js = j.get("status", "")
+        c = ("#FF5C8A" if js in gate else "#46E08B" if js == "optimized"
+             else "#F5B14C" if js in ("failed", "halted_budget") else "#2FE3D2")
+        rows.append(f"<tr><td class='mono'>{_esc(j.get('job_id'))}</td>"
+                    f"<td>{_esc(j.get('type'))}</td>"
+                    f"<td><span class='pill' style='color:{c};border-color:{c}'>{_esc(js)}</span></td>"
+                    f"<td class='mono'>${float(j.get('cost_so_far_usd',0)):.4f}</td></tr>")
+    jobs_body = "".join(rows) or "<tr><td colspan='4' class='mut'>No jobs yet.</td></tr>"
+
+    # --- command board ---
+    opts = "".join(f"<option value='{s}'>{s}</option>" for s in sorted(_TASTEABLE))
+    logout = "<a class='logout' href='/logout'>Sign out</a>" if _dash_password() else ""
+
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Content Engine · Control Center</title><style>" + _DASH_CSS + "</style></head><body>"
+        "<div class='wrap'>"
+        "<div class='top'><div><h1>Content Engine — Control Center</h1></div>" + logout + "</div>"
+        "<p class='sub'>Live costs · agent health · the 18 · wiring blueprint · commands</p>"
+        # KPI row
+        "<div class='grid'>"
+        f"<div class='card kpi'><h2>Month spend</h2><b>${month_spent:.2f}</b>"
+        f"<div class='bar'><i style='width:{pct}%;background:{bar_col}'></i></div>"
+        f"<span class='mut'>of ${month_cap:.0f} cap · {pct}%</span></div>"
+        f"<div class='card kpi'><h2>Today</h2><b>${day_spent:.2f}</b><span>of ${day_cap:.0f}/day</span></div>"
+        f"<div class='card kpi'><h2>Jobs</h2><b>{len(jobs)}</b>"
+        f"<span>{sum(1 for j in jobs if j.get('status') in gate)} awaiting approval</span></div>"
+        f"<div class='card kpi'><h2>Completed</h2><b>{sum(1 for j in jobs if j.get('status')=='optimized')}</b>"
+        f"<span>{'healthy' if h.get('healthy') else 'check health'}</span></div>"
+        "</div>"
+        # 18 + health
+        "<div class='grid'>"
+        "<div class='card full'><h2>The 18 capabilities</h2><div class='eight'>" + eight + "</div></div>"
+        "</div>"
+        "<div class='grid'>"
+        "<div class='card'><h2>Agent / system health</h2>" + health_rows + "</div>"
+        "<div class='card'><h2>Connectors</h2>" + conn + "</div>"
+        "</div>"
+        # blueprint
+        "<div class='card full' style='margin-bottom:14px'><h2>Wiring blueprint (green = live · amber = add key)</h2>"
+        + _blueprint_svg(st) + "</div>"
+        # command board
+        "<div class='card full' style='margin-bottom:14px'><h2>Command board — talk to an agent</h2>"
+        "<div class='row'><select id='sk'>" + opts + "</select>"
+        "<button onclick='runSkill()'>Run</button></div>"
+        "<textarea id='inp'>{\"site_url\":\"https://anthropos-automation.com\"}</textarea>"
+        "<pre id='out' style='margin-top:8px'>Result appears here…</pre></div>"
+        # jobs
+        "<div class='card full'><h2>Jobs</h2><table><thead><tr><th>Job</th><th>Type</th>"
+        "<th>Status</th><th>Cost</th></tr></thead><tbody>" + jobs_body + "</tbody></table>"
+        "<div class='links'><a href='/health'>/health</a> · <a href='/skills'>/skills</a> · "
+        "<a href='/jobs'>/jobs</a></div></div>"
+        "</div>"
+        "<script>"
+        "async function runSkill(){"
+        "var sk=document.getElementById('sk').value,out=document.getElementById('out');"
+        "var inp=document.getElementById('inp').value;out.textContent='Running '+sk+'…';"
+        "try{var b=JSON.parse(inp||'{}');}catch(e){out.textContent='Invalid JSON input';return;}"
+        "try{var r=await fetch('/skills/'+sk+'/taste',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({input:b})});var j=await r.json();"
+        "out.textContent=JSON.stringify(j,null,2);}catch(e){out.textContent='Error: '+e;}}"
+        "</script></body></html>")
 
 
 # ---------------------------------------------------------------------------
 # FastAPI wiring (optional — only if fastapi is installed)
 # ---------------------------------------------------------------------------
 def build_app():
-    from fastapi import FastAPI
-    from fastapi.responses import HTMLResponse
+    from fastapi import FastAPI, Form, Request
+    from fastapi.responses import HTMLResponse, RedirectResponse
 
     app = FastAPI(title="Content Engine", version="1.0")
 
     @app.get("/", response_class=HTMLResponse)
-    def dashboard():
-        return api_dashboard_html()
+    def dashboard(request: Request):
+        if not dash_authed(request.cookies):
+            return HTMLResponse(_login_html())
+        return HTMLResponse(api_dashboard_html())
+
+    @app.post("/login")
+    def login(password: str = Form("")):
+        if _dash_password() and password == _dash_password():
+            resp = RedirectResponse(url="/", status_code=303)
+            resp.set_cookie("aa_dash", _dash_token(), httponly=True,
+                            samesite="lax", max_age=60 * 60 * 24 * 14)
+            return resp
+        return HTMLResponse(_login_html("Wrong password"), status_code=401)
+
+    @app.get("/logout")
+    def logout():
+        resp = RedirectResponse(url="/", status_code=303)
+        resp.delete_cookie("aa_dash")
+        return resp
 
     @app.get("/health")
     def health():

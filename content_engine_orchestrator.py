@@ -72,9 +72,12 @@ ROUTES = {
     "orchestrator":       {"engine": "code"},
 }
 
-# Budget caps (SECTION 5 #10). Tune per client tier.
+# Budget caps (SECTION 5 #10). Tune per client tier. The monthly cap is the
+# founder's hard ceiling ("$200/month, all activity included") — the engine
+# pauses new LLM steps once it is reached rather than overspending.
 PER_JOB_BUDGET_USD = float(os.getenv("PER_JOB_BUDGET_USD", "0.50"))
 PER_DAY_BUDGET_USD = float(os.getenv("PER_DAY_BUDGET_USD", "50.00"))
+PER_MONTH_BUDGET_USD = float(os.getenv("PER_MONTH_BUDGET_USD", "200.00"))
 
 # How long a published piece / sent campaign collects real traffic BEFORE the
 # measurement gate opens automatically. This makes "wait N days" a real elapsed
@@ -146,6 +149,11 @@ class InMemoryJobStore(JobStore):
 
     def daily_cost(self) -> float:
         return self._daily.get(date.today().isoformat(), 0.0)
+
+    def monthly_cost(self) -> float:
+        prefix = date.today().isoformat()[:7]   # YYYY-MM
+        return round(sum(v for k, v in self._daily.items()
+                         if k.startswith(prefix)), 6)
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +293,9 @@ def over_budget(job: dict, store: JobStore) -> Optional[str]:
         return f"per-job cap ${PER_JOB_BUDGET_USD} reached"
     if store.daily_cost() >= PER_DAY_BUDGET_USD:
         return f"per-day cap ${PER_DAY_BUDGET_USD} reached"
+    monthly = getattr(store, "monthly_cost", None)
+    if callable(monthly) and monthly() >= PER_MONTH_BUDGET_USD:
+        return f"per-month cap ${PER_MONTH_BUDGET_USD} reached"
     return None
 
 
