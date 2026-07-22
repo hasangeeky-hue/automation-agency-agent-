@@ -418,9 +418,28 @@ def api_dashboard_html() -> str:
 # ---------------------------------------------------------------------------
 def build_app():
     from fastapi import FastAPI
-    from fastapi.responses import HTMLResponse, RedirectResponse
+    from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
     app = FastAPI(title="Content Engine", version="1.0")
+
+    @app.middleware("http")
+    async def _auth_gate(request, call_next):
+        # When DASHBOARD_PASSWORD is set, EVERY endpoint requires auth, so the
+        # dashboard is safe to expose publicly (no tunnel needed). Browser auths
+        # via the login cookie; n8n/automation via ?key= or an X-API-Key header.
+        pw = _dash_password()
+        if not pw:
+            return await call_next(request)
+        if request.url.path == "/login":
+            return await call_next(request)
+        cookie_ok = request.cookies.get("aa_dash") == _dash_token()
+        key = request.headers.get("x-api-key") or request.query_params.get("key")
+        if cookie_ok or (key and key == pw):
+            return await call_next(request)
+        if request.url.path == "/":
+            return HTMLResponse(_login_html())
+        return JSONResponse({"detail": "unauthorized — sign in at / or send ?key= / X-API-Key"},
+                            status_code=401)
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request):

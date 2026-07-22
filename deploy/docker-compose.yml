@@ -39,9 +39,11 @@ services:
       db:
         condition: service_healthy
     ports:
-      # Bind to localhost ONLY. Do not expose 8000 to the public internet;
-      # the API has no auth. n8n talks to it over the docker network.
-      - "127.0.0.1:8000:8000"
+      # Public on port 8000 so you can open the dashboard from any browser at
+      # http://<your-vps-ip>:8000 — NO SSH tunnel needed. Safe because the app
+      # gates EVERY endpoint behind DASHBOARD_PASSWORD (set it in .env!). With no
+      # password set the API is open, so ALWAYS set DASHBOARD_PASSWORD here.
+      - "8000:8000"
     networks: [engine-net]
 
   worker:
