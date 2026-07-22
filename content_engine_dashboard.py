@@ -85,6 +85,12 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .alert:hover{border-color:var(--teal)}
 .sbtn{background:var(--good);color:#04140a;border:none;border-radius:7px;padding:5px 11px;font-weight:700;font-size:11.5px;cursor:pointer}
 .prog{height:8px;background:var(--s2);border-radius:99px;overflow:hidden;margin:6px 0 10px}.prog i{display:block;height:100%;background:var(--teal);border-radius:99px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.cform{background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:13px;display:flex;flex-direction:column;gap:7px}
+.cflab{font-size:12.5px;font-weight:700}
+.cform input{background:#0a0f1b;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:8px 10px;font:inherit;font-size:12px}
+.cform input:focus{outline:none;border-color:var(--teal)}
+.cform .sbtn{align-self:flex-start;margin-top:3px}
 @media(max-width:860px){.shell{flex-direction:column}.side{width:auto;flex-direction:row;overflow-x:auto;position:static;max-height:none}.navb{white-space:nowrap}.navb .bd{display:none}.g2,.g3,.g4{grid-template-columns:1fr}}
 """
 
@@ -552,8 +558,31 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
             "<p class='cc'>Every connection in plain English. Amber rows tell you exactly what to add and what you're missing until you do.</p>"
             "<div class='tbwrap'><table><thead><tr><th>Connection (wire)</th><th>Status</th><th>Why it's not working</th><th>What it breaks — and the fix</th></tr></thead><tbody>"
             + "".join(diag_rows) + "</tbody></table></div></div>")
+    # Connect form — paste keys in the browser, no SSH. Fields auto-built from
+    # each wire's required keys; the wire turns green above once saved.
+    conn_rows = []
+    for k, name, why, effect, fix in _DIAG:
+        if st.get(k):
+            conn_rows.append(f"<div class='cform'><div class='cflab'><span class='dot' style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#3FD98B;margin-right:6px'></span>{_esc(name)}</div><span class='pill p-live'>connected</span></div>")
+            continue
+        fields = ""
+        for tok in fix.split(" + "):
+            tok = tok.strip()
+            if "=" in tok:
+                kk, dv = tok.split("=", 1)
+            else:
+                kk, dv = tok, ""
+            typ = "password" if any(x in kk.upper() for x in ("PASSWORD", "TOKEN", "KEY", "JSON", "SECRET")) else "text"
+            fields += f"<input name='{_esc(kk)}' type='{typ}' placeholder='{_esc(kk)}' value='{_esc(dv)}'>"
+        conn_rows.append(
+            f"<form class='cform' onsubmit='return saveConnect(this)'>"
+            f"<div class='cflab'>{_esc(name)}</div>{fields}"
+            f"<button class='sbtn' type='submit'>Connect</button></form>")
+    connect_card = ("<div class='card full' style='margin-top:12px'><p class='ct'>🔌 Connect your wires — paste keys, click Connect</p>"
+                    "<p class='cc'>No SSH, no rebuild. Saved instantly; the wire turns green above within ~15 seconds. What each one needs (and unlocks) is in the table above.</p>"
+                    "<div class='cgrid'>" + "".join(conn_rows) + "</div></div>")
     p_map = ("<div class='card full'><p class='ct'>System map</p><p class='cc'>Every component and how data flows between them.</p>"
-             + _system_map(st) + "</div>" + diag)
+             + _system_map(st) + "</div>" + diag + connect_card)
 
     # ---- OVERVIEW (mother) ----
     def tile(nav, icon, label, val, sub, dot):
@@ -647,6 +676,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "document.querySelectorAll('.navb').forEach(b=>b.classList.remove('act'));"
               "var n=document.getElementById('nav-'+id);if(n)n.classList.add('act');window.scrollTo(0,0);}"
               "async function act(u){try{await fetch(u,{method:'POST'});location.reload();}catch(e){alert('Action failed: '+e);}}"
+              "async function saveConnect(f){var o={};for(var i=0;i<f.elements.length;i++){var e=f.elements[i];if(e.name&&e.value)o[e.name]=e.value;}"
+              "if(!Object.keys(o).length){alert('Fill in at least one field.');return false;}"
+              "try{var r=await fetch('/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});"
+              "var j=await r.json();alert('Saved: '+(j.saved||[]).join(', ')+'. It goes live in ~15s.');location.reload();}"
+              "catch(e){alert('Save failed: '+e);}return false;}"
               "async function approve(id){await act('/jobs/'+id+'/approve');}"
               "async function runSkill(){var sk=document.getElementById('sk').value,out=document.getElementById('out'),inp=document.getElementById('inp').value;"
               "out.textContent='Running '+sk+'…';try{var b=JSON.parse(inp||'{}');}catch(e){out.textContent='That input is not valid JSON.';return;}"

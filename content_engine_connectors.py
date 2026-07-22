@@ -81,8 +81,48 @@ def _requests():
         return None
 
 
+# Credentials can come from the settings store (set via the dashboard's Connect
+# form) OR from environment variables. The store wins so the founder can wire
+# everything from the browser with no SSH / .env editing / rebuild.
+_SETTINGS_GET = None
+
+
+def set_settings_provider(fn) -> None:
+    """api/worker call this with store.get_setting so _env() reads DB creds."""
+    global _SETTINGS_GET
+    _SETTINGS_GET = fn
+
+
 def _env(name: str, default: str = "") -> str:
-    return (os.getenv(name) or default).strip()
+    v = None
+    if _SETTINGS_GET is not None:
+        try:
+            v = _SETTINGS_GET(name)
+        except Exception:
+            v = None
+    if v is None or v == "":
+        v = os.getenv(name, default)
+    return (str(v) if v is not None else "").strip()
+
+
+# Every credential the dashboard's Connect form is allowed to set (the allow-list
+# the /connect endpoint checks, and the fields the form renders).
+CONNECTOR_ENV_KEYS = [
+    "WORDPRESS_URL", "WORDPRESS_USER", "WORDPRESS_APP_PASSWORD", "WP_STATUS",
+    "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_STARTTLS",
+    "IMAP_HOST", "IMAP_PORT", "IMAP_USER", "IMAP_PASSWORD", "IMAP_FOLDER",
+    "SEARCH_PROVIDER", "SEARCH_API_KEY",
+    "LINKEDIN_PROVIDER_URL", "LINKEDIN_API_KEY",
+    "GOOGLE_ACCESS_TOKEN", "GSC_SITE_URL", "GA4_PROPERTY_ID",
+    "GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SHEETS_ID", "GDRIVE_FOLDER_ID",
+    "ADS_JSON", "BACKLINKS_JSON",
+    "LINKEDIN_POST_TOKEN", "LINKEDIN_AUTHOR_URN", "TWITTER_BEARER_TOKEN",
+    "META_PAGE_ID", "META_PAGE_TOKEN", "IG_USER_ID", "TIKTOK_ACCESS_TOKEN",
+    "IMAGE_PROVIDER", "IMAGE_API_KEY", "IMAGE_MODEL", "IMAGE_API_URL",
+    "VIDEO_PROVIDER", "VIDEO_API_KEY", "VIDEO_API_URL",
+    "REPLY_OUR_OFFER", "REPLY_SENDER_NAME", "REPLY_CONTEXT", "REPLY_AUTO_SEND",
+    "CI_JSON",
+]
 
 
 def _get_json(url: str, headers: Optional[dict] = None, params: Optional[dict] = None):

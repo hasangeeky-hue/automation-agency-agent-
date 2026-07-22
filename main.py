@@ -64,7 +64,15 @@ def run(store) -> None:
     busy = float(os.getenv("POLL_BUSY_SECS", "0.1"))
     run_once = os.getenv("RUN_ONCE") == "1"
 
+    loops = 0
     while not _stop:
+        loops += 1
+        if loops % 15 == 1:   # pick up credentials added from the dashboard live
+            try:
+                import content_engine_connectors as _c
+                _c.wire_all()
+            except Exception:
+                pass
         try:
             orch.auto_approve_stale(store)   # autonomy: release stale gates if ON
             status = orch.tick(store)        # claim + advance one job, or None
@@ -93,16 +101,16 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
-    # Install real-world connectors (WordPress/email/search/LinkedIn/Google).
-    # Only the ones whose credentials are present get wired; the rest stay in
-    # their safe offline default, so a partial config still runs.
+    store = make_store()
+    # Let connectors read credentials the founder saved from the dashboard's
+    # Connect form (settings store), then install hooks. run() re-wires each
+    # loop so keys added later take effect within seconds — no restart needed.
     try:
         import content_engine_connectors as connectors
+        connectors.set_settings_provider(store.get_setting)
         connectors.wire_all()
     except Exception:
         log.exception("connector wiring failed; continuing with offline defaults")
-
-    store = make_store()
     log.info("worker starting (STORE=%s, USE_FIXTURES=%s, RUN_ONCE=%s)",
              os.getenv("STORE", "memory"),
              os.getenv("USE_FIXTURES", "0"),

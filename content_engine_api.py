@@ -80,6 +80,13 @@ def get_store():
             init_db(_STORE)
         else:
             _STORE = orch.InMemoryJobStore()
+        # Let connectors read credentials the founder saved via the dashboard's
+        # Connect form (settings store), not just env vars.
+        try:
+            import content_engine_connectors as _C
+            _C.set_settings_provider(_STORE.get_setting)
+        except Exception:
+            pass
     return _STORE
 
 
@@ -254,6 +261,23 @@ def api_record_outcome(job_id: str, leads: int = 0, revenue: float = 0.0,
     oc["customers"] = int(oc.get("customers", 0)) + int(customers)
     store.save(job)
     return {"job_id": job_id, "outcome": oc}
+
+
+def api_connect(values: dict) -> dict:
+    """Save connector credentials from the dashboard's Connect form into the
+    settings store — connectors read them live (no restart). Only allow-listed
+    keys are accepted."""
+    store = get_store()
+    if not hasattr(store, "set_setting"):
+        return {"error": "this store can't save credentials"}
+    import content_engine_connectors as C
+    allowed = set(C.CONNECTOR_ENV_KEYS)
+    saved = []
+    for k, v in (values or {}).items():
+        if k in allowed and v not in (None, ""):
+            store.set_setting(k, str(v))
+            saved.append(k)
+    return {"saved": saved, "status": C.status()}
 
 
 def api_schedule_run(force: bool = False) -> dict:
@@ -549,6 +573,14 @@ def build_app():
     @app.post("/control/auto-run")
     def auto_run():
         return api_auto_run()
+
+    @app.post("/connect")
+    async def connect(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_connect(data if isinstance(data, dict) else {})
 
     return app
 
