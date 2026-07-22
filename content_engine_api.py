@@ -481,6 +481,14 @@ def build_app():
         return JSONResponse({"detail": "unauthorized — sign in at / or send ?key= / X-API-Key"},
                             status_code=401)
 
+    # Ensure connectors read dashboard-saved credentials on EVERY request path
+    # (not only after a get_store() call), so /health etc. reflect them too.
+    try:
+        import content_engine_connectors as _C
+        _C.set_settings_provider(lambda k: get_store().get_setting(k))
+    except Exception:
+        pass
+
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request):
         if not dash_authed(request.cookies):
