@@ -156,6 +156,16 @@ class PgJobStore:
             row = cur.fetchone()
         return float(row[0]) if row else 0.0
 
+    def monthly_cost(self) -> float:
+        """Sum of daily costs in the current calendar month — powers the hard
+        PER_MONTH_BUDGET_USD ($200) cap on the live Postgres deployment."""
+        first = date.today().replace(day=1)
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT COALESCE(SUM(cost), 0) FROM daily_cost WHERE day >= %s",
+                        (first,))
+            row = cur.fetchone()
+        return float(row[0]) if row else 0.0
+
     def close(self) -> None:
         self._conn.close()
 
