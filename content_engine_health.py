@@ -104,6 +104,20 @@ def check_rest(urls: Optional[list] = None, timeout: float = 5.0) -> list:
 # ---------------------------------------------------------------------------
 # Aggregate
 # ---------------------------------------------------------------------------
+def check_connectors() -> dict:
+    """Report which real-world connectors are live (creds present) vs offline.
+    Never fails — a connector being offline is informational, not an error."""
+    try:
+        import content_engine_connectors as connectors
+        st = connectors.status()
+        live = [k for k, v in st.items()
+                if v and k not in ("requests_installed", "email_verify")]
+        detail = ("live: " + ", ".join(live)) if live else "all offline (no creds yet)"
+        return {**_res(OK, detail), "map": st}
+    except Exception as e:
+        return _res(SKIP, f"connectors module unavailable ({e.__class__.__name__})")
+
+
 def run_health(dsn: Optional[str] = None, rest_urls: Optional[list] = None) -> dict:
     report = {
         "dependencies": {m: check_dependency(m)
@@ -112,9 +126,11 @@ def run_health(dsn: Optional[str] = None, rest_urls: Optional[list] = None) -> d
         "openai": check_openai(),
         "postgres": check_postgres(dsn),
         "rest": check_rest(rest_urls),
+        "connectors": check_connectors(),
     }
     # healthy = nothing is in FAIL state (skips are acceptable)
-    flat = [report["anthropic"], report["openai"], report["postgres"]]
+    flat = [report["anthropic"], report["openai"], report["postgres"],
+            report["connectors"]]
     flat += list(report["dependencies"].values())
     flat += report["rest"]
     report["healthy"] = all(x["status"] != FAIL for x in flat)
@@ -130,6 +146,7 @@ def _print(report: dict) -> None:
     line("anthropic", report["anthropic"])
     line("openai", report["openai"])
     line("postgres", report["postgres"])
+    line("connectors", report["connectors"])
     for m, r in report["dependencies"].items():
         line(f"dep:{m}", r)
     for r in report["rest"]:

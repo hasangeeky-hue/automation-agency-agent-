@@ -92,6 +92,15 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
+    # Install real-world connectors (WordPress/email/search/LinkedIn/Google).
+    # Only the ones whose credentials are present get wired; the rest stay in
+    # their safe offline default, so a partial config still runs.
+    try:
+        import content_engine_connectors as connectors
+        connectors.wire_all()
+    except Exception:
+        log.exception("connector wiring failed; continuing with offline defaults")
+
     store = make_store()
     log.info("worker starting (STORE=%s, USE_FIXTURES=%s, RUN_ONCE=%s)",
              os.getenv("STORE", "memory"),
