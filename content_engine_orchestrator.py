@@ -123,6 +123,13 @@ class InMemoryJobStore(JobStore):
     def __init__(self):
         self._jobs: dict[str, dict] = {}
         self._daily: dict[str, float] = {}
+        self._settings: dict[str, object] = {}
+
+    def get_setting(self, key: str, default=None):
+        return self._settings.get(key, default)
+
+    def set_setting(self, key: str, value) -> None:
+        self._settings[key] = value
 
     def put(self, job: dict) -> None:      # test/setup helper
         self._jobs[job["job_id"]] = job
@@ -406,6 +413,7 @@ def advance(job: dict, store: JobStore) -> str:
         job["halt_reason"] = str(e)
 
     _maybe_stamp_measure(job)      # open a measurement window on arrival at published/sent
+    job["updated_at"] = _now().isoformat()
     store.save(job)
 
     # Mirror finished jobs to the Google hub (Sheets + Drive), once per state.
@@ -462,7 +470,11 @@ def run_until_blocked(job: dict, store: JobStore, max_steps: int = 50) -> str:
 
 
 def tick(store: JobStore) -> Optional[str]:
-    """One poll cycle: claim a runnable job and advance it to its next block."""
+    """One poll cycle: claim a runnable job and advance it to its next block.
+    Honors the dashboard's global pause switch (get_setting('paused'))."""
+    getset = getattr(store, "get_setting", None)
+    if callable(getset) and getset("paused", False):
+        return None
     job = store.claim_next()
     if job is None:
         return None
@@ -470,11 +482,13 @@ def tick(store: JobStore) -> Optional[str]:
 
 
 def new_job(job_id: str, job_type: str, brand: dict, payload: dict) -> dict:
+    now = _now().isoformat()
     return {
         "job_id": job_id, "type": job_type, "status": "created",
         "client_id": brand.get("brand_name", ""), "brand": brand,
         "payload": payload, "approved": False,
         "cost_so_far_usd": 0.0, "model_log": [],
+        "created_at": now, "updated_at": now,   # power trends / calendar / projection
     }
 
 

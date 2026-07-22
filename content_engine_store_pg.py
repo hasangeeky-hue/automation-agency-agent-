@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS daily_cost (
     day  DATE PRIMARY KEY,
     cost NUMERIC NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value JSONB NOT NULL
+);
 """
 
 # Claim: oldest runnable job, skipping rows other workers hold.
@@ -165,6 +170,21 @@ class PgJobStore:
                         (first,))
             row = cur.fetchone()
         return float(row[0]) if row else 0.0
+
+    def get_setting(self, key: str, default=None):
+        """Dashboard control flags (paused, autonomy) shared across api + worker."""
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT value FROM settings WHERE key = %s", (key,))
+            row = cur.fetchone()
+        return row[0] if row else default
+
+    def set_setting(self, key: str, value) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO settings (key, value) VALUES (%s, %s) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                (key, json.dumps(value)))
+        self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()

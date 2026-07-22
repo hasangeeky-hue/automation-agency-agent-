@@ -77,6 +77,14 @@ th{color:var(--dim);font-size:10.5px;letter-spacing:.05em;text-transform:upperca
 .cmd button{background:var(--teal);color:#04121a;font-weight:700;border:none;border-radius:8px;padding:9px 15px;cursor:pointer}
 pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font-size:11.5px;color:#B9C4E0;max-height:190px;margin-top:8px}
 .maplegend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);margin-top:12px}
+.ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.cbtn{background:var(--s1);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:8px 13px;font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+.cbtn:hover{border-color:var(--teal)}.cbtn.warn{border-color:var(--warn);color:var(--warn)}.cbtn.on{border-color:var(--good);color:var(--good)}
+.attn{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.alert{background:var(--s1);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:12.5px;color:var(--ink);cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+.alert:hover{border-color:var(--teal)}
+.sbtn{background:var(--good);color:#04140a;border:none;border-radius:7px;padding:5px 11px;font-weight:700;font-size:11.5px;cursor:pointer}
+.prog{height:8px;background:var(--s2);border-radius:99px;overflow:hidden;margin:6px 0 10px}.prog i{display:block;height:100%;background:var(--teal);border-radius:99px}
 @media(max-width:860px){.shell{flex-direction:column}.side{width:auto;flex-direction:row;overflow-x:auto;position:static;max-height:none}.navb{white-space:nowrap}.navb .bd{display:none}.g2,.g3,.g4{grid-template-columns:1fr}}
 """
 
@@ -216,6 +224,42 @@ def _panel(title, desc, body):
     return f"<div class='card'><p class='ct'>{_esc(title)}</p><p class='cc'>{_esc(desc)}</p>{body}</div>"
 
 
+def _sparkline(vals, color, h=42, w=220):
+    if not vals or max(vals) == 0:
+        return (f"<svg width='100%' height='{h}' viewBox='0 0 {w} {h}' preserveAspectRatio='none'>"
+                f"<line x1='0' y1='{h-6}' x2='{w}' y2='{h-6}' stroke='#1B2640' stroke-width='1.5'/></svg>")
+    mx = max(vals) or 1
+    step = w / max(len(vals) - 1, 1)
+    pts = " ".join(f"{i*step:.0f},{h-6-(v/mx)*(h-14):.0f}" for i, v in enumerate(vals))
+    return (f"<svg width='100%' height='{h}' viewBox='0 0 {w} {h}' preserveAspectRatio='none'>"
+            f"<polyline points='0,{h} {pts} {w},{h}' fill='{color}' opacity='0.12'/>"
+            f"<polyline points='{pts}' fill='none' stroke='{color}' stroke-width='2'/></svg>")
+
+
+def _daybuckets(jobs, pred, days=14, valfn=None):
+    from datetime import date, timedelta
+    today = date.today()
+    idx = {(today - timedelta(days=days - 1 - i)).isoformat(): i for i in range(days)}
+    vals = [0.0] * days
+    for j in jobs:
+        if not pred(j):
+            continue
+        ca = (j.get("created_at") or "")[:10]
+        if ca in idx:
+            vals[idx[ca]] += (valfn(j) if valfn else 1)
+    return vals
+
+
+def _outcomes(jobs):
+    leads = revenue = customers = 0.0
+    for j in jobs:
+        oc = (j.get("payload", {}) or {}).get("outcome", {}) or {}
+        leads += oc.get("leads", 0)
+        revenue += oc.get("revenue", 0.0)
+        customers += oc.get("customers", 0)
+    return int(leads), round(revenue, 2), int(customers)
+
+
 # ---------------------------------------------------------------------------
 # system map (component-level, every labeled connection)
 # ---------------------------------------------------------------------------
@@ -313,8 +357,10 @@ def login_html(error=""):
 # dashboard
 # ---------------------------------------------------------------------------
 def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_cap,
-                   taste_skills, has_password=False):
+                   taste_skills, has_password=False, paused=False, autonomy=False):
+    from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
+    o_leads, o_rev, o_cust = _outcomes(jobs)
     content_jobs = [j for j in jobs if j.get("type") != "outreach_campaign"]
     out_jobs = [j for j in jobs if j.get("type") == "outreach_campaign"]
     pl = _pipeline(jobs)
@@ -338,16 +384,26 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     by_status = {}
     for j in content_jobs:
         by_status[j.get("status", "?")] = by_status.get(j.get("status", "?"), 0) + 1
-    recent = "".join(f"<div class='fe'><span class='tm'>{_esc(str(j.get('job_id',''))[:10])}</span><span>{_esc((j.get('payload',{}).get('content_producer',{}) or {}).get('title') or j.get('status',''))}</span></div>" for j in list(reversed(content_jobs))[:6])
+    import calendar
+    this_month = date.today().isoformat()[:7]
+    made_month = sum(1 for j in content_jobs if (j.get("created_at") or "")[:7] == this_month)
+    dom = date.today().day
+    dim = calendar.monthrange(date.today().year, date.today().month)[1]
+    proj = round(made_month / max(dom, 1) * dim)
+    content_series = _daybuckets(content_jobs, lambda j: True, 14)
+    top = [j for j in content_jobs if _STAGE_OF.get(j.get("status", "")) in (4, 5)][:6]
+    top_html = "".join(
+        f"<div class='fe'><span>{_esc((j.get('payload',{}).get('content_producer',{}) or {}).get('title') or j.get('job_id'))}</span>"
+        f"<span class='dim' style='margin-left:auto'>{_esc(j.get('status'))}</span></div>" for j in top)
     p_content = grid(
         _panel("Pipeline — where each piece is", "Idea → written → checked → your approval → live → measured.",
                _funnel(list(zip(_STAGES, pl))) if sum(pl) else _empty("No content jobs yet.")),
         _panel("Content by stage", "How many pieces sit at each stage right now.",
                _bars([(k, v) for k, v in by_status.items()][:6], "#4C8DFF") if by_status else _empty("Nothing in production yet.")),
-        _panel("Output vs target", "Your goal: 2 blogs/day + 3 posts per channel.",
-               _empty("Fills as pieces publish. Target 17/day.")),
-        _panel("Recent pieces", "The latest things the writer produced.",
-               recent or _empty("No pieces written yet.")))
+        _panel("Output & projection", "Target ≈ 60/month (2 blogs a day).",
+               (_sparkline(content_series, "#4C8DFF") + f"<div class='dim' style='margin-top:6px'>{made_month} made this month · on pace for <b style='color:var(--ink)'>{proj}</b></div>") if content_jobs else _empty("Fills as pieces are made.")),
+        _panel("Published pieces", "What's live on your site.",
+               top_html or _empty("Nothing published yet.")))
 
     # ---- 2. LEAD MACHINE ----
     p_leads = grid(
@@ -356,7 +412,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Lead quality", "How warm your leads are: hot / warm / cold.", _empty("Scores show once leads flow in.")),
         _panel("Leads by source", "Where each lead came from (web, LinkedIn).",
                _bars([("Web", leads_found), ("LinkedIn", 0)], "#8B7CFF") if leads_found else _empty("No lead sources connected.")),
-        _panel("Leads over time", "New leads collected per week.", _empty("Fills as the lead finder runs.")))
+        _panel("Leads over time · 14 days", "New lead-jobs per day.",
+               _sparkline(_daybuckets(out_jobs, lambda j: True, 14), "#8B7CFF") if out_jobs else _empty("Fills as the lead finder runs.")))
 
     # ---- 3. EMAIL & OUTREACH ----
     p_email = grid(
@@ -392,15 +449,27 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
 
     # ---- 7. BUDGET & COST ----
     lead_cost = total_cost - content_cost
+    spend_series = _daybuckets(jobs, lambda j: True, 14, valfn=lambda j: float(j.get("cost_so_far_usd", 0)))
+    if o_rev or o_leads or o_cust:
+        roi_col = "#3FD98B" if o_rev >= total_cost else "#F5B14C"
+        cpl = f"${(total_cost/o_leads):.2f}" if o_leads else "—"
+        cpc = f"${(total_cost/o_cust):.2f}" if o_cust else "—"
+        roi_body = (f"<div class='big tnum' style='color:{roi_col}'>${o_rev:,.0f}</div>"
+                    f"<div class='dim'>earned vs ${total_cost:.2f} spent</div>"
+                    "<div class='bars' style='margin-top:10px'>"
+                    f"<div class='br'><span class='bl'>Cost / lead</span><div class='track'><i style='width:40%;background:#8B7CFF'></i></div><span class='bv'>{cpl}</span></div>"
+                    f"<div class='br'><span class='bl'>Cost / customer</span><div class='track'><i style='width:60%;background:#4C8DFF'></i></div><span class='bv'>{cpc}</span></div></div>")
+    else:
+        roi_body = _empty("No results yet. Record leads/revenue per job (from your CRM or n8n → POST /jobs/{id}/outcome) to see ROI here.")
     p_budget = grid(
         _panel("This month vs $200 cap", "The engine pauses before it ever goes over.",
                "<div style='display:flex;align-items:center;gap:18px'>" + _donut(pct, bcol) +
                f"<div><div class='dim'>Today</div><div class='big tnum'>${day_spent:.2f}</div><div class='dim'>of ${day_cap:.0f}/day</div></div></div>"),
+        _panel("Return on investment (ROI)", "The number that matters: money in vs money out.", roi_body),
         _panel("Cost by activity", "What your AI spend is doing.",
                _bars([("Content", content_cost), ("Leads/email", lead_cost)], "#8B7CFF", money=True) if total_cost else _empty("No spend yet.")),
-        _panel("Cost per piece", "Average AI cost to produce one item.",
-               f"<div class='big tnum'>${(content_cost/max(len(content_jobs),1)):.3f}</div><div class='dim'>per content piece</div>" if content_jobs else _empty("No pieces yet.")),
-        _panel("Daily spend", "Spend per day this month.", _empty("Fills day by day.")))
+        _panel("Spend trend · 14 days", f"${total_cost:.2f} so far this month · ${(content_cost/max(len(content_jobs),1)):.3f} per piece.",
+               _sparkline(spend_series, "#3FD98B") if total_cost else _empty("Fills day by day.")))
 
     # ---- 8. AGENTS & HEALTH ----
     outcomes = {"running": 0, "done": 0, "failed": 0}
@@ -436,7 +505,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
 
     # ---- 10. APPROVALS & QUEUE ----
     ap = "".join(
-        f"<div class='chip'><span class='nm'>{_esc((j.get('payload',{}).get('content_producer',{}) or {}).get('title') or j.get('job_id'))}</span><span class='dim'>{'website' if j.get('type')!='outreach_campaign' else 'email'}</span></div>"
+        f"<div class='chip'><span class='nm'>{_esc((j.get('payload',{}).get('content_producer',{}) or {}).get('title') or j.get('job_id'))}</span>"
+        f"<button class='sbtn' onclick=\"approve('{_esc(j.get('job_id'))}')\">Approve</button></div>"
         for j in jobs if j.get("status") == "AWAITING_APPROVAL")
     revs = sum(1 for j in jobs if j.get("status") == "revision_needed")
     opts = "".join(f"<option value='{_esc(s)}'>{_esc(s)}</option>" for s in taste_skills)
@@ -474,7 +544,19 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         return (f"<div class='tile' onclick=\"nav('{nav}')\"><div class='tl'><span class='d' style='width:8px;height:8px;border-radius:50%;background:{dot}'></span>{icon} {label}</div>"
                 f"<div class='tv tnum'>{val}</div><div class='tx'>{sub}</div></div>")
     green, amber = "#3FD98B", "#F5B14C"
-    overview = ("<div class='ov'>"
+    setup_missing = [(name, fix) for k, name, why, eff, fix in _DIAG if not st.get(k)]
+    setup_done = total_conn - len(setup_missing)
+    setup_pct = round(setup_done / total_conn * 100) if total_conn else 0
+    setup_list = "".join(
+        f"<div class='fe'><span class='mut'>{_esc(name)}</span>"
+        f"<span class='dim' style='margin-left:auto'>add {_esc(fix.split(' + ')[0])}</span></div>"
+        for name, fix in setup_missing[:6])
+    setup_card = ("<div class='card full' style='margin-bottom:12px'><p class='ct'>Setup — connect these to switch everything on</p>"
+                  f"<p class='cc'>{setup_done} of {total_conn} connections live.</p>"
+                  f"<div class='prog'><i style='width:{setup_pct}%'></i></div>"
+                  + (setup_list or "<div class='dim'>All connected 🎉</div>")
+                  + "<div class='dim' style='margin-top:8px'>Full details + what each one unlocks on the <b>System Map</b> page.</div></div>")
+    overview = (setup_card + "<div class='ov'>"
                 + tile("content", "📝", "Content", published, "published this month", green if published else amber)
                 + tile("leads", "🧲", "Leads", leads_found, "collected", green if leads_found else amber)
                 + tile("email", "✉️", "Email", emails_sent, "sent", green if emails_sent else amber)
@@ -514,11 +596,41 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         for i, (pid, icon, short, title, sub, body) in enumerate(PAGES))
 
     onboarding = "" if jobs else "<div style='background:#101d33;border:1px solid #26456f;border-radius:10px;padding:11px 14px;font-size:12.5px;color:var(--mut);margin-bottom:14px'><b style='color:var(--teal)'>Your control center is ready.</b> Numbers fill in as agents run and you connect keys — the <b>System Map</b> page lists exactly what to add.</div>"
+    # ---- attention center + control bar (always visible above the pages) ----
+    failed = sum(1 for j in jobs if j.get("status") in ("failed", "halted_budget"))
+    broken = total_conn - live_conn
+    alerts = []
+    if paused:
+        alerts.append(("#FF6B93", "⏸", "Everything is paused", ""))
+    if waiting:
+        alerts.append(("#F5B14C", "⚠", f"{waiting} waiting for your approval", "appr"))
+    if broken:
+        alerts.append(("#F5B14C", "🔌", f"{broken} connection(s) not wired", "map"))
+    if pct >= 80:
+        alerts.append(("#FF6B93" if pct >= 95 else "#F5B14C", "💰", f"Budget at {pct}% of ${month_cap:.0f}", "budget"))
+    if failed:
+        alerts.append(("#FF6B93", "✕", f"{failed} job(s) failed or paused", "agents"))
+    if not alerts:
+        alerts.append(("#3FD98B", "✓", "All clear — nothing needs you right now", ""))
+    aparts = []
+    for col, ic, msg, nid in alerts:
+        oc = f" onclick=\"nav('{nid}')\"" if nid else ""
+        aparts.append(f"<button class='alert'{oc}><span style='color:{col}'>{ic}</span> {_esc(msg)}</button>")
+    attn_html = "<div class='attn'>" + "".join(aparts) + "</div>"
+    pause_btn = ("<button class='cbtn warn' onclick=\"act('/control/resume')\">▶ Resume all</button>" if paused
+                 else "<button class='cbtn' onclick=\"act('/control/pause')\">⏸ Pause all</button>")
+    auto_btn = ("<button class='cbtn on' onclick=\"act('/control/autonomy?on=false')\">🟢 Autonomy ON</button>" if autonomy
+                else "<button class='cbtn' onclick=\"act('/control/autonomy?on=true')\">⚪ Autonomy OFF</button>")
+    ctrl_html = ("<div class='ctrl'><button class='cbtn' onclick=\"act('/tick')\">▶ Run now</button>"
+                 + pause_btn + auto_btn + "</div>")
+
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
     script = ("<script>function nav(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
               "var s=document.getElementById('sec-'+id);if(s)s.classList.add('on');"
               "document.querySelectorAll('.navb').forEach(b=>b.classList.remove('act'));"
               "var n=document.getElementById('nav-'+id);if(n)n.classList.add('act');window.scrollTo(0,0);}"
+              "async function act(u){try{await fetch(u,{method:'POST'});location.reload();}catch(e){alert('Action failed: '+e);}}"
+              "async function approve(id){await act('/jobs/'+id+'/approve');}"
               "async function runSkill(){var sk=document.getElementById('sk').value,out=document.getElementById('out'),inp=document.getElementById('inp').value;"
               "out.textContent='Running '+sk+'…';try{var b=JSON.parse(inp||'{}');}catch(e){out.textContent='That input is not valid JSON.';return;}"
               "try{var r=await fetch('/skills/'+sk+'/taste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:b})});"
@@ -531,7 +643,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "<div style='display:flex;gap:9px;align-items:center'><span class='status'><span class='d' style='background:"
         + ("#3FD98B" if healthy else "#F5B14C") + "'></span>" + ("All systems nominal" if healthy else "Check health")
         + "</span>" + logout + "</div></div>"
-        "<div class='shell'><div class='side'>" + nav + "</div><div class='main'>" + onboarding + pages + "</div></div>"
+        "<div class='shell'><div class='side'>" + nav + "</div><div class='main'>"
+        + ctrl_html + attn_html + onboarding + pages + "</div></div>"
         + script + "</body></html>")
 
 

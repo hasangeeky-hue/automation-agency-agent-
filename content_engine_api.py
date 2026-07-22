@@ -210,6 +210,52 @@ def api_answer_replies(limit: int = 20, dry_run: bool = False) -> dict:
     return reply_agent.answer_replies(limit=limit, dry_run=dry_run)
 
 
+def _settings():
+    st = get_store()
+    return {"paused": bool(getattr(st, "get_setting", lambda *a: False)("paused", False)),
+            "autonomy": bool(getattr(st, "get_setting", lambda *a: False)("autonomy", False))}
+
+
+def api_control(action: str) -> dict:
+    """Global run controls from the dashboard: pause / resume everything."""
+    store = get_store()
+    if not hasattr(store, "set_setting"):
+        return {"error": "this store has no control state"}
+    if action == "pause":
+        store.set_setting("paused", True)
+    elif action == "resume":
+        store.set_setting("paused", False)
+    else:
+        return {"error": f"unknown control '{action}'"}
+    return {"paused": store.get_setting("paused", False)}
+
+
+def api_autonomy(on: bool = True) -> dict:
+    """Toggle 'run without me' autonomy (the agents proceed on their own)."""
+    store = get_store()
+    if not hasattr(store, "set_setting"):
+        return {"error": "this store has no control state"}
+    store.set_setting("autonomy", bool(on))
+    return {"autonomy": bool(on)}
+
+
+def api_record_outcome(job_id: str, leads: int = 0, revenue: float = 0.0,
+                       customers: int = 0) -> dict:
+    """Record real business RESULTS on a job (leads booked, revenue, customers)
+    so the dashboard can show ROI, not just cost. Called by n8n / your CRM."""
+    store = get_store()
+    try:
+        job = store.get(job_id)
+    except KeyError:
+        return {"error": "not found", "job_id": job_id}
+    oc = job.setdefault("payload", {}).setdefault("outcome", {})
+    oc["leads"] = int(oc.get("leads", 0)) + int(leads)
+    oc["revenue"] = round(float(oc.get("revenue", 0.0)) + float(revenue), 2)
+    oc["customers"] = int(oc.get("customers", 0)) + int(customers)
+    store.save(job)
+    return {"job_id": job_id, "outcome": oc}
+
+
 def _esc(s) -> str:
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
@@ -358,11 +404,13 @@ def api_dashboard_html() -> str:
     day_cap = getattr(orch, "PER_DAY_BUDGET_USD", 50.0)
     month_spent = store.monthly_cost() if hasattr(store, "monthly_cost") else         sum(float(j.get("cost_so_far_usd", 0)) for j in jobs)
     day_spent = store.daily_cost() if hasattr(store, "daily_cost") else 0.0
+    settings = _settings()
     import content_engine_dashboard as D
     return D.dashboard_html(
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
-        has_password=bool(_dash_password()))
+        has_password=bool(_dash_password()), paused=settings["paused"],
+        autonomy=settings["autonomy"])
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +490,22 @@ def build_app():
     @app.post("/replies/answer")
     def answer_replies(limit: int = 20, dry_run: bool = False):
         return api_answer_replies(limit=limit, dry_run=dry_run)
+
+    @app.post("/control/pause")
+    def control_pause():
+        return api_control("pause")
+
+    @app.post("/control/resume")
+    def control_resume():
+        return api_control("resume")
+
+    @app.post("/control/autonomy")
+    def control_autonomy(on: bool = True):
+        return api_autonomy(on)
+
+    @app.post("/jobs/{job_id}/outcome")
+    def outcome(job_id: str, leads: int = 0, revenue: float = 0.0, customers: int = 0):
+        return api_record_outcome(job_id, leads, revenue, customers)
 
     return app
 
