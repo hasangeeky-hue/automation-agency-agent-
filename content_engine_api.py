@@ -192,6 +192,14 @@ def api_tick() -> dict:
     return {"advanced": status is not None, "status": status}
 
 
+def api_answer_replies(limit: int = 20, dry_run: bool = False) -> dict:
+    """Trigger the inbound-reply agent (Q18b): read unread replies, draft
+    answers, auto-send only the safe ones (respects REPLY_AUTO_SEND; complaints
+    are always held for a human). Call from an n8n cron."""
+    import content_engine_reply_agent as reply_agent
+    return reply_agent.answer_replies(limit=limit, dry_run=dry_run)
+
+
 def _esc(s) -> str:
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
@@ -299,6 +307,10 @@ def build_app():
     @app.post("/tick")
     def tick():
         return api_tick()
+
+    @app.post("/replies/answer")
+    def answer_replies(limit: int = 20, dry_run: bool = False):
+        return api_answer_replies(limit=limit, dry_run=dry_run)
 
     return app
 

@@ -48,6 +48,8 @@ ENV VARS (add the ones you have; leave the rest blank to stay offline)
 
 from __future__ import annotations
 
+import email as _emaillib
+import imaplib
 import json
 import logging
 import os
@@ -55,8 +57,9 @@ import re
 import smtplib
 import socket
 import ssl
+from email.header import decode_header, make_header
 from email.message import EmailMessage
-from email.utils import make_msgid
+from email.utils import make_msgid, parseaddr
 from html.parser import HTMLParser
 from typing import Optional
 
@@ -185,45 +188,53 @@ class Emailer:
         leads = p.get("leads") or []
         return (leads[0].get("email") if leads else "") or ""
 
-    def send(self, job: dict, email: dict) -> str:
-        to_addr = self._recipient(job)
-        if not to_addr:
-            log.error("no recipient email on job %s — not sending", job.get("job_id"))
-            return f"send_error_no_recipient:{job.get('job_id')}"
+    def _transport(self, msg: EmailMessage) -> None:
+        ctx = ssl.create_default_context()
+        if self.port == 465:
+            with smtplib.SMTP_SSL(self.host, self.port, timeout=_HTTP_TIMEOUT,
+                                  context=ctx) as s:
+                if self.user:
+                    s.login(self.user, self.password)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP(self.host, self.port, timeout=_HTTP_TIMEOUT) as s:
+                if self.starttls:
+                    s.starttls(context=ctx)
+                if self.user:
+                    s.login(self.user, self.password)
+                s.send_message(msg)
 
-        subject = (email.get("subject_variants") or ["(no subject)"])[0]
-        body = email.get("body", "")
-        unsub = job.get("payload", {}).get("unsubscribe_url", "")
-
+    def send_message(self, to_addr: str, subject: str, body: str,
+                     extra_headers: Optional[dict] = None) -> str:
+        """Generic one-shot send (reused by cold outreach AND reply answering)."""
         msg = EmailMessage()
         msg["From"] = self.sender
         msg["To"] = to_addr
         msg["Subject"] = subject
         msg["Message-ID"] = make_msgid()
-        if unsub:
-            msg["List-Unsubscribe"] = f"<{unsub}>"
+        for k, v in (extra_headers or {}).items():
+            if v:
+                msg[k] = v
         msg.set_content(body)
-
         try:
-            ctx = ssl.create_default_context()
-            if self.port == 465:
-                with smtplib.SMTP_SSL(self.host, self.port, timeout=_HTTP_TIMEOUT,
-                                      context=ctx) as s:
-                    if self.user:
-                        s.login(self.user, self.password)
-                    s.send_message(msg)
-            else:
-                with smtplib.SMTP(self.host, self.port, timeout=_HTTP_TIMEOUT) as s:
-                    if self.starttls:
-                        s.starttls(context=ctx)
-                    if self.user:
-                        s.login(self.user, self.password)
-                    s.send_message(msg)
-            log.info("email sent to %s (job %s)", to_addr, job.get("job_id"))
+            self._transport(msg)
+            log.info("email sent to %s", to_addr)
             return msg["Message-ID"]
         except Exception as e:
             log.error("email send failed: %s", e)
-            return f"send_error:{job.get('job_id')}"
+            return f"send_error:{to_addr}"
+
+    def send(self, job: dict, email: dict) -> str:
+        to_addr = self._recipient(job)
+        if not to_addr:
+            log.error("no recipient email on job %s — not sending", job.get("job_id"))
+            return f"send_error_no_recipient:{job.get('job_id')}"
+        subject = (email.get("subject_variants") or ["(no subject)"])[0]
+        body = email.get("body", "")
+        unsub = job.get("payload", {}).get("unsubscribe_url", "")
+        return self.send_message(
+            to_addr, subject, body,
+            extra_headers={"List-Unsubscribe": f"<{unsub}>" if unsub else ""})
 
 
 # ---------------------------------------------------------------------------
@@ -485,6 +496,185 @@ class Google:
 
 
 # ---------------------------------------------------------------------------
+# Q4 — Social posting (SOCIAL_FN)  — LinkedIn / X(Twitter) / Facebook Page
+# ---------------------------------------------------------------------------
+class LinkedInPoster:
+    """Post a text update to a LinkedIn person or organization page via the UGC
+    Posts API. Needs an access token with w_member_social / w_organization_social
+    and the author URN (e.g. urn:li:organization:12345 or urn:li:person:abc)."""
+
+    def __init__(self) -> None:
+        self.token = _env("LINKEDIN_POST_TOKEN")
+        self.author = _env("LINKEDIN_AUTHOR_URN")
+
+    def available(self) -> bool:
+        return bool(self.token and self.author and _requests())
+
+    def post(self, text: str) -> str:
+        body = {
+            "author": self.author,
+            "lifecycleState": "PUBLISHED",
+            "specificContent": {
+                "com.linkedin.ugc.ShareContent": {
+                    "shareCommentary": {"text": text},
+                    "shareMediaCategory": "NONE",
+                }
+            },
+            "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+        }
+        j = _post_json("https://api.linkedin.com/v2/ugcPosts", body,
+                       headers={"Authorization": f"Bearer {self.token}",
+                                "X-Restli-Protocol-Version": "2.0.0"})
+        if j is None:
+            return "linkedin_error"
+        return "linkedin:" + str(j.get("id", "posted"))
+
+
+class TwitterPoster:
+    """Post a tweet via X API v2. Needs an OAuth2 user access token with
+    tweet.write scope (TWITTER_BEARER_TOKEN)."""
+
+    def __init__(self) -> None:
+        self.token = _env("TWITTER_BEARER_TOKEN")
+
+    def available(self) -> bool:
+        return bool(self.token and _requests())
+
+    def post(self, text: str) -> str:
+        j = _post_json("https://api.twitter.com/2/tweets", {"text": text[:280]},
+                       headers={"Authorization": f"Bearer {self.token}"})
+        if j is None:
+            return "twitter_error"
+        return "twitter:" + str((j.get("data") or {}).get("id", "posted"))
+
+
+class MetaPoster:
+    """Post to a Facebook Page feed via the Graph API. Needs META_PAGE_ID +
+    META_PAGE_TOKEN. (Instagram requires the extra media-container flow — left
+    as a follow-up; this covers Facebook Pages.)"""
+
+    def __init__(self) -> None:
+        self.page_id = _env("META_PAGE_ID")
+        self.token = _env("META_PAGE_TOKEN")
+
+    def available(self) -> bool:
+        return bool(self.page_id and self.token and _requests())
+
+    def post(self, text: str, channel: str = "facebook") -> str:
+        url = f"https://graph.facebook.com/v21.0/{self.page_id}/feed"
+        j = _post_json(url, {"message": text, "access_token": self.token})
+        if j is None:
+            return "meta_error"
+        return "facebook:" + str(j.get("id", "posted"))
+
+
+def _piece_to_social_text(piece: dict, limit: int = 1000) -> str:
+    """Turn a produced piece into a social caption, trimmed to the platform limit,
+    with up to 5 hashtags appended."""
+    title = (piece.get("title") or "").strip()
+    body = (piece.get("body") or "").strip()
+    tags = piece.get("hashtags") or []
+    text = (f"{title}\n\n{body}").strip()
+    if len(text) > limit:
+        text = text[:limit - 1].rstrip() + "…"
+    if tags:
+        text += "\n\n" + " ".join(
+            (t if str(t).startswith("#") else "#" + str(t)) for t in tags[:5])
+    return text
+
+
+def post_social(job: dict, piece: dict, channel: str) -> str:
+    """SOCIAL_FN — post a produced piece to one social channel. Each platform
+    self-degrades to a clear '<channel>_not_configured' marker (visible to the
+    human) when its credentials are absent, so the pipeline never crashes."""
+    ch = (channel or "").lower()
+    jid = job.get("job_id")
+    if ch == "linkedin":
+        p = LinkedInPoster()
+        return p.post(_piece_to_social_text(piece, 2900)) if p.available() \
+            else f"linkedin_not_configured:{jid}"
+    if ch in ("twitter", "x"):
+        p = TwitterPoster()
+        return p.post(_piece_to_social_text(piece, 280)) if p.available() \
+            else f"twitter_not_configured:{jid}"
+    if ch in ("facebook", "meta", "instagram"):
+        p = MetaPoster()
+        return p.post(_piece_to_social_text(piece, 2000), ch) if p.available() \
+            else f"{ch}_not_configured:{jid}"
+    return f"social_{ch}_unknown:{jid}"
+
+
+def _any_social_available() -> bool:
+    return (LinkedInPoster().available() or TwitterPoster().available()
+            or MetaPoster().available())
+
+
+# ---------------------------------------------------------------------------
+# Q18b — Inbound email reader (IMAP) for the reply-answering agent
+# ---------------------------------------------------------------------------
+def _extract_plain_text(msg) -> str:
+    """Best-effort text body from a parsed email.message.Message."""
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.get_content_type() == "text/plain" and \
+                    "attachment" not in str(part.get("Content-Disposition", "")):
+                try:
+                    return part.get_payload(decode=True).decode(
+                        part.get_content_charset() or "utf-8", errors="replace")
+                except Exception:
+                    continue
+        return ""
+    try:
+        return msg.get_payload(decode=True).decode(
+            msg.get_content_charset() or "utf-8", errors="replace")
+    except Exception:
+        return msg.get_payload() or ""
+
+
+class InboundEmail:
+    """Read unread replies over IMAP so the reply agent can answer them. Needs
+    IMAP_HOST + IMAP_USER + IMAP_PASSWORD (use an app password). Read-only unless
+    you call mark_seen()."""
+
+    def __init__(self) -> None:
+        self.host = _env("IMAP_HOST")
+        self.port = int(_env("IMAP_PORT", "993") or "993")
+        self.user = _env("IMAP_USER")
+        self.password = _env("IMAP_PASSWORD")
+        self.folder = _env("IMAP_FOLDER", "INBOX")
+
+    def available(self) -> bool:
+        return bool(self.host and self.user and self.password)
+
+    def fetch_unread(self, limit: int = 20) -> list:
+        out: list = []
+        try:
+            box = imaplib.IMAP4_SSL(self.host, self.port)
+            box.login(self.user, self.password)
+            box.select(self.folder)
+            typ, data = box.search(None, "UNSEEN")
+            ids = data[0].split()[:limit]
+            for i in ids:
+                typ, msgdata = box.fetch(i, "(RFC822)")
+                if not msgdata or not msgdata[0]:
+                    continue
+                m = _emaillib.message_from_bytes(msgdata[0][1])
+                from_hdr = str(make_header(decode_header(m.get("From", ""))))
+                out.append({
+                    "uid": i.decode(),
+                    "from": from_hdr,
+                    "from_email": parseaddr(from_hdr)[1],
+                    "subject": str(make_header(decode_header(m.get("Subject", "")))),
+                    "message_id": m.get("Message-ID", ""),
+                    "message": _extract_plain_text(m).strip()[:4000],
+                })
+            box.logout()
+        except Exception as e:
+            log.error("IMAP fetch failed: %s", e)
+        return out
+
+
+# ---------------------------------------------------------------------------
 # Payload collectors — build the namespaces prep.py reads from
 # ---------------------------------------------------------------------------
 def collect_site_audit(site_url: str) -> dict:
@@ -556,10 +746,14 @@ def status() -> dict:
     """What's live right now (creds present) vs offline."""
     return {
         "wordpress_publish": WordPress().available(),
+        "social_linkedin": LinkedInPoster().available(),
+        "social_twitter": TwitterPoster().available(),
+        "social_facebook": MetaPoster().available(),
         "email_send": Emailer().available(),
+        "email_reply_inbound": InboundEmail().available(),
         "email_verify": True,  # always on (degrades to syntactic)
         "web_search": bool(_env("SEARCH_PROVIDER") and _env("SEARCH_API_KEY") and _requests()),
-        "linkedin": LinkedIn().available(),
+        "linkedin_leads": LinkedIn().available(),
         "google_gsc_ga4": Google().available(),
         "ads_data": bool(_env("ADS_JSON")),
         "backlinks_data": bool(_env("BACKLINKS_JSON")),
@@ -580,6 +774,11 @@ def wire_all() -> dict:
     em = Emailer()
     if em.available():
         cs.SEND_FN = em.send
+
+    # Social posting engages if any platform is configured; the dispatcher
+    # self-degrades per channel, so unconfigured channels leave a clear marker.
+    if _any_social_available():
+        cs.SOCIAL_FN = post_social
 
     # Verifier is always safe to install (real MX check when possible).
     cs.VERIFY_FN = verify_email

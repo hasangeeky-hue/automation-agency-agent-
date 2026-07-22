@@ -35,7 +35,8 @@ from typing import Callable, Optional
 SOURCE_FN: Optional[Callable[[dict], list]] = None   # -> raw leads
 VERIFY_FN: Optional[Callable[[str], bool]] = None    # -> email deliverable?
 BACKLINK_FN: Optional[Callable[[dict], dict]] = None # -> {client, competitors}
-PUBLISH_FN: Optional[Callable[[dict, dict], str]] = None  # -> external ref
+PUBLISH_FN: Optional[Callable[[dict, dict], str]] = None  # -> CMS ref (WordPress)
+SOCIAL_FN: Optional[Callable[[dict, dict, str], str]] = None  # (job, piece, channel) -> ref
 SEND_FN: Optional[Callable[[dict, dict], str]] = None     # -> external ref
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -113,16 +114,37 @@ def authority_backlinks(job: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# SKILL 8 — Publisher (idempotent)
+# SKILL 8 — Publisher (idempotent, multi-channel: CMS + social)
 # ---------------------------------------------------------------------------
+def _target_channels(job: dict) -> list:
+    """Where to publish this piece. Defaults to the website only (preserves prior
+    behavior); set payload.config.deploy_channels to fan out, e.g.
+    ["wordpress", "linkedin", "twitter"]."""
+    cfg = job.get("payload", {}).get("config", {}) or {}
+    channels = cfg.get("deploy_channels") or ["wordpress"]
+    return [str(c).lower() for c in channels]
+
+
 def publisher(job: dict) -> dict:
     payload = job.setdefault("payload", {})
     if payload.get("published_ref"):
         return {"already_published": payload["published_ref"]}
     piece = payload.get("content_producer", {})
-    ref = PUBLISH_FN(job, piece) if PUBLISH_FN else f"pub_{job['job_id']}"
-    payload["published_ref"] = ref
-    return {"published_ref": ref}
+
+    refs: dict[str, str] = {}
+    for ch in _target_channels(job):
+        if ch in ("wordpress", "cms", "web", "blog"):
+            refs[ch] = PUBLISH_FN(job, piece) if PUBLISH_FN else f"pub_{job['job_id']}"
+        else:
+            refs[ch] = (SOCIAL_FN(job, piece, ch) if SOCIAL_FN
+                        else f"social_{ch}_{job['job_id']}")
+
+    # Primary ref = the CMS/web post if there is one, else the first channel.
+    primary = (refs.get("wordpress") or refs.get("cms") or refs.get("web")
+               or refs.get("blog") or next(iter(refs.values()), f"pub_{job['job_id']}"))
+    payload["published_ref"] = primary
+    payload["published_refs"] = refs
+    return {"published_ref": primary, "channels": refs}
 
 
 # ---------------------------------------------------------------------------

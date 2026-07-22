@@ -99,6 +99,7 @@ _MAX_TOKENS = {
     "optimizer": 700,
     "segmenter": 400,
     "outreach_copy": 400,   # per lead; one lead per call
+    "reply_responder": 500,  # one inbound reply per call
 }
 
 

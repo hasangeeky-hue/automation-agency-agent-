@@ -541,6 +541,21 @@ ADS_OPTIMIZER = {
 }
 
 
+REPLY_RESPONDER = {
+    "type": "object",
+    "required": ["intent", "needs_human", "reply_subject", "reply_body", "notes"],
+    "properties": {
+        "intent": {"enum": ["interested", "question", "objection", "unsubscribe",
+                            "not_interested", "complaint", "other"]},
+        "needs_human": {"type": "boolean"},
+        "reply_subject": {"type": "string"},
+        "reply_body": {"type": "string"},
+        "notes": {"type": "string"},
+    },
+    "additionalProperties": False,
+}
+
+
 # ---------------------------------------------------------------------------
 # Validator wrapper: .validate(obj) -> (ok: bool, errors: list[str])
 # Accepts either the skill schema OR the SECTION 6 error object.
@@ -598,6 +613,7 @@ SCHEMAS = {
     "lead_qualifier":          Schema("lead_qualifier", LEAD_QUALIFIER),
     "outreach_copy":           Schema("outreach_copy", OUTREACH_COPY),
     "ads_optimizer":           Schema("ads_optimizer", ADS_OPTIMIZER),
+    "reply_responder":         Schema("reply_responder", REPLY_RESPONDER),
 }
 
 # Pure-code skills have no output schema:

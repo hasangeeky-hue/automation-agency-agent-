@@ -68,6 +68,7 @@ ROUTES = {
     "lead_qualifier":     {"engine": CHEAP_MODEL, "fallback": CHEAP_ALT},
     "outreach_copy":      {"engine": CHEAP_MODEL, "fallback": CHEAP_ALT},
     "ads_optimizer":      {"engine": FRONTIER_MODEL, "fallback": FRONTIER_ALT},  # money = judgment
+    "reply_responder":    {"engine": CHEAP_MODEL, "fallback": FRONTIER_ALT},  # customer-facing
     "orchestrator":       {"engine": "code"},
 }
 
