@@ -9,19 +9,11 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 COPY deploy/requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt
 
-# The engine modules + runner (all live at the repo root).
-COPY content_engine_prompts.py \
-     content_engine_schemas.py \
-     content_engine_providers.py \
-     content_engine_learning.py \
-     content_engine_prep.py \
-     content_engine_code_skills.py \
-     content_engine_orchestrator.py \
-     content_engine_store_pg.py \
-     content_engine_health.py \
-     content_engine_api.py \
-     main.py \
-     ./
+# The engine modules + runner (all live at the repo root). Copy ALL root-level
+# Python files so a newly added module is never accidentally left out of the
+# image (this previously caused a 500 when content_engine_dashboard.py, the
+# connectors and the reply agent were missing).
+COPY *.py ./
 
 EXPOSE 8000
 
