@@ -38,6 +38,28 @@ from content_engine_health import run_health
 # The engine's job store. Swap to Postgres by setting STORE=pg + DATABASE_URL.
 _STORE = None
 
+# HTTP request models. Defined at MODULE LEVEL on purpose: this file uses
+# `from __future__ import annotations`, so FastAPI sees the route hints as
+# strings and resolves them against module globals — a class defined inside
+# build_app() would not be found (FastAPI then mis-reads the body as a query
+# param -> 422). Guarded so the module still imports without pydantic.
+try:
+    from pydantic import BaseModel
+
+    class TasteBody(BaseModel):
+        model_config = {"protected_namespaces": ()}
+        input: dict
+        brand: Optional[dict] = None
+        model: Optional[str] = None
+
+    class JobBody(BaseModel):
+        type: str
+        brand: dict = {}
+        payload: dict = {}
+        job_id: Optional[str] = None
+except Exception:  # pydantic absent (core-only use, no HTTP)
+    BaseModel = None  # type: ignore
+
 
 def get_store():
     global _STORE
@@ -82,7 +104,11 @@ def api_taste_skill(skill: str, skill_input: dict, brand: Optional[dict] = None,
                 "tasteable": sorted(_TASTEABLE)}
     route = orch.ROUTES.get(skill, {})
     chosen = model or route.get("engine")
-    if not chosen or chosen == "code":
+    if chosen == "code":
+        # code+narrate skills (site_intelligence, analytics_funnel, segmenter)
+        # do their LLM work through a narrate/label model.
+        chosen = route.get("narrate") or route.get("label")
+    if not chosen:
         return {"error": f"skill '{skill}' has no LLM engine to taste"}
     spec = build_prompt(skill, {"payload": skill_input, "brand": brand or {}})
     result = call_provider(chosen, spec)
@@ -227,24 +253,12 @@ a{{color:#2FE3D2;text-decoration:none}} .links{{margin-top:18px;font-size:13px;c
 def build_app():
     from fastapi import FastAPI
     from fastapi.responses import HTMLResponse
-    from pydantic import BaseModel
 
     app = FastAPI(title="Content Engine", version="1.0")
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard():
         return api_dashboard_html()
-
-    class TasteBody(BaseModel):
-        input: dict
-        brand: Optional[dict] = None
-        model: Optional[str] = None
-
-    class JobBody(BaseModel):
-        type: str
-        brand: dict = {}
-        payload: dict = {}
-        job_id: Optional[str] = None
 
     @app.get("/health")
     def health():
