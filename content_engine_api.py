@@ -501,7 +501,7 @@ def api_dashboard_html() -> str:
 # FastAPI wiring (optional — only if fastapi is installed)
 # ---------------------------------------------------------------------------
 def build_app():
-    from fastapi import FastAPI, Form, Request
+    from fastapi import FastAPI, Request
     from fastapi.responses import HTMLResponse, RedirectResponse
 
     app = FastAPI(title="Content Engine", version="1.0")
@@ -513,7 +513,11 @@ def build_app():
         return HTMLResponse(api_dashboard_html())
 
     @app.post("/login")
-    def login(password: str = Form("")):
+    async def login(request: Request):
+        # Parse the urlencoded form by hand so we don't need python-multipart.
+        from urllib.parse import parse_qs
+        raw = (await request.body()).decode("utf-8", "ignore")
+        password = parse_qs(raw).get("password", [""])[0]
         if _dash_password() and password == _dash_password():
             resp = RedirectResponse(url="/", status_code=303)
             resp.set_cookie("aa_dash", _dash_token(), httponly=True,
@@ -578,8 +582,11 @@ def build_app():
 # still imports where fastapi isn't installed).
 try:
     app = build_app()
-except Exception:  # fastapi not installed
+except ImportError:  # fastapi/starlette not installed (core-only offline use)
     app = None
+    # Any OTHER build error is intentionally NOT swallowed here: letting it
+    # propagate makes uvicorn fail loudly with the real traceback instead of
+    # silently serving app=None (which 500s every request).
 
 
 if __name__ == "__main__":
