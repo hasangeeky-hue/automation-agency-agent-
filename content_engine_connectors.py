@@ -740,6 +740,141 @@ def backlinks(job: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# GOOGLE WORKSPACE HUB (Option A: Postgres stays the engine's memory; Google is
+# the visible hub). Sheets = the "mother dashboard" + structured store; Drive =
+# content saved as JSON. Auth = ONE service-account key
+# (GOOGLE_SERVICE_ACCOUNT_JSON = inline JSON or a path). Share the target Sheet
+# + Drive folder with the service-account email. Gmail sending reuses the SMTP
+# Emailer above (SMTP_HOST=smtp.gmail.com + a Workspace app password).
+# ---------------------------------------------------------------------------
+_GSHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+_GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+
+
+def _google_sa_info():
+    raw = _env("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if not raw:
+        return None
+    try:
+        if raw.lstrip().startswith("{"):
+            return json.loads(raw)
+        with open(raw, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        log.warning("GOOGLE_SERVICE_ACCOUNT_JSON unreadable: %s", e)
+        return None
+
+
+def _google_configured() -> bool:
+    return _google_sa_info() is not None and _requests() is not None
+
+
+def _google_token(scopes):
+    """Exchange the service-account key for a short-lived access token. Uses
+    google-auth (handles the signed-JWT flow); returns None if unavailable."""
+    info = _google_sa_info()
+    if not info:
+        return None
+    try:
+        from google.oauth2 import service_account
+        from google.auth.transport.requests import Request
+        creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+        creds.refresh(Request())
+        return creds.token
+    except Exception as e:
+        log.warning("google service-account auth failed: %s", e)
+        return None
+
+
+class GoogleSheets:
+    """Append rows to a Google Sheet — the 'mother dashboard' / structured store.
+    Tabs are created by you (e.g. Content, Leads, Jobs); this appends to them."""
+
+    def __init__(self) -> None:
+        self.sheet_id = _env("GOOGLE_SHEETS_ID")
+
+    def available(self) -> bool:
+        return bool(self.sheet_id and _google_configured())
+
+    def append_row(self, tab: str, values: list) -> bool:
+        token = _google_token([_GSHEETS_SCOPE])
+        if not token:
+            return False
+        from urllib.parse import quote
+        rng = quote(f"{tab}!A1", safe="")
+        url = (f"https://sheets.googleapis.com/v4/spreadsheets/{self.sheet_id}"
+               f"/values/{rng}:append?valueInputOption=USER_ENTERED")
+        j = _post_json(url, {"values": [[("" if v is None else v) for v in values]]},
+                       headers={"Authorization": f"Bearer {token}"})
+        return j is not None
+
+
+class GoogleDrive:
+    """Save content as a JSON file inside an organized company folder (no media
+    yet — text/JSON; convert to images/video later)."""
+
+    def __init__(self) -> None:
+        self.folder_id = _env("GDRIVE_FOLDER_ID")
+
+    def available(self) -> bool:
+        return bool(self.folder_id and _google_configured())
+
+    def save_json(self, name: str, obj: dict) -> str:
+        token = _google_token([_GDRIVE_SCOPE])
+        rq = _requests()
+        if not token or not rq:
+            return ""
+        meta = {"name": name, "parents": [self.folder_id], "mimeType": "application/json"}
+        b = "aa_hub_boundary"
+        body = (
+            f"--{b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
+            + json.dumps(meta)
+            + f"\r\n--{b}\r\nContent-Type: application/json\r\n\r\n"
+            + json.dumps(obj, ensure_ascii=False)
+            + f"\r\n--{b}--"
+        )
+        try:
+            r = rq.post(
+                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": f"multipart/related; boundary={b}"},
+                data=body.encode("utf-8"), timeout=_HTTP_TIMEOUT)
+            r.raise_for_status()
+            j = r.json()
+            return j.get("webViewLink") or ("drive:" + str(j.get("id", "")))
+        except Exception as e:
+            log.warning("Drive save_json failed: %s", e)
+            return ""
+
+
+def mirror_job(job: dict) -> None:
+    """Best-effort mirror of a finished job to the Google hub: the produced piece
+    as JSON in Drive + a summary row in Sheets. No-op if Google isn't configured,
+    and never raises — Postgres remains the source of truth (Option A)."""
+    sheets, drive = GoogleSheets(), GoogleDrive()
+    if not (sheets.available() or drive.available()):
+        return
+    payload = job.get("payload", {}) or {}
+    jtype = job.get("type")
+    drive_ref = ""
+    piece = payload.get("content_producer")
+    if drive.available() and piece:
+        drive_ref = drive.save_json(
+            f"{job.get('job_id')}.json",
+            {"job_id": job.get("job_id"), "type": jtype, "status": job.get("status"),
+             "piece": piece, "published_refs": payload.get("published_refs")})
+    if sheets.available():
+        cost = round(float(job.get("cost_so_far_usd", 0) or 0), 4)
+        if jtype == "outreach_campaign":
+            sheets.append_row("Leads", [job.get("job_id"), job.get("status"),
+                                        payload.get("send_ref", ""), cost])
+        else:
+            sheets.append_row("Content", [job.get("job_id"), job.get("status"),
+                                          (piece or {}).get("title", ""),
+                                          payload.get("published_ref", ""), drive_ref, cost])
+
+
+# ---------------------------------------------------------------------------
 # Wiring + status
 # ---------------------------------------------------------------------------
 def status() -> dict:
@@ -752,6 +887,8 @@ def status() -> dict:
         "email_send": Emailer().available(),
         "email_reply_inbound": InboundEmail().available(),
         "email_verify": True,  # always on (degrades to syntactic)
+        "google_sheets": GoogleSheets().available(),   # mother dashboard / store
+        "google_drive": GoogleDrive().available(),     # content JSON storage
         "web_search": bool(_env("SEARCH_PROVIDER") and _env("SEARCH_API_KEY") and _requests()),
         "linkedin_leads": LinkedIn().available(),
         "google_gsc_ga4": Google().available(),
@@ -790,6 +927,16 @@ def wire_all() -> dict:
     # Backlink data only if a JSON blob was provided.
     if _env("BACKLINKS_JSON"):
         cs.BACKLINK_FN = backlinks
+
+    # Google Workspace hub: when Sheets/Drive is configured, mirror every
+    # finished job to Google (content JSON -> Drive, summary row -> Sheets).
+    # Postgres stays the source of truth (Option A); this is the visible layer.
+    if GoogleSheets().available() or GoogleDrive().available():
+        try:
+            import content_engine_orchestrator as _orch
+            _orch.MIRROR_FN = mirror_job
+        except Exception:
+            log.warning("could not install Google hub mirror on the orchestrator")
 
     st = status()
     live = [k for k, v in st.items() if v and k not in ("requests_installed", "email_verify")]
@@ -851,6 +998,12 @@ if __name__ == "__main__":
     cs.PUBLISH_FN = None
     cs.SEND_FN = None
 
+    # 7) Google hub is off without a service-account key; mirror is a safe no-op.
+    assert GoogleSheets().available() is False and GoogleDrive().available() is False
+    mirror_job({"job_id": "z", "type": "content_piece", "payload": {}})  # must not raise
+    st2 = status()
+    assert st2["google_sheets"] is False and st2["google_drive"] is False
+
     print("OK — connectors self-check passed: graceful offline degradation, "
           "verifier always on, hooks wire only when creds present, collectors "
-          "return safe empties. (No network, no API.)")
+          "return safe empties, Google hub off-and-safe. (No network, no API.)")

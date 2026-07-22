@@ -328,6 +328,12 @@ def run_llm_skill(job: dict, skill: str, store: JobStore) -> tuple[dict, float]:
 # Indirection so tests can stub the LLM layer without touching providers.
 _LLM_HOOK: Callable[[dict, str, JobStore], tuple[dict, float]] = run_llm_skill
 
+# Optional hook to mirror a finished job to an external hub (Google Sheets +
+# Drive). Best-effort; connectors.wire_all() sets it when Google is configured.
+# Postgres remains the source of truth; a mirror failure never affects the job.
+MIRROR_FN: Optional[Callable[[dict], None]] = None
+_MIRROR_STATES = {"published", "sent", "optimized"}
+
 
 # ---------------------------------------------------------------------------
 # advance(): execute exactly ONE step for the job's current status.
@@ -390,6 +396,18 @@ def advance(job: dict, store: JobStore) -> str:
 
     _maybe_stamp_measure(job)      # open a measurement window on arrival at published/sent
     store.save(job)
+
+    # Mirror finished jobs to the Google hub (Sheets + Drive), once per state.
+    if MIRROR_FN and job.get("status") in _MIRROR_STATES:
+        _done = job.setdefault("_mirrored", [])
+        if job["status"] not in _done:
+            try:
+                MIRROR_FN(job)
+                _done.append(job["status"])
+                store.save(job)
+            except Exception:
+                pass   # best-effort; Postgres is the source of truth
+
     return job["status"]
 
 

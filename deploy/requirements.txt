@@ -5,3 +5,4 @@ psycopg[binary]>=3.1
 jsonschema>=4.0
 requests>=2.31        # connectors: WordPress / web search / scrape / Google REST
 dnspython>=2.4        # connectors: real MX-record email verification (optional)
+google-auth>=2.23     # Google Workspace hub: service-account auth for Sheets + Drive
