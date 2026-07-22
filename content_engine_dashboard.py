@@ -1,78 +1,101 @@
 """
 content_engine_dashboard.py
 ============================================================================
-The Business Control Center UI (Phase 1, redesigned). Plain-English, chart-led,
-no machine jargon. Pure render functions: they take primitives (jobs, connector
-status, health, budget) and return HTML. content_engine_api.py gathers the data
-and calls dashboard_html(); everything here is offline-testable.
+The Business Control Center UI. Plain-English, chart-led, no machine jargon.
+Pure render functions: they take primitives (jobs, connector status, health,
+budget) and return HTML. content_engine_api.py gathers the data and calls
+dashboard_html(); everything here is offline-testable.
 
-Charts are hand-drawn inline SVG (no external libraries, works on the VPS with
-no internet). Numbers come from the live engine; panels with no data yet show a
-clean empty state instead of fake figures.
+Design: a professional dark data-dashboard. Semantic status colors (green=live,
+amber=needs a key) always carry a label, never color alone. Numbers are tabular.
+Charts + the full system map are hand-drawn inline SVG (no libraries; works on
+the VPS with no internet). Panels with no data yet show a clean empty state.
 ============================================================================
 """
 
 from __future__ import annotations
 
-# --- palette / css ----------------------------------------------------------
 CSS = """
-:root{--bg:#0A0E1A;--panel:#121A2E;--panel2:#0E1524;--line:#1E2A45;--ink:#EEF2FF;
---mut:#93A0C4;--dim:#5D6A8C;--teal:#2FE3D2;--violet:#8B7CFF;--good:#46E08B;--warn:#F5B14C;--bad:#FF5C8A}
+:root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
+--ink:#EDF1FB;--mut:#8E9BBE;--dim:#59668A;--teal:#2FE3D2;--violet:#8B7CFF;
+--good:#3FD98B;--warn:#F5B14C;--bad:#FF6B93;--blue:#4C8DFF}
 *{box-sizing:border-box}
-body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#132038 0,var(--bg) 55%);
-color:var(--ink);font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
-.tnum{font-variant-numeric:tabular-nums}
-.wrap{max-width:1180px;margin:0 auto;padding:22px 16px 70px}
-.note{background:#16233d;border:1px solid var(--teal);border-radius:12px;padding:10px 14px;font-size:12.5px;color:var(--mut);margin-bottom:16px}
-.note b{color:var(--teal)}
-.head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+body{margin:0;background:var(--bg);color:var(--ink);
+font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.tnum{font-variant-numeric:tabular-nums;font-feature-settings:'tnum'}
+.wrap{max-width:1260px;margin:0 auto;padding:20px 18px 70px}
+/* top bar */
+.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+padding-bottom:16px;margin-bottom:18px;border-bottom:1px solid var(--line2)}
 .brand{display:flex;align-items:center;gap:11px}
-.logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--teal),var(--violet));display:grid;place-items:center;color:#04121a;font-weight:800}
-h1{font-size:20px;margin:0;letter-spacing:-.01em}
-.tag{color:var(--mut);font-size:12.5px;margin:2px 0 20px}
-.who{display:flex;align-items:center;gap:9px;color:var(--mut);font-size:12.5px}
-.logout{color:var(--mut);font-size:12px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;text-decoration:none}
-.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:14px}
-.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px}
-.kpi .lab{color:var(--mut);font-size:11.5px;letter-spacing:.04em;text-transform:uppercase}
-.kpi .val{font-size:27px;font-weight:750;margin-top:5px;letter-spacing:-.02em}
-.kpi .sub{font-size:12px;margin-top:3px;color:var(--mut)}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
-.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:17px}
+.logo{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--teal),var(--violet));display:grid;place-items:center;color:#04121a;font-weight:800;font-size:15px}
+h1{font-size:17px;margin:0;letter-spacing:-.01em;font-weight:700}
+.brand small{display:block;color:var(--mut);font-size:11.5px;font-weight:400}
+.status{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--mut);background:var(--s1);border:1px solid var(--line);border-radius:99px;padding:5px 11px}
+.status .dot{width:8px;height:8px;border-radius:50%}
+.logout{color:var(--mut);font-size:12px;border:1px solid var(--line);border-radius:8px;padding:6px 11px;text-decoration:none}
+.note{background:#101d33;border:1px solid #26456f;border-radius:10px;padding:11px 14px;font-size:12.5px;color:var(--mut);margin-bottom:16px}
+.note b{color:var(--teal)}
+/* section label */
+.sec{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:700;margin:22px 2px 10px}
+/* kpi */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:11px}
+.kpi{background:linear-gradient(180deg,var(--s1),var(--s2));border:1px solid var(--line);border-radius:12px;padding:14px 15px}
+.kpi .lab{color:var(--mut);font-size:11px;letter-spacing:.03em;text-transform:uppercase;font-weight:600}
+.kpi .val{font-size:26px;font-weight:750;margin-top:6px;letter-spacing:-.02em;line-height:1}
+.kpi .val small{font-size:15px;color:var(--dim);font-weight:600}
+.kpi .sub{font-size:11.5px;margin-top:6px;display:flex;align-items:center;gap:5px}
+/* grid + cards */
+.grid{display:grid;gap:11px;margin-bottom:2px}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:13px;padding:15px 16px}
 .full{grid-column:1/-1}
-.ct{font-size:14px;font-weight:700;margin:0}
-.cc{color:var(--mut);font-size:12px;margin:3px 0 14px}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:10px}
-.lg{display:inline-flex;align-items:center;gap:6px}.sw{width:10px;height:10px;border-radius:3px;display:inline-block}
-.fn{display:flex;flex-direction:column;gap:7px}
+.ch{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:3px}
+.ct{font-size:13.5px;font-weight:700;margin:0}
+.cx{font-size:11.5px;color:var(--dim)}
+.cc{color:var(--mut);font-size:12px;margin:2px 0 14px}
+/* status pill */
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;border-radius:99px;padding:2px 8px;letter-spacing:.02em}
+.p-live{color:var(--good);background:rgba(63,217,139,.12)}
+.p-need{color:var(--warn);background:rgba(245,177,76,.12)}
+.pill .dot{width:6px;height:6px;border-radius:50%}
+/* funnel */
+.fn{display:flex;flex-direction:column;gap:6px}
 .fr{display:flex;align-items:center;gap:10px}
-.fbar{height:30px;border-radius:7px;display:flex;align-items:center;padding:0 10px;color:#04121a;font-weight:700;font-size:12.5px;min-width:34px}
-.fr .fl{width:110px;color:var(--mut);font-size:12.5px;flex-shrink:0}
-.bars{display:flex;flex-direction:column;gap:9px}
-.br{display:flex;align-items:center;gap:10px}.br .bl{width:92px;font-size:12.5px;color:var(--mut)}
-.track{flex:1;height:12px;background:var(--panel2);border-radius:99px;overflow:hidden}.track i{display:block;height:100%;border-radius:99px}
-.br .bv{width:44px;text-align:right;font-size:12px;color:var(--ink)}
-.autos{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px}
-.grp .gh{font-size:12px;color:var(--violet);font-weight:700;margin:0 0 8px;letter-spacing:.02em}
-.chip{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:6px 0;border-bottom:1px solid #0f1930}
-.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.fbar{height:28px;border-radius:6px;display:flex;align-items:center;padding:0 9px;color:#05131f;font-weight:750;font-size:12px;min-width:30px}
+.fr .fl{width:118px;color:var(--mut);font-size:12px;flex-shrink:0}
+/* bars */
+.bars{display:flex;flex-direction:column;gap:8px}
+.br{display:flex;align-items:center;gap:10px}.br .bl{width:96px;font-size:12px;color:var(--mut)}
+.track{flex:1;height:11px;background:var(--s2);border-radius:99px;overflow:hidden}.track i{display:block;height:100%;border-radius:99px}
+.br .bv{width:46px;text-align:right;font-size:11.5px;color:var(--ink)}
+/* automations */
+.autos{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.grp .gh{font-size:11.5px;color:var(--violet);font-weight:700;margin:0 0 9px;letter-spacing:.02em;display:flex;justify-content:space-between}
+.chip{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid var(--line2)}
+.chip .nm{display:flex;align-items:center;gap:8px}.chip .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+/* feed */
 .feed{display:flex;flex-direction:column}
-.fe{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid #0f1930}
-.fe .tm{color:var(--dim);font-size:11.5px;width:70px;flex-shrink:0;padding-top:1px}
-.fe .tx{font-size:13px}.fe .tx b{font-weight:650}
-.appr{display:flex;flex-direction:column;gap:9px}
-.ap{display:flex;align-items:center;gap:11px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:10px 12px}
-.ap .apt{flex:1;font-size:13px}.ap .apk{font-size:11px;color:var(--mut)}
-.btn{border:none;border-radius:9px;padding:7px 13px;font-weight:700;font-size:12.5px;cursor:pointer}
+.fe{display:flex;gap:11px;padding:8px 0;border-bottom:1px solid var(--line2)}
+.fe .tm{color:var(--dim);font-size:11px;width:78px;flex-shrink:0;padding-top:1px}
+.fe .tx{font-size:12.5px}.fe .tx b{font-weight:650}
+/* suggestions */
+.sug{display:flex;gap:9px;padding:8px 0;border-bottom:1px solid var(--line2);font-size:12.5px;color:var(--mut)}
+.sug .i{color:var(--warn);flex-shrink:0}
+/* approvals + command */
+.appr{display:flex;flex-direction:column;gap:8px}
+.ap{display:flex;align-items:center;gap:10px;background:var(--s2);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+.ap .apt{flex:1;font-size:12.5px}.ap .apk{font-size:11px;color:var(--mut)}
+.btn{border:none;border-radius:8px;padding:6px 12px;font-weight:700;font-size:12px;cursor:pointer}
 .ok{background:var(--good);color:#04140a}.no{background:transparent;border:1px solid var(--line);color:var(--mut)}
-.cmd{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
-.cmd select,.cmd input{flex:1;min-width:130px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:9px 11px;font:inherit}
-.cmd button{background:var(--teal);color:#04121a;font-weight:700;border:none;border-radius:9px;padding:9px 15px;cursor:pointer}
-.empty{color:var(--dim);font-size:12.5px;padding:14px 0;text-align:center}
-pre{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px;overflow:auto;font-size:11.5px;color:#B9C4E0;max-height:220px;margin-top:8px}
-.links{margin-top:12px;font-size:12px;color:var(--mut)}.links a{color:var(--teal);text-decoration:none}
-@media(max-width:820px){.grid,.grid3{grid-template-columns:1fr}}
+.cmd{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+.cmd select,.cmd input{flex:1;min-width:130px;background:var(--s2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:9px 11px;font:inherit}
+.cmd button{background:var(--teal);color:#04121a;font-weight:700;border:none;border-radius:8px;padding:9px 15px;cursor:pointer}
+.empty{color:var(--dim);font-size:12.5px;padding:16px 0;text-align:center}
+pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font-size:11.5px;color:#B9C4E0;max-height:200px;margin-top:8px}
+.maplegend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);margin-top:12px}
+.links{margin-top:16px;font-size:12px;color:var(--dim)}.links a{color:var(--teal);text-decoration:none}
+@media(max-width:900px){.g2,.g3{grid-template-columns:1fr}}
 """
 
 
@@ -108,11 +131,9 @@ def _autos(st: dict) -> dict:
 _STAGES = ["Ideas", "Written", "Checked", "Waiting for you", "Published", "Measured"]
 _STAGE_OF = {
     "created": 0, "site_ready": 0, "competitor_ready": 0, "planned": 0,
-    "sourced": 0, "qualified": 0, "segmented": 0,
-    "produced": 1, "drafted": 1,
-    "seo_checked": 2,
-    "AWAITING_APPROVAL": 3,
-    "publishing": 4, "published": 4, "sending": 4, "sent": 4, "measuring": 4, "tracking": 4,
+    "sourced": 0, "qualified": 0, "segmented": 0, "produced": 1, "drafted": 1,
+    "seo_checked": 2, "AWAITING_APPROVAL": 3, "publishing": 4, "published": 4,
+    "sending": 4, "sent": 4, "measuring": 4, "tracking": 4,
     "measured": 5, "tracked": 5, "learned": 5, "optimized": 5,
 }
 _FRIENDLY = {
@@ -127,165 +148,292 @@ _FRIENDLY = {
 }
 
 
-def _pipeline(jobs: list) -> list:
-    counts = [0] * len(_STAGES)
+def _pipeline(jobs):
+    c = [0] * len(_STAGES)
     for j in jobs:
         i = _STAGE_OF.get(j.get("status", ""))
         if i is not None:
-            counts[i] += 1
-    return counts
+            c[i] += 1
+    return c
 
 
-def _lead_funnel(jobs: list) -> list:
-    found = verified = qualified = emailed = replied = booked = 0
+def _lead_funnel(jobs):
+    found = verified = qualified = emailed = 0
     for j in jobs:
         if j.get("type") != "outreach_campaign":
             continue
         p = j.get("payload", {}) or {}
         found += len(p.get("raw_leads", []) or []) or len(p.get("leads", []) or [])
         verified += len(p.get("leads", []) or [])
-        lq = p.get("lead_qualifier", {}) or {}
-        qualified += len(lq.get("results", []) or [])
+        qualified += len((p.get("lead_qualifier", {}) or {}).get("results", []) or [])
         if p.get("send_ref") or p.get("outreach_send"):
             emailed += 1
     return [("Found", found), ("Verified", verified), ("Qualified", qualified),
-            ("Emailed", emailed), ("Replied", replied), ("Booked", booked)]
+            ("Emailed", emailed), ("Replied", 0), ("Booked", 0)]
 
 
 # --- svg helpers -------------------------------------------------------------
-def _donut(pct: int, color: str) -> str:
+def _donut(pct, color):
     import math
-    r = 52
+    r = 50
     circ = 2 * math.pi * r
     off = circ * (1 - min(100, max(0, pct)) / 100)
-    return (
-        f'<svg width="132" height="132" viewBox="0 0 132 132">'
-        f'<circle cx="66" cy="66" r="{r}" fill="none" stroke="#182238" stroke-width="16"/>'
-        f'<circle cx="66" cy="66" r="{r}" fill="none" stroke="{color}" stroke-width="16" '
-        f'stroke-linecap="round" stroke-dasharray="{circ:.0f}" stroke-dashoffset="{off:.0f}" '
-        f'transform="rotate(-90 66 66)"/>'
-        f'<text x="66" y="62" text-anchor="middle" fill="#EEF2FF" font-size="26" font-weight="750">{pct}%</text>'
-        f'<text x="66" y="82" text-anchor="middle" fill="#93A0C4" font-size="11">of budget</text></svg>')
+    return (f'<svg width="120" height="120" viewBox="0 0 120 120">'
+            f'<circle cx="60" cy="60" r="{r}" fill="none" stroke="#16223c" stroke-width="14"/>'
+            f'<circle cx="60" cy="60" r="{r}" fill="none" stroke="{color}" stroke-width="14" '
+            f'stroke-linecap="round" stroke-dasharray="{circ:.0f}" stroke-dashoffset="{off:.0f}" '
+            f'transform="rotate(-90 60 60)"/>'
+            f'<text x="60" y="57" text-anchor="middle" fill="#EDF1FB" font-size="24" font-weight="750">{pct}%</text>'
+            f'<text x="60" y="76" text-anchor="middle" fill="#8E9BBE" font-size="10">of budget</text></svg>')
 
 
-_FN_COLORS = ["#37507e", "#4a6bd6", "#8B7CFF", "#F5B14C", "#2FE3D2", "#46E08B"]
+_FN_COLORS = ["#4C8DFF", "#5A7BE8", "#8B7CFF", "#F5B14C", "#2FE3D2", "#3FD98B"]
 
 
-def _funnel(rows: list, colors: list) -> str:
+def _funnel(rows, colors):
     mx = max((v for _, v in rows), default=0) or 1
     out = ['<div class="fn">']
     for i, (label, v) in enumerate(rows):
-        w = max(6, round(v / mx * 100))
+        w = max(5, round(v / mx * 100))
         out.append(f'<div class="fr"><span class="fl">{_esc(label)}</span>'
                    f'<div class="fbar" style="width:{w}%;background:{colors[i % len(colors)]}">{v}</div></div>')
     out.append("</div>")
     return "".join(out)
 
 
+# --- THE SYSTEM MAP: every component + every labeled connection --------------
+def _system_map(st):
+    def c(k):
+        return "#3FD98B" if st.get(k) else "#F5B14C"
+    social_live = st.get("social_linkedin") or st.get("social_twitter") or st.get("social_facebook")
+    g_on = st.get("google_sheets") or st.get("google_drive")
+    P = []
+
+    def box(x, y, w, h, col, title, sub="", tcol="#EDF1FB"):
+        s = f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="7" fill="#0B111F" stroke="{col}" stroke-width="1.3"/>'
+        yt = y + (h / 2 + 4) if not sub else y + h / 2 - 2
+        s += f'<text x="{x+w/2}" y="{yt:.0f}" text-anchor="middle" fill="{tcol}" font-size="11" font-weight="600">{title}</text>'
+        if sub:
+            s += f'<text x="{x+w/2}" y="{y+h/2+11:.0f}" text-anchor="middle" fill="#8E9BBE" font-size="9">{sub}</text>'
+        return s
+
+    def wire(x1, y1, x2, y2, col="#33507e", dash="", label="", lx=None, ly=None):
+        mx = (x1 + x2) / 2
+        s = (f'<path d="M{x1} {y1} C {mx} {y1}, {mx} {y2}, {x2} {y2}" fill="none" '
+             f'stroke="{col}" stroke-width="1.3" {dash} marker-end="url(#arw)" opacity="0.85"/>')
+        if label:
+            s += (f'<text x="{lx or mx:.0f}" y="{(ly or (y1+y2)/2 - 4):.0f}" text-anchor="middle" '
+                  f'fill="#8E9BBE" font-size="9">{label}</text>')
+        return s
+
+    P.append('<svg width="100%" viewBox="0 0 1220 640" style="max-width:100%;height:auto">'
+             '<defs><marker id="arw" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">'
+             '<path d="M0,0 L6,3 L0,6" fill="#5a79aa"/></marker></defs>')
+
+    # column labels
+    for lx, txt in [(95, "SOURCES"), (300, "TRIGGER"), (620, "ENGINE (your VPS)"),
+                    (900, "GOOGLE HUB"), (1120, "CHANNELS")]:
+        P.append(f'<text x="{lx}" y="26" text-anchor="middle" fill="#59668A" font-size="10" '
+                 f'font-weight="700" letter-spacing="1">{txt}</text>')
+
+    # SOURCES (left)
+    src = [("Web search", c("web_search"), 60), ("Web scraper", c("web_search"), 108),
+           ("LinkedIn", c("linkedin_leads"), 156), ("Search Console", c("google_gsc_ga4"), 224),
+           ("Analytics (GA4)", c("google_gsc_ga4"), 272)]
+    for name, col, y in src:
+        P.append(box(20, y, 150, 38, col, name))
+    # n8n trigger
+    P.append(box(230, 470, 140, 40, "#8B7CFF", "n8n", "cron + webhooks"))
+
+    # ENGINE big container
+    P.append('<rect x="420" y="46" width="400" height="470" rx="12" fill="#0D1526" stroke="#2FE3D2" stroke-width="1.6"/>')
+    P.append('<text x="620" y="70" text-anchor="middle" fill="#2FE3D2" font-size="13" font-weight="750">Automation Engine</text>')
+    P.append('<text x="620" y="86" text-anchor="middle" fill="#8E9BBE" font-size="9.5">orchestrator · runs 24/7</text>')
+    # inner blocks
+    P.append(box(445, 100, 350, 34, "#4C8DFF", "Orchestrator", "decides the next step for every job"))
+    P.append('<rect x="445" y="146" width="350" height="70" rx="7" fill="#0B111F" stroke="#2b3a5c"/>')
+    P.append('<text x="455" y="163" fill="#8B7CFF" font-size="9.5" font-weight="700">CONTENT AGENTS</text>')
+    P.append('<text x="455" y="180" fill="#C7D0EA" font-size="10">site · competitor · strategist · writer</text>')
+    P.append('<text x="455" y="196" fill="#C7D0EA" font-size="10">SEO/AEO tuner · quality &amp; legal · publisher</text>')
+    P.append('<text x="455" y="210" fill="#8E9BBE" font-size="9">→ images + video (phase 2)</text>')
+    P.append('<rect x="445" y="228" width="350" height="70" rx="7" fill="#0B111F" stroke="#2b3a5c"/>')
+    P.append('<text x="455" y="245" fill="#8B7CFF" font-size="9.5" font-weight="700">LEAD MACHINE</text>')
+    P.append('<text x="455" y="262" fill="#C7D0EA" font-size="10">sourcing · verify · qualifier · segmenter</text>')
+    P.append('<text x="455" y="278" fill="#C7D0EA" font-size="10">outreach writer · reply responder</text>')
+    P.append('<text x="455" y="292" fill="#8E9BBE" font-size="9">cold-email first, then paid marketing</text>')
+    P.append(box(445, 310, 168, 34, "#4C8DFF", "Ads optimizer", "SEO + performance"))
+    P.append(box(627, 310, 168, 34, "#4C8DFF", "Learning agent", "gets smarter monthly"))
+    P.append(box(445, 356, 168, 34, "#3FD98B", "Approval gate", "your yes/no"))
+    P.append(box(627, 356, 168, 34, "#3FD98B", "Budget guard", "$200/mo hard cap"))
+    # Claude + Postgres (below engine, inside)
+    P.append(box(445, 404, 168, 40, "#3FD98B", "Claude", "Opus 4.8 / Haiku 4.5"))
+    P.append(box(627, 404, 168, 40, "#2FE3D2", "Postgres", "engine memory"))
+    P.append(box(445, 458, 350, 40, "#2FE3D2", "Control dashboard", "this screen · localhost:8000"))
+
+    # GOOGLE HUB
+    P.append(f'<rect x="850" y="60" width="180" height="150" rx="10" fill="#0D1526" stroke="{"#3FD98B" if g_on else "#F5B14C"}" stroke-width="1.5"/>')
+    P.append('<text x="940" y="82" text-anchor="middle" fill="#EDF1FB" font-size="11.5" font-weight="700">Google Workspace</text>')
+    P.append(box(866, 96, 148, 32, c("google_sheets"), "Sheets", "your dashboard data"))
+    P.append(box(866, 134, 148, 32, c("google_drive"), "Drive", "content as JSON"))
+    P.append(box(866, 172, 148, 32, c("email_send"), "Gmail", "sending"))
+
+    # CHANNELS (right)
+    ch = [("Website (WordPress)", c("wordpress_publish"), 60),
+          ("LinkedIn", c("social_linkedin"), 100), ("X / Twitter", c("social_twitter"), 140),
+          ("Facebook", c("social_facebook"), 180),
+          ("Instagram", "#F5B14C", 220), ("TikTok", "#F5B14C", 260),
+          ("Email out (SMTP)", c("email_send"), 316),
+          ("Replies in (IMAP)", c("email_reply_inbound"), 356)]
+    for name, col, y in ch:
+        P.append(box(1050, y, 160, 34, col, name))
+
+    # WIRES
+    # sources -> engine (bundle into orchestrator)
+    for _, _, y in src:
+        P.append(wire(170, y + 19, 420, 117, "#33507e"))
+    P.append('<text x="300" y="150" text-anchor="middle" fill="#8E9BBE" font-size="9.5">leads · research · SEO data</text>')
+    # n8n -> engine
+    P.append(wire(370, 490, 420, 250, "#5b4fb0", label="triggers", lx=400, ly=350))
+    # engine -> google hub
+    P.append(wire(820, 130, 850, 130, "#2FE3D2", label="mirror + content", lx=838, ly=118))
+    # engine -> channels (publish/post)
+    P.append(wire(820, 200, 1050, 90, "#2FE3D2", label="publish", lx=940, ly=150))
+    P.append(wire(820, 240, 1050, 180, "#2FE3D2"))
+    P.append(wire(820, 300, 1050, 240, "#2FE3D2", label="post", lx=940, ly=290))
+    P.append(wire(820, 330, 1050, 333, "#2FE3D2", label="send email", lx=940, ly=328))
+    # replies in -> engine (back arrow)
+    P.append(wire(1050, 373, 820, 470, "#33507e", dash='stroke-dasharray="4 3"', label="answer replies", lx=940, ly=455))
+
+    P.append("</svg>")
+
+    legend = ('<div class="maplegend">'
+              '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3FD98B;margin-right:5px"></span>Connected &amp; running</span>'
+              '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#F5B14C;margin-right:5px"></span>Ready — needs its key</span>'
+              '<span><span style="color:#5a79aa">→</span> data flows this way</span></div>')
+    return "".join(P) + legend
+
+
 # --- login -------------------------------------------------------------------
 def login_html(error: str = "") -> str:
-    err = f'<p style="color:#FF5C8A;font-size:13px;margin:0 0 10px">{_esc(error)}</p>' if error else ""
+    err = f'<p style="color:#FF6B93;font-size:13px;margin:0 0 10px">{_esc(error)}</p>' if error else ""
     return ("<!doctype html><html><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
             "<title>Sign in · Control Center</title><style>" + CSS +
             "body{display:flex;align-items:center;justify-content:center;min-height:100vh}"
-            ".box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px;width:330px;max-width:90vw}"
-            "input{width:100%;margin-bottom:12px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:11px}"
+            ".box{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:26px;width:330px;max-width:90vw}"
+            "input{width:100%;margin-bottom:12px;background:var(--s2);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:11px}"
             "button{width:100%;background:var(--teal);color:#04121a;font-weight:700;border:none;border-radius:9px;padding:11px;cursor:pointer}</style></head><body>"
             "<form class='box' method='post' action='/login'>"
-            "<h1 style='font-size:18px;margin:0 0 2px'>Business Control Center</h1>"
-            "<p class='tag' style='margin:0 0 16px'>Sign in to continue</p>" + err +
+            "<h1 style='font-size:17px;margin:0 0 2px'>Business Control Center</h1>"
+            "<p style='color:#8E9BBE;font-size:12px;margin:0 0 16px'>Sign in to continue</p>" + err +
             "<input type='password' name='password' placeholder='Password' autofocus>"
             "<button type='submit'>Sign in</button></form></body></html>")
 
 
 # --- dashboard ---------------------------------------------------------------
 def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_cap,
-                   taste_skills, has_password=False) -> str:
-    jobs = jobs or []
-    st = st or {}
-    health = health or {}
-
-    # KPIs
+                   taste_skills, has_password=False):
+    jobs, st, health = jobs or [], st or {}, health or {}
     published = sum(1 for j in jobs if _STAGE_OF.get(j.get("status", "")) in (4, 5)
                     and j.get("type") != "outreach_campaign")
     lead_rows = _lead_funnel(jobs)
-    leads_found = lead_rows[0][1]
-    emails_sent = lead_rows[3][1]
+    leads_found, emails_sent = lead_rows[0][1], lead_rows[3][1]
     autos = _autos(st)
-    ok = sum(1 for grp in autos.values() for _, v in grp if v)
-    total = sum(len(grp) for grp in autos.values())
+    ok = sum(1 for g in autos.values() for _, v in g if v)
+    total = sum(len(g) for g in autos.values())
     pct = round(month_spent / month_cap * 100) if month_cap else 0
-    bar_col = "#46E08B" if pct < 70 else ("#F5B14C" if pct < 90 else "#FF5C8A")
+    bcol = "#3FD98B" if pct < 70 else ("#F5B14C" if pct < 90 else "#FF6B93")
+    healthy = health.get("healthy")
 
-    def kpi(lab, val, sub, sub_col="var(--mut)"):
-        return (f'<div class="kpi"><div class="lab">{lab}</div>'
-                f'<div class="val tnum">{val}</div>'
-                f'<div class="sub" style="color:{sub_col}">{sub}</div></div>')
+    def kpi(lab, val, sub, col="var(--mut)", dot=""):
+        d = f'<span class="dot" style="width:6px;height:6px;border-radius:50%;background:{dot}"></span>' if dot else ""
+        return (f'<div class="kpi"><div class="lab">{lab}</div><div class="val tnum">{val}</div>'
+                f'<div class="sub" style="color:{col}">{d}{sub}</div></div>')
 
-    strip = ("<div class='strip'>"
-             + kpi("Content live · month", published, "articles &amp; posts published")
-             + kpi("Leads collected", leads_found, "found by your agents")
-             + kpi("Cold emails sent", emails_sent, "through your mail")
-             + kpi("Spend · month", f"${month_spent:.0f}<span style='color:var(--dim);font-size:16px'>/{month_cap:.0f}</span>",
-                   "on budget" if pct < 90 else "near cap", "var(--good)" if pct < 90 else "var(--warn)")
-             + kpi("Agents healthy", f"{ok}<span style='color:var(--dim);font-size:16px'>/{total}</span>",
-                   f"{total-ok} need a key" if ok < total else "all running",
+    strip = ("<div class='kpis'>"
+             + kpi("Content live", published, "published this month")
+             + kpi("Leads collected", leads_found, "found by agents")
+             + kpi("Cold emails", emails_sent, "sent this month")
+             + kpi("Spend", f"${month_spent:.0f}<small>/{month_cap:.0f}</small>",
+                   ("on budget" if pct < 90 else "near cap"),
+                   "var(--good)" if pct < 90 else "var(--warn)",
+                   "var(--good)" if pct < 90 else "var(--warn)")
+             + kpi("Automations", f"{ok}<small>/{total}</small>",
+                   (f"{total-ok} need a key" if ok < total else "all running"),
+                   "var(--warn)" if ok < total else "var(--good)",
                    "var(--warn)" if ok < total else "var(--good)")
              + "</div>")
 
-    # budget + pipeline
     onboarding = "" if jobs else ("<div class='note'><b>Your control center is ready.</b> "
-                                  "The charts fill up as your agents run and you connect keys. "
-                                  "Create your first job or connect a channel to see it move.</div>")
+                                  "The charts fill in as your agents run and you connect keys — no fake numbers here. "
+                                  "Start a job or connect a channel to watch it move.</div>")
 
-    budget_card = (
-        "<div class='card'><p class='ct'>Monthly AI budget</p>"
-        f"<p class='cc'>You've used ${month_spent:.2f} of your ${month_cap:.0f} cap. "
-        "The system pauses itself before it ever goes over.</p>"
-        "<div style='display:flex;align-items:center;gap:22px'>" + _donut(pct, bar_col) +
-        f"<div style='flex:1'><div style='font-size:12px;color:var(--mut);margin-bottom:6px'>Today's spend</div>"
-        f"<div style='font-size:24px;font-weight:750' class='tnum'>${day_spent:.2f}</div>"
-        f"<div style='font-size:12px;color:var(--mut)'>of ${day_cap:.0f}/day</div></div></div></div>")
-
+    # budget + pipeline
+    budget = ("<div class='card'><div class='ch'><p class='ct'>Monthly AI budget</p>"
+              f"<span class='cx'>${month_spent:.2f} / ${month_cap:.0f}</span></div>"
+              "<p class='cc'>The system pauses itself before it ever goes over your cap.</p>"
+              "<div style='display:flex;align-items:center;gap:20px'>" + _donut(pct, bcol) +
+              f"<div><div style='font-size:11.5px;color:var(--mut)'>Today</div>"
+              f"<div class='tnum' style='font-size:23px;font-weight:750'>${day_spent:.2f}</div>"
+              f"<div style='font-size:11.5px;color:var(--dim)'>of ${day_cap:.0f}/day</div></div></div></div>")
     pl = _pipeline(jobs)
-    pipeline_card = (
-        "<div class='card'><p class='ct'>Content pipeline — where every piece is now</p>"
-        "<p class='cc'>From idea to measured result. Anything at “waiting for you” needs a click.</p>"
-        + (_funnel(list(zip(_STAGES, pl)), _FN_COLORS) if sum(pl)
-           else "<div class='empty'>No content jobs yet.</div>") + "</div>")
+    pipeline = ("<div class='card'><p class='ct'>Content pipeline — where each piece is</p>"
+                "<p class='cc'>Idea → written → checked → your approval → live → measured.</p>"
+                + (_funnel(list(zip(_STAGES, pl)), _FN_COLORS) if sum(pl)
+                   else "<div class='empty'>No content jobs yet.</div>") + "</div>")
 
-    # lead funnel + automations status handled below
-    lead_card = (
-        "<div class='card'><p class='ct'>Lead funnel — stranger to booked call</p>"
-        "<p class='cc'>How many people move through each step.</p>"
-        + (_funnel(lead_rows, _FN_COLORS) if any(v for _, v in lead_rows)
-           else "<div class='empty'>No leads yet — connect the lead finder to start.</div>") + "</div>")
-
-    # automations
-    groups = []
-    for name, items in autos.items():
-        chips = "".join(
-            f"<div class='chip'><span class='dot' style='background:{'#46E08B' if v else '#F5B14C'}'></span>{_esc(lbl)}</div>"
-            for lbl, v in items)
-        groups.append(f"<div class='grp'><div class='gh'>{_esc(name)}</div>{chips}</div>")
-    autos_card = ("<div class='card full' style='margin-bottom:12px'>"
-                  "<p class='ct'>Your automations — live status</p>"
-                  "<p class='cc'>Green = running now · Amber = ready, just needs its key connected.</p>"
-                  "<div class='autos'>" + "".join(groups) + "</div></div>")
-
-    # activity feed (last 8 jobs, newest first)
+    # lead funnel + activity
+    lead = ("<div class='card'><p class='ct'>Lead funnel — stranger to booked call</p>"
+            "<p class='cc'>How many people move through each step.</p>"
+            + (_funnel(lead_rows, _FN_COLORS) if any(v for _, v in lead_rows)
+               else "<div class='empty'>No leads yet — connect the lead finder.</div>") + "</div>")
     fe = []
     for j in list(reversed(jobs))[:8]:
         verb = _FRIENDLY.get(j.get("status", ""), f"is at “{_esc(j.get('status',''))}”")
         kind = "Content" if j.get("type") != "outreach_campaign" else "Outreach"
-        fe.append(f"<div class='fe'><span class='tm'>{_esc(str(j.get('job_id',''))[:10])}</span>"
+        fe.append(f"<div class='fe'><span class='tm'>{_esc(str(j.get('job_id',''))[:11])}</span>"
                   f"<span class='tx'><b>{kind}</b> {verb}.</span></div>")
-    feed_card = ("<div class='card'><p class='ct'>Live activity — what your agents did</p>"
-                 "<p class='cc'>Newest first.</p><div class='feed'>"
-                 + ("".join(fe) if fe else "<div class='empty'>No activity yet.</div>") + "</div></div>")
+    feed = ("<div class='card'><p class='ct'>Live activity</p><p class='cc'>What your agents did, newest first.</p>"
+            "<div class='feed'>" + ("".join(fe) if fe else "<div class='empty'>No activity yet.</div>") + "</div></div>")
 
-    # approvals (AWAITING_APPROVAL)
+    # automations
+    groups = []
+    for name, items in autos.items():
+        live_n = sum(1 for _, v in items if v)
+        chips = "".join(
+            f"<div class='chip'><span class='nm'><span class='dot' style='background:{'#3FD98B' if v else '#F5B14C'}'></span>{_esc(lbl)}</span>"
+            f"<span class='pill {'p-live' if v else 'p-need'}'>{'live' if v else 'needs key'}</span></div>"
+            for lbl, v in items)
+        groups.append(f"<div class='grp'><div class='gh'><span>{_esc(name)}</span>"
+                      f"<span style='color:var(--dim)'>{live_n}/{len(items)}</span></div>{chips}</div>")
+    autos_card = ("<div class='card full'><p class='ct'>Your automations — live status</p>"
+                  "<p class='cc'>Every capability we built, grouped. Green = running · Amber = ready, needs its key.</p>"
+                  "<div class='autos'>" + "".join(groups) + "</div></div>")
+
+    # business cost breakdown
+    total_cost = sum(float(j.get("cost_so_far_usd", 0)) for j in jobs)
+    content_cost = sum(float(j.get("cost_so_far_usd", 0)) for j in jobs if j.get("type") != "outreach_campaign")
+    lead_cost = total_cost - content_cost
+    cmx = max(content_cost, lead_cost, 0.01)
+    cost = ("<div class='card'><p class='ct'>Where the money goes</p>"
+            "<p class='cc'>Your AI spend, split by what it's doing.</p><div class='bars'>"
+            f"<div class='br'><span class='bl'>Content</span><div class='track'><i style='width:{content_cost/cmx*100:.0f}%;background:#4C8DFF'></i></div><span class='bv tnum'>${content_cost:.2f}</span></div>"
+            f"<div class='br'><span class='bl'>Leads/email</span><div class='track'><i style='width:{lead_cost/cmx*100:.0f}%;background:#8B7CFF'></i></div><span class='bv tnum'>${lead_cost:.2f}</span></div>"
+            f"<div class='br'><span class='bl'>Total</span><div class='track'><i style='width:{total_cost/max(month_cap,0.01)*100:.0f}%;background:{bcol}'></i></div><span class='bv tnum'>${total_cost:.2f}</span></div>"
+            "</div></div>")
+
+    # SEO / AEO / GEO with suggestions
+    gsc = st.get("google_gsc_ga4")
+    if gsc:
+        seo_body = "<div class='empty'>Connected — traffic &amp; ranking charts appear here after the first pull.</div>"
+    else:
+        seo_body = ("<div class='sug'><span class='i'>◆</span><span>Connect <b>Google Search Console</b> to track keyword rankings &amp; on-page SEO.</span></div>"
+                    "<div class='sug'><span class='i'>◆</span><span>Connect <b>Google Analytics</b> to see traffic and which pages convert.</span></div>"
+                    "<div class='sug'><span class='i'>◆</span><span>Your articles are already built for <b>AI answers</b> (ChatGPT/Google AI) — mentions show here once tracking is on.</span></div>")
+    seo = ("<div class='card'><p class='ct'>SEO · AEO · GEO</p>"
+           "<p class='cc'>Search, AI-answer and geo visibility — with next-step suggestions.</p>" + seo_body + "</div>")
+
+    # approvals + command
     ap = []
     for j in jobs:
         if j.get("status") != "AWAITING_APPROVAL":
@@ -293,95 +441,74 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         p = j.get("payload", {}) or {}
         title = (p.get("content_producer", {}) or {}).get("title") or p.get("category") or j.get("job_id")
         kind = "Website · ready to publish" if j.get("type") != "outreach_campaign" else "Email · ready to send"
-        ap.append(f"<div class='ap'><div><div class='apt'>{_esc(title)}</div>"
-                  f"<div class='apk'>{kind}</div></div>"
-                  f"<button class='btn ok' disabled title='Approve via /jobs/{_esc(j.get('job_id'))}/approve'>Publish</button>"
-                  f"<button class='btn no' disabled>Hold</button></div>")
+        ap.append(f"<div class='ap'><div style='flex:1'><div class='apt'>{_esc(title)}</div><div class='apk'>{kind}</div></div>"
+                  f"<button class='btn ok' disabled>Publish</button><button class='btn no' disabled>Hold</button></div>")
     opts = "".join(f"<option value='{_esc(s)}'>{_esc(s)}</option>" for s in taste_skills)
-    approve_card = ("<div class='card'><p class='ct'>Waiting for your approval</p>"
-                    "<p class='cc'>Nothing goes live without you.</p><div class='appr'>"
-                    + ("".join(ap) if ap else "<div class='empty'>Nothing waiting right now.</div>") + "</div>"
-                    "<p class='ct' style='margin-top:16px'>Talk to an agent</p>"
-                    "<div class='cmd'><select id='sk'>" + opts + "</select>"
-                    "<input id='inp' placeholder='{\"site_url\":\"https://...\"}'>"
-                    "<button onclick='runSkill()'>Run</button></div>"
-                    "<pre id='out'>Pick an agent, add input, press Run.</pre></div>")
-
-    # system map
-    def mc(k):
-        return "#46E08B" if st.get(k) else "#F5B14C"
-    g_on = st.get("google_sheets") or st.get("google_drive")
-    smap = ("<div class='card full'><p class='ct'>System map — how it all connects</p>"
-            "<p class='cc'>Your agents live on the VPS; what they make lands in Google; then it goes to your channels. Green = connected.</p>"
-            "<svg width='100%' height='200' viewBox='0 0 900 200' style='max-width:100%'>"
-            "<defs><marker id='ar' markerWidth='8' markerHeight='8' refX='6' refY='3' orient='auto'>"
-            "<path d='M0,0 L6,3 L0,6' fill='#2FE3D2'/></marker></defs>"
-            "<rect x='20' y='76' width='150' height='48' rx='10' fill='#0E1524' stroke='#37507e'/>"
-            "<text x='95' y='98' text-anchor='middle' fill='#EEF2FF' font-size='12.5' font-weight='600'>Web · LinkedIn</text>"
-            "<text x='95' y='114' text-anchor='middle' fill='#93A0C4' font-size='10.5'>leads &amp; research</text>"
-            "<rect x='330' y='55' width='230' height='90' rx='14' fill='#14203a' stroke='#2FE3D2' stroke-width='2'/>"
-            "<text x='445' y='88' text-anchor='middle' fill='#2FE3D2' font-size='14' font-weight='750'>Your Agents (VPS)</text>"
-            "<text x='445' y='108' text-anchor='middle' fill='#93A0C4' font-size='11'>write · score · decide · learn</text>"
-            "<text x='445' y='126' text-anchor='middle' fill='#46E08B' font-size='11'>powered by Claude</text>"
-            f"<rect x='700' y='20' width='180' height='70' rx='12' fill='#0E1524' stroke='{'#46E08B' if g_on else '#F5B14C'}'/>"
-            "<text x='790' y='44' text-anchor='middle' fill='#EEF2FF' font-size='12.5' font-weight='700'>Google Workspace</text>"
-            f"<text x='790' y='62' text-anchor='middle' fill='{'#46E08B' if g_on else '#F5B14C'}' font-size='10.5'>Sheets · Drive · Gmail</text>"
-            "<text x='790' y='78' text-anchor='middle' fill='#93A0C4' font-size='10.5'>your data &amp; content</text>"
-            f"<rect x='700' y='108' width='180' height='30' rx='8' fill='#0E1524' stroke='{mc('wordpress_publish')}'/>"
-            "<text x='790' y='128' text-anchor='middle' fill='#EEF2FF' font-size='12'>Website (WordPress)</text>"
-            f"<rect x='700' y='150' width='180' height='30' rx='8' fill='#0E1524' stroke='{'#46E08B' if (st.get('social_linkedin') or st.get('social_twitter') or st.get('social_facebook')) else '#F5B14C'}'/>"
-            "<text x='790' y='170' text-anchor='middle' fill='#EEF2FF' font-size='12'>Social channels</text>"
-            "<path d='M170,100 C 250,100 260,100 330,100' fill='none' stroke='#2FE3D2' stroke-width='1.6' marker-end='url(#ar)'/>"
-            "<path d='M560,90 C 630,80 640,60 700,55' fill='none' stroke='#2FE3D2' stroke-width='1.6' marker-end='url(#ar)'/>"
-            "<path d='M560,110 C 630,115 640,120 700,123' fill='none' stroke='#2FE3D2' stroke-width='1.6' marker-end='url(#ar)'/>"
-            "<path d='M560,125 C 630,140 640,160 700,165' fill='none' stroke='#2FE3D2' stroke-width='1.6' marker-end='url(#ar)'/>"
-            "</svg></div>")
+    approve = ("<div class='card'><p class='ct'>Waiting for your approval</p><p class='cc'>Nothing goes live without you.</p>"
+               "<div class='appr'>" + ("".join(ap) if ap else "<div class='empty'>Nothing waiting right now.</div>") + "</div>"
+               "<p class='ct' style='margin-top:15px'>Talk to an agent</p>"
+               "<div class='cmd'><select id='sk'>" + opts + "</select>"
+               "<input id='inp' placeholder='{\"site_url\":\"https://...\"}'><button onclick='runSkill()'>Run</button></div>"
+               "<pre id='out'>Pick an agent, add input, press Run.</pre></div>")
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
-    healthy = health.get("healthy")
     script = ("<script>async function runSkill(){var sk=document.getElementById('sk').value,"
               "out=document.getElementById('out'),inp=document.getElementById('inp').value;"
               "out.textContent='Running '+sk+'…';try{var b=JSON.parse(inp||'{}');}"
               "catch(e){out.textContent='That input is not valid JSON.';return;}"
-              "try{var r=await fetch('/skills/'+sk+'/taste',{method:'POST',"
-              "headers:{'Content-Type':'application/json'},body:JSON.stringify({input:b})});"
-              "out.textContent=JSON.stringify(await r.json(),null,2);}catch(e){out.textContent='Error: '+e;}}</script>")
+              "try{var r=await fetch('/skills/'+sk+'/taste',{method:'POST',headers:{'Content-Type':'application/json'},"
+              "body:JSON.stringify({input:b})});out.textContent=JSON.stringify(await r.json(),null,2);}"
+              "catch(e){out.textContent='Error: '+e;}}</script>")
 
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Business Control Center</title><style>" + CSS + "</style></head><body><div class='wrap'>"
-        "<div class='head'><div class='brand'><div class='logo'>A</div>"
-        "<h1>Anthropos — Business Control Center</h1></div>"
-        "<div class='who'><span>" + ("All systems nominal" if healthy else "Check system health")
-        + "</span><span class='dot' style='width:9px;height:9px;background:"
-        + ("#46E08B" if healthy else "#F5B14C") + "'></span>" + logout + "</div></div>"
-        "<p class='tag'>Every step of your automation, in plain English.</p>"
+        "<div class='bar'><div class='brand'><div class='logo'>A</div>"
+        "<div><h1>Anthropos — Control Center</h1><small>Your automation, in plain English</small></div></div>"
+        "<div style='display:flex;gap:9px;align-items:center'><span class='status'><span class='dot' style='background:"
+        + ("#3FD98B" if healthy else "#F5B14C") + "'></span>" + ("All systems nominal" if healthy else "Check health")
+        + "</span>" + logout + "</div></div>"
         + onboarding + strip
-        + "<div class='grid'>" + budget_card + pipeline_card + "</div>"
-        + "<div class='grid'>" + lead_card + feed_card + "</div>"
-        + autos_card
-        + "<div class='grid'>" + approve_card + smap + "</div>"
+        + "<div class='sec'>Money &amp; production</div>"
+        + "<div class='grid g2'>" + budget + pipeline + "</div>"
+        + "<div class='grid g2' style='margin-top:11px'>" + cost + seo + "</div>"
+        + "<div class='sec'>Leads &amp; activity</div>"
+        + "<div class='grid g2'>" + lead + feed + "</div>"
+        + "<div class='sec'>Every automation</div>" + autos_card
+        + "<div class='sec'>System map — how everything is wired</div>"
+        + "<div class='card full'><p class='cc' style='margin-top:0'>Every part of your system and how data flows between them. "
+        "Green boxes are connected; amber are ready and just need their key.</p>" + _system_map(st) + "</div>"
+        + "<div class='sec'>Approvals &amp; controls</div>"
+        + "<div class='grid g2'>" + approve
+        + "<div class='card'><p class='ct'>System health</p><p class='cc'>Live checks on the engine's core parts.</p>"
+        + "".join(
+            f"<div class='chip'><span class='nm'><span class='dot' style='background:"
+            + ({'ok': '#3FD98B', 'fail': '#FF6B93'}.get((health.get(k) or {}).get('status'), '#8E9BBE'))
+            + f"'></span>{lbl}</span><span class='cx'>{_esc((health.get(k) or {}).get('status','—'))}</span></div>"
+            for k, lbl in [("anthropic", "Claude API"), ("postgres", "Database (memory)"), ("connectors", "Connectors")])
+        + "</div></div>"
         + "<div class='links'><a href='/health'>health</a> · <a href='/jobs'>jobs</a> · <a href='/skills'>skills</a></div>"
         + "</div>" + script + "</body></html>")
 
 
 if __name__ == "__main__":
-    # Offline render check with an empty engine + a couple of sample jobs.
-    demo_jobs = [
-        {"job_id": "job_a", "type": "content_piece", "status": "AWAITING_APPROVAL",
-         "payload": {"content_producer": {"title": "24/7 price monitoring"}}, "cost_so_far_usd": 0.04},
-        {"job_id": "job_b", "type": "content_piece", "status": "optimized", "payload": {}, "cost_so_far_usd": 0.11},
-        {"job_id": "job_c", "type": "outreach_campaign", "status": "sent",
+    demo = [
+        {"job_id": "job_a1b2", "type": "content_piece", "status": "AWAITING_APPROVAL",
+         "payload": {"content_producer": {"title": "24/7 competitor price monitoring"}}, "cost_so_far_usd": 0.04},
+        {"job_id": "job_c3d4", "type": "content_piece", "status": "optimized", "payload": {}, "cost_so_far_usd": 0.11},
+        {"job_id": "job_e5f6", "type": "outreach_campaign", "status": "sent",
          "payload": {"leads": [{"email": "a@b.com"}], "send_ref": "x"}, "cost_so_far_usd": 0.02},
     ]
-    html = dashboard_html(jobs=demo_jobs, st={"wordpress_publish": True, "google_sheets": False},
-                          health={"healthy": True}, month_spent=0.17, month_cap=200,
-                          day_spent=0.17, day_cap=50, taste_skills=["content_producer", "seo_optimizer"])
-    assert "Control Center" in html and "<svg" in html and "Content pipeline" in html
-    assert "24/7 price monitoring" in html  # approval shows real title
-    empty = dashboard_html(jobs=[], st={}, health={"healthy": True}, month_spent=0, month_cap=200,
-                           day_spent=0, day_cap=50, taste_skills=[])
-    assert "control center is ready" in empty  # onboarding empty state
+    html = dashboard_html(jobs=demo, st={"wordpress_publish": True, "social_linkedin": True, "google_sheets": False},
+                          health={"healthy": True, "anthropic": {"status": "ok"}, "postgres": {"status": "ok"}},
+                          month_spent=0.17, month_cap=200, day_spent=0.17, day_cap=50,
+                          taste_skills=["content_producer", "seo_optimizer"])
+    for need in ("Control Center", "System map", "Automation Engine", "Where the money goes",
+                 "SEO · AEO · GEO", "24/7 competitor price monitoring", "<marker"):
+        assert need in html, need
+    assert "control center is ready" in dashboard_html(
+        jobs=[], st={}, health={"healthy": True}, month_spent=0, month_cap=200,
+        day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
-    print("OK — dashboard renders (populated + empty), login page renders. No network.")
+    print("OK — pro dashboard + full system map render (populated + empty). No network.")
