@@ -61,6 +61,15 @@ try:
 except Exception:  # pydantic absent (core-only use, no HTTP)
     BaseModel = None  # type: ignore
 
+# `Request` must live at MODULE level for the same reason as the models above:
+# `from __future__ import annotations` turns `request: Request` into a string
+# hint that FastAPI resolves against module globals. Imported inside build_app()
+# it would be invisible -> FastAPI treats `request` as a query field -> 422.
+try:
+    from fastapi import Request  # noqa: E402
+except Exception:
+    Request = None  # type: ignore
+
 
 def get_store():
     global _STORE
@@ -501,7 +510,7 @@ def api_dashboard_html() -> str:
 # FastAPI wiring (optional — only if fastapi is installed)
 # ---------------------------------------------------------------------------
 def build_app():
-    from fastapi import FastAPI, Request
+    from fastapi import FastAPI
     from fastapi.responses import HTMLResponse, RedirectResponse
 
     app = FastAPI(title="Content Engine", version="1.0")
