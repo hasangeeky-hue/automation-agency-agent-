@@ -453,12 +453,15 @@ class LinkedIn:
 
     SEARCH_URL = "https://api.prospeo.io/search-person"
     ENRICH_URL = "https://api.prospeo.io/enrich-person"
-    # loose ICP size word -> Prospeo company_headcount_range enums (small-biz first)
+    # Prospeo's valid company_headcount_range enums (see /api-docs/enum/employee-ranges).
+    # Kept for reference / opt-in via query['headcount']; NOT sent by default because
+    # the endpoint rejects the filter on the current tier — title+location already
+    # target the ICP well (our verticals are inherently small businesses).
     _SIZE_MAP = {
-        "small": ["1-10", "11-50"],
-        "smb": ["1-10", "11-50", "51-200"],
-        "medium": ["51-200", "201-500"],
-        "large": ["501-1000", "1001-5000"],
+        "small": ["1-10", "11-20", "21-50"],
+        "smb": ["1-10", "11-20", "21-50", "51-100", "101-200"],
+        "medium": ["51-100", "101-200", "201-500"],
+        "large": ["501-1000", "1001-2000", "2001-5000"],
     }
     _DEFAULT_TITLES = ["Dentist", "Doctor", "Lawyer", "Attorney", "Tax Consultant",
                        "Accountant", "Founder", "Owner", "Marketing Manager"]
@@ -479,7 +482,12 @@ class LinkedIn:
         return {"X-KEY": self.key, "Content-Type": "application/json"}
 
     def _build_filters(self, query: dict) -> dict:
-        """Map the engine's generic ICP query onto Prospeo's filter shape."""
+        """Map the engine's generic ICP query onto Prospeo's filter shape.
+
+        Only the two filters Prospeo reliably accepts are sent: person_job_title
+        (the ICP verticals) + person_location_search (the target countries). The
+        headcount/industry enum filters are 400-rejected on the current tier, and
+        our verticals are inherently small businesses, so title+location suffice."""
         f: dict = {}
         titles = query.get("titles") or []
         if not titles:
@@ -489,12 +497,6 @@ class LinkedIn:
         f["person_job_title"] = {"include": titles}
         if self.countries:
             f["person_location_search"] = {"include": self.countries}
-        inds = query.get("industries") or []
-        if inds:
-            f["company_industry"] = {"include": inds}
-        hc = self._SIZE_MAP.get((query.get("company_size") or "").lower())
-        if hc:
-            f["company_headcount_range"] = {"include": hc}
         return f
 
     def find_leads(self, query: dict) -> list:
