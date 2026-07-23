@@ -113,6 +113,7 @@ CONNECTOR_ENV_KEYS = [
     "IMAP_HOST", "IMAP_PORT", "IMAP_USER", "IMAP_PASSWORD", "IMAP_FOLDER",
     "SEARCH_PROVIDER", "SEARCH_API_KEY",
     "LINKEDIN_PROVIDER_URL", "LINKEDIN_API_KEY",
+    "PROSPEO_API_KEY", "LEAD_COUNTRIES", "LEAD_TITLES",
     "GOOGLE_ACCESS_TOKEN", "GSC_SITE_URL", "GA4_PROPERTY_ID",
     "GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SHEETS_ID", "GDRIVE_FOLDER_ID",
     "ADS_JSON", "BACKLINKS_JSON",
@@ -428,40 +429,129 @@ def search_web(query: str, k: int = 8) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Q14 — LinkedIn  (via a COMPLIANT data provider, not direct scraping)
+# Q14 — LinkedIn leads via Prospeo  (compliant licensed people data, NOT scraping)
 # ---------------------------------------------------------------------------
 class LinkedIn:
-    """LinkedIn's ToS forbids direct scraping and it is aggressively enforced.
-    This connector calls a compliant third-party people-data provider (you set
-    LINKEDIN_PROVIDER_URL to its search endpoint and LINKEDIN_API_KEY). It
-    expects the provider to return JSON with a list under `results`/`data`/`people`
-    of {name, email, company, title, ...}. Swap the mapping for your provider."""
+    """Pulls ICP-matched leads from Prospeo (https://prospeo.io) — licensed
+    people data, so it's LinkedIn-ToS-safe (never scraping an account).
+
+    Two-step, because Prospeo separates discovery from email reveal:
+      1) POST /search-person  — filter the database to your ICP (free; no email)
+      2) POST /enrich-person  — reveal the VERIFIED work email by person_id
+                                (1 credit per verified email; nothing charged on
+                                a miss or a same-record re-enrich within 90 days)
+
+    We keep ONLY verified emails, so credits are never spent on guesses.
+
+    Config (dashboard Connect form / env):
+      PROSPEO_API_KEY   your Prospeo key            (legacy LINKEDIN_API_KEY also works)
+      LEAD_COUNTRIES    comma list of target markets (default: the 5 ICP countries)
+      LEAD_TITLES       comma list of job titles     (fallback when the job carries none)
+
+    The job's ICP still drives each search (titles/keywords, industries, size);
+    LEAD_* are sensible defaults so it works before the ICP config is perfect."""
+
+    SEARCH_URL = "https://api.prospeo.io/search-person"
+    ENRICH_URL = "https://api.prospeo.io/enrich-person"
+    # loose ICP size word -> Prospeo company_headcount_range enums (small-biz first)
+    _SIZE_MAP = {
+        "small": ["1-10", "11-50"],
+        "smb": ["1-10", "11-50", "51-200"],
+        "medium": ["51-200", "201-500"],
+        "large": ["501-1000", "1001-5000"],
+    }
+    _DEFAULT_TITLES = ["Dentist", "Doctor", "Lawyer", "Attorney", "Tax Consultant",
+                       "Accountant", "Founder", "Owner", "Marketing Manager"]
+    _DEFAULT_COUNTRIES = "United States,United Kingdom,Germany,Switzerland,Canada"
 
     def __init__(self) -> None:
-        self.url = _env("LINKEDIN_PROVIDER_URL")
-        self.key = _env("LINKEDIN_API_KEY")
+        self.key = _env("PROSPEO_API_KEY") or _env("LINKEDIN_API_KEY")
+        self.countries = [c.strip() for c in
+                          _env("LEAD_COUNTRIES", self._DEFAULT_COUNTRIES).split(",")
+                          if c.strip()]
+        self.default_titles = [t.strip() for t in
+                               _env("LEAD_TITLES", "").split(",") if t.strip()]
 
     def available(self) -> bool:
-        return bool(self.url and self.key and _requests())
+        return bool(self.key and _requests())
+
+    def _headers(self) -> dict:
+        return {"X-KEY": self.key, "Content-Type": "application/json"}
+
+    def _build_filters(self, query: dict) -> dict:
+        """Map the engine's generic ICP query onto Prospeo's filter shape."""
+        f: dict = {}
+        titles = query.get("titles") or []
+        if not titles:
+            kw = query.get("keywords") or ""
+            titles = [t.strip() for t in re.split(r"[,;/]", kw) if t.strip()]
+        titles = titles or self.default_titles or self._DEFAULT_TITLES
+        f["person_job_title"] = {"include": titles}
+        if self.countries:
+            f["person_location_search"] = {"include": self.countries}
+        inds = query.get("industries") or []
+        if inds:
+            f["company_industry"] = {"include": inds}
+        hc = self._SIZE_MAP.get((query.get("company_size") or "").lower())
+        if hc:
+            f["company_headcount_range"] = {"include": hc}
+        return f
 
     def find_leads(self, query: dict) -> list:
-        j = _post_json(self.url, query,
-                       headers={"Authorization": f"Bearer {self.key}"})
-        if not j:
+        if not self.available():
             return []
-        rows = j.get("results") or j.get("data") or j.get("people") or []
-        out = []
-        for r in rows:
-            out.append({
-                "name": r.get("name") or f"{r.get('first_name','')} {r.get('last_name','')}".strip(),
-                "email": r.get("email", ""),
-                "company": r.get("company") or r.get("organization", ""),
-                "title": r.get("title") or r.get("headline", ""),
-                "domain": r.get("company_domain", ""),
-                "signal": r.get("signal", "linkedin"),
-                "source": "linkedin",
-            })
+        limit = int(query.get("limit", 25) or 25)
+        filters = self._build_filters(query)
+        out: list = []
+        page = 1
+        while len(out) < limit and page <= 40:
+            j = _post_json(self.SEARCH_URL, {"page": page, "filters": filters},
+                           headers=self._headers())
+            if not j or j.get("error"):
+                break
+            rows = j.get("results") or []
+            if not rows:
+                break
+            for r in rows:
+                if len(out) >= limit:
+                    break
+                pid = (r.get("person") or {}).get("person_id")
+                if not pid:
+                    continue
+                lead = self._enrich(pid)   # 1 credit only if a verified email exists
+                if lead:
+                    out.append(lead)
+            pag = j.get("pagination") or {}
+            if page >= int(pag.get("total_page") or page):
+                break
+            page += 1
         return out
+
+    def _enrich(self, person_id: str) -> Optional[dict]:
+        """Reveal + verify one person's work email. Returns None (no credit spent)
+        when there's no verified email."""
+        j = _post_json(self.ENRICH_URL + "?only_verified_email=true",
+                       {"data": {"person_id": person_id}}, headers=self._headers())
+        if not j or j.get("error"):
+            return None
+        p = j.get("person") or {}
+        c = j.get("company") or {}
+        email_obj = p.get("email") or {}
+        email = email_obj.get("email") or ""
+        if not email or email_obj.get("status") != "VERIFIED":
+            return None
+        domain = (c.get("website") or "").replace("https://", "").replace(
+            "http://", "").strip("/")
+        return {
+            "name": p.get("full_name")
+            or f"{p.get('first_name', '')} {p.get('last_name', '')}".strip(),
+            "email": email,
+            "company": c.get("name", ""),
+            "title": p.get("current_job_title", ""),
+            "domain": domain,
+            "signal": "prospeo",
+            "source": "linkedin",
+        }
 
 
 # ---------------------------------------------------------------------------
