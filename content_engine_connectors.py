@@ -124,6 +124,20 @@ CONNECTOR_ENV_KEYS = [
     "CI_JSON",
 ]
 
+# Which alias each email PURPOSE goes out from (localpart @ your domain). This is
+# the loop: the agent tags an email's purpose, and it's sent from the matching
+# alias — newsletter@ / marketing@ / customercare@ / contact@ — all from your one
+# Workspace inbox. Override any with EMAIL_FROM_<CATEGORY>.
+EMAIL_CATEGORY_ALIAS = {
+    "newsletter": "newsletter",
+    "marketing": "marketing",
+    "outreach": "marketing",
+    "support": "customercare",
+    "reply": "customercare",
+    "thanks": "contact",
+    "welcome": "contact",
+}
+
 
 def _get_json(url: str, headers: Optional[dict] = None, params: Optional[dict] = None):
     rq = _requests()
@@ -244,11 +258,27 @@ class Emailer:
                     s.login(self.user, self.password)
                 s.send_message(msg)
 
+    def from_for(self, category: Optional[str]) -> str:
+        """Pick the FROM address for an email's purpose so each type goes out on
+        the right alias (newsletter@ / marketing@ / customercare@ / contact@).
+        Override any with EMAIL_FROM_<CATEGORY>; otherwise derive alias@yourdomain."""
+        base = self.sender or self.user
+        if not category or "@" not in (base or ""):
+            return base
+        override = _env(f"EMAIL_FROM_{category.upper()}")
+        domain = base.split("@", 1)[1]
+        if override:
+            return override if "@" in override else f"{override}@{domain}"
+        alias = EMAIL_CATEGORY_ALIAS.get(category.lower())
+        return f"{alias}@{domain}" if alias else base
+
     def send_message(self, to_addr: str, subject: str, body: str,
-                     extra_headers: Optional[dict] = None) -> str:
-        """Generic one-shot send (reused by cold outreach AND reply answering)."""
+                     extra_headers: Optional[dict] = None,
+                     category: Optional[str] = None) -> str:
+        """Generic one-shot send (reused by cold outreach AND reply answering).
+        `category` routes the FROM address to the matching alias."""
         msg = EmailMessage()
-        msg["From"] = self.sender
+        msg["From"] = self.from_for(category)
         msg["To"] = to_addr
         msg["Subject"] = subject
         msg["Message-ID"] = make_msgid()
@@ -258,7 +288,7 @@ class Emailer:
         msg.set_content(body)
         try:
             self._transport(msg)
-            log.info("email sent to %s", to_addr)
+            log.info("email sent to %s from %s (%s)", to_addr, msg["From"], category or "default")
             return msg["Message-ID"]
         except Exception as e:
             log.error("email send failed: %s", e)
@@ -271,10 +301,15 @@ class Emailer:
             return f"send_error_no_recipient:{job.get('job_id')}"
         subject = (email.get("subject_variants") or ["(no subject)"])[0]
         body = email.get("body", "")
-        unsub = job.get("payload", {}).get("unsubscribe_url", "")
+        payload = job.get("payload", {}) or {}
+        # the agent tags each email's purpose; default cold outreach -> marketing.
+        category = payload.get("email_category") or (
+            "marketing" if job.get("type") == "outreach_campaign" else None)
+        unsub = payload.get("unsubscribe_url", "")
         return self.send_message(
             to_addr, subject, body,
-            extra_headers={"List-Unsubscribe": f"<{unsub}>" if unsub else ""})
+            extra_headers={"List-Unsubscribe": f"<{unsub}>" if unsub else ""},
+            category=category)
 
 
 # ---------------------------------------------------------------------------
@@ -469,29 +504,29 @@ def source_leads(job: dict) -> list:
 # Q7 — Google Search Console (on-page SEO data)  +  Q11 — GA4 (tracking)
 # ---------------------------------------------------------------------------
 class Google:
-    """Read-only pulls from Google Search Console and GA4 using a Bearer access
-    token (GOOGLE_ACCESS_TOKEN). Get a token from an OAuth flow or a service
-    account with the right scopes. If you'd rather not manage tokens here, let
-    n8n's native Google nodes fetch the data and POST it into payload['audit'] /
-    payload['analytics'] via the engine's REST API — this class is the direct
-    alternative."""
+    """Read-only pulls from Google Search Console + GA4. Uses the SAME service
+    account key as Sheets/Drive (GOOGLE_SERVICE_ACCOUNT_JSON) — add that service
+    account as a user in Search Console and as a Viewer in GA4, and one key
+    powers all four. (Falls back to a raw GOOGLE_ACCESS_TOKEN if you set one.)"""
 
     GSC_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly"
     GA4_SCOPE = "https://www.googleapis.com/auth/analytics.readonly"
 
     def __init__(self) -> None:
-        self.token = _env("GOOGLE_ACCESS_TOKEN")
         self.site = _env("GSC_SITE_URL")
         self.ga4_property = _env("GA4_PROPERTY_ID")
 
     def available(self) -> bool:
-        return bool(self.token and _requests())
+        has_auth = _google_configured() or bool(_env("GOOGLE_ACCESS_TOKEN"))
+        return bool(has_auth and (self.site or self.ga4_property) and _requests())
 
-    def _auth(self) -> dict:
-        return {"Authorization": f"Bearer {self.token}"}
+    def _auth(self, scope) -> dict:
+        token = _google_token([scope]) or _env("GOOGLE_ACCESS_TOKEN")
+        return {"Authorization": f"Bearer {token}"} if token else {}
 
     def gsc_top_queries(self, days: int = 28, limit: int = 25) -> list:
-        if not (self.available() and self.site):
+        auth = self._auth(self.GSC_SCOPE)
+        if not (auth and self.site):
             return []
         from datetime import date, timedelta
         end = date.today()
@@ -504,7 +539,7 @@ class Google:
         from urllib.parse import quote
         url = (f"https://searchconsole.googleapis.com/webmasters/v3/sites/"
                f"{quote(self.site, safe='')}/searchAnalytics/query")
-        j = _post_json(url, body, headers=self._auth())
+        j = _post_json(url, body, headers=auth)
         if not j:
             return []
         return [{"query": row["keys"][0], "clicks": row.get("clicks", 0),

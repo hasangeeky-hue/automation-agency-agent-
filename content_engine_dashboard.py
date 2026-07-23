@@ -438,10 +438,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                _sparkline(_daybuckets(out_jobs, lambda j: True, 14), "#8B7CFF") if out_jobs else _empty("Fills as the lead finder runs.")))
 
     # ---- 3. EMAIL & OUTREACH ----
+    _routing = [("📰 Newsletter", "newsletter@"), ("🎯 Marketing", "marketing@"),
+                ("💬 Support reply", "customercare@"), ("🙏 Thanks / general", "contact@")]
+    route_html = "".join(
+        f"<div class='chip'><span class='nm'>{p}</span><span class='dim'>from {a}</span></div>"
+        for p, a in _routing)
     p_email = grid(
         _panel("Sent vs replied", "Cold emails out, and how many replied.",
                _bars([("Sent", emails_sent), ("Replied", 0)], "#4C8DFF") if emails_sent else _empty("No emails sent yet.")),
-        _panel("Reply rate by segment", "Which customer groups answer most.", _empty("Shows after replies come in.")),
+        _panel("Sent by purpose → address", "The loop: your agent sends each email type from the right alias — all from your one inbox.", route_html),
         _panel("Send volume over time", "Emails sent per day.", _empty("Fills as outreach runs.")),
         _panel("Deliverability", "Delivered vs bounced.", _empty("Connect your mail to track this.")))
 

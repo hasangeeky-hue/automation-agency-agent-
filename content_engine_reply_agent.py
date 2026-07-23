@@ -132,7 +132,8 @@ def answer_replies(limit: int = 20, auto_send: Optional[bool] = None,
                 m.get("from_email", ""), data.get("reply_subject", ""),
                 data.get("reply_body", ""),
                 extra_headers={"In-Reply-To": m.get("message_id", ""),
-                               "References": m.get("message_id", "")})
+                               "References": m.get("message_id", "")},
+                category="support")   # replies go out from customercare@
             entry["status"] = "sent"
             entry["send_ref"] = ref
         results.append(entry)
@@ -182,8 +183,8 @@ if __name__ == "__main__":
         def available(self):
             return True
 
-        def send_message(self, to, subject, body, extra_headers=None):
-            self.sent.append((to, subject))
+        def send_message(self, to, subject, body, extra_headers=None, category=None):
+            self.sent.append((to, subject, category))
             return f"msgid:{to}"
 
     # 3) Stub the LLM: first mail is a simple answerable question; second is a
@@ -206,7 +207,7 @@ if __name__ == "__main__":
     assert out["status"] == "ok" and out["count"] == 2, out
     assert out["sent"] == 1, f"expected 1 auto-sent, got {out['sent']}"
     assert out["pending_human"] == 1, "complaint must be held for a human"
-    assert fe.sent == [("sam@co.com", "Re: pricing?")], fe.sent
+    assert fe.sent == [("sam@co.com", "Re: pricing?", "support")], fe.sent
 
     # auto_send OFF (default): nothing sends, everything is queued for a human.
     fe2 = FakeEmailer()
