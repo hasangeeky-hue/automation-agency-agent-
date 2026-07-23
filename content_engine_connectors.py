@@ -108,6 +108,7 @@ def _env(name: str, default: str = "") -> str:
 # Every credential the dashboard's Connect form is allowed to set (the allow-list
 # the /connect endpoint checks, and the fields the form renders).
 CONNECTOR_ENV_KEYS = [
+    "ANTHROPIC_API_KEY",   # the Claude brain — front-end settable, bridged to env in wire_all()
     "WORDPRESS_URL", "WORDPRESS_USER", "WORDPRESS_APP_PASSWORD", "WP_STATUS",
     "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_STARTTLS",
     "IMAP_HOST", "IMAP_PORT", "IMAP_USER", "IMAP_PASSWORD", "IMAP_FOLDER",
@@ -1152,6 +1153,7 @@ def mirror_job(job: dict) -> None:
 def status() -> dict:
     """What's live right now (creds present) vs offline."""
     return {
+        "claude_api": bool(_env("ANTHROPIC_API_KEY")),   # the engine's brain
         "wordpress_publish": WordPress().available(),
         "social_linkedin": LinkedInPoster().available(),
         "social_twitter": TwitterPoster().available(),
@@ -1179,6 +1181,12 @@ def wire_all() -> dict:
     at worker startup: only connectors with creds are wired; the rest stay in
     their offline default. Returns the status map for logging."""
     import content_engine_code_skills as cs
+
+    # Bridge the Claude key saved from the dashboard into the environment so the
+    # Anthropic SDK (which reads ANTHROPIC_API_KEY) picks it up live — no restart.
+    _ak = _env("ANTHROPIC_API_KEY")
+    if _ak:
+        os.environ["ANTHROPIC_API_KEY"] = _ak
 
     wp = WordPress()
     if wp.available():

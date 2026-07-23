@@ -103,6 +103,10 @@ def _esc(s):
 # connector diagnostics — the "which wire is down, why, and what breaks" table
 # ---------------------------------------------------------------------------
 _DIAG = [
+    ("claude_api", "Claude AI brain (Anthropic)",
+     "no Anthropic API key set",
+     "The whole engine can't think — no content, cold emails, or replies get written. This is the brain; wire it first.",
+     "ANTHROPIC_API_KEY"),
     ("wordpress_publish", "Publish to website (WordPress)",
      "no WordPress URL + application password set",
      "Articles get written and checked, but can't post to your site on their own — you'd paste them in by hand.",
@@ -164,6 +168,35 @@ _DIAG = [
      "No AI video is produced (the pricey one — use selectively).",
      "VIDEO_PROVIDER + VIDEO_API_KEY + VIDEO_API_URL"),
 ]
+
+
+# Plain-language placeholders so the connect boxes read like a form, not code.
+_FIELD_HINT = {
+    "ANTHROPIC_API_KEY": "Claude API key (sk-ant-…)",
+    "WORDPRESS_URL": "Your website address (https://…)", "WORDPRESS_USER": "WordPress username",
+    "WORDPRESS_APP_PASSWORD": "WordPress application password", "WP_STATUS": "publish or draft",
+    "SMTP_HOST": "Mail server (smtp.gmail.com)", "SMTP_PORT": "Port (587)",
+    "SMTP_USER": "Your business email address", "SMTP_PASSWORD": "Email app password (16 chars, no spaces)",
+    "SMTP_FROM": "Send-from email address", "SMTP_STARTTLS": "Leave as 1",
+    "IMAP_HOST": "Inbox server (imap.gmail.com)", "IMAP_PORT": "Port (993)",
+    "IMAP_USER": "Your business email address", "IMAP_PASSWORD": "Email app password (16 chars, no spaces)",
+    "IMAP_FOLDER": "Folder (INBOX)",
+    "PROSPEO_API_KEY": "Prospeo API key", "LEAD_COUNTRIES": "Target countries (comma-separated)",
+    "LEAD_TITLES": "Target job titles (comma-separated)",
+    "SEARCH_PROVIDER": "Search provider (tavily)", "SEARCH_API_KEY": "Tavily API key",
+    "GOOGLE_SERVICE_ACCOUNT_JSON": "Paste the whole Google key file (the { … } JSON)",
+    "GOOGLE_SHEETS_ID": "Google Sheet ID (from its URL)", "GDRIVE_FOLDER_ID": "Google Drive folder ID (from its URL)",
+    "GSC_SITE_URL": "Search Console site (sc-domain:yoursite.com)", "GA4_PROPERTY_ID": "Analytics property ID (numbers only)",
+    "GOOGLE_ACCESS_TOKEN": "Google access token (optional)",
+    "LINKEDIN_POST_TOKEN": "LinkedIn access token", "LINKEDIN_AUTHOR_URN": "Your LinkedIn URN (urn:li:person:…)",
+    "TWITTER_BEARER_TOKEN": "X (Twitter) access token",
+    "META_PAGE_ID": "Facebook Page ID", "META_PAGE_TOKEN": "Facebook Page access token",
+    "IG_USER_ID": "Instagram business account ID", "TIKTOK_ACCESS_TOKEN": "TikTok access token",
+    "IMAGE_PROVIDER": "Image provider (openai)", "IMAGE_API_KEY": "OpenAI API key (sk-…)",
+    "IMAGE_MODEL": "Image model (gpt-image-1)",
+    "VIDEO_PROVIDER": "Video provider (fal)", "VIDEO_API_KEY": "Video API key", "VIDEO_API_URL": "Video endpoint URL",
+    "ADS_JSON": "Ad data (JSON)", "BACKLINKS_JSON": "Backlink data (JSON)",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +275,36 @@ def _empty(msg):
     return f"<div class='empty'>{_esc(msg)}</div>"
 
 
+def _funnel_skeleton(rows, note):
+    """A funnel drawn even before data flows, so the SHAPE is visible; the note
+    says what to connect to fill it. rows = [(label, value, width%)]."""
+    body = "<div class='fn'>" + "".join(
+        f"<div class='fr'><span class='fl'>{_esc(l)}</span>"
+        f"<div class='fbar' style='width:{w}%;background:{_FN[i%len(_FN)]};opacity:.4'>{_esc(str(v))}</div></div>"
+        for i, (l, v, w) in enumerate(rows)) + "</div>"
+    return body + f"<div class='dim' style='margin-top:9px'>{_esc(note)}</div>"
+
+
+def _by_country(out_jobs):
+    """Count real leads per target market (from lead payloads), so segmentation
+    fills as leads arrive. Zeroes until then — never faked."""
+    markets = ["United States", "United Kingdom", "Germany", "Switzerland", "Canada"]
+    counts = {m: 0 for m in markets}
+    alias = {"usa": "United States", "united states": "United States", "u.s": "United States",
+             "uk": "United Kingdom", "united kingdom": "United Kingdom", "england": "United Kingdom",
+             "germany": "Germany", "deutschland": "Germany",
+             "switzerland": "Switzerland", "schweiz": "Switzerland",
+             "canada": "Canada"}
+    for j in out_jobs:
+        for l in (j.get("payload", {}) or {}).get("leads", []) or []:
+            raw = str(l.get("country") or l.get("location") or "").strip().lower()
+            for key, m in alias.items():
+                if key in raw:
+                    counts[m] += 1
+                    break
+    return [(m, counts[m]) for m in markets]
+
+
 def _panel(title, desc, body):
     return f"<div class='card'><p class='ct'>{_esc(title)}</p><p class='cc'>{_esc(desc)}</p>{body}</div>"
 
@@ -300,9 +363,15 @@ def _system_map(st):
             s += f'<text x="{x+w/2}" y="{y+h/2+11:.0f}" text-anchor="middle" fill="#8E9BBE" font-size="9">{sub}</text>'
         return s
 
-    def wire(x1, y1, x2, y2, col="#33507e", dash="", label="", lx=None, ly=None):
+    def wire(x1, y1, x2, y2, col="#33507e", dash="", label="", lx=None, ly=None, flow=True):
         mx = (x1 + x2) / 2
-        s = f'<path d="M{x1} {y1} C {mx} {y1}, {mx} {y2}, {x2} {y2}" fill="none" stroke="{col}" stroke-width="1.3" {dash} marker-end="url(#arw)" opacity="0.85"/>'
+        d = f"M{x1} {y1} C {mx} {y1}, {mx} {y2}, {x2} {y2}"
+        s = f'<path d="{d}" fill="none" stroke="{col}" stroke-width="1.3" {dash} marker-end="url(#arw)" opacity="0.7"/>'
+        if flow:
+            # the "crystal jar" — data you can actually SEE moving through the wire
+            s += (f'<path d="{d}" fill="none" stroke="{col}" stroke-width="2.4" stroke-linecap="round" '
+                  f'stroke-dasharray="0.1 13" opacity="0.95">'
+                  f'<animate attributeName="stroke-dashoffset" from="26" to="0" dur="1.5s" repeatCount="indefinite"/></path>')
         if label:
             s += f'<text x="{lx or mx:.0f}" y="{(ly or (y1+y2)/2-4):.0f}" text-anchor="middle" fill="#8E9BBE" font-size="9">{label}</text>'
         return s
@@ -331,7 +400,7 @@ def _system_map(st):
     P.append(box(614, 262, 172, 30, "#4C8DFF", "Learning agent"))
     P.append(box(434, 302, 172, 30, "#3FD98B", "Approval gate"))
     P.append(box(614, 302, 172, 30, "#3FD98B", "Budget guard $200"))
-    P.append(box(434, 342, 172, 36, "#3FD98B", "Claude", "Opus / Haiku"))
+    P.append(box(434, 342, 172, 36, c("claude_api"), "Claude · the brain", "Opus / Haiku"))
     P.append(box(614, 342, 172, 36, "#2FE3D2", "Postgres", "engine memory"))
     P.append(box(434, 390, 352, 34, "#2FE3D2", "Control dashboard", "this screen"))
     P.append(f'<rect x="890" y="50" width="176" height="150" rx="10" fill="#0D1526" stroke="{"#3FD98B" if g_on else "#F5B14C"}" stroke-width="1.5"/>')
@@ -431,9 +500,14 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     p_leads = grid(
         _panel("Lead funnel", "Stranger → verified → qualified → emailed → replied → booked.",
                _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("No leads yet — connect the lead finder.")),
-        _panel("Lead quality", "How warm your leads are: hot / warm / cold.", _empty("Scores show once leads flow in.")),
-        _panel("Leads by source", "Where each lead came from (web, LinkedIn).",
-               _bars([("Web", leads_found), ("LinkedIn", 0)], "#8B7CFF") if leads_found else _empty("No lead sources connected.")),
+        _panel("Leads by country — your 5 target markets",
+               "Segmentation across USA · UK · Germany · Switzerland · Canada.",
+               _bars(_by_country(out_jobs), "#2FE3D2") if any(v for _, v in _by_country(out_jobs))
+               else _funnel_skeleton([("United States", 0, 100), ("United Kingdom", 0, 82),
+                                      ("Germany", 0, 66), ("Switzerland", 0, 50), ("Canada", 0, 40)],
+                                     "Fills as Prospeo leads arrive, split by country.")),
+        _panel("Leads by source", "Where each lead came from (Prospeo / web).",
+               _bars([("Prospeo (LinkedIn)", 0), ("Web search", leads_found)], "#8B7CFF") if leads_found else _empty("No lead sources connected.")),
         _panel("Leads over time · 14 days", "New lead-jobs per day.",
                _sparkline(_daybuckets(out_jobs, lambda j: True, 14), "#8B7CFF") if out_jobs else _empty("Fills as the lead finder runs.")))
 
@@ -447,8 +521,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Sent vs replied", "Cold emails out, and how many replied.",
                _bars([("Sent", emails_sent), ("Replied", 0)], "#4C8DFF") if emails_sent else _empty("No emails sent yet.")),
         _panel("Sent by purpose → address", "The loop: your agent sends each email type from the right alias — all from your one inbox.", route_html),
-        _panel("Send volume over time", "Emails sent per day.", _empty("Fills as outreach runs.")),
-        _panel("Deliverability", "Delivered vs bounced.", _empty("Connect your mail to track this.")))
+        _panel("Deal conversion — the money moment", "Email → reply → booked consultation → paying customer.",
+               _funnel_skeleton([("Emailed", emails_sent, 100), ("Replied", 0, 62),
+                                 ("Consultation booked", 0, 38), ("Customer won", o_cust, 20)],
+                                "Fills as replies land. Connect Cal.com so booked consultations count here automatically.")),
+        _panel("Send volume over time", "Emails sent per day.",
+               _sparkline(_daybuckets(out_jobs, lambda j: bool((j.get('payload',{}) or {}).get('send_ref')), 14), "#4C8DFF")
+               if emails_sent else _empty("Fills as outreach runs.")))
 
     # ---- 4. SOCIAL MEDIA ----
     p_social = grid(
@@ -458,14 +537,22 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Content mix", "Story vs image vs video vs link.", _empty("Fills as content posts.")))
 
     # ---- 5. SEO / AEO / GEO ----
-    seo_sug = ("<div class='fe'><span class='mut'>◆ Connect <b>Search Console</b> to see keyword rankings.</span></div>"
-               "<div class='fe'><span class='mut'>◆ Connect <b>Analytics</b> to see traffic &amp; conversions.</span></div>"
-               "<div class='fe'><span class='mut'>◆ Your articles are already built for AI answers — mentions show once tracking is on.</span></div>")
+    gsc_on = st.get("google_gsc_ga4")
+    mfunnel = (_funnel([("Traffic", 0), ("Interest", 0), ("Location match", 0), ("Authority", 0)]) if gsc_on
+               else _funnel_skeleton([("Traffic — visitors", "—", 100), ("Interest — engaged", "—", 70),
+                                      ("Location — your 5 markets", "—", 48), ("Authority — backlinks", "—", 30)],
+                                     "Connect Search Console + Analytics to fill this with real numbers."))
+    assist = "".join(f"<div class='fe'><span class='mut'>{x}</span></div>" for x in [
+        "◆ <b>Publish next</b> for your least-covered vertical — rotate dentists → lawyers → tax consultants → Shopify → creators.",
+        "◆ <b>Internal links:</b> point each new blog at its matching service page — that's where deals happen.",
+        "◆ <b>Backlinks to chase:</b> local directories, niche bodies (dental / legal / tax associations), one guest post a month.",
+        "◆ <b>Topic gaps:</b> once Search Console is live this turns data-driven — the keywords you rank #5–15 for are your easy wins.",
+    ])
     p_seo = grid(
-        _panel("Search traffic", "Visitors from Google over time.", _empty("Connect Google Analytics.")),
+        _panel("Marketing funnel", "Traffic → interest → location → authority.", mfunnel),
         _panel("Keyword rankings", "Where your pages rank.", _empty("Connect Search Console.")),
         _panel("AI-answer mentions", "How often ChatGPT / Google AI quote you.", _empty("Shows once tracking is on.")),
-        _panel("Next steps", "What to do to improve visibility.", seo_sug))
+        _panel("Content assistant — your next move", "What to publish and where to build backlinks.", assist))
 
     # ---- 6. ADS & GROWTH ----
     p_ads = grid(
@@ -583,11 +670,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
             else:
                 kk, dv = tok, ""
             typ = "password" if any(x in kk.upper() for x in ("PASSWORD", "TOKEN", "KEY", "JSON", "SECRET")) else "text"
-            fields += f"<input name='{_esc(kk)}' type='{typ}' placeholder='{_esc(kk)}' value='{_esc(dv)}'>"
+            friendly = _FIELD_HINT.get(kk, kk)
+            pre = "🔑 " if typ == "password" else ""
+            fields += f"<input name='{_esc(kk)}' type='{typ}' placeholder='{pre}{_esc(friendly)}' value='{_esc(dv)}'>"
         conn_rows.append(
             f"<form class='cform' onsubmit='return saveConnect(this)'>"
-            f"<div class='cflab'>{_esc(name)}</div>{fields}"
-            f"<button class='sbtn' type='submit'>Connect</button></form>")
+            f"<div class='cflab'>{_esc(name)}</div>"
+            f"<div class='dim' style='margin:-3px 0 5px;line-height:1.45'>{_esc(effect)}</div>"
+            f"{fields}"
+            f"<button class='sbtn' type='submit'>Connect · turns green in ~15s</button></form>")
     connect_card = ("<div class='card full' style='margin-top:12px'><p class='ct'>🔌 Connect your wires — paste keys, click Connect</p>"
                     "<p class='cc'>No SSH, no rebuild. Saved instantly; the wire turns green above within ~15 seconds. What each one needs (and unlocks) is in the table above.</p>"
                     "<div class='cgrid'>" + "".join(conn_rows) + "</div></div>")
@@ -611,7 +702,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                   f"<div class='prog'><i style='width:{setup_pct}%'></i></div>"
                   + (setup_list or "<div class='dim'>All connected 🎉</div>")
                   + "<div class='dim' style='margin-top:8px'>Full details + what each one unlocks on the <b>System Map</b> page.</div></div>")
-    overview = (setup_card + "<div class='ov'>"
+    avg_day = total_cost / max(date.today().day, 1)
+    cost_meter = ("<div class='card full' style='margin-bottom:12px'>"
+                  "<p class='ct'>💸 API cost meter — live spend</p>"
+                  "<p class='cc'>Every euro the engine spends on Claude, tracked against your cap. (Prospeo + images are small separate fixed costs.)</p>"
+                  "<div style='display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end'>"
+                  f"<div><div class='dim'>This month</div><div class='big tnum' style='color:{bcol}'>${month_spent:.2f}</div><div class='dim'>of ${month_cap:.0f} cap · {pct}%</div></div>"
+                  f"<div><div class='dim'>Today</div><div class='big tnum'>${day_spent:.2f}</div><div class='dim'>of ${day_cap:.0f}/day</div></div>"
+                  f"<div><div class='dim'>Avg / day</div><div class='big tnum'>${avg_day:.2f}</div><div class='dim'>this month</div></div>"
+                  f"<div style='flex:1;min-width:220px'><div class='dim' style='margin-bottom:4px'>Spend · last 14 days</div>{_sparkline(spend_series, bcol)}</div>"
+                  "</div>"
+                  f"<div class='prog' style='margin-top:12px'><i style='width:{min(100,pct)}%;background:{bcol}'></i></div></div>")
+    overview = (setup_card + cost_meter + "<div class='ov'>"
                 + tile("content", "📝", "Content", published, "published this month", green if published else amber)
                 + tile("leads", "🧲", "Leads", leads_found, "collected", green if leads_found else amber)
                 + tile("email", "✉️", "Email", emails_sent, "sent", green if emails_sent else amber)
