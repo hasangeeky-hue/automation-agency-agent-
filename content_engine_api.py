@@ -85,6 +85,10 @@ def get_store():
         try:
             import content_engine_connectors as _C
             _C.set_settings_provider(_STORE.get_setting)
+            if hasattr(_STORE, "add_daily_cost"):
+                _C.set_cost_recorder(_STORE.add_daily_cost)   # external spend -> the cap
+            if hasattr(_STORE, "set_setting"):
+                _C.set_settings_writer(_STORE.set_setting)     # suppression + send caps
         except Exception:
             pass
     return _STORE

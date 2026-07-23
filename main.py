@@ -108,6 +108,10 @@ def main() -> int:
     try:
         import content_engine_connectors as connectors
         connectors.set_settings_provider(store.get_setting)
+        if hasattr(store, "add_daily_cost"):
+            connectors.set_cost_recorder(store.add_daily_cost)   # meter external spend
+        if hasattr(store, "set_setting"):
+            connectors.set_settings_writer(store.set_setting)     # suppression + send caps
         connectors.wire_all()
     except Exception:
         log.exception("connector wiring failed; continuing with offline defaults")

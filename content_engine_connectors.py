@@ -105,6 +105,136 @@ def _env(name: str, default: str = "") -> str:
     return (str(v) if v is not None else "").strip()
 
 
+# ---------------------------------------------------------------------------
+# LOOP-CLOSERS — set by api/worker at startup
+#   1) Budget loop: meter EXTERNAL spend (Prospeo credits, image/video) into the
+#      same daily cost the €200 cap watches — it previously saw only Claude.
+#   2) Deliverability loop: an email suppression list + a warm-up daily send cap,
+#      so cold email from a fresh domain doesn't get torched by spam filters.
+# ---------------------------------------------------------------------------
+_COST_RECORDER = None   # -> store.add_daily_cost
+_SETTINGS_SET = None    # -> store.set_setting (persists suppression + counters)
+
+
+def set_cost_recorder(fn) -> None:
+    global _COST_RECORDER
+    _COST_RECORDER = fn
+
+
+def set_settings_writer(fn) -> None:
+    global _SETTINGS_SET
+    _SETTINGS_SET = fn
+
+
+def _record_cost(usd: float, kind: str = "") -> None:
+    try:
+        if _COST_RECORDER and usd and usd > 0:
+            _COST_RECORDER(float(usd))
+            log.info("external spend metered: $%.4f (%s)", usd, kind)
+    except Exception:
+        pass
+
+
+def _setting(key: str, default=None):
+    """Read a structured (non-string) setting, e.g. the suppression list."""
+    if _SETTINGS_GET is not None:
+        try:
+            v = _SETTINGS_GET(key)
+            if v is not None:
+                return v
+        except Exception:
+            pass
+    return default
+
+
+def _set_setting(key: str, value) -> None:
+    try:
+        if _SETTINGS_SET:
+            _SETTINGS_SET(key, value)
+    except Exception:
+        pass
+
+
+def is_suppressed(addr: str) -> bool:
+    a = (addr or "").strip().lower()
+    if not a:
+        return True
+    supp = _setting("email_suppression", []) or []
+    return a in {str(s).strip().lower() for s in supp}
+
+
+def suppress_email(addr: str, reason: str = "bounce") -> None:
+    a = (addr or "").strip()
+    if not a:
+        return
+    supp = list(_setting("email_suppression", []) or [])
+    if a.lower() not in {str(s).strip().lower() for s in supp}:
+        supp.append(a)
+        _set_setting("email_suppression", supp)
+        log.info("suppressed %s (%s)", a, reason)
+
+
+def _warmup_cap() -> int:
+    """Today's cold-email ceiling. A hard OUTREACH_DAILY_CAP wins; otherwise ramp
+    up from a new domain over ~2 weeks so we protect sending reputation."""
+    hard = _env("OUTREACH_DAILY_CAP")
+    if hard.isdigit() and int(hard) > 0:
+        return int(hard)
+    start = _setting("outreach_first_send_day")
+    if not start:
+        return 15
+    try:
+        from datetime import date
+        days = (date.today() - date.fromisoformat(str(start)[:10])).days
+    except Exception:
+        return 15
+    ramp = [15, 20, 30, 45, 60, 80, 110, 150, 200]
+    return ramp[min(max(days, 0), len(ramp) - 1)]
+
+
+def _sent_today_key() -> str:
+    from datetime import date
+    return "outreach_sent_" + date.today().isoformat()
+
+
+def outreach_send_allowed() -> bool:
+    """False once today's warm-up cap is hit — the deliverability guard."""
+    return int(_setting(_sent_today_key(), 0) or 0) < _warmup_cap()
+
+
+def _note_outreach_sent() -> None:
+    from datetime import date
+    if not _setting("outreach_first_send_day"):
+        _set_setting("outreach_first_send_day", date.today().isoformat())
+    k = _sent_today_key()
+    _set_setting(k, int(_setting(k, 0) or 0) + 1)
+
+
+_BOUNCE_SENDERS = ("mailer-daemon", "postmaster", "mail-daemon")
+_BOUNCE_SUBJECTS = ("undeliverable", "delivery status notification", "returned mail",
+                    "delivery failure", "mail delivery failed", "failure notice",
+                    "delivery has failed", "undelivered mail", "address not found")
+
+
+def detect_bounce(m: dict) -> str:
+    """If message m is a bounce / non-delivery report, return the dead recipient
+    address to suppress (best-effort), else ''. Used by the reply agent so a
+    bounced address is never emailed again."""
+    frm = str(m.get("from_email") or m.get("from") or "").lower()
+    subj = str(m.get("subject") or "").lower()
+    if not (any(s in frm for s in _BOUNCE_SENDERS) or any(s in subj for s in _BOUNCE_SUBJECTS)):
+        return ""
+    body = str(m.get("message") or "")
+    mm = re.search(r"[Ff]inal-[Rr]ecipient:\s*rfc822;\s*([^\s>]+@[^\s>]+)", body)
+    if mm:
+        return mm.group(1).strip().strip("<>")
+    for cand in re.findall(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", body):
+        cl = cand.lower()
+        if not any(s in cl for s in _BOUNCE_SENDERS) and "anthropos-automation.com" not in cl:
+            return cand
+    return ""
+
+
 # Every credential the dashboard's Connect form is allowed to set (the allow-list
 # the /connect endpoint checks, and the fields the form renders).
 CONNECTOR_ENV_KEYS = [
@@ -279,6 +409,9 @@ class Emailer:
                      category: Optional[str] = None) -> str:
         """Generic one-shot send (reused by cold outreach AND reply answering).
         `category` routes the FROM address to the matching alias."""
+        if is_suppressed(to_addr):   # never email a bounced / unsubscribed address
+            log.info("skip suppressed recipient %s", to_addr)
+            return f"suppressed:{to_addr}"
         msg = EmailMessage()
         msg["From"] = self.from_for(category)
         msg["To"] = to_addr
@@ -301,17 +434,25 @@ class Emailer:
         if not to_addr:
             log.error("no recipient email on job %s — not sending", job.get("job_id"))
             return f"send_error_no_recipient:{job.get('job_id')}"
+        is_outreach = job.get("type") == "outreach_campaign"
+        # deliverability loop: hold cold outreach once the warm-up cap is hit.
+        if is_outreach and not outreach_send_allowed():
+            log.info("daily cold-email cap (%d) reached — holding %s",
+                     _warmup_cap(), job.get("job_id"))
+            return f"held_daily_cap:{job.get('job_id')}"
         subject = (email.get("subject_variants") or ["(no subject)"])[0]
         body = email.get("body", "")
         payload = job.get("payload", {}) or {}
         # the agent tags each email's purpose; default cold outreach -> marketing.
-        category = payload.get("email_category") or (
-            "marketing" if job.get("type") == "outreach_campaign" else None)
+        category = payload.get("email_category") or ("marketing" if is_outreach else None)
         unsub = payload.get("unsubscribe_url", "")
-        return self.send_message(
+        ref = self.send_message(
             to_addr, subject, body,
             extra_headers={"List-Unsubscribe": f"<{unsub}>" if unsub else ""},
             category=category)
+        if is_outreach and isinstance(ref, str) and not ref.startswith(("suppressed:", "send_error")):
+            _note_outreach_sent()   # count it toward today's warm-up cap
+        return ref
 
 
 # ---------------------------------------------------------------------------
@@ -543,6 +684,7 @@ class LinkedIn:
         email = email_obj.get("email") or ""
         if not email or email_obj.get("status") != "VERIFIED":
             return None
+        _record_cost(float(_env("PROSPEO_COST_PER_EMAIL", "0.039") or 0.039), "prospeo")
         domain = (c.get("website") or "").replace("https://", "").replace(
             "http://", "").strip("/")
         return {
@@ -803,21 +945,23 @@ def generate_image(prompt: str, size: str = "1024x1024") -> str:
     if not key or not _requests():
         return ""
     provider = _env("IMAGE_PROVIDER", "openai").lower()
+    out = ""
     if provider == "openai":
         j = _post_json("https://api.openai.com/v1/images/generations",
                        {"model": _env("IMAGE_MODEL", "gpt-image-1"), "prompt": prompt,
                         "size": size, "n": 1},
                        headers={"Authorization": f"Bearer {key}"})
-        if not j:
-            return ""
-        data = (j.get("data") or [{}])[0]
-        return data.get("url") or data.get("b64_json", "")[:0] or ""
-    url = _env("IMAGE_API_URL")
-    if not url:
-        return ""
-    j = _post_json(url, {"prompt": prompt, "size": size},
-                   headers={"Authorization": f"Bearer {key}"})
-    return (j or {}).get("url", "") if j else ""
+        if j:
+            out = (j.get("data") or [{}])[0].get("url") or ""
+    else:
+        url = _env("IMAGE_API_URL")
+        if url:
+            j = _post_json(url, {"prompt": prompt, "size": size},
+                           headers={"Authorization": f"Bearer {key}"})
+            out = (j or {}).get("url", "") if j else ""
+    if out:   # budget loop: count image spend against the cap
+        _record_cost(float(_env("IMAGE_COST_PER", "0.04") or 0.04), "image")
+    return out
 
 
 def generate_video(prompt: str) -> str:
@@ -829,6 +973,7 @@ def generate_video(prompt: str) -> str:
                    headers={"Authorization": f"Bearer {_env('VIDEO_API_KEY')}"})
     if not j:
         return ""
+    _record_cost(float(_env("VIDEO_COST_PER", "0.30") or 0.30), "video")   # video is the pricey one
     return j.get("url") or j.get("id", "") or "video_pending"
 
 

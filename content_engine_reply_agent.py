@@ -95,6 +95,14 @@ def answer_replies(limit: int = 20, auto_send: Optional[bool] = None,
 
     results: list = []
     for m in inbound.fetch_unread(limit):
+        # Deliverability loop: a bounce / non-delivery report means the address is
+        # dead — suppress it (so it's never emailed again) and skip drafting.
+        bounced = connectors.detect_bounce(m)
+        if bounced:
+            connectors.suppress_email(bounced, "bounce")
+            results.append({"from": m.get("from_email", ""),
+                            "status": "bounce_suppressed", "bounced": bounced})
+            continue
         payload = {
             "from": m.get("from", ""),
             "subject": m.get("subject", ""),
@@ -140,10 +148,11 @@ def answer_replies(limit: int = 20, auto_send: Optional[bool] = None,
 
     sent = sum(1 for r in results if r["status"] == "sent")
     held = sum(1 for r in results if r["status"] == "pending_human")
-    log.info("reply agent: %d processed, %d sent, %d held for human",
-             len(results), sent, held)
-    return {"status": "ok", "count": len(results),
-            "sent": sent, "pending_human": held, "results": results}
+    bounced = sum(1 for r in results if r["status"] == "bounce_suppressed")
+    log.info("reply agent: %d processed, %d sent, %d held, %d bounces suppressed",
+             len(results), sent, held, bounced)
+    return {"status": "ok", "count": len(results), "sent": sent,
+            "pending_human": held, "bounces_suppressed": bounced, "results": results}
 
 
 # ---------------------------------------------------------------------------
