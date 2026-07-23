@@ -280,6 +280,25 @@ def api_connect(values: dict) -> dict:
     return {"saved": saved, "status": C.status()}
 
 
+def api_disconnect(keys) -> dict:
+    """Clear connector credentials from the settings store (dashboard 'Disconnect'
+    button). Blanks each allow-listed key so its wire reverts to disconnected and
+    the paste-in box comes back — all from the front-end, no SSH."""
+    store = get_store()
+    if not hasattr(store, "set_setting"):
+        return {"error": "this store can't edit credentials"}
+    import content_engine_connectors as C
+    allowed = set(C.CONNECTOR_ENV_KEYS)
+    if isinstance(keys, str):
+        keys = [x.strip() for x in keys.split(",")]
+    cleared = []
+    for k in (keys or []):
+        if k in allowed:
+            store.set_setting(k, "")   # blank -> connector.available() becomes False
+            cleared.append(k)
+    return {"cleared": cleared, "status": C.status()}
+
+
 def api_schedule_run(force: bool = False) -> dict:
     """Create today's production batch (cold-email-first). Call from an n8n daily
     cron. Idempotent per day unless force=True."""
@@ -589,6 +608,15 @@ def build_app():
         except Exception:
             data = {}
         return api_connect(data if isinstance(data, dict) else {})
+
+    @app.post("/disconnect")
+    async def disconnect(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        keys = data.get("keys") if isinstance(data, dict) else None
+        return api_disconnect(keys)
 
     return app
 

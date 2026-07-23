@@ -568,7 +568,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     conn_rows = []
     for k, name, why, effect, fix in _DIAG:
         if st.get(k):
-            conn_rows.append(f"<div class='cform'><div class='cflab'><span class='dot' style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#3FD98B;margin-right:6px'></span>{_esc(name)}</div><span class='pill p-live'>connected</span></div>")
+            keys = ",".join(tok.split("=", 1)[0].strip() for tok in fix.split(" + "))
+            conn_rows.append(
+                "<div class='cform'><div class='cflab'><span class='dot' style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#3FD98B;margin-right:6px'></span>"
+                f"{_esc(name)}</div><span class='pill p-live'>connected</span>"
+                f"<button class='sbtn' style='background:transparent;border:1px solid #F5788A;color:#F5788A' "
+                f"onclick=\"disconnectWire('{_esc(keys)}')\">Disconnect</button></div>")
             continue
         fields = ""
         for tok in fix.split(" + "):
@@ -686,6 +691,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});"
               "var j=await r.json();alert('Saved: '+(j.saved||[]).join(', ')+'. It goes live in ~15s.');location.reload();}"
               "catch(e){alert('Save failed: '+e);}return false;}"
+              "async function disconnectWire(keys){if(!confirm('Disconnect and clear this connection? You can re-enter it right after.'))return false;"
+              "try{await fetch('/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys:keys.split(',')})});"
+              "alert('Disconnected — the box is editable again.');location.reload();}"
+              "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "async function approve(id){await act('/jobs/'+id+'/approve');}"
               "async function runSkill(){var sk=document.getElementById('sk').value,out=document.getElementById('out'),inp=document.getElementById('inp').value;"
               "out.textContent='Running '+sk+'…';try{var b=JSON.parse(inp||'{}');}catch(e){out.textContent='That input is not valid JSON.';return;}"
