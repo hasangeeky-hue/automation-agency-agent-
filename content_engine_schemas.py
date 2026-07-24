@@ -556,6 +556,44 @@ REPLY_RESPONDER = {
 }
 
 
+MEDIA_BUYER = {
+    "type": "object",
+    "required": ["campaign_name", "objective", "daily_budget", "locations",
+                 "ad_groups", "rationale", "human_should_check"],
+    "properties": {
+        "campaign_name": {"type": "string"},
+        "objective": {"type": "string"},
+        "daily_budget": {"type": "number"},
+        "monthly_budget": {"type": "number"},
+        "locations": {"type": "array", "items": {"type": "string"}},
+        "languages": {"type": "array", "items": {"type": "string"}},
+        "ad_groups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["theme", "keywords", "headlines", "descriptions"],
+                "properties": {
+                    "theme": {"type": "string"},
+                    "keywords": {"type": "array", "items": {"type": "string"}},
+                    "negative_keywords": {"type": "array", "items": {"type": "string"}},
+                    "headlines": {"type": "array", "items": {"type": "string"}},
+                    "descriptions": {"type": "array", "items": {"type": "string"}},
+                    "creative_id": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        "audience_notes": {"type": "string"},
+        "estimated_cpc_range": {"type": "string"},
+        "estimated_leads_range": {"type": "string"},
+        "rationale": {"type": "string"},
+        "risks": {"type": "string"},
+        "human_should_check": {"type": "array", "items": {"type": "string"}},
+    },
+    "additionalProperties": False,
+}
+
+
 # ---------------------------------------------------------------------------
 # Validator wrapper: .validate(obj) -> (ok: bool, errors: list[str])
 # Accepts either the skill schema OR the SECTION 6 error object.
@@ -613,6 +651,7 @@ SCHEMAS = {
     "lead_qualifier":          Schema("lead_qualifier", LEAD_QUALIFIER),
     "outreach_copy":           Schema("outreach_copy", OUTREACH_COPY),
     "ads_optimizer":           Schema("ads_optimizer", ADS_OPTIMIZER),
+    "media_buyer":             Schema("media_buyer", MEDIA_BUYER),
     "reply_responder":         Schema("reply_responder", REPLY_RESPONDER),
 }
 

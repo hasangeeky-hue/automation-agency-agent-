@@ -286,6 +286,31 @@ def _in_ads_optimizer(job: dict) -> dict:
     }
 
 
+def _in_media_buyer(job: dict) -> dict:
+    """Feed the media buyer: the offer + ICP + the creatives handed over by the
+    creative agents + any learnings. It drafts a Google Ads campaign from these."""
+    p = job.get("payload", {})
+    cfg = _cfg(job)
+    icp = cfg.get("icp", {}) or {}
+    pb = _learnings(job) or {}
+    return {
+        "offer": cfg.get("our_offer") or _brand(job).get("offer", ""),
+        "goal": cfg.get("ad_goal", "leads"),
+        "monthly_budget": cfg.get("ad_monthly_budget", 0),
+        "landing_url": cfg.get("landing_url", ""),
+        "icp": {
+            "verticals": icp.get("ideal_industries") or icp.get("verticals", []),
+            "countries": icp.get("countries", []),
+            "deal_size": icp.get("ideal_size", ""),
+        },
+        "creatives": p.get("creatives", []),
+        "past_learnings": {
+            "winning_keywords": pb.get("winning_topics", []),
+            "notes": pb.get("notes", ""),
+        },
+    }
+
+
 _MAPPERS = {
     # Pipeline A
     "site_intelligence": _in_site_intelligence,
@@ -304,6 +329,7 @@ _MAPPERS = {
     "outreach_copy": _in_outreach_copy,
     # Ads
     "ads_optimizer": _in_ads_optimizer,
+    "media_buyer": _in_media_buyer,
 }
 
 
