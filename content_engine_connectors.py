@@ -59,7 +59,7 @@ import socket
 import ssl
 from email.header import decode_header, make_header
 from email.message import EmailMessage
-from email.utils import make_msgid, parseaddr
+from email.utils import formataddr, make_msgid, parseaddr
 from html.parser import HTMLParser
 from typing import Optional
 
@@ -252,6 +252,7 @@ CONNECTOR_ENV_KEYS = [
     "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "CALCOM_API_KEY",
     "EMAIL_LOGO_URL", "EMAIL_BOOKING_URL", "EMAIL_MANAGE_URL", "EMAIL_UNSUBSCRIBE_URL",
     "EMAIL_COMPANY", "EMAIL_ADDRESS", "EMAIL_BRAND_COLOR", "EMAIL_HTML", "EMAIL_WEBSITE",
+    "EMAIL_FROM_NAME",
     "LINKEDIN_POST_TOKEN", "LINKEDIN_AUTHOR_URN", "TWITTER_BEARER_TOKEN",
     "META_PAGE_ID", "META_PAGE_TOKEN", "IG_USER_ID", "TIKTOK_ACCESS_TOKEN",
     "IMAGE_PROVIDER", "IMAGE_API_KEY", "IMAGE_MODEL", "IMAGE_API_URL",
@@ -448,7 +449,9 @@ class Emailer:
             log.info("skip suppressed recipient %s", to_addr)
             return f"suppressed:{to_addr}"
         msg = EmailMessage()
-        msg["From"] = self.from_for(category)
+        _from = self.from_for(category)
+        _name = _env("EMAIL_FROM_NAME", "Hasan")   # friendly sender name on every email
+        msg["From"] = formataddr((_name, _from)) if _name else _from
         msg["To"] = to_addr
         msg["Subject"] = subject
         msg["Message-ID"] = make_msgid()
