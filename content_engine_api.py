@@ -304,37 +304,40 @@ def api_disconnect(keys) -> dict:
 
 
 def api_media_chat(job_id, message):
-    """Discuss a drafted campaign with the media buyer; it answers and may revise
-    the draft in place. Returns {'reply', 'changed'}."""
+    """Talk to the media buyer. If job_id points at a drafted campaign, it can
+    revise that campaign in place. With no campaign it answers as a planning
+    assistant. Returns {'reply', 'changed'}."""
     store = get_store()
-    try:
-        job = store.get(job_id)
-    except Exception:
-        return {"error": "campaign not found"}
-    p = job.get("payload", {}) or {}
+    job = None
+    if job_id:
+        try:
+            job = store.get(job_id)
+        except Exception:
+            job = None
+    p = (job or {}).get("payload", {}) or {}
     campaign = p.get("media_buyer") or {}
-    if not campaign:
-        return {"error": "no drafted campaign on this job"}
     history = p.get("media_chat_history") or []
     try:
         from content_engine_providers import build_prompt, call_provider
-        spec = build_prompt("media_chat", {"job_id": job_id, "brand": job.get("brand", {}),
+        spec = build_prompt("media_chat", {"job_id": job_id or "", "brand": (job or {}).get("brand", {}),
             "payload": {"campaign": campaign, "message": message or "", "history": history[-10:]}})
         data = (call_provider(orch.FRONTIER_MODEL, spec).data) or {}
     except Exception as e:
-        return {"error": f"agent error: {str(e)[:120]}"}
+        return {"reply": f"(agent error: {str(e)[:120]})", "changed": False}
     reply = data.get("reply") or "(no reply)"
-    changed = (bool(data.get("changed")) and isinstance(data.get("campaign"), dict)
-               and data["campaign"].get("campaign_name"))
+    # only persist a revision when we actually have a campaign job to save it on
+    changed = (bool(job) and bool(campaign) and bool(data.get("changed"))
+               and isinstance(data.get("campaign"), dict) and data["campaign"].get("campaign_name"))
     if changed:
         p["media_buyer"] = data["campaign"]
-    p["media_chat_history"] = (history + [{"role": "user", "text": message or ""},
-                                          {"role": "agent", "text": reply}])[-20:]
-    job["payload"] = p
-    try:
-        store.save(job)
-    except Exception:
-        pass
+    if job:
+        p["media_chat_history"] = (history + [{"role": "user", "text": message or ""},
+                                              {"role": "agent", "text": reply}])[-20:]
+        job["payload"] = p
+        try:
+            store.save(job)
+        except Exception:
+            pass
     return {"reply": reply, "changed": bool(changed)}
 
 

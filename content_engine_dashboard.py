@@ -647,6 +647,25 @@ def _media_page(jobs, st):
                  "<p class='cc'>Click <b>✍️ Draft a campaign now</b> above and the media buyer will draft a full "
                  "Google Ads campaign — with its reasoning — for you to review, chat about, and deploy in one click. "
                  "(It also drafts automatically whenever your image agents produce new creatives.)</p></div>")
+    # Always-visible chat with the media buyer. When a campaign exists, changes
+    # apply to the latest one; otherwise it acts as a planning assistant.
+    latest_id = drafts[-1][0].get("job_id") if drafts else ""
+    bound = ("💬 It will apply changes to your latest campaign, <b>"
+             + _esc(drafts[-1][1].get("campaign_name", "campaign")) + "</b>."
+             if drafts else
+             "💬 No campaign yet — ask it to plan one, or click <b>Draft a campaign now</b> above, "
+             "then chat here to refine it.")
+    chat_card = (
+        "<div class='card full' style='margin-bottom:12px'>"
+        "<p class='ct'>💬 Talk to your media buyer</p>"
+        f"<p class='cc'>{bound} Ask <i>why</i> it chose a strategy, or request changes — budget, keywords, "
+        "headlines, locations, countries.</p>"
+        "<div class='mlog' id='mlog-section' style='max-height:280px;overflow:auto;margin-bottom:8px'></div>"
+        "<div class='ctrl'>"
+        "<input id='min-section' placeholder='e.g. plan a lead-gen campaign for dentists in Munich at €10/day' "
+        "style='flex:1;min-width:260px' onkeydown=\"if(event.key==='Enter')mediaSectionSend()\">"
+        "<button class='sbtn' onclick='mediaSectionSend()'>Send</button></div>"
+        f"<input type='hidden' id='section-jobid' value='{_esc(latest_id)}'></div>")
     # Connections live ONLY on the System Map. Here we just show status + point there.
     if not ads_on:
         note = ("<div class='card full' style='margin-bottom:12px'><p class='ct'>🟠 Google Ads not connected</p>"
@@ -656,7 +675,7 @@ def _media_page(jobs, st):
                 "<div class='ctrl'><button class='cbtn' onclick=\"nav('map')\">Go to System Map →</button></div></div>")
     else:
         note = ""
-    return master + note + cards
+    return master + chat_card + note + cards
 
 
 # ---------------------------------------------------------------------------
@@ -1386,6 +1405,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/media/abort/'+id,{method:'POST'});var j=await r.json();"
               "if(j.ok){alert(j.detail||'Done.');location.reload();}else{alert('Could not abort: '+(j.error||j.detail||'unknown error'));}}"
               "catch(e){alert('Abort failed: '+e);}}"
+              "async function mediaSectionSend(){var el=document.getElementById('min-section'),log=document.getElementById('mlog-section');if(!el||!log)return;var m=el.value.trim();if(!m)return;"
+              "var jid=(document.getElementById('section-jobid')||{}).value||'';"
+              "log.innerHTML+=\"<div class='fe'><span class='tm' style='min-width:44px'>You</span><span class='mut'>\"+m.replace(/</g,'&lt;')+\"</span></div>\";el.value='';"
+              "var wid='ws'+Date.now();log.innerHTML+=\"<div class='fe' id='\"+wid+\"'><span class='tm' style='min-width:44px'>Agent</span><span class='dim'>thinking…</span></div>\";log.scrollTop=log.scrollHeight;"
+              "try{var r=await fetch('/media/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:jid,message:m})});var j=await r.json();"
+              "var w=document.getElementById(wid);var t=(j.reply||j.error||'(no reply)').replace(/</g,'&lt;');w.innerHTML=\"<span class='tm' style='min-width:44px'>Agent</span><span class='mut'>\"+t+\"</span>\";log.scrollTop=log.scrollHeight;"
+              "if(j.changed){setTimeout(function(){location.reload();},1200);}}catch(e){var w2=document.getElementById(wid);if(w2)w2.innerHTML=\"<span class='mut'>Error: \"+e+\"</span>\";}}"
               "async function draftCampaign(){var b=document.getElementById('draftbtn');if(b){b.disabled=true;b.textContent='Drafting… ~15s';}"
               "try{var r=await fetch('/media/draft',{method:'POST'});var j=await r.json();"
               "if(j.ok){alert('Drafted: '+(j.campaign||'campaign')+'. Scroll down to review it.');location.reload();}else{alert('Could not draft: '+(j.error||'unknown error'));if(b){b.disabled=false;b.textContent='✍️ Draft a campaign now';}}}"
