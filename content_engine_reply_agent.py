@@ -192,7 +192,7 @@ if __name__ == "__main__":
         def available(self):
             return True
 
-        def send_message(self, to, subject, body, extra_headers=None, category=None):
+        def send_message(self, to, subject, body, extra_headers=None, category=None, html=None):
             self.sent.append((to, subject, category))
             return f"msgid:{to}"
 

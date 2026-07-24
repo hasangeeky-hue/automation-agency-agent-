@@ -250,6 +250,8 @@ CONNECTOR_ENV_KEYS = [
     "ADS_JSON", "BACKLINKS_JSON",
     "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN",
     "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "CALCOM_API_KEY",
+    "EMAIL_LOGO_URL", "EMAIL_BOOKING_URL", "EMAIL_MANAGE_URL", "EMAIL_UNSUBSCRIBE_URL",
+    "EMAIL_COMPANY", "EMAIL_ADDRESS", "EMAIL_BRAND_COLOR",
     "LINKEDIN_POST_TOKEN", "LINKEDIN_AUTHOR_URN", "TWITTER_BEARER_TOKEN",
     "META_PAGE_ID", "META_PAGE_TOKEN", "IG_USER_ID", "TIKTOK_ACCESS_TOKEN",
     "IMAGE_PROVIDER", "IMAGE_API_KEY", "IMAGE_MODEL", "IMAGE_API_URL",
@@ -351,10 +353,40 @@ class WordPress:
 # ---------------------------------------------------------------------------
 # Q17 / Q18 — Email sender  (SEND_FN)  — CAN-SPAM aware
 # ---------------------------------------------------------------------------
+def _html_escape(s: str) -> str:
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+# Brand defaults pulled from the live site (logo) so cold email looks like the brand.
+_LOGO_DEFAULT = "https://anthropos-automation.com/wp-content/uploads/2026/07/cropped-anthropos-logo-mark-transparent-1024-270x270.png"
+
+
+def _branded_email_html(body: str, *, logo, booking_url, unsub_url, manage_url,
+                        company, address, brand, sender) -> str:
+    """A branded, email-client-safe HTML wrapper: logo header, the written body,
+    a Book-an-appointment button, and a footer with address + manage/unsubscribe."""
+    paras = "".join(
+        f'<p style="margin:0 0 14px;color:#2b2b3a;font-size:15px;line-height:1.6">{_html_escape(p).strip()}</p>'
+        for p in body.split("\n") if p.strip())
+    return (
+        '<!doctype html><html><body style="margin:0;background:#f4f2fb">'
+        '<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f2fb;padding:24px 0"><tr><td align="center">'
+        '<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;max-width:600px">'
+        f'<tr><td style="background:{brand};padding:18px 28px"><img src="{logo}" alt="{_html_escape(company)}" height="38" style="height:38px;display:block;border:0"></td></tr>'
+        f'<tr><td style="padding:26px 28px 6px">{paras}</td></tr>'
+        f'<tr><td style="padding:8px 28px 24px"><a href="{booking_url}" style="background:{brand};color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:13px 26px;border-radius:10px;display:inline-block">\U0001F4C5 Book a free appointment</a></td></tr>'
+        f'<tr><td style="padding:0 28px 22px"><p style="margin:0;color:#8a8aa0;font-size:13px">— {_html_escape(sender)}, {_html_escape(company)}</p></td></tr>'
+        f'<tr><td style="background:#f4f2fb;padding:15px 28px;border-top:1px solid #eceafa">'
+        f'<p style="margin:0 0 6px;color:#9a9ab0;font-size:11px;line-height:1.5">{_html_escape(company)} · {_html_escape(address)}</p>'
+        f'<p style="margin:0;color:#9a9ab0;font-size:11px"><a href="{manage_url}" style="color:{brand}">Manage subscription</a> · <a href="{unsub_url}" style="color:{brand}">Unsubscribe</a></p>'
+        '</td></tr></table></td></tr></table></body></html>')
+
+
 class Emailer:
-    """Send the approved cold email over SMTP. Adds a List-Unsubscribe header
-    and relies on the copy already containing a physical address + unsubscribe
-    link (enforced upstream by qa_compliance)."""
+    """Send the approved cold email over SMTP. Cold outreach goes out as a branded
+    HTML email (logo + Book-an-appointment button + manage/unsubscribe footer);
+    replies stay plain. Adds a List-Unsubscribe header and relies on the copy
+    already containing a physical address + unsubscribe link."""
 
     def __init__(self) -> None:
         self.host = _env("SMTP_HOST")
@@ -408,9 +440,10 @@ class Emailer:
 
     def send_message(self, to_addr: str, subject: str, body: str,
                      extra_headers: Optional[dict] = None,
-                     category: Optional[str] = None) -> str:
+                     category: Optional[str] = None, html: Optional[str] = None) -> str:
         """Generic one-shot send (reused by cold outreach AND reply answering).
-        `category` routes the FROM address to the matching alias."""
+        `category` routes the FROM address to the matching alias. `html` (optional)
+        sends a branded HTML alternative with the plain text as fallback."""
         if is_suppressed(to_addr):   # never email a bounced / unsubscribed address
             log.info("skip suppressed recipient %s", to_addr)
             return f"suppressed:{to_addr}"
@@ -423,6 +456,8 @@ class Emailer:
             if v:
                 msg[k] = v
         msg.set_content(body)
+        if html:
+            msg.add_alternative(html, subtype="html")
         try:
             self._transport(msg)
             log.info("email sent to %s from %s (%s)", to_addr, msg["From"], category or "default")
@@ -448,13 +483,30 @@ class Emailer:
         # the agent tags each email's purpose; default cold outreach -> marketing.
         category = payload.get("email_category") or ("marketing" if is_outreach else None)
         unsub = payload.get("unsubscribe_url", "")
+        html = self._outreach_html(body, job) if is_outreach else None
         ref = self.send_message(
             to_addr, subject, body,
             extra_headers={"List-Unsubscribe": f"<{unsub}>" if unsub else ""},
-            category=category)
+            category=category, html=html)
         if is_outreach and isinstance(ref, str) and not ref.startswith(("suppressed:", "send_error")):
             _note_outreach_sent()   # count it toward today's warm-up cap
         return ref
+
+    def _outreach_html(self, body: str, job: dict) -> str:
+        """Wrap a cold-email body in the branded template (logo + booking button +
+        manage/unsubscribe). Defaults come from the live site; override via env."""
+        p = job.get("payload", {}) or {}
+        cfg = p.get("config", {}) or {}
+        return _branded_email_html(
+            body,
+            logo=_env("EMAIL_LOGO_URL", _LOGO_DEFAULT),
+            booking_url=_env("EMAIL_BOOKING_URL", "https://anthropos-automation.com/free-audit/"),
+            unsub_url=p.get("unsubscribe_url") or _env("EMAIL_UNSUBSCRIBE_URL", "https://anthropos-automation.com/unsubscribe"),
+            manage_url=_env("EMAIL_MANAGE_URL", "https://anthropos-automation.com/free-audit/"),
+            company=_env("EMAIL_COMPANY", "Anthropos Automation Service LLC"),
+            address=_env("EMAIL_ADDRESS", "1309 Coffeen Ave STE 1200, Sheridan, WY 82801"),
+            brand=_env("EMAIL_BRAND_COLOR", "#7A00DF"),
+            sender=cfg.get("sender_name") or _env("REPLY_SENDER_NAME", "Hasan"))
 
 
 # ---------------------------------------------------------------------------
