@@ -544,6 +544,82 @@ def _dataflow(pl, lead_rows):
 
 
 # ---------------------------------------------------------------------------
+# Media buying — drafted Google Ads campaigns (the media_buyer agent's output)
+# ---------------------------------------------------------------------------
+def _media_campaigns(jobs):
+    """Pull drafted campaigns (the media_buyer result lives on the job payload)."""
+    out = []
+    for j in jobs:
+        mb = (j.get("payload", {}) or {}).get("media_buyer")
+        if isinstance(mb, dict) and mb.get("campaign_name"):
+            out.append((j, mb))
+    return out
+
+
+def _media_card(jid, mb, status):
+    ags = mb.get("ad_groups", []) or []
+    themes = " · ".join(a.get("theme", "") for a in ags[:6])
+    kws, heads = [], []
+    for a in ags:
+        kws += (a.get("keywords") or [])
+        heads += (a.get("headlines") or [])
+    checks = "".join(f"<div class='fe'><span class='mut'>◆ {_esc(x)}</span></div>"
+                     for x in (mb.get("human_should_check") or [])[:5])
+    approved = status not in ("AWAITING_APPROVAL", "drafted", None)
+    action = (f"<span class='pill p-live'>✓ approved</span>" if approved
+              else f"<button class='sbtn' onclick=\"approve('{_esc(jid)}')\">✓ Approve campaign</button>")
+    risks = (f"<div class='dim' style='margin-top:8px'>⚠ Risks</div>"
+             f"<div style='margin-top:4px'>{_esc(mb.get('risks',''))}</div>") if mb.get("risks") else ""
+    return (
+        "<div class='card full' style='margin-bottom:12px'>"
+        f"<p class='ct'>🎯 {_esc(mb.get('campaign_name','Campaign'))}</p>"
+        f"<p class='cc'>{_esc(mb.get('objective','leads'))} · ${_esc(str(mb.get('daily_budget','')))}/day "
+        f"(${_esc(str(mb.get('monthly_budget','')))}/mo) · {_esc(', '.join(mb.get('locations',[]) or []))}</p>"
+        "<div style='display:flex;gap:22px;flex-wrap:wrap'>"
+        f"<div style='flex:1;min-width:240px'><div class='dim'>Ad groups ({len(ags)})</div>"
+        f"<div style='margin-top:4px'>{_esc(themes)}</div>"
+        f"<div class='dim' style='margin-top:8px'>Top keywords</div>"
+        f"<div style='margin-top:4px'>{_esc(', '.join(kws[:8]))}</div>"
+        f"<div class='dim' style='margin-top:8px'>Sample headlines</div>"
+        f"<div style='margin-top:4px'>{_esc(' · '.join(heads[:4]))}</div></div>"
+        f"<div style='flex:1;min-width:240px'><div class='dim'>💡 Why the agent built it this way</div>"
+        f"<div style='margin-top:4px;line-height:1.6'>{_esc(mb.get('rationale',''))}</div>{risks}"
+        f"<div class='dim' style='margin-top:8px'>Estimate: {_esc(mb.get('estimated_cpc_range',''))} CPC · "
+        f"{_esc(mb.get('estimated_leads_range',''))}</div></div></div>"
+        + (f"<div style='margin-top:10px'><div class='dim'>Check before you approve:</div>{checks}</div>" if checks else "")
+        + "<div class='ctrl' style='margin-top:12px'>" + action
+        + f"<button class='cbtn' onclick=\"mediaChat('{_esc(jid)}')\">💬 Discuss / request changes</button></div></div>")
+
+
+def _media_page(jobs, st):
+    drafts = _media_campaigns(jobs)
+    ads_on = bool(st.get("ads_api"))
+    total = sum(float(mb.get("monthly_budget") or 0) for _, mb in drafts)
+    waiting = sum(1 for j, _ in drafts if j.get("status") == "AWAITING_APPROVAL")
+    master = _master("🎯", "Media buying — at a glance",
+        "AI-drafted Google Ads campaigns from your creatives. Nothing spends until you approve.",
+        [("Drafts", len(drafts), "#EDF1FB"), ("Waiting you", waiting, "#F5B14C"),
+         ("Budget drafted", f"${total:,.0f}/mo", "#8B7CFF"),
+         ("Google Ads", "live" if ads_on else "not connected", "#3FD98B" if ads_on else "#F5B14C")],
+        _empty("Drafted campaigns show below — read the reasoning, then approve.") if drafts
+        else _empty("No campaigns yet."))
+    if drafts:
+        cards = "".join(_media_card(j.get("job_id"), mb, j.get("status")) for j, mb in drafts)
+    else:
+        cards = ("<div class='card full'><p class='ct'>No campaigns drafted yet</p>"
+                 "<p class='cc'>Once your image agent produces creatives, the media buyer drafts a Google Ads "
+                 "campaign here — with its full reasoning — for you to approve. Connect Google Ads below and give "
+                 "it creatives to start.</p></div>")
+    connect = ("<div class='card full'><p class='ct'>Google Ads connection</p>"
+               + ("<p class='cc'>🟢 Connected — real spend, clicks and CPA flow in, and approved campaigns can go live.</p>"
+                  if ads_on else
+                  "<p class='cc'>🟠 Not connected. To push approved campaigns live and see performance, connect "
+                  "Google Ads on the <b>System Map</b> page (developer token · customer id · OAuth). Google must "
+                  "approve your developer token first.</p>") + "</div>")
+    return master + cards + connect
+
+
+# ---------------------------------------------------------------------------
 # system map (component-level, every labeled connection)
 # ---------------------------------------------------------------------------
 def _system_map(st):
@@ -1131,6 +1207,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
              + _system_map(st) + "</div>"
              + diag + connect_card)
 
+    # ---- MEDIA BUYING (drafted Google Ads campaigns) ----
+    p_media = _media_page(jobs, st)
+
     # ---- OVERVIEW (mother) ----
     def tile(nav, icon, label, val, sub, dot):
         return (f"<div class='tile' onclick=\"nav('{nav}')\"><div class='tl'><span class='d' style='width:8px;height:8px;border-radius:50%;background:{dot}'></span>{icon} {label}</div>"
@@ -1172,6 +1251,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 + tile("social", "📣", "Social", "—", "connect a channel", amber)
                 + tile("seo", "🔎", "SEO/AEO/GEO", "—", "connect Google", amber)
                 + tile("ads", "🎯", "Ads", "—", "feed ad data", amber)
+                + tile("media", "🛒", "Media Buying", len(_media_campaigns(jobs)), "campaigns drafted", green if _media_campaigns(jobs) else amber)
                 + tile("budget", "💰", "Budget", f"${month_spent:.0f}/{month_cap:.0f}", f"{pct}% of cap", green if pct < 90 else amber)
                 + tile("agents", "❤️", "Agents", f"{live_conn}/{total_conn}", "connectors live", green if live_conn else amber)
                 + tile("google", "☁️", "Google hub", "—", "sheets · drive · gmail", green if (st.get('google_sheets') or st.get('google_drive')) else amber)
@@ -1189,6 +1269,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("social", "📣", "Social Media", "Social Media", "Posting and engagement across channels.", p_social),
         ("seo", "🔎", "SEO / AEO / GEO", "SEO · AEO · GEO", "Search, AI-answer and geo visibility.", p_seo),
         ("ads", "🎯", "Ads & Growth", "Ads & Growth", "Paid campaigns tuned with your SEO signals.", p_ads),
+        ("media", "🛒", "Media Buying", "Media Buying", "AI-drafted Google Ads campaigns — read the reasoning, then approve.", p_media),
         ("budget", "💰", "Budget & Cost", "Budget & Cost", "Where the money goes, against your $200 cap.", p_budget),
         ("agents", "❤️", "Agents & Health", "Agents & Health", "Are the agents running, and is anything broken?", p_agents),
         ("google", "☁️", "Google Hub", "Google Hub", "Your Sheets, Drive and Gmail data hub.", p_google),
@@ -1250,6 +1331,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "alert('Disconnected — the box is editable again.');location.reload();}"
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "async function approve(id){await act('/jobs/'+id+'/approve');}"
+              "function mediaChat(id){alert('Chat with the media buyer opens here next. For now: read the reasoning, then Approve — or leave it as a draft.');}"
               "async function approveAll(ids){var a=ids.split(',');for(var i=0;i<a.length;i++){try{await fetch('/jobs/'+a[i]+'/approve',{method:'POST'});}catch(e){}}location.reload();}"
               "async function runSkill(){var sk=document.getElementById('sk').value,out=document.getElementById('out'),inp=document.getElementById('inp').value;"
               "out.textContent='Running '+sk+'…';try{var b=JSON.parse(inp||'{}');}catch(e){out.textContent='That input is not valid JSON.';return;}"
@@ -1283,8 +1365,8 @@ if __name__ == "__main__":
     for need in ("Overview", "Content Factory", "System Map", "Wiring diagnostic", "Automation Engine",
                  "sec-map", "nav('leads')", "24/7 competitor", "What it breaks", "Not connected"):
         assert need in html, need
-    assert html.count("class='page") == 13, html.count("class='page")
+    assert html.count("class='page") == 14, html.count("class='page")
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
-    print("OK — 13-page tabbed dashboard (overview + 12 machines, 48 views) + wiring diagnostic render. No network.")
+    print("OK — 14-page tabbed dashboard (overview + 13 machines incl. Media Buying) + wiring diagnostic render. No network.")
