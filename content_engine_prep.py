@@ -238,6 +238,12 @@ def _in_segmenter(job: dict) -> dict:
 
 def _in_outreach_copy(job: dict) -> dict:
     cfg = _cfg(job)
+    try:
+        import content_engine_connectors as _c
+        booking = cfg.get("booking_url") or _c._env(
+            "EMAIL_BOOKING_URL", "https://anthropos-automation.com/free-audit/")
+    except Exception:
+        booking = cfg.get("booking_url") or "https://anthropos-automation.com/free-audit/"
     out = {
         "category": job.get("payload", {}).get("category", "other"),
         "lead": job.get("payload", {}).get("lead", {}),
@@ -246,6 +252,7 @@ def _in_outreach_copy(job: dict) -> dict:
         "sender_name": cfg.get("sender_name", ""),
         "physical_address": cfg.get("physical_address", ""),
         "unsubscribe_token": job.get("payload", {}).get("unsubscribe_token", "{{unsubscribe_token}}"),
+        "booking_url": booking,
     }
     pb = _learnings(job)
     if pb and pb.get("winning_email_subject_style"):

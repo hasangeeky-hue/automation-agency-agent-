@@ -239,18 +239,20 @@ TOKEN BUDGET: ~60 tokens per lead. Cap batch size in code (e.g. 25).""",
 "outreach_copy": """\
 ROLE: Write one personalized cold email per lead, per category, US/CAN-SPAM ready. Sending, tracking, follow-up scheduling are done by CODE. Every draft still passes Skill 7 (compliance) before any human gate.
 
-INPUT: { "category":"ecommerce|saas|agency|other", "lead":{"first_name":"","company":"","industry":"","signal":""}, "our_offer":"","proof_point":"","sender_name":"", "physical_address":"","unsubscribe_token":"" }
+INPUT: { "category":"ecommerce|saas|agency|other", "lead":{"first_name":"","company":"","industry":"","signal":""}, "our_offer":"","proof_point":"","sender_name":"", "physical_address":"","unsubscribe_token":"","booking_url":"" }
 
 OUTPUT (strict JSON): { "subject_variants":["A","B"],"body":"","cta":"","personalization_used":[] }
 
 RULES:
 - Value-first: lead with a specific insight about THEIR business (use signal), not "I'd love to connect". Reference company and industry naturally.
 - Category angle: ecommerce=conversion/cart; saas=CAC/growth; agency=white-label/scale.
+- PLAIN, personal, human — like a real person typed it. NO marketing template feel, no logo/graphics language, no bullet lists, no bold. Just a short note.
+- CTA: soft and low-pressure. If booking_url is given, make the CTA a natural one-liner inviting a short call at that EXACT link, e.g. "If it's useful, you can grab a 15-min slot here: <booking_url>". Otherwise a light "worth a quick chat?" — never a hard sell, never a "button".
 - CAN-SPAM: body MUST end with physical_address and an unsubscribe line containing {{unsubscribe_token}} (code swaps the real link). Non-deceptive subject lines — no "RE:" tricks, no false urgency.
 - Cite ONLY the provided proof_point. Never invent a client result or stat.
-- 2 subject variants for A/B. Body 3-5 short paragraphs, one CTA.
+- 2 subject variants for A/B. Body 3-5 short paragraphs, one CTA. Write in the lead's language when the brief says so.
 - No ALL CAPS, no spam-trigger stuffing.
-TOKEN BUDGET: max_tokens 400 per lead.""",
+TOKEN BUDGET: keep it tight; a full email fits comfortably.""",
 
 "ads_optimizer": """\
 ROLE: Optimize paid ad campaigns using BOTH their own performance AND the site's SEO signals. Recommend concrete bid / budget / keyword / creative changes. Code has already pulled the campaign metrics and the SEO data; you decide what to change and why.

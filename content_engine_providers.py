@@ -98,7 +98,7 @@ _MAX_TOKENS = {
     "analytics_funnel": 400,
     "optimizer": 700,
     "segmenter": 400,
-    "outreach_copy": 400,   # per lead; one lead per call
+    "outreach_copy": 800,   # per lead; room for a full email (incl. German)
     "reply_responder": 500,  # one inbound reply per call
 }
 
@@ -396,7 +396,7 @@ if __name__ == "__main__":
         "content_producer_image": 300,
         "lead_qualifier": max(200, 60 * 2 + 100),
         "qa_compliance": 600,
-        "outreach_copy": 400,
+        "outreach_copy": 800,
     }
     for skill, expected in checks.items():
         spec = build_prompt(skill, sample_job)
