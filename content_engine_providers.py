@@ -100,6 +100,7 @@ _MAX_TOKENS = {
     "segmenter": 400,
     "outreach_copy": 800,   # per lead; room for a full email (incl. German)
     "media_buyer": 1200,    # drafts a full Google Ads campaign + rationale
+    "media_chat": 1500,     # discuss + return a possibly-revised campaign
     "reply_responder": 500,  # one inbound reply per call
 }
 

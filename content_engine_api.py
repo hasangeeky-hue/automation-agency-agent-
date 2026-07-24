@@ -303,6 +303,71 @@ def api_disconnect(keys) -> dict:
     return {"cleared": cleared, "status": C.status()}
 
 
+def api_media_chat(job_id, message):
+    """Discuss a drafted campaign with the media buyer; it answers and may revise
+    the draft in place. Returns {'reply', 'changed'}."""
+    store = get_store()
+    try:
+        job = store.get(job_id)
+    except Exception:
+        return {"error": "campaign not found"}
+    p = job.get("payload", {}) or {}
+    campaign = p.get("media_buyer") or {}
+    if not campaign:
+        return {"error": "no drafted campaign on this job"}
+    history = p.get("media_chat_history") or []
+    try:
+        from content_engine_providers import build_prompt, call_provider
+        spec = build_prompt("media_chat", {"job_id": job_id, "brand": job.get("brand", {}),
+            "payload": {"campaign": campaign, "message": message or "", "history": history[-10:]}})
+        data = (call_provider(orch.FRONTIER_MODEL, spec).data) or {}
+    except Exception as e:
+        return {"error": f"agent error: {str(e)[:120]}"}
+    reply = data.get("reply") or "(no reply)"
+    changed = (bool(data.get("changed")) and isinstance(data.get("campaign"), dict)
+               and data["campaign"].get("campaign_name"))
+    if changed:
+        p["media_buyer"] = data["campaign"]
+    p["media_chat_history"] = (history + [{"role": "user", "text": message or ""},
+                                          {"role": "agent", "text": reply}])[-20:]
+    job["payload"] = p
+    try:
+        store.save(job)
+    except Exception:
+        pass
+    return {"reply": reply, "changed": bool(changed)}
+
+
+def api_media_activate(job_id):
+    """1-click activate: push an APPROVED drafted campaign live into Google Ads."""
+    store = get_store()
+    try:
+        job = store.get(job_id)
+    except Exception:
+        return {"ok": False, "error": "campaign not found"}
+    if job.get("status") == "AWAITING_APPROVAL":
+        return {"ok": False, "error": "Approve the campaign first, then activate."}
+    p = job.get("payload", {}) or {}
+    draft = p.get("media_buyer") or {}
+    if not draft:
+        return {"ok": False, "error": "no drafted campaign"}
+    import content_engine_connectors as C
+    ga = C.GoogleAds()
+    if not ga.available():
+        return {"ok": False, "error": "Connect Google Ads first (on the System Map page)."}
+    landing = (p.get("config", {}) or {}).get("landing_url", "")
+    res = ga.create_campaign(draft, landing)
+    if res.get("ok"):
+        job["status"] = "campaign_live"
+        p["campaign_ref"] = res.get("campaign")
+        job["payload"] = p
+        try:
+            store.save(job)
+        except Exception:
+            pass
+    return res
+
+
 def api_schedule_run(force: bool = False) -> dict:
     """Create today's production batch (cold-email-first). Call from an n8n daily
     cron. Idempotent per day unless force=True."""

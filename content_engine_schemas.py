@@ -594,6 +594,18 @@ MEDIA_BUYER = {
 }
 
 
+MEDIA_CHAT = {
+    "type": "object",
+    "required": ["reply", "changed", "campaign"],
+    "properties": {
+        "reply": {"type": "string"},
+        "changed": {"type": "boolean"},
+        "campaign": {"type": "object"},
+    },
+    "additionalProperties": False,
+}
+
+
 # ---------------------------------------------------------------------------
 # Validator wrapper: .validate(obj) -> (ok: bool, errors: list[str])
 # Accepts either the skill schema OR the SECTION 6 error object.
@@ -652,6 +664,7 @@ SCHEMAS = {
     "outreach_copy":           Schema("outreach_copy", OUTREACH_COPY),
     "ads_optimizer":           Schema("ads_optimizer", ADS_OPTIMIZER),
     "media_buyer":             Schema("media_buyer", MEDIA_BUYER),
+    "media_chat":              Schema("media_chat", MEDIA_CHAT),
     "reply_responder":         Schema("reply_responder", REPLY_RESPONDER),
 }
 

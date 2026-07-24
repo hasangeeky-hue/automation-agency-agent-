@@ -556,7 +556,7 @@ def _media_campaigns(jobs):
     return out
 
 
-def _media_card(jid, mb, status):
+def _media_card(jid, mb, status, ads_on=False, history=None):
     ags = mb.get("ad_groups", []) or []
     themes = " · ".join(a.get("theme", "") for a in ags[:6])
     kws, heads = [], []
@@ -566,10 +566,35 @@ def _media_card(jid, mb, status):
     checks = "".join(f"<div class='fe'><span class='mut'>◆ {_esc(x)}</span></div>"
                      for x in (mb.get("human_should_check") or [])[:5])
     approved = status not in ("AWAITING_APPROVAL", "drafted", None)
-    action = (f"<span class='pill p-live'>✓ approved</span>" if approved
-              else f"<button class='sbtn' onclick=\"approve('{_esc(jid)}')\">✓ Approve campaign</button>")
+    live = status == "campaign_live"
+    # action button: draft -> Approve ; approved+ads -> Activate ; approved no-ads -> guidance ; live -> pill
+    if live:
+        action = "<span class='pill p-live'>🚀 live in Google Ads</span>"
+    elif not approved:
+        action = f"<button class='sbtn' onclick=\"approve('{_esc(jid)}')\">✓ Approve campaign</button>"
+    elif ads_on:
+        action = (f"<span class='pill p-live'>✓ approved</span>"
+                  f"<button class='sbtn' onclick=\"activateCampaign('{_esc(jid)}')\">🚀 Activate campaign (go live)</button>")
+    else:
+        action = (f"<span class='pill p-live'>✓ approved</span>"
+                  f"<span class='dim' style='margin-left:8px'>Connect Google Ads (System Map) to activate</span>")
     risks = (f"<div class='dim' style='margin-top:8px'>⚠ Risks</div>"
              f"<div style='margin-top:4px'>{_esc(mb.get('risks',''))}</div>") if mb.get("risks") else ""
+    # chat log (hidden until the user opens it)
+    log = ""
+    for h in (history or [])[-8:]:
+        who = "You" if h.get("role") == "user" else "Agent"
+        log += (f"<div class='fe'><span class='tm' style='min-width:44px'>{who}</span>"
+                f"<span class='mut'>{_esc(h.get('text',''))}</span></div>")
+    chat = (
+        f"<div class='mchat' id='mchat-{_esc(jid)}' style='display:none;margin-top:12px;"
+        "border-top:1px solid rgba(255,255,255,.08);padding-top:12px'>"
+        f"<div class='dim'>💬 Talk to the media buyer — ask why, or request changes (budget, keywords, headlines, locations)</div>"
+        f"<div class='mlog' id='mlog-{_esc(jid)}' style='margin-top:8px;max-height:240px;overflow:auto'>{log}</div>"
+        "<div class='ctrl' style='margin-top:8px'>"
+        f"<input id='min-{_esc(jid)}' placeholder='e.g. lower the daily budget to €10 and add Munich' "
+        "style='flex:1;min-width:220px' onkeydown=\"if(event.key==='Enter')mediaSend('" + _esc(jid) + "')\">"
+        f"<button class='sbtn' onclick=\"mediaSend('{_esc(jid)}')\">Send</button></div></div>")
     return (
         "<div class='card full' style='margin-bottom:12px'>"
         f"<p class='ct'>🎯 {_esc(mb.get('campaign_name','Campaign'))}</p>"
@@ -588,7 +613,8 @@ def _media_card(jid, mb, status):
         f"{_esc(mb.get('estimated_leads_range',''))}</div></div></div>"
         + (f"<div style='margin-top:10px'><div class='dim'>Check before you approve:</div>{checks}</div>" if checks else "")
         + "<div class='ctrl' style='margin-top:12px'>" + action
-        + f"<button class='cbtn' onclick=\"mediaChat('{_esc(jid)}')\">💬 Discuss / request changes</button></div></div>")
+        + f"<button class='cbtn' onclick=\"mediaChat('{_esc(jid)}')\">💬 Discuss / request changes</button></div>"
+        + chat + "</div>")
 
 
 def _media_page(jobs, st):
@@ -596,15 +622,20 @@ def _media_page(jobs, st):
     ads_on = bool(st.get("ads_api"))
     total = sum(float(mb.get("monthly_budget") or 0) for _, mb in drafts)
     waiting = sum(1 for j, _ in drafts if j.get("status") == "AWAITING_APPROVAL")
+    live = sum(1 for j, _ in drafts if j.get("status") == "campaign_live")
     master = _master("🎯", "Media buying — at a glance",
         "AI-drafted Google Ads campaigns from your creatives. Nothing spends until you approve.",
         [("Drafts", len(drafts), "#EDF1FB"), ("Waiting you", waiting, "#F5B14C"),
+         ("Live", live, "#3FD98B"),
          ("Budget drafted", f"${total:,.0f}/mo", "#8B7CFF"),
          ("Google Ads", "live" if ads_on else "not connected", "#3FD98B" if ads_on else "#F5B14C")],
         _empty("Drafted campaigns show below — read the reasoning, then approve.") if drafts
         else _empty("No campaigns yet."))
     if drafts:
-        cards = "".join(_media_card(j.get("job_id"), mb, j.get("status")) for j, mb in drafts)
+        cards = "".join(
+            _media_card(j.get("job_id"), mb, j.get("status"), ads_on,
+                        (j.get("payload", {}) or {}).get("media_chat_history"))
+            for j, mb in drafts)
     else:
         cards = ("<div class='card full'><p class='ct'>No campaigns drafted yet</p>"
                  "<p class='cc'>Once your image agent produces creatives, the media buyer drafts a Google Ads "
@@ -1331,7 +1362,17 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "alert('Disconnected — the box is editable again.');location.reload();}"
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "async function approve(id){await act('/jobs/'+id+'/approve');}"
-              "function mediaChat(id){alert('Chat with the media buyer opens here next. For now: read the reasoning, then Approve — or leave it as a draft.');}"
+              "function mediaChat(id){var c=document.getElementById('mchat-'+id);if(c){c.style.display=(c.style.display==='none'?'block':'none');if(c.style.display==='block'){var i=document.getElementById('min-'+id);if(i)i.focus();}}}"
+              "async function mediaSend(id){var el=document.getElementById('min-'+id),log=document.getElementById('mlog-'+id);if(!el||!log)return;var m=el.value.trim();if(!m)return;"
+              "log.innerHTML+=\"<div class='fe'><span class='tm' style='min-width:44px'>You</span><span class='mut'>\"+m.replace(/</g,'&lt;')+\"</span></div>\";el.value='';"
+              "var wid='w'+Date.now();log.innerHTML+=\"<div class='fe' id='\"+wid+\"'><span class='tm' style='min-width:44px'>Agent</span><span class='dim'>thinking…</span></div>\";log.scrollTop=log.scrollHeight;"
+              "try{var r=await fetch('/media/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:id,message:m})});var j=await r.json();"
+              "var w=document.getElementById(wid);var t=(j.reply||j.error||'(no reply)').replace(/</g,'&lt;');w.innerHTML=\"<span class='tm' style='min-width:44px'>Agent</span><span class='mut'>\"+t+\"</span>\";log.scrollTop=log.scrollHeight;"
+              "if(j.changed){setTimeout(function(){location.reload();},1000);}}catch(e){var w2=document.getElementById(wid);if(w2)w2.innerHTML=\"<span class='mut'>Error: \"+e+\"</span>\";}}"
+              "async function activateCampaign(id){if(!confirm('Activate this campaign in Google Ads? It will start spending your daily budget once Google approves it.'))return;"
+              "try{var r=await fetch('/media/activate/'+id,{method:'POST'});var j=await r.json();"
+              "if(j.ok){alert('🚀 Campaign activated: '+(j.detail||'live in Google Ads'));location.reload();}else{alert('Could not activate: '+(j.error||j.detail||'unknown error'));}}"
+              "catch(e){alert('Activate failed: '+e);}}"
               "async function approveAll(ids){var a=ids.split(',');for(var i=0;i<a.length;i++){try{await fetch('/jobs/'+a[i]+'/approve',{method:'POST'});}catch(e){}}location.reload();}"
               "async function runSkill(){var sk=document.getElementById('sk').value,out=document.getElementById('out'),inp=document.getElementById('inp').value;"
               "out.textContent='Running '+sk+'…';try{var b=JSON.parse(inp||'{}');}catch(e){out.textContent='That input is not valid JSON.';return;}"

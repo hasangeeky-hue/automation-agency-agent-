@@ -69,6 +69,7 @@ ROUTES = {
     "outreach_copy":      {"engine": CHEAP_MODEL, "fallback": CHEAP_ALT},
     "ads_optimizer":      {"engine": FRONTIER_MODEL, "fallback": FRONTIER_ALT},  # money = judgment
     "media_buyer":        {"engine": FRONTIER_MODEL, "fallback": FRONTIER_ALT},  # drafts paid campaigns = judgment
+    "media_chat":         {"engine": FRONTIER_MODEL, "fallback": FRONTIER_ALT},  # discuss + revise the draft
     "reply_responder":    {"engine": CHEAP_MODEL, "fallback": FRONTIER_ALT},  # customer-facing
     "orchestrator":       {"engine": "code"},
 }

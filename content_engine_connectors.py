@@ -1476,6 +1476,67 @@ class GoogleAds:
                 "conversions": round(conv, 1), "cpa": round(spend / conv, 2) if conv else 0,
                 "campaigns": camps[:6]}
 
+    def create_campaign(self, draft: dict, landing_url: str = "") -> dict:
+        """1-click activate: launch a drafted campaign into Google Ads —
+        budget -> campaign -> ad group -> responsive search ad -> keywords.
+        Returns {'ok', 'detail'}. Requires an APPROVED developer token; until
+        Google approves it the API returns an error (surfaced, nothing charged)."""
+        if not self.available():
+            return {"ok": False, "error": "Google Ads not connected"}
+        tok = self._access_token()
+        if not tok:
+            return {"ok": False, "error": "could not get a Google access token"}
+        H = {"Authorization": f"Bearer {tok}", "developer-token": self.dev}
+        base = f"https://googleads.googleapis.com/v17/customers/{self.cid}"
+
+        def mut(resource, ops):
+            return _post_json(f"{base}/{resource}:mutate", {"operations": ops}, headers=H)
+
+        def rn(res):
+            return (((res or {}).get("results") or [{}])[0]).get("resourceName")
+
+        try:
+            name = (draft.get("campaign_name") or "Anthropos campaign")[:120]
+            daily = float(draft.get("daily_budget") or 10)
+            budget = mut("campaignBudgets", [{"create": {
+                "name": name + " budget", "amountMicros": int(daily * 1_000_000),
+                "deliveryMethod": "STANDARD"}}])
+            b_rn = rn(budget)
+            if not b_rn:
+                return {"ok": False, "error": f"budget step failed: {str(budget)[:200]}"}
+            camp = mut("campaigns", [{"create": {
+                "name": name, "status": "ENABLED", "advertisingChannelType": "SEARCH",
+                "campaignBudget": b_rn, "manualCpc": {},
+                "networkSettings": {"targetGoogleSearch": True, "targetSearchNetwork": True,
+                                    "targetContentNetwork": False}}}])
+            c_rn = rn(camp)
+            if not c_rn:
+                return {"ok": False, "error": f"campaign step failed: {str(camp)[:200]}"}
+            made = 0
+            for g in (draft.get("ad_groups") or [])[:5]:
+                ag = mut("adGroups", [{"create": {
+                    "name": (g.get("theme") or "Ad group")[:120], "campaign": c_rn,
+                    "status": "ENABLED", "type": "SEARCH_STANDARD", "cpcBidMicros": 1_000_000}}])
+                ag_rn = rn(ag)
+                if not ag_rn:
+                    continue
+                heads = [{"text": h[:30]} for h in (g.get("headlines") or [])[:15] if h]
+                descs = [{"text": d[:90]} for d in (g.get("descriptions") or [])[:4] if d]
+                if len(heads) >= 3 and len(descs) >= 2:
+                    mut("adGroupAds", [{"create": {
+                        "adGroup": ag_rn, "status": "ENABLED",
+                        "ad": {"responsiveSearchAd": {"headlines": heads, "descriptions": descs},
+                               "finalUrls": [landing_url or "https://anthropos-automation.com/"]}}}])
+                kw = [{"create": {"adGroup": ag_rn, "status": "ENABLED",
+                                  "keyword": {"text": k[:80], "matchType": "PHRASE"}}}
+                      for k in (g.get("keywords") or [])[:20] if k]
+                if kw:
+                    mut("adGroupCriteria", kw)
+                made += 1
+            return {"ok": True, "detail": f"campaign live with {made} ad group(s)", "campaign": c_rn}
+        except Exception as e:  # never crash the dashboard
+            return {"ok": False, "error": str(e)[:200]}
+
 
 # ---------------------------------------------------------------------------
 # Wiring + status
