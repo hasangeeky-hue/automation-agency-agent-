@@ -1537,6 +1537,27 @@ class GoogleAds:
         except Exception as e:  # never crash the dashboard
             return {"ok": False, "error": str(e)[:200]}
 
+    def pause_campaign(self, campaign_ref: str) -> dict:
+        """Abort a live campaign: set it to PAUSED in Google Ads (stops spend)."""
+        if not campaign_ref:
+            return {"ok": False, "error": "no campaign reference stored"}
+        if not self.available():
+            return {"ok": False, "error": "Google Ads not connected"}
+        tok = self._access_token()
+        if not tok:
+            return {"ok": False, "error": "could not get a Google access token"}
+        H = {"Authorization": f"Bearer {tok}", "developer-token": self.dev}
+        url = f"https://googleads.googleapis.com/v17/customers/{self.cid}/campaigns:mutate"
+        try:
+            r = _post_json(url, {"operations": [{
+                "update": {"resourceName": campaign_ref, "status": "PAUSED"},
+                "updateMask": "status"}]}, headers=H)
+            if r and r.get("results"):
+                return {"ok": True, "detail": "campaign paused in Google Ads"}
+            return {"ok": False, "error": f"pause failed: {str(r)[:180]}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200]}
+
 
 # ---------------------------------------------------------------------------
 # Wiring + status

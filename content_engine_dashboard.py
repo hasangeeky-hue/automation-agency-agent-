@@ -556,7 +556,7 @@ def _media_campaigns(jobs):
     return out
 
 
-def _media_card(jid, mb, status, ads_on=False, history=None):
+def _media_card(jid, mb, approved=False, live=False, ads_on=False, history=None):
     ags = mb.get("ad_groups", []) or []
     themes = " · ".join(a.get("theme", "") for a in ags[:6])
     kws, heads = [], []
@@ -565,19 +565,21 @@ def _media_card(jid, mb, status, ads_on=False, history=None):
         heads += (a.get("headlines") or [])
     checks = "".join(f"<div class='fe'><span class='mut'>◆ {_esc(x)}</span></div>"
                      for x in (mb.get("human_should_check") or [])[:5])
-    approved = status not in ("AWAITING_APPROVAL", "drafted", None)
-    live = status == "campaign_live"
+    # abort is always available: pause a live campaign, or discard a draft
+    abort = (f"<button class='cbtn warn' onclick=\"abortCampaign('{_esc(jid)}',{'true' if live else 'false'})\">"
+             + ("⛔ Abort — pause &amp; stop spend" if live else "🗑 Discard draft") + "</button>")
     # action button: draft -> Approve ; approved+ads -> Activate ; approved no-ads -> guidance ; live -> pill
     if live:
         action = "<span class='pill p-live'>🚀 live in Google Ads</span>"
     elif not approved:
-        action = f"<button class='sbtn' onclick=\"approve('{_esc(jid)}')\">✓ Approve campaign</button>"
+        action = (f"<button class='sbtn' onclick=\"approve('{_esc(jid)}')\">✓ Approve campaign</button>"
+                  f"<button class='sbtn' onclick=\"activateCampaign('{_esc(jid)}')\">🚀 Approve &amp; deploy in 1 click</button>")
     elif ads_on:
         action = (f"<span class='pill p-live'>✓ approved</span>"
                   f"<button class='sbtn' onclick=\"activateCampaign('{_esc(jid)}')\">🚀 Activate campaign (go live)</button>")
     else:
         action = (f"<span class='pill p-live'>✓ approved</span>"
-                  f"<span class='dim' style='margin-left:8px'>Connect Google Ads (System Map) to activate</span>")
+                  f"<button class='sbtn' onclick=\"activateCampaign('{_esc(jid)}')\">🚀 Activate (connect Google Ads first)</button>")
     risks = (f"<div class='dim' style='margin-top:8px'>⚠ Risks</div>"
              f"<div style='margin-top:4px'>{_esc(mb.get('risks',''))}</div>") if mb.get("risks") else ""
     # chat log (hidden until the user opens it)
@@ -613,41 +615,64 @@ def _media_card(jid, mb, status, ads_on=False, history=None):
         f"{_esc(mb.get('estimated_leads_range',''))}</div></div></div>"
         + (f"<div style='margin-top:10px'><div class='dim'>Check before you approve:</div>{checks}</div>" if checks else "")
         + "<div class='ctrl' style='margin-top:12px'>" + action
-        + f"<button class='cbtn' onclick=\"mediaChat('{_esc(jid)}')\">💬 Discuss / request changes</button></div>"
+        + f"<button class='cbtn' onclick=\"mediaChat('{_esc(jid)}')\">💬 Discuss / request changes</button>"
+        + abort + "</div>"
         + chat + "</div>")
 
 
+_ADS_KEYS = ("GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN",
+             "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET")
+
+
+def _ads_connect_card(ads_on):
+    """Connect your Google Ads account right here — no SSH, no other page."""
+    if ads_on:
+        return ("<div class='card full' style='margin-bottom:12px'>"
+                "<p class='ct'>🟢 Google Ads — connected</p>"
+                "<p class='cc'>Real spend, clicks and CPA flow in, and approved campaigns can be deployed with one click. "
+                "(Google must have approved your developer token for live campaign creation.)</p>"
+                f"<div class='ctrl'><button class='cbtn warn' onclick=\"disconnectWire('{','.join(_ADS_KEYS)}')\">Disconnect</button></div></div>")
+    fields = ""
+    for kk in _ADS_KEYS:
+        typ = "password" if any(x in kk for x in ("TOKEN", "SECRET", "REFRESH")) else "text"
+        pre = "🔑 " if typ == "password" else ""
+        fields += f"<input name='{kk}' type='{typ}' placeholder='{pre}{_esc(_FIELD_HINT.get(kk, kk))}'>"
+    return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>🔌 Connect your Google Ads account</p>"
+            "<p class='cc'>Paste the 5 values below and click Connect — it turns green in ~15s. You need a "
+            "<b>developer token</b> (Google Ads → API Center), your <b>customer ID</b> (10 digits, top-right of Google Ads), "
+            "and an <b>OAuth client id + secret + refresh token</b>. Nothing spends until you deploy a campaign.</p>"
+            f"<form class='cform' onsubmit='return saveConnect(this)'>{fields}"
+            "<button class='sbtn' type='submit'>Connect Google Ads · turns green in ~15s</button></form></div>")
+
+
 def _media_page(jobs, st):
-    drafts = _media_campaigns(jobs)
+    all_drafts = _media_campaigns(jobs)
+    drafts = [(j, mb) for j, mb in all_drafts if j.get("status") != "aborted"]
     ads_on = bool(st.get("ads_api"))
     total = sum(float(mb.get("monthly_budget") or 0) for _, mb in drafts)
-    waiting = sum(1 for j, _ in drafts if j.get("status") == "AWAITING_APPROVAL")
+    waiting = sum(1 for j, _ in drafts if not j.get("approved") and j.get("status") != "campaign_live")
     live = sum(1 for j, _ in drafts if j.get("status") == "campaign_live")
     master = _master("🎯", "Media buying — at a glance",
-        "AI-drafted Google Ads campaigns from your creatives. Nothing spends until you approve.",
+        "AI-drafted Google Ads campaigns from your creatives. Nothing spends until you deploy.",
         [("Drafts", len(drafts), "#EDF1FB"), ("Waiting you", waiting, "#F5B14C"),
          ("Live", live, "#3FD98B"),
          ("Budget drafted", f"${total:,.0f}/mo", "#8B7CFF"),
          ("Google Ads", "live" if ads_on else "not connected", "#3FD98B" if ads_on else "#F5B14C")],
-        _empty("Drafted campaigns show below — read the reasoning, then approve.") if drafts
-        else _empty("No campaigns yet."))
+        "<div class='ctrl' style='margin-top:8px'>"
+        "<button class='sbtn' id='draftbtn' onclick='draftCampaign()'>✍️ Draft a campaign now</button>"
+        "<span class='dim' style='align-self:center'>Runs the media buyer on your ICP — a full campaign appears below in ~15s.</span></div>")
     if drafts:
         cards = "".join(
-            _media_card(j.get("job_id"), mb, j.get("status"), ads_on,
+            _media_card(j.get("job_id"), mb,
+                        bool(j.get("approved")), j.get("status") == "campaign_live", ads_on,
                         (j.get("payload", {}) or {}).get("media_chat_history"))
             for j, mb in drafts)
     else:
-        cards = ("<div class='card full'><p class='ct'>No campaigns drafted yet</p>"
-                 "<p class='cc'>Once your image agent produces creatives, the media buyer drafts a Google Ads "
-                 "campaign here — with its full reasoning — for you to approve. Connect Google Ads below and give "
-                 "it creatives to start.</p></div>")
-    connect = ("<div class='card full'><p class='ct'>Google Ads connection</p>"
-               + ("<p class='cc'>🟢 Connected — real spend, clicks and CPA flow in, and approved campaigns can go live.</p>"
-                  if ads_on else
-                  "<p class='cc'>🟠 Not connected. To push approved campaigns live and see performance, connect "
-                  "Google Ads on the <b>System Map</b> page (developer token · customer id · OAuth). Google must "
-                  "approve your developer token first.</p>") + "</div>")
-    return master + cards + connect
+        cards = ("<div class='card full'><p class='ct'>No campaigns yet</p>"
+                 "<p class='cc'>Click <b>✍️ Draft a campaign now</b> above and the media buyer will draft a full "
+                 "Google Ads campaign — with its reasoning — for you to review, chat about, and deploy in one click. "
+                 "(It also drafts automatically whenever your image agents produce new creatives.)</p></div>")
+    return master + _ads_connect_card(ads_on) + cards
 
 
 # ---------------------------------------------------------------------------
@@ -1369,10 +1394,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/media/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:id,message:m})});var j=await r.json();"
               "var w=document.getElementById(wid);var t=(j.reply||j.error||'(no reply)').replace(/</g,'&lt;');w.innerHTML=\"<span class='tm' style='min-width:44px'>Agent</span><span class='mut'>\"+t+\"</span>\";log.scrollTop=log.scrollHeight;"
               "if(j.changed){setTimeout(function(){location.reload();},1000);}}catch(e){var w2=document.getElementById(wid);if(w2)w2.innerHTML=\"<span class='mut'>Error: \"+e+\"</span>\";}}"
-              "async function activateCampaign(id){if(!confirm('Activate this campaign in Google Ads? It will start spending your daily budget once Google approves it.'))return;"
-              "try{var r=await fetch('/media/activate/'+id,{method:'POST'});var j=await r.json();"
-              "if(j.ok){alert('🚀 Campaign activated: '+(j.detail||'live in Google Ads'));location.reload();}else{alert('Could not activate: '+(j.error||j.detail||'unknown error'));}}"
-              "catch(e){alert('Activate failed: '+e);}}"
+              "async function activateCampaign(id){if(!confirm('Deploy this campaign to Google Ads now? This approves it and starts spending your daily budget (once Google has approved your developer token).'))return;"
+              "try{await fetch('/jobs/'+id+'/approve',{method:'POST'});var r=await fetch('/media/activate/'+id,{method:'POST'});var j=await r.json();"
+              "if(j.ok){alert('🚀 Campaign deployed: '+(j.detail||'live in Google Ads'));location.reload();}else{alert('Could not deploy: '+(j.error||j.detail||'unknown error'));}}"
+              "catch(e){alert('Deploy failed: '+e);}}"
+              "async function abortCampaign(id,live){if(!confirm(live?'Abort this live campaign? It will be paused in Google Ads and stop spending.':'Discard this drafted campaign?'))return;"
+              "try{var r=await fetch('/media/abort/'+id,{method:'POST'});var j=await r.json();"
+              "if(j.ok){alert(j.detail||'Done.');location.reload();}else{alert('Could not abort: '+(j.error||j.detail||'unknown error'));}}"
+              "catch(e){alert('Abort failed: '+e);}}"
+              "async function draftCampaign(){var b=document.getElementById('draftbtn');if(b){b.disabled=true;b.textContent='Drafting… ~15s';}"
+              "try{var r=await fetch('/media/draft',{method:'POST'});var j=await r.json();"
+              "if(j.ok){alert('Drafted: '+(j.campaign||'campaign')+'. Scroll down to review it.');location.reload();}else{alert('Could not draft: '+(j.error||'unknown error'));if(b){b.disabled=false;b.textContent='✍️ Draft a campaign now';}}}"
+              "catch(e){alert('Draft failed: '+e);if(b){b.disabled=false;b.textContent='✍️ Draft a campaign now';}}}"
               "async function approveAll(ids){var a=ids.split(',');for(var i=0;i<a.length;i++){try{await fetch('/jobs/'+a[i]+'/approve',{method:'POST'});}catch(e){}}location.reload();}"
               "async function runSkill(){var sk=document.getElementById('sk').value,out=document.getElementById('out'),inp=document.getElementById('inp').value;"
               "out.textContent='Running '+sk+'…';try{var b=JSON.parse(inp||'{}');}catch(e){out.textContent='That input is not valid JSON.';return;}"

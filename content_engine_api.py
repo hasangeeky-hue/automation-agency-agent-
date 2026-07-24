@@ -345,8 +345,10 @@ def api_media_activate(job_id):
         job = store.get(job_id)
     except Exception:
         return {"ok": False, "error": "campaign not found"}
-    if job.get("status") == "AWAITING_APPROVAL":
+    if not job.get("approved"):
         return {"ok": False, "error": "Approve the campaign first, then activate."}
+    if job.get("status") == "campaign_live":
+        return {"ok": False, "error": "This campaign is already live."}
     p = job.get("payload", {}) or {}
     draft = p.get("media_buyer") or {}
     if not draft:
@@ -354,7 +356,7 @@ def api_media_activate(job_id):
     import content_engine_connectors as C
     ga = C.GoogleAds()
     if not ga.available():
-        return {"ok": False, "error": "Connect Google Ads first (on the System Map page)."}
+        return {"ok": False, "error": "Connect Google Ads first — use the form on this page."}
     landing = (p.get("config", {}) or {}).get("landing_url", "")
     res = ga.create_campaign(draft, landing)
     if res.get("ok"):
@@ -366,6 +368,79 @@ def api_media_activate(job_id):
         except Exception:
             pass
     return res
+
+
+def api_media_abort(job_id):
+    """Abort: pause a LIVE campaign in Google Ads, or discard a draft/approved one."""
+    store = get_store()
+    try:
+        job = store.get(job_id)
+    except Exception:
+        return {"ok": False, "error": "campaign not found"}
+    p = job.get("payload", {}) or {}
+    if job.get("status") == "campaign_live":
+        import content_engine_connectors as C
+        res = C.GoogleAds().pause_campaign(p.get("campaign_ref", ""))
+        if res.get("ok"):
+            job["status"] = "aborted"
+            try:
+                store.save(job)
+            except Exception:
+                pass
+        return res
+    # draft / approved but not live -> just discard it
+    job["status"] = "aborted"
+    job["approved"] = False
+    try:
+        store.save(job)
+    except Exception:
+        pass
+    return {"ok": True, "detail": "campaign discarded"}
+
+
+def api_media_draft():
+    """One-click: run the media buyer now on your ICP (+ any recent creatives) and
+    save the drafted campaign so it shows as a card with every control."""
+    store = get_store()
+    creatives = []
+    try:
+        if hasattr(store, "list_jobs"):
+            for j in store.list_jobs():
+                pl = j.get("payload", {}) or {}
+                c = pl.get("creatives") or pl.get("image") or pl.get("image_brief")
+                if c:
+                    creatives.append(c if isinstance(c, str) else str(c)[:220])
+                if len(creatives) >= 4:
+                    break
+    except Exception:
+        pass
+    payload = {
+        "offer": "AI & automation systems that save small businesses 10+ hours a week",
+        "goal": "leads", "monthly_budget": 200,
+        "landing_url": "https://anthropos-automation.com/",
+        "icp": {"verticals": ["doctors", "lawyers", "Shopify stores", "tax consultants",
+                              "content creators", "marketing managers"],
+                "countries": ["USA", "UK", "Germany", "Switzerland", "Canada"],
+                "deal_size": "$2,000-$10,000"},
+        "creatives": creatives, "past_learnings": []}
+    try:
+        from content_engine_providers import build_prompt, call_provider
+        spec = build_prompt("media_buyer", {"payload": payload, "brand": {}})
+        model = orch.ROUTES.get("media_buyer", {}).get("engine") or orch.FRONTIER_MODEL
+        draft = (call_provider(model, spec).data) or {}
+    except Exception as e:
+        return {"ok": False, "error": f"agent error: {str(e)[:140]}"}
+    if not draft.get("campaign_name"):
+        return {"ok": False, "error": "the agent did not return a campaign — try again"}
+    jid = f"media_{abs(hash(str(draft))) % 10_000_000}"
+    job = {"job_id": jid, "type": "media_campaign", "status": "AWAITING_APPROVAL",
+           "approved": False, "brand": {},
+           "payload": {"media_buyer": draft, "config": {"landing_url": payload["landing_url"]}}}
+    try:
+        store.save(job)
+    except Exception as e:
+        return {"ok": False, "error": f"could not save: {str(e)[:100]}"}
+    return {"ok": True, "job_id": jid, "campaign": draft.get("campaign_name")}
 
 
 def api_schedule_run(force: bool = False) -> dict:
@@ -692,6 +767,26 @@ def build_app():
             data = {}
         keys = data.get("keys") if isinstance(data, dict) else None
         return api_disconnect(keys)
+
+    @app.post("/media/draft")
+    def media_draft():
+        return api_media_draft()
+
+    @app.post("/media/chat")
+    async def media_chat(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_media_chat(data.get("job_id"), data.get("message", ""))
+
+    @app.post("/media/activate/{job_id}")
+    def media_activate(job_id: str):
+        return api_media_activate(job_id)
+
+    @app.post("/media/abort/{job_id}")
+    def media_abort(job_id: str):
+        return api_media_abort(job_id)
 
     return app
 
