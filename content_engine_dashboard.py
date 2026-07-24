@@ -108,6 +108,19 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .bparrow{display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:16px;flex:0 0 14px}
 .bplegend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--mut);margin-top:10px}
 @media(max-width:860px){.bpwrap{flex-direction:column}.bparrow{transform:rotate(90deg);align-self:center;flex-basis:auto}}
+.dfp{margin-top:4px}.dfp+.dfp{margin-top:18px}
+.dfh{font-size:12.5px;font-weight:700;margin-bottom:9px}.dfh .dim{font-weight:400}
+.dfrow{display:flex;align-items:center;overflow-x:auto;padding:2px 0 6px}
+.dfstage{flex:1 1 0;min-width:106px;background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:10px 8px;text-align:center}
+.dfstage.hot{border-color:rgba(47,227,210,.55)}
+.dfstage .i{font-size:18px}
+.dfstage .n{font-size:11px;color:var(--mut);margin-top:3px}
+.dfstage .v{font-size:21px;font-weight:750;margin-top:2px;line-height:1}
+.dfstage .b{font-size:9px;color:var(--dim);margin-top:5px;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 6px;display:inline-block}
+.dfconn{flex:0 0 32px;position:relative;height:2px;margin-top:-8px}
+.dfconn .line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--line2),var(--teal),var(--line2))}
+.dfconn::after{content:'';position:absolute;top:-2px;left:0;width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 7px var(--teal);animation:dfflow 1.7s linear infinite}
+@keyframes dfflow{0%{left:-4px;opacity:0}15%{opacity:1}85%{opacity:1}100%{left:100%;opacity:0}}
 """
 
 
@@ -426,6 +439,32 @@ def _blueprint(st):
               "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#F5B14C;margin-right:5px'></span>Ready — needs its key</span>"
               "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#8B7CFF;margin-right:5px'></span>Always-on engine part</span></div>")
     return ("<div class='bpwrap'>" + "<div class='bparrow'>→</div>".join(cols) + "</div>" + legend)
+
+
+def _dataflow(pl, lead_rows):
+    """Live data-flow map: the two pipelines, stage by stage, with REAL counts and
+    the tool each stage uses. A dot animates along each connector = data moving."""
+    def cell(icon, name, val, tool):
+        hot = " hot" if val else ""
+        return (f"<div class='dfstage{hot}'><div class='i'>{icon}</div><div class='n'>{_esc(name)}</div>"
+                f"<div class='v tnum'>{val}</div><div class='b'>{_esc(tool)}</div></div>")
+    def row(title, sub, stages):
+        cells = []
+        for j, s in enumerate(stages):
+            cells.append(cell(*s))
+            if j < len(stages) - 1:
+                cells.append("<div class='dfconn'><div class='line'></div></div>")
+        return (f"<div class='dfp'><div class='dfh'>{_esc(title)} <span class='dim'>· {_esc(sub)}</span></div>"
+                f"<div class='dfrow'>{''.join(cells)}</div></div>")
+    lr = lead_rows
+    content = [("💡", "Plan", pl[0], "strategist"), ("✍️", "Write", pl[1], "Claude"),
+               ("🔎", "SEO check", pl[2], "SEO agent"), ("✅", "Approve", pl[3], "you"),
+               ("🌐", "Publish", pl[4], "WordPress"), ("📈", "Measure", pl[5], "GA4")]
+    outreach = [("🧲", "Find", lr[0][1], "Prospeo"), ("✔️", "Verify", lr[1][1], "engine"),
+                ("🎯", "Qualify", lr[2][1], "Claude"), ("✉️", "Send", lr[3][1], "contact@"),
+                ("💬", "Reply", lr[4][1], "IMAP"), ("📅", "Booked", lr[5][1], "Cal.com")]
+    return (row("Content pipeline", "idea → written → checked → approved → live → measured", content)
+            + row("Outreach pipeline", "lead → verify → qualify → send → reply → booked", outreach))
 
 
 # ---------------------------------------------------------------------------
@@ -768,8 +807,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     p_map = ("<div class='card full'><p class='ct'>🗺️ System blueprint — every connection in your machine</p>"
              "<p class='cc'>Each card is one API, account or plugin — its icon, what kind of connection it is, one line of what it does, and whether it's live. Read left → right: inputs → brain → Google hub → outputs.</p>"
              + _blueprint(st) + "</div>"
-             "<div class='card full' style='margin-top:12px'><p class='ct'>Live data flow</p>"
-             "<p class='cc'>The same machine as a moving flow — data animates along each connected wire.</p>"
+             "<div class='card full' style='margin-top:12px'><p class='ct'>⚡ Live data flow — your two pipelines, stage by stage</p>"
+             "<p class='cc'>Real counts at every stage, and the tool each one uses. Dots animate along each step — that's data moving through your machine.</p>"
+             + _dataflow(pl, lead_rows) + "</div>"
+             "<div class='card full' style='margin-top:12px'><p class='ct'>Wiring diagram</p>"
+             "<p class='cc'>The physical connections between components (secondary view).</p>"
              + _system_map(st) + "</div>"
              + diag + connect_card)
 
