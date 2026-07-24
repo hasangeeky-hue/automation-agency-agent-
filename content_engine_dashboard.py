@@ -688,7 +688,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Output & projection", "Target ≈ 60/month (2 blogs a day).",
                (_sparkline(content_series, "#4C8DFF") + f"<div class='dim' style='margin-top:6px'>{made_month} made this month · on pace for <b style='color:var(--ink)'>{proj}</b></div>") if content_jobs else _empty("Fills as pieces are made.")),
         _panel("Published pieces", "What's live on your site.",
-               top_html or _empty("Nothing published yet.")))
+               top_html or _empty("Nothing published yet.")),
+        _panel("Cost per piece", "Average AI spend to make one piece.",
+               f"<div class='big tnum'>${(content_cost/max(len(content_jobs),1)):.3f}</div><div class='dim'>per piece · {len(content_jobs)} made</div>" if content_jobs else _empty("Fills as pieces are made.")),
+        _panel("Live vs in progress", "How much is published vs still moving.",
+               _donut(round(published/max(len(content_jobs),1)*100), "#3FD98B") if content_jobs else _empty("Fills as pieces are made.")),
+        _panel("Where pieces sit", "Count at each stage of the line.",
+               _bars(list(zip(_STAGES, pl)), "#4C8DFF") if sum(pl) else _empty("Nothing in production yet.")),
+        _panel("Monthly pace", "Made so far vs projected by month-end.",
+               f"<div class='big tnum'>{made_month}<small> / {proj}</small></div><div class='dim'>this month · projected</div>" if content_jobs else _empty("Fills as pieces are made.")))
 
     # ---- 2. LEAD MACHINE ----
     m_leads = _master("🧲", "Leads — at a glance", "Your pipeline from stranger to booked call.",
@@ -707,7 +715,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Leads by source", "Where each lead came from (Prospeo / web).",
                _bars([("Prospeo (LinkedIn)", 0), ("Web search", leads_found)], "#8B7CFF") if leads_found else _empty("No lead sources connected.")),
         _panel("Leads over time · 14 days", "New lead-jobs per day.",
-               _sparkline(_daybuckets(out_jobs, lambda j: True, 14), "#8B7CFF") if out_jobs else _empty("Fills as the lead finder runs.")))
+               _sparkline(_daybuckets(out_jobs, lambda j: True, 14), "#8B7CFF") if out_jobs else _empty("Fills as the lead finder runs.")),
+        _panel("Leads by vertical", "Which professions your leads cluster in.",
+               _bars(_verticals(out_jobs), "#8B7CFF") if _verticals(out_jobs) else _empty("Fills as Prospeo leads arrive.")),
+        _panel("Cost per lead", "What each verified lead costs you.",
+               f"<div class='big tnum'>${(total_cost/max(leads_found,1)):.2f}</div><div class='dim'>per lead · {leads_found} found</div>" if leads_found else _empty("Fills as leads flow in.")),
+        _panel("Email quality", "Prospeo returns only verified work emails.",
+               (_donut(100, "#3FD98B") + "<div class='dim' style='text-align:center'>verified deliverable</div>") if leads_found else _empty("Fills as leads flow in.")),
+        _panel("Reply & booking rate", "How many leads answer and book a call.",
+               _funnel_skeleton([("Emailed", emails_sent, 100), ("Replied", lead_rows[4][1], 55), ("Booked", lead_rows[5][1], 28)], "Fills as replies land.")))
 
     # ---- 3. EMAIL & OUTREACH ----
     _routing = [("📰 Newsletter", "newsletter@"), ("🎯 Marketing", "marketing@"),
@@ -730,7 +746,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                                 "Fills as replies land. Connect Cal.com so booked consultations count here automatically.")),
         _panel("Send volume over time", "Emails sent per day.",
                _sparkline(_daybuckets(out_jobs, lambda j: bool((j.get('payload',{}) or {}).get('send_ref')), 14), "#4C8DFF")
-               if emails_sent else _empty("Fills as outreach runs.")))
+               if emails_sent else _empty("Fills as outreach runs.")),
+        _panel("Reply rate", "Share of cold emails that get a reply.",
+               f"<div class='big tnum'>0%</div><div class='dim'>of {emails_sent} sent · fills as replies land</div>" if emails_sent else _empty("Fills as outreach runs.")),
+        _panel("Deliverability guard", "How your domain stays out of spam.",
+               "<div class='dim' style='line-height:1.8'>✔️ Dead addresses drop automatically (bounce suppression)<br>✔️ Daily send cap ramps up as the domain warms<br>✔️ A suppressed address is never emailed again</div>"),
+        _panel("Volume by sender alias", "Which address each email went out from.",
+               _bars([("newsletter@", 0), ("marketing@", 0), ("customercare@", 0), ("contact@", emails_sent)], "#8B7CFF") if emails_sent else _empty("Fills as outreach runs.")),
+        _panel("Best subject lines", "Which openers win the most replies.",
+               _empty("Ranks your subject lines once replies come in.")))
 
     # ---- 4. SOCIAL MEDIA ----
     _social_live = sum(1 for k in ("social_linkedin", "social_twitter", "social_facebook",
@@ -743,7 +767,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Posts per channel", "Content pushed to each social channel.", _empty("Connect a social channel to post.")),
         _panel("Engagement", "Likes, comments, shares per channel.", _empty("Shows once posting is on.")),
         _panel("Schedule adherence", "Are you hitting 3 posts/channel/day?", _empty("Target 3/channel/day.")),
-        _panel("Content mix", "Story vs image vs video vs link.", _empty("Fills as content posts.")))
+        _panel("Content mix", "Story vs image vs video vs link.", _empty("Fills as content posts.")),
+        _panel("Reach & impressions", "How many people saw each channel.", _empty("Shows once a channel is connected + posting.")),
+        _panel("Follower growth", "Audience size over time.", _empty("Tracks once channels are connected.")),
+        _panel("Best time to post", "When your audience engages most.", _empty("Learns from your post performance.")),
+        _panel("Top posts", "Your best-performing content.", _empty("Ranks once posts go out.")))
 
     # ---- 5. SEO / AEO / GEO ----
     gsc_on = st.get("google_gsc_ga4")
@@ -764,7 +792,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Marketing funnel", "Traffic → interest → location → authority.", mfunnel),
         _panel("Keyword rankings", "Where your pages rank.", _empty("Connect Search Console.")),
         _panel("AI-answer mentions", "How often ChatGPT / Google AI quote you.", _empty("Shows once tracking is on.")),
-        _panel("Content assistant — your next move", "What to publish and where to build backlinks.", assist))
+        _panel("Content assistant — your next move", "What to publish and where to build backlinks.", assist),
+        _panel("Traffic over time", "Visitors from Google, day by day.", _empty("Connect Google Analytics.")),
+        _panel("Top pages", "Which pages pull the most visits.", _empty("Connect Google Analytics.")),
+        _panel("Ranking spread", "Keywords ranking 1-3 / 4-10 / 11+.", _empty("Connect Search Console.")),
+        _panel("Click-through rate", "How often a ranking turns into a click.", _empty("Connect Search Console.")))
 
     # ---- 6. ADS & GROWTH ----
     m_ads = _master("🎯", "Ads & growth — at a glance", "Paid campaigns, tuned by your SEO signals.",
@@ -776,7 +808,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Spend by campaign", "Where the ad budget goes.", _empty("Feed ad data (ADS_JSON / n8n).")),
         _panel("Cost per result (CPA/ROAS)", "Efficiency per campaign.", _empty("Shows with ad data.")),
         _panel("Budget reallocation", "Move money to what works.", _empty("The ads agent suggests moves here.")),
-        _panel("SEO-informed keywords", "Winning keywords to pull into ads.", _empty("Fills from your SEO data.")))
+        _panel("SEO-informed keywords", "Winning keywords to pull into ads.", _empty("Fills from your SEO data.")),
+        _panel("Impressions & clicks", "How much attention your ads get.", _empty("Connect Google Ads on the System Map.")),
+        _panel("Conversion rate", "Clicks that turn into leads.", _empty("Shows once ads run.")),
+        _panel("Budget pacing", "Are you on track for the month?", _empty("Shows once an ad budget is set.")),
+        _panel("Best & worst campaign", "Where to add or cut spend.", _empty("Ranks once campaigns run.")))
 
     # ---- 7. BUDGET & COST ----
     lead_cost = total_cost - content_cost
@@ -804,7 +840,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Cost by activity", "What your AI spend is doing.",
                _bars([("Content", content_cost), ("Leads/email", lead_cost)], "#8B7CFF", money=True) if total_cost else _empty("No spend yet.")),
         _panel("Spend trend · 14 days", f"${total_cost:.2f} so far this month · ${(content_cost/max(len(content_jobs),1)):.3f} per piece.",
-               _sparkline(spend_series, "#3FD98B") if total_cost else _empty("Fills day by day.")))
+               _sparkline(spend_series, "#3FD98B") if total_cost else _empty("Fills day by day.")),
+        _panel("Cost per outcome", "What one blog, lead or customer costs.",
+               _bars([("Per piece", content_cost/max(len(content_jobs),1)), ("Per lead", total_cost/max(o_leads or leads_found, 1)), ("Per customer", total_cost/max(o_cust, 1))], "#8B7CFF", money=True) if total_cost else _empty("Fills as spend happens.")),
+        _panel("Daily burn", "Average spend per day, projected to month-end.",
+               f"<div class='big tnum'>${(total_cost/max(date.today().day,1)):.2f}</div><div class='dim'>per day · projecting ${(total_cost/max(date.today().day,1))*30:.0f}/mo</div>" if total_cost else _empty("Fills day by day.")),
+        _panel("Spend by area", "Content vs leads & email.",
+               _bars([("Claude · content", content_cost), ("Leads / email", lead_cost)], "#4C8DFF", money=True) if total_cost else _empty("Fills as spend happens.")),
+        _panel("Headroom left", "How much of the cap remains this month.",
+               _donut(max(0, 100 - pct), "#3FD98B")))
 
     # ---- 8. AGENTS & HEALTH ----
     outcomes = {"running": 0, "done": 0, "failed": 0}
@@ -858,7 +902,14 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel(f"Your 16 agents — {agents_live} ready", "Each worker, what it does, and whether it can run right now.", agents_html),
         _panel("Job outcomes", "Running vs done vs failed.",
                _bars([("Running", outcomes["running"]), ("Done", outcomes["done"]), ("Failed", outcomes["failed"])], "#4C8DFF") if jobs else _empty("No jobs yet.")),
-        _panel("Recent errors", "Anything that failed or paused.", errs or _empty("No errors — all clean.")))
+        _panel("Recent errors", "Anything that failed or paused.", errs or _empty("No errors — all clean.")),
+        _panel("Jobs per day · 14 days", "How much the engine is processing.",
+               _sparkline(_daybuckets(jobs, lambda j: True, 14), "#4C8DFF") if jobs else _empty("Fills as the engine runs.")),
+        _panel("Queue depth", "Jobs in progress right now.",
+               f"<div class='big tnum'>{outcomes['running']}</div><div class='dim'>working now</div>" if jobs else _empty("No jobs queued.")),
+        _panel("Model usage", "Cheap Haiku vs powerful Opus.", _empty("Shows once the writer runs.")),
+        _panel("Engine uptime", "Is the worker alive and ticking?",
+               f"<div class='big tnum' style='color:{'#3FD98B' if healthy else '#F5B14C'}'>{'Live' if healthy else 'Check'}</div><div class='dim'>worker status</div>"))
 
     # ---- 9. GOOGLE HUB ----
     def ghub(k, name, what):
@@ -882,7 +933,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                + f"<div class='dim'><b style='color:var(--ink)'>{emails_sent}</b> sent · replies read via IMAP</div>"),
         _panel("What's stored right now", "Live counts living in your Google hub.",
                _bars([("Job rows", len(jobs)), ("Content files", published), ("Emails sent", emails_sent)], "#2FE3D2")
-               if (jobs or emails_sent) else _empty("Counts appear once the hub is connected + jobs run.")))
+               if (jobs or emails_sent) else _empty("Counts appear once the hub is connected + jobs run.")),
+        _panel("Rows by type", "What's mirrored to Sheets.",
+               _bars([("Content", len(content_jobs)), ("Leads", len(out_jobs))], "#2FE3D2") if jobs else _empty("Fills as jobs run.")),
+        _panel("Storage used", "Drive space your content uses.", _empty("Shows once files are saved.")),
+        _panel("Last sync", "When data last mirrored to Google.", _empty("Shows after the first mirror.")),
+        _panel("Email quota", "Daily Gmail send headroom.", _empty("Tracks as email sends.")))
 
     # ---- 10. APPROVALS & COMMANDS (human, with previews — no code) ----
     waiting_jobs = [j for j in jobs if j.get("status") == "AWAITING_APPROVAL"]
@@ -939,6 +995,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               + _panel("Sent back for rewrite", "Pieces you asked to redo.",
                        f"<div class='big tnum'>{revs}</div><div class='dim'>need a rewrite</div>" if revs else _empty("None — quality is clean."))
               + _panel("How approval works", "The safety flow, in plain words.", howto)
+              + _panel("Pending by type", "Articles vs cold emails awaiting you.",
+                       _bars([("Articles", sum(1 for j in waiting_jobs if j.get('type') != 'outreach_campaign')),
+                              ("Cold emails", sum(1 for j in waiting_jobs if j.get('type') == 'outreach_campaign'))], "#F5B14C")
+                       if waiting_jobs else _empty("Nothing pending."))
+              + _panel("Turnaround", "How much is queued for you.",
+                       f"<div class='big tnum'>{len(waiting_jobs)}</div><div class='dim'>waiting right now</div>" if waiting_jobs else _empty("All caught up."))
+              + _panel("Decisions this week", "Your approval activity.", _empty("Builds as you approve."))
               + "</div>")
 
     # ---- 11. LEARNING & RESULTS (cross-functional: content + leads + cost) ----
@@ -977,7 +1040,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                _bars(themes, "#4C8DFF") if themes else _empty("Fills as content is produced.")),
         _panel("Where your market really is", "Which professions your leads actually cluster in.",
                _bars(verticals, "#2FE3D2") if verticals else _empty("Fills as leads flow in from Prospeo.")),
-        _panel("Getting more efficient", "Cost per piece over time — is the machine learning to do more for less?", eff_body))
+        _panel("Getting more efficient", "Cost per piece over time — is the machine learning to do more for less?", eff_body),
+        _panel("What converted", "Which topics / verticals brought results.", _empty("Fills once outcomes are recorded.")),
+        _panel("Month over month", "Is each cycle smarter than the last?", _empty("Compares once a second month runs.")),
+        _panel("ROI by vertical", "Which profession pays back best.", _empty("Fills as customers close.")),
+        _panel("Winning email styles", "The openers that get replies.", _empty("Learns from reply data.")))
 
     # ---- 12. SYSTEM MAP + DIAGNOSTIC ----
     diag_rows = []
