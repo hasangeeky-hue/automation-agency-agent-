@@ -314,6 +314,43 @@ def _funnel_skeleton(rows, note):
     return body + f"<div class='dim' style='margin-top:9px'>{_esc(note)}</div>"
 
 
+_STOP = set(("the a an and or to of for your you our we with in on how why what that this not are is it as at "
+             "by from into their his her its can will about over more into out get your make when where who "
+             "you're every each still just than then them they there here".split()))
+_VMAP = {"dentist": "Dentists", "zahnarzt": "Dentists", "doctor": "Doctors", "clinic": "Doctors",
+         "lawyer": "Lawyers", "attorney": "Lawyers", "kanzlei": "Lawyers", "law": "Lawyers",
+         "tax": "Tax / Accounting", "account": "Tax / Accounting", "steuer": "Tax / Accounting",
+         "treuhand": "Tax / Accounting", "fiduciary": "Tax / Accounting",
+         "shopify": "E-commerce", "commerce": "E-commerce", "shop": "E-commerce",
+         "marketing": "Marketing", "social": "Marketing", "agency": "Marketing"}
+
+
+def _themes(content_jobs):
+    """Most-written subjects (word frequency across content titles)."""
+    import re, collections
+    w = collections.Counter()
+    for j in content_jobs:
+        t = ((j.get("payload", {}).get("content_producer", {}) or {}).get("title") or "")
+        for x in re.findall(r"[a-zA-Z]{4,}", t.lower()):
+            if x not in _STOP:
+                w[x] += 1
+    return w.most_common(6)
+
+
+def _verticals(out_jobs):
+    """Which professions the leads cluster in (from lead titles)."""
+    import collections
+    c = collections.Counter()
+    for j in out_jobs:
+        for l in (j.get("payload", {}) or {}).get("leads", []) or []:
+            t = str(l.get("title", "")).lower()
+            for k, v in _VMAP.items():
+                if k in t:
+                    c[v] += 1
+                    break
+    return c.most_common(6)
+
+
 def _by_country(out_jobs):
     """Count real leads per target market (from lead payloads), so segmentation
     fills as leads arrive. Zeroes until then — never faked."""
@@ -753,12 +790,39 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Talk to an agent", "Give any agent a direct command.",
                "<div class='cmd'><select id='sk'>" + opts + "</select><input id='inp' placeholder='{\"site_url\":\"https://...\"}'><button onclick='runSkill()'>Run</button></div><pre id='out'>Pick an agent, add input, press Run.</pre>"))
 
-    # ---- 11. LEARNING & RESULTS ----
+    # ---- 11. LEARNING & RESULTS (cross-functional: content + leads + cost) ----
+    themes = _themes(content_jobs)
+    verticals = _verticals(out_jobs)
+    countries = _by_country(out_jobs)
+    top_c = max(countries, key=lambda x: x[1]) if any(v for _, v in countries) else None
+    rules = []
+    if themes:
+        rules.append(f"Your content centers on <b>{_esc(themes[0][0])}</b> — lean into the subjects that perform.")
+    if verticals:
+        rules.append(f"Most of your leads are <b>{_esc(verticals[0][0])}</b> — sharpen the message for that persona.")
+    if top_c and top_c[1]:
+        rules.append(f"Strongest market so far: <b>{_esc(top_c[0])}</b> ({top_c[1]} leads).")
+    if o_rev and total_cost:
+        rules.append(f"ROI so far: <b>${o_rev:,.0f}</b> earned vs ${total_cost:.2f} spent.")
+    if o_leads:
+        rules.append(f"Cost per lead is <b>${(total_cost/max(o_leads,1)):.2f}</b> — the engine steers spend toward cheaper wins.")
+    if published:
+        rules.append(f"<b>{published}</b> pieces published — the more it ships, the sharper its topic sense gets.")
+    rules_html = ("".join(f"<div class='fe'><span class='mut'>◆ {r}</span></div>" for r in rules)
+                  or _empty("Rules appear as work flows through. Publish + send once, record outcomes, and the "
+                            "engine starts learning across content, leads and email — automatically."))
+    eff_body = ((_sparkline(_daybuckets(content_jobs, lambda j: True, 14,
+                                        valfn=lambda j: float(j.get("cost_so_far_usd", 0))), "#3FD98B")
+                 + f"<div class='dim' style='margin-top:6px'>${(content_cost/max(len(content_jobs),1)):.3f} avg per piece · "
+                   "target: down over time as it learns</div>")
+                if content_jobs else _empty("Fills as pieces are made."))
     p_learn = grid(
-        _panel("Winning topics", "What's working, remembered for next time.", _empty("Fills after the first measured cycle.")),
-        _panel("Content that converted", "Pieces that brought leads/sales.", _empty("Shows once results are measured.")),
-        _panel("Cycle improvements", "How each month gets smarter.", _empty("Compares month over month.")),
-        _panel("Playbook", "The rules the agents learned about your brand.", _empty("Grows as the engine learns.")))
+        _panel("Playbook — what the engine has learned", "Rules it builds from your WHOLE business — content, leads and money.", rules_html),
+        _panel("Top content themes", "The subjects your machine writes about most (its growing expertise).",
+               _bars(themes, "#4C8DFF") if themes else _empty("Fills as content is produced.")),
+        _panel("Where your market really is", "Which professions your leads actually cluster in.",
+               _bars(verticals, "#2FE3D2") if verticals else _empty("Fills as leads flow in from Prospeo.")),
+        _panel("Getting more efficient", "Cost per piece over time — is the machine learning to do more for less?", eff_body))
 
     # ---- 12. SYSTEM MAP + DIAGNOSTIC ----
     diag_rows = []
