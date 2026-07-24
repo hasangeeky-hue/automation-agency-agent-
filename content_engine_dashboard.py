@@ -92,6 +92,22 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .cform input:focus{outline:none;border-color:var(--teal)}
 .cform .sbtn{align-self:flex-start;margin-top:3px}
 @media(max-width:860px){.shell{flex-direction:column}.side{width:auto;flex-direction:row;overflow-x:auto;position:static;max-height:none}.navb{white-space:nowrap}.navb .bd{display:none}.g2,.g3,.g4{grid-template-columns:1fr}}
+.bpwrap{display:flex;gap:4px;align-items:stretch;overflow-x:auto;padding:8px 0 4px}
+.bpcol{flex:1 1 0;min-width:196px;display:flex;flex-direction:column;gap:8px}
+.bpcl{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);font-weight:700;padding:0 2px 3px;display:flex;align-items:center;gap:6px}
+.bpcl .n{margin-left:auto;background:var(--line);color:var(--mut);border-radius:99px;padding:1px 7px;font-size:9.5px}
+.bpc{background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:10px 11px;transition:border-color .15s}
+.bpc.on{border-color:rgba(63,217,139,.5)}.bpc.off{border-color:rgba(245,177,76,.4)}
+.bph{display:flex;align-items:center;gap:8px}
+.bpi{font-size:18px;width:24px;text-align:center}
+.bpn{font-weight:700;font-size:12.5px}
+.bpd{width:8px;height:8px;border-radius:50%;margin-left:auto;flex-shrink:0}
+.bpt{display:inline-block;font-size:9px;color:var(--dim);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 6px;margin-top:7px;letter-spacing:.03em}
+.bpx{font-size:11px;color:var(--mut);margin-top:6px;line-height:1.4}
+.bps{font-size:10px;font-weight:700;margin-top:6px;text-transform:uppercase;letter-spacing:.04em}
+.bparrow{display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:16px;flex:0 0 14px}
+.bplegend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--mut);margin-top:10px}
+@media(max-width:860px){.bpwrap{flex-direction:column}.bparrow{transform:rotate(90deg);align-self:center;flex-basis:auto}}
 """
 
 
@@ -343,6 +359,73 @@ def _outcomes(jobs):
         revenue += oc.get("revenue", 0.0)
         customers += oc.get("customers", 0)
     return int(leads), round(revenue, 2), int(customers)
+
+
+# ---------------------------------------------------------------------------
+# blueprint — every API / account / plugin as an icon component, laid out as
+# the workflow (inputs -> brain -> hub -> outputs). Reads far clearer than the
+# wire tangle: each card shows its icon, what KIND of connection it is, one line
+# of detail, and its live status.
+#   entry = (status_key | None, icon, name, type_badge, detail)
+# ---------------------------------------------------------------------------
+_BLUEPRINT = [
+    ("① Inputs — data comes in", [
+        ("linkedin_leads", "🧲", "Prospeo", "REST API · key", "LinkedIn-sourced leads + verified work emails"),
+        ("web_search", "🔎", "Tavily", "REST API · key", "Web-search lead backup source"),
+        ("google_gsc_ga4", "🔍", "Search Console", "Google API · service acct", "Keyword rankings & search queries"),
+        ("google_gsc_ga4", "📈", "Analytics GA4", "Google API · service acct", "Visitors, traffic & conversions"),
+    ]),
+    ("② Brain + engine · VPS", [
+        ("claude_api", "🧠", "Claude", "Anthropic API · key", "Opus + Haiku — writes & decides everything"),
+        (None, "⚙️", "Orchestrator", "engine core", "Runs each job step-by-step"),
+        (None, "🗄️", "Postgres", "database", "The engine's memory & job store"),
+        (None, "🛡️", "Budget guard", "safety rule", "Hard €200/month cap — auto-pauses"),
+        (None, "✅", "Approval gate", "safety rule", "Nothing publishes/sends without you"),
+        (None, "💧", "Deliverability", "safety rule", "Warm-up cap + bounce suppression"),
+    ]),
+    ("③ Google Workspace hub", [
+        ("email_send", "📧", "Gmail SMTP", "mother@ · app pw", "Sends every email"),
+        ("email_reply_inbound", "📥", "Gmail IMAP", "mother@ · app pw", "Reads customer replies"),
+        ("google_sheets", "📊", "Sheets", "Google API", "Live data mirror / dashboard store"),
+        ("google_drive", "📁", "Drive", "Google API", "Finished content saved as files"),
+    ]),
+    ("④ Outputs — channels", [
+        ("wordpress_publish", "🌐", "WordPress", "REST API · app pw", "Publishes articles to your site"),
+        ("email_send", "✉️", "Cold email out", "alias: contact@/marketing@", "Outreach + reply sending"),
+        ("social_linkedin", "💼", "LinkedIn", "REST API · token", "Posts updates to your profile/page"),
+        ("social_facebook", "📘", "Facebook", "Graph API · token", "Posts to your Page"),
+        ("social_instagram", "📸", "Instagram", "Graph API · token", "Posts images"),
+        ("social_twitter", "▶️", "X (Twitter)", "API v2 · token", "Posts tweets"),
+        ("social_tiktok", "🎵", "TikTok", "Content API · token", "Posts short video"),
+        ("image_gen", "🎨", "OpenAI Images", "REST API · key", "Generates images for posts"),
+    ]),
+]
+
+
+def _blueprint(st):
+    def stat(key):
+        if key is None:
+            return ("#8B7CFF", "core", "")          # always-on internal part
+        return ("#3FD98B", "live", "on") if st.get(key) else ("#F5B14C", "needs key", "off")
+    cols = []
+    for layer, items in _BLUEPRINT:
+        live = sum(1 for k, *_ in items if k and st.get(k))
+        keyed = sum(1 for k, *_ in items if k is not None)
+        cards = []
+        for key, icon, name, typ, detail in items:
+            col, lab, cls = stat(key)
+            cards.append(
+                f"<div class='bpc {cls}'><div class='bph'><span class='bpi'>{icon}</span>"
+                f"<span class='bpn'>{_esc(name)}</span><span class='bpd' style='background:{col}'></span></div>"
+                f"<div class='bpt'>{_esc(typ)}</div><div class='bpx'>{_esc(detail)}</div>"
+                f"<div class='bps' style='color:{col}'>{lab}</div></div>")
+        badge = f"<span class='n'>{live}/{keyed} live</span>" if keyed else ""
+        cols.append(f"<div class='bpcol'><div class='bpcl'>{_esc(layer)}{badge}</div>{''.join(cards)}</div>")
+    legend = ("<div class='bplegend'>"
+              "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#3FD98B;margin-right:5px'></span>Connected &amp; live</span>"
+              "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#F5B14C;margin-right:5px'></span>Ready — needs its key</span>"
+              "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#8B7CFF;margin-right:5px'></span>Always-on engine part</span></div>")
+    return ("<div class='bpwrap'>" + "<div class='bparrow'>→</div>".join(cols) + "</div>" + legend)
 
 
 # ---------------------------------------------------------------------------
@@ -682,8 +765,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     connect_card = ("<div class='card full' style='margin-top:12px'><p class='ct'>🔌 Connect your wires — paste keys, click Connect</p>"
                     "<p class='cc'>No SSH, no rebuild. Saved instantly; the wire turns green above within ~15 seconds. What each one needs (and unlocks) is in the table above.</p>"
                     "<div class='cgrid'>" + "".join(conn_rows) + "</div></div>")
-    p_map = ("<div class='card full'><p class='ct'>System map</p><p class='cc'>Every component and how data flows between them.</p>"
-             + _system_map(st) + "</div>" + diag + connect_card)
+    p_map = ("<div class='card full'><p class='ct'>🗺️ System blueprint — every connection in your machine</p>"
+             "<p class='cc'>Each card is one API, account or plugin — its icon, what kind of connection it is, one line of what it does, and whether it's live. Read left → right: inputs → brain → Google hub → outputs.</p>"
+             + _blueprint(st) + "</div>"
+             "<div class='card full' style='margin-top:12px'><p class='ct'>Live data flow</p>"
+             "<p class='cc'>The same machine as a moving flow — data animates along each connected wire.</p>"
+             + _system_map(st) + "</div>"
+             + diag + connect_card)
 
     # ---- OVERVIEW (mother) ----
     def tile(nav, icon, label, val, sub, dot):
