@@ -468,12 +468,18 @@ def api_dashboard_html() -> str:
     month_spent = store.monthly_cost() if hasattr(store, "monthly_cost") else         sum(float(j.get("cost_so_far_usd", 0)) for j in jobs)
     day_spent = store.daily_cost() if hasattr(store, "daily_cost") else 0.0
     settings = _settings()
+    try:
+        import content_engine_connectors as _C
+        bookings = _C.CalCom().summary()
+        ads = _C.GoogleAds().summary()
+    except Exception:
+        bookings, ads = {}, {}
     import content_engine_dashboard as D
     return D.dashboard_html(
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
-        autonomy=settings["autonomy"])
+        autonomy=settings["autonomy"], bookings=bookings, ads=ads)
 
 
 # ---------------------------------------------------------------------------

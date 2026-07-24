@@ -249,6 +249,7 @@ CONNECTOR_ENV_KEYS = [
     "GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SHEETS_ID", "GDRIVE_FOLDER_ID",
     "ADS_JSON", "BACKLINKS_JSON",
     "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN",
+    "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "CALCOM_API_KEY",
     "LINKEDIN_POST_TOKEN", "LINKEDIN_AUTHOR_URN", "TWITTER_BEARER_TOKEN",
     "META_PAGE_ID", "META_PAGE_TOKEN", "IG_USER_ID", "TIKTOK_ACCESS_TOKEN",
     "IMAGE_PROVIDER", "IMAGE_API_KEY", "IMAGE_MODEL", "IMAGE_API_URL",
@@ -1294,6 +1295,89 @@ def mirror_job(job: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Cal.com — booked consultations (closes the deal loop: email -> reply -> BOOKED)
+# ---------------------------------------------------------------------------
+class CalCom:
+    """Reads real booked consultations from Cal.com. Set CALCOM_API_KEY
+    (cal.com -> Settings -> Developer -> API keys). No scraping — official API."""
+
+    def __init__(self) -> None:
+        self.key = _env("CALCOM_API_KEY")
+
+    def available(self) -> bool:
+        return bool(self.key and _requests())
+
+    def bookings(self) -> list:
+        j = _get_json("https://api.cal.com/v1/bookings", params={"apiKey": self.key})
+        if not j:
+            return []
+        return j.get("bookings", []) or []
+
+    def summary(self) -> dict:
+        """{'total', 'booked'} — booked = accepted consultations."""
+        if not self.available():
+            return {}
+        b = self.bookings()
+        accepted = sum(1 for x in b if str(x.get("status", "")).lower() in ("accepted", "confirmed"))
+        return {"total": len(b), "booked": accepted or len(b)}
+
+
+# ---------------------------------------------------------------------------
+# Google Ads — real campaign metrics via the official REST API (v17)
+# Needs a developer token + customer id + an OAuth refresh token (+ the OAuth
+# client id/secret that minted it). Google must approve the developer token
+# before live data flows — until then available() is False (no fake numbers).
+# ---------------------------------------------------------------------------
+class GoogleAds:
+    def __init__(self) -> None:
+        self.dev = _env("GOOGLE_ADS_DEVELOPER_TOKEN")
+        self.cid = _env("GOOGLE_ADS_CUSTOMER_ID").replace("-", "")
+        self.refresh = _env("GOOGLE_ADS_REFRESH_TOKEN")
+        self.client_id = _env("GOOGLE_ADS_CLIENT_ID")
+        self.client_secret = _env("GOOGLE_ADS_CLIENT_SECRET")
+
+    def available(self) -> bool:
+        return bool(self.dev and self.cid and self.refresh
+                    and self.client_id and self.client_secret and _requests())
+
+    def _access_token(self) -> str:
+        j = _post_json("https://oauth2.googleapis.com/token", {
+            "client_id": self.client_id, "client_secret": self.client_secret,
+            "refresh_token": self.refresh, "grant_type": "refresh_token"})
+        return (j or {}).get("access_token", "")
+
+    def summary(self) -> dict:
+        if not self.available():
+            return {}
+        tok = self._access_token()
+        if not tok:
+            return {}
+        q = ("SELECT campaign.name, metrics.cost_micros, metrics.clicks, "
+             "metrics.impressions, metrics.conversions FROM campaign "
+             "WHERE segments.date DURING LAST_30_DAYS")
+        j = _post_json(
+            f"https://googleads.googleapis.com/v17/customers/{self.cid}/googleAds:searchStream",
+            {"query": q},
+            headers={"Authorization": f"Bearer {tok}", "developer-token": self.dev})
+        if not j:
+            return {}
+        spend = clicks = impr = conv = 0.0
+        camps: list = []
+        for batch in (j if isinstance(j, list) else [j]):
+            for r in batch.get("results", []) or []:
+                m = r.get("metrics", {}) or {}
+                cost = float(m.get("costMicros", 0)) / 1e6
+                spend += cost
+                clicks += float(m.get("clicks", 0))
+                impr += float(m.get("impressions", 0))
+                conv += float(m.get("conversions", 0))
+                camps.append(((r.get("campaign", {}) or {}).get("name", ""), round(cost, 2)))
+        return {"spend": round(spend, 2), "clicks": int(clicks), "impressions": int(impr),
+                "conversions": round(conv, 1), "cpa": round(spend / conv, 2) if conv else 0,
+                "campaigns": camps[:6]}
+
+
+# ---------------------------------------------------------------------------
 # Wiring + status
 # ---------------------------------------------------------------------------
 def status() -> dict:
@@ -1317,7 +1401,8 @@ def status() -> dict:
         "linkedin_leads": LinkedIn().available(),
         "google_gsc_ga4": Google().available(),
         "ads_data": bool(_env("ADS_JSON")),
-        "ads_api": bool(_env("GOOGLE_ADS_DEVELOPER_TOKEN") and _env("GOOGLE_ADS_CUSTOMER_ID")),
+        "ads_api": GoogleAds().available(),
+        "calcom_bookings": CalCom().available(),
         "backlinks_data": bool(_env("BACKLINKS_JSON")),
         "requests_installed": _requests() is not None,
     }

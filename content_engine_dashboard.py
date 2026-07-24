@@ -201,7 +201,11 @@ _DIAG = [
     ("ads_api", "Google Ads (paid campaigns)",
      "no Google Ads API credentials",
      "The ads agent can't see or tune your paid campaigns — no spend, cost-per-lead or ROAS flows in, so it can't move budget to what works.",
-     "GOOGLE_ADS_DEVELOPER_TOKEN + GOOGLE_ADS_CUSTOMER_ID + GOOGLE_ADS_REFRESH_TOKEN"),
+     "GOOGLE_ADS_DEVELOPER_TOKEN + GOOGLE_ADS_CUSTOMER_ID + GOOGLE_ADS_REFRESH_TOKEN + GOOGLE_ADS_CLIENT_ID + GOOGLE_ADS_CLIENT_SECRET"),
+    ("calcom_bookings", "Booked consultations (Cal.com)",
+     "no Cal.com API key",
+     "The dashboard can't see booked calls, so the deal loop (email → reply → BOOKED → customer) never closes — 'Booked' stays 0.",
+     "CALCOM_API_KEY"),
     ("image_gen", "Generate images (OpenAI)",
      "no image provider key",
      "Posts go out as text only — no generated images.",
@@ -242,6 +246,9 @@ _FIELD_HINT = {
     "GOOGLE_ADS_DEVELOPER_TOKEN": "Google Ads developer token",
     "GOOGLE_ADS_CUSTOMER_ID": "Google Ads account ID (10 digits)",
     "GOOGLE_ADS_REFRESH_TOKEN": "Google Ads refresh token",
+    "GOOGLE_ADS_CLIENT_ID": "Google OAuth client ID",
+    "GOOGLE_ADS_CLIENT_SECRET": "Google OAuth client secret",
+    "CALCOM_API_KEY": "Cal.com API key (cal_live_…)",
 }
 
 
@@ -455,6 +462,7 @@ _BLUEPRINT = [
         ("google_gsc_ga4", "🔍", "Search Console", "Google API · service acct", "Keyword rankings & search queries"),
         ("google_gsc_ga4", "📈", "Analytics GA4", "Google API · service acct", "Visitors, traffic & conversions"),
         ("ads_api", "🎯", "Google Ads", "Ads API · token", "Paid campaign spend, CPA & ROAS"),
+        ("calcom_bookings", "📅", "Cal.com", "REST API · key", "Booked consultations — closes the deal loop"),
     ]),
     ("② Brain + engine · VPS", [
         ("claude_api", "🧠", "Claude", "Anthropic API · key", "Opus + Haiku — writes & decides everything"),
@@ -638,14 +646,19 @@ def login_html(error=""):
 # dashboard
 # ---------------------------------------------------------------------------
 def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_cap,
-                   taste_skills, has_password=False, paused=False, autonomy=False):
+                   taste_skills, has_password=False, paused=False, autonomy=False,
+                   bookings=None, ads=None):
     from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
+    bookings, ads = bookings or {}, ads or {}
+    booked = int(bookings.get("booked", 0) or 0)
     o_leads, o_rev, o_cust = _outcomes(jobs)
     content_jobs = [j for j in jobs if j.get("type") != "outreach_campaign"]
     out_jobs = [j for j in jobs if j.get("type") == "outreach_campaign"]
     pl = _pipeline(jobs)
-    lead_rows = _lead_funnel(jobs)
+    lead_rows = list(_lead_funnel(jobs))
+    if booked:
+        lead_rows[5] = ("Booked", booked)   # real Cal.com consultations
     published = sum(1 for j in content_jobs if _STAGE_OF.get(j.get("status", "")) in (4, 5))
     leads_found = lead_rows[0][1]
     emails_sent = lead_rows[3][1]
@@ -733,17 +746,17 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         for p, a in _routing)
     m_email = _master("✉️", "Outreach — at a glance", "Cold email → reply → booked → won.",
         [("Sent", emails_sent, "#EDF1FB"), ("Replied", 0, "#8B7CFF"),
-         ("Booked", 0, "#F5B14C"), ("Won", o_cust, "#3FD98B")],
+         ("Booked", booked, "#F5B14C"), ("Won", o_cust, "#3FD98B")],
         _funnel_skeleton([("Sent", emails_sent, 100), ("Replied", 0, 62),
-                          ("Booked", 0, 38), ("Won", o_cust, 20)], "Fills as replies land."))
+                          ("Booked", booked, 38), ("Won", o_cust, 20)], "Fills as replies land."))
     p_email = m_email + grid(
         _panel("Sent vs replied", "Cold emails out, and how many replied.",
                _bars([("Sent", emails_sent), ("Replied", 0)], "#4C8DFF") if emails_sent else _empty("No emails sent yet.")),
         _panel("Sent by purpose → address", "The loop: your agent sends each email type from the right alias — all from your one inbox.", route_html),
         _panel("Deal conversion — the money moment", "Email → reply → booked consultation → paying customer.",
                _funnel_skeleton([("Emailed", emails_sent, 100), ("Replied", 0, 62),
-                                 ("Consultation booked", 0, 38), ("Customer won", o_cust, 20)],
-                                "Fills as replies land. Connect Cal.com so booked consultations count here automatically.")),
+                                 ("Consultation booked", booked, 38), ("Customer won", o_cust, 20)],
+                                "Booked consultations come live from Cal.com; replies + won come as outcomes are recorded.")),
         _panel("Send volume over time", "Emails sent per day.",
                _sparkline(_daybuckets(out_jobs, lambda j: bool((j.get('payload',{}) or {}).get('send_ref')), 14), "#4C8DFF")
                if emails_sent else _empty("Fills as outreach runs.")),
@@ -754,7 +767,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Volume by sender alias", "Which address each email went out from.",
                _bars([("newsletter@", 0), ("marketing@", 0), ("customercare@", 0), ("contact@", emails_sent)], "#8B7CFF") if emails_sent else _empty("Fills as outreach runs.")),
         _panel("Best subject lines", "Which openers win the most replies.",
-               _empty("Ranks your subject lines once replies come in.")))
+               _empty("Ranks your subject lines once replies come in.")),
+        _panel("Consultations booked (Cal.com)", "Real calls booked off your outreach.",
+               f"<div class='big tnum' style='color:#3FD98B'>{booked}</div><div class='dim'>consultations booked</div>"
+               if st.get("calcom_bookings") else _empty("Connect Cal.com on the System Map to count booked calls.")))
 
     # ---- 4. SOCIAL MEDIA ----
     _social_live = sum(1 for k in ("social_linkedin", "social_twitter", "social_facebook",
@@ -799,17 +815,25 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Click-through rate", "How often a ranking turns into a click.", _empty("Connect Search Console.")))
 
     # ---- 6. ADS & GROWTH ----
-    m_ads = _master("🎯", "Ads & growth — at a glance", "Paid campaigns, tuned by your SEO signals.",
-        [("Spend", "—", "#EDF1FB"), ("Clicks", "—", "#4C8DFF"),
-         ("Cost / lead", "—", "#8B7CFF"), ("ROAS", "—", "#3FD98B")],
-        _empty("Connect Google Ads on the System Map to fill this.") if not st.get("ads_api")
-        else _empty("Campaign data appears once ads run."))
+    _ads_on = bool(ads)
+    m_ads = _master("🎯", "Ads & growth — at a glance", "Paid campaigns, live from Google Ads.",
+        [("Spend · 30d", f"${ads.get('spend',0):,.0f}" if _ads_on else "—", "#EDF1FB"),
+         ("Clicks", ads.get('clicks', '—') if _ads_on else "—", "#4C8DFF"),
+         ("CPA", f"${ads.get('cpa',0):.2f}" if (_ads_on and ads.get('cpa')) else "—", "#8B7CFF"),
+         ("Conversions", ads.get('conversions', '—') if _ads_on else "—", "#3FD98B")],
+        _bars(ads.get('campaigns', []), "#4C8DFF", money=True) if (_ads_on and ads.get('campaigns'))
+        else (_empty("Connect Google Ads on the System Map to fill this.") if not st.get("ads_api")
+              else _empty("Campaign data appears once ads run.")))
     p_ads = m_ads + grid(
-        _panel("Spend by campaign", "Where the ad budget goes.", _empty("Feed ad data (ADS_JSON / n8n).")),
+        _panel("Spend by campaign", "Where the ad budget goes.",
+               _bars(ads.get('campaigns', []), "#4C8DFF", money=True) if ads.get('campaigns')
+               else _empty("Connect Google Ads on the System Map.")),
         _panel("Cost per result (CPA/ROAS)", "Efficiency per campaign.", _empty("Shows with ad data.")),
         _panel("Budget reallocation", "Move money to what works.", _empty("The ads agent suggests moves here.")),
         _panel("SEO-informed keywords", "Winning keywords to pull into ads.", _empty("Fills from your SEO data.")),
-        _panel("Impressions & clicks", "How much attention your ads get.", _empty("Connect Google Ads on the System Map.")),
+        _panel("Impressions & clicks", "How much attention your ads get.",
+               _bars([("Impressions", ads.get('impressions', 0)), ("Clicks", ads.get('clicks', 0))], "#4C8DFF")
+               if ads else _empty("Connect Google Ads on the System Map.")),
         _panel("Conversion rate", "Clicks that turn into leads.", _empty("Shows once ads run.")),
         _panel("Budget pacing", "Are you on track for the month?", _empty("Shows once an ad budget is set.")),
         _panel("Best & worst campaign", "Where to add or cut spend.", _empty("Ranks once campaigns run.")))
