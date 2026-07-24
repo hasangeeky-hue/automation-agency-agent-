@@ -248,6 +248,7 @@ CONNECTOR_ENV_KEYS = [
     "GOOGLE_ACCESS_TOKEN", "GSC_SITE_URL", "GA4_PROPERTY_ID",
     "GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SHEETS_ID", "GDRIVE_FOLDER_ID",
     "ADS_JSON", "BACKLINKS_JSON",
+    "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN",
     "LINKEDIN_POST_TOKEN", "LINKEDIN_AUTHOR_URN", "TWITTER_BEARER_TOKEN",
     "META_PAGE_ID", "META_PAGE_TOKEN", "IG_USER_ID", "TIKTOK_ACCESS_TOKEN",
     "IMAGE_PROVIDER", "IMAGE_API_KEY", "IMAGE_MODEL", "IMAGE_API_URL",
@@ -1316,6 +1317,7 @@ def status() -> dict:
         "linkedin_leads": LinkedIn().available(),
         "google_gsc_ga4": Google().available(),
         "ads_data": bool(_env("ADS_JSON")),
+        "ads_api": bool(_env("GOOGLE_ADS_DEVELOPER_TOKEN") and _env("GOOGLE_ADS_CUSTOMER_ID")),
         "backlinks_data": bool(_env("BACKLINKS_JSON")),
         "requests_installed": _requests() is not None,
     }

@@ -188,6 +188,10 @@ _DIAG = [
      "no TikTok token",
      "Content won't post to TikTok automatically.",
      "TIKTOK_ACCESS_TOKEN"),
+    ("ads_api", "Google Ads (paid campaigns)",
+     "no Google Ads API credentials",
+     "The ads agent can't see or tune your paid campaigns — no spend, cost-per-lead or ROAS flows in, so it can't move budget to what works.",
+     "GOOGLE_ADS_DEVELOPER_TOKEN + GOOGLE_ADS_CUSTOMER_ID + GOOGLE_ADS_REFRESH_TOKEN"),
     ("image_gen", "Generate images (OpenAI)",
      "no image provider key",
      "Posts go out as text only — no generated images.",
@@ -225,6 +229,9 @@ _FIELD_HINT = {
     "IMAGE_MODEL": "Image model (gpt-image-1)",
     "VIDEO_PROVIDER": "Video provider (fal)", "VIDEO_API_KEY": "Video API key", "VIDEO_API_URL": "Video endpoint URL",
     "ADS_JSON": "Ad data (JSON)", "BACKLINKS_JSON": "Backlink data (JSON)",
+    "GOOGLE_ADS_DEVELOPER_TOKEN": "Google Ads developer token",
+    "GOOGLE_ADS_CUSTOMER_ID": "Google Ads account ID (10 digits)",
+    "GOOGLE_ADS_REFRESH_TOKEN": "Google Ads refresh token",
 }
 
 
@@ -424,6 +431,7 @@ _BLUEPRINT = [
         ("web_search", "🔎", "Tavily", "REST API · key", "Web-search lead backup source"),
         ("google_gsc_ga4", "🔍", "Search Console", "Google API · service acct", "Keyword rankings & search queries"),
         ("google_gsc_ga4", "📈", "Analytics GA4", "Google API · service acct", "Visitors, traffic & conversions"),
+        ("ads_api", "🎯", "Google Ads", "Ads API · token", "Paid campaign spend, CPA & ROAS"),
     ]),
     ("② Brain + engine · VPS", [
         ("claude_api", "🧠", "Claude", "Anthropic API · key", "Opus + Haiku — writes & decides everything"),
@@ -758,12 +766,38 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         f"<div class='chip'><span class='nm'><span class='d' style='background:{({'ok':'#3FD98B','fail':'#FF6B93'}.get((health.get(k) or {}).get('status'),'#8E9BBE'))}'></span>{lbl}</span><span class='dim'>{_esc((health.get(k) or {}).get('status','—'))}</span></div>"
         for k, lbl in [("anthropic", "Claude API"), ("postgres", "Database (memory)"), ("connectors", "Connectors")])
     errs = "".join(f"<div class='fe'><span class='tm'>{_esc(str(j.get('job_id',''))[:10])}</span><span class='mut'>{_esc(j.get('halt_reason') or j.get('status'))}</span></div>" for j in jobs if j.get("status") in ("failed", "halted_budget"))
+    _AGENTS = [
+        ("🔍 Site analyst", "reads your website for gaps", None),
+        ("🕵️ Competitor scout", "checks what rivals rank for", None),
+        ("🧭 Content strategist", "picks what to write next", "claude_api"),
+        ("✍️ Writer", "writes the articles", "claude_api"),
+        ("🔎 SEO / AEO optimizer", "tunes for Google & AI answers", "claude_api"),
+        ("🛡️ Quality & legal check", "catches errors before publish", "claude_api"),
+        ("🌐 Publisher", "posts to your website", "wordpress_publish"),
+        ("📣 Social poster", "pushes to your channels", "social_linkedin"),
+        ("🧲 Lead finder", "pulls leads from Prospeo", "linkedin_leads"),
+        ("✔️ Email verifier", "checks addresses are real", None),
+        ("🎯 Lead qualifier", "scores who's worth emailing", "claude_api"),
+        ("🗂️ Segmenter", "groups leads by type", "claude_api"),
+        ("✉️ Cold-email writer", "writes each outreach mail", "claude_api"),
+        ("💬 Reply responder", "answers customer replies", "email_reply_inbound"),
+        ("🎯 Ads optimizer", "moves budget to what works", "ads_api"),
+        ("🧠 Learning agent", "remembers what wins", None),
+    ]
+
+    def _agent_row(name, does, dep):
+        live = (dep is None) or bool(st.get(dep))
+        col = "#3FD98B" if live else "#F5B14C"
+        return (f"<div class='chip'><span class='nm'><span class='d' style='background:{col}'></span>"
+                f"<b>{_esc(name)}</b> <span class='dim'>— {_esc(does)}</span></span>"
+                f"<span class='dim' style='color:{col}'>{'ready' if live else 'needs a wire'}</span></div>")
+    agents_live = sum(1 for _, _, dep in _AGENTS if dep is None or st.get(dep))
+    agents_html = "".join(_agent_row(*a) for a in _AGENTS)
     p_agents = grid(
         _panel("Engine health", "Live checks on the core parts.", hrows),
+        _panel(f"Your 16 agents — {agents_live} ready", "Each worker, what it does, and whether it can run right now.", agents_html),
         _panel("Job outcomes", "Running vs done vs failed.",
                _bars([("Running", outcomes["running"]), ("Done", outcomes["done"]), ("Failed", outcomes["failed"])], "#4C8DFF") if jobs else _empty("No jobs yet.")),
-        _panel("Automations live", f"{live_conn} of {total_conn} connectors are live.",
-               f"<div class='big tnum'>{live_conn}<small>/{total_conn}</small></div><div class='dim'>connected · see System Map to fix the rest</div>"),
         _panel("Recent errors", "Anything that failed or paused.", errs or _empty("No errors — all clean.")))
 
     # ---- 9. GOOGLE HUB ----
@@ -771,24 +805,69 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         on = st.get(k)
         return f"<div class='chip'><span class='nm'><span class='d' style='background:{'#3FD98B' if on else '#F5B14C'}'></span>{name}</span><span class='pill {'p-live' if on else 'p-need'}'>{'live' if on else 'needs key'}</span></div><div class='dim' style='padding:0 0 8px'>{what}</div>"
     p_google = grid(
-        _panel("Google Sheets", "Your mother dashboard / data store.", ghub("google_sheets", "Sheets", "Every job, lead and metric mirrors here as rows.")),
-        _panel("Google Drive", "Where content is stored as JSON.", ghub("google_drive", "Drive", "Each finished piece saved as a file in your folder.")),
-        _panel("Gmail (Workspace)", "How email is sent.", ghub("email_send", "Gmail", "Personalised emails sent through your company mail.")),
-        _panel("What's stored", "The data living in Google right now.", _empty("Counts appear once the hub is connected.")))
+        _panel("Google Sheets — data hub", "Every job, lead & metric mirrors here as rows.",
+               ghub("google_sheets", "Sheets", "Your live spreadsheet dashboard.")
+               + f"<div class='dim'>≈ <b style='color:var(--ink)'>{len(jobs)}</b> rows mirrored</div>"),
+        _panel("Google Drive — content store", "Each finished piece saved as a file.",
+               ghub("google_drive", "Drive", "Your content library, as files.")
+               + f"<div class='dim'>≈ <b style='color:var(--ink)'>{published}</b> files saved</div>"),
+        _panel("Gmail (Workspace)", "Send + read — from mother@ with aliases.",
+               ghub("email_send", "Gmail", "contact@ · marketing@ · newsletter@ · customercare@")
+               + f"<div class='dim'><b style='color:var(--ink)'>{emails_sent}</b> sent · replies read via IMAP</div>"),
+        _panel("What's stored right now", "Live counts living in your Google hub.",
+               _bars([("Job rows", len(jobs)), ("Content files", published), ("Emails sent", emails_sent)], "#2FE3D2")
+               if (jobs or emails_sent) else _empty("Counts appear once the hub is connected + jobs run.")))
 
-    # ---- 10. APPROVALS & QUEUE ----
-    ap = "".join(
-        f"<div class='chip'><span class='nm'>{_esc((j.get('payload',{}).get('content_producer',{}) or {}).get('title') or j.get('job_id'))}</span>"
-        f"<button class='sbtn' onclick=\"approve('{_esc(j.get('job_id'))}')\">Approve</button></div>"
-        for j in jobs if j.get("status") == "AWAITING_APPROVAL")
+    # ---- 10. APPROVALS & COMMANDS (human, with previews — no code) ----
+    waiting_jobs = [j for j in jobs if j.get("status") == "AWAITING_APPROVAL"]
+
+    def _appr_card(j):
+        jid = _esc(j.get("job_id"))
+        p = j.get("payload", {}) or {}
+        if j.get("type") == "outreach_campaign":
+            oc = p.get("outreach_copy", {}) or {}
+            lead = p.get("lead", {}) or {}
+            who = lead.get("company") or lead.get("name") or ""
+            kind = "✉️ Cold email" + (f" → {_esc(who)}" if who else "")
+            title = (oc.get("subject_variants") or ["Cold email"])[0]
+            snippet = (oc.get("body") or "")[:260]
+        else:
+            cp = p.get("content_producer", {}) or {}
+            kind = "📝 Article"
+            title = cp.get("title") or j.get("job_id")
+            snippet = (cp.get("body") or cp.get("summary") or "")[:260]
+        return ("<div style='background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px'>"
+                f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'><span class='dim'>{kind}</span>"
+                f"<b style='font-size:13px'>{_esc(title)}</b>"
+                f"<button class='sbtn' style='margin-left:auto' onclick=\"approve('{jid}')\">✓ Approve</button></div>"
+                f"<div class='dim' style='margin-top:8px;line-height:1.55'>{_esc(snippet)}{'…' if snippet else '(preview appears once it is written)'}</div></div>")
+
+    if waiting_jobs:
+        ids = ",".join(str(j.get("job_id")) for j in waiting_jobs)
+        ap_body = "".join(_appr_card(j) for j in waiting_jobs[:8])
+        if len(waiting_jobs) > 1:
+            ap_body += f"<button class='cbtn on' onclick=\"approveAll('{_esc(ids)}')\">✓ Approve all {len(waiting_jobs)}</button>"
+    else:
+        ap_body = _empty("Nothing waiting — you're all caught up. 🎉")
     revs = sum(1 for j in jobs if j.get("status") == "revision_needed")
-    opts = "".join(f"<option value='{_esc(s)}'>{_esc(s)}</option>" for s in taste_skills)
-    p_appr = grid(
-        _panel("Waiting for your approval", "Nothing goes live without you.", ap or _empty("Nothing waiting right now.")),
-        _panel("Approval turnaround", "How fast you review.", _empty("Tracked once you start approving.")),
-        _panel("Sent back for rewrite", "Pieces that needed changes.", f"<div class='big tnum'>{revs}</div><div class='dim'>need a rewrite</div>" if revs else _empty("None — quality is clean.")),
-        _panel("Talk to an agent", "Give any agent a direct command.",
-               "<div class='cmd'><select id='sk'>" + opts + "</select><input id='inp' placeholder='{\"site_url\":\"https://...\"}'><button onclick='runSkill()'>Run</button></div><pre id='out'>Pick an agent, add input, press Run.</pre>"))
+    quick_body = ("<div class='ctrl' style='margin:0'>"
+                  "<button class='cbtn' onclick=\"act('/schedule/run')\">🗓️ Plan today's work</button>"
+                  "<button class='cbtn' onclick=\"act('/tick')\">▶️ Run one cycle now</button></div>"
+                  "<div class='dim' style='margin-top:9px;line-height:1.6'><b>Plan today's work</b> — queues today's blogs, social &amp; one cold-email batch.<br>"
+                  "<b>Run one cycle</b> — nudges the next job forward one step so you can watch it move.<br>"
+                  "Pause &amp; Autonomy are in the bar at the top.</div>")
+    howto = ("<div class='dim' style='line-height:1.75'>① The engine writes content &amp; emails.<br>"
+             "② Each waits here for your <b>✓ Approve</b>.<br>"
+             "③ Approved work publishes / sends right away (cold email is capped &amp; bounce-protected).<br>"
+             "④ Flip on <b>Autonomy</b> only when you trust it — then it approves the safe ones itself.</div>")
+    p_appr = ("<div class='card full'><p class='ct'>✅ Waiting for your approval</p>"
+              "<p class='cc'>Read the preview, then approve — nothing goes live without you.</p>" + ap_body + "</div>"
+              + "<div class='grid g3' style='margin-top:12px'>"
+              + _panel("Quick actions", "Real buttons — no code, no typing.", quick_body)
+              + _panel("Sent back for rewrite", "Pieces you asked to redo.",
+                       f"<div class='big tnum'>{revs}</div><div class='dim'>need a rewrite</div>" if revs else _empty("None — quality is clean."))
+              + _panel("How approval works", "The safety flow, in plain words.", howto)
+              + "</div>")
 
     # ---- 11. LEARNING & RESULTS (cross-functional: content + leads + cost) ----
     themes = _themes(content_jobs)
@@ -992,6 +1071,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "alert('Disconnected — the box is editable again.');location.reload();}"
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "async function approve(id){await act('/jobs/'+id+'/approve');}"
+              "async function approveAll(ids){var a=ids.split(',');for(var i=0;i<a.length;i++){try{await fetch('/jobs/'+a[i]+'/approve',{method:'POST'});}catch(e){}}location.reload();}"
               "async function runSkill(){var sk=document.getElementById('sk').value,out=document.getElementById('out'),inp=document.getElementById('inp').value;"
               "out.textContent='Running '+sk+'…';try{var b=JSON.parse(inp||'{}');}catch(e){out.textContent='That input is not valid JSON.';return;}"
               "try{var r=await fetch('/skills/'+sk+'/taste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:b})});"
