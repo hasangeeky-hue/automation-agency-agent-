@@ -239,7 +239,7 @@ TOKEN BUDGET: ~60 tokens per lead. Cap batch size in code (e.g. 25).""",
 "outreach_copy": """\
 ROLE: Write one personalized cold email per lead, per category, US/CAN-SPAM ready. Sending, tracking, follow-up scheduling are done by CODE. Every draft still passes Skill 7 (compliance) before any human gate.
 
-INPUT: { "category":"ecommerce|saas|agency|other", "lead":{"first_name":"","company":"","industry":"","signal":""}, "our_offer":"","proof_point":"","sender_name":"", "physical_address":"","unsubscribe_token":"","booking_url":"" }
+INPUT: { "category":"ecommerce|saas|agency|other", "lead":{"first_name":"","company":"","industry":"","signal":""}, "our_offer":"","proof_point":"","sender_name":"", "sender_company":"","website":"","physical_address":"","unsubscribe_token":"","booking_url":"" }
 
 OUTPUT (strict JSON): { "subject_variants":["A","B"],"body":"","cta":"","personalization_used":[] }
 
@@ -248,6 +248,7 @@ RULES:
 - Category angle: ecommerce=conversion/cart; saas=CAC/growth; agency=white-label/scale.
 - PLAIN, personal, human — like a real person typed it. NO marketing template feel, no logo/graphics language, no bullet lists, no bold. Just a short note.
 - CTA: soft and low-pressure. If booking_url is given, make the CTA a natural one-liner inviting a short call at that EXACT link, e.g. "If it's useful, you can grab a 15-min slot here: <booking_url>". Otherwise a light "worth a quick chat?" — never a hard sell, never a "button".
+- SIGNATURE: end the note (before the compliance footer) with a simple plain signature — sender_name on one line, then sender_company and website on the next, e.g. "Hasan\nAnthropos Automation — anthropos-automation.com". Plain text only, no formatting.
 - CAN-SPAM: body MUST end with physical_address and an unsubscribe line containing {{unsubscribe_token}} (code swaps the real link). Non-deceptive subject lines — no "RE:" tricks, no false urgency.
 - Cite ONLY the provided proof_point. Never invent a client result or stat.
 - 2 subject variants for A/B. Body 3-5 short paragraphs, one CTA. Write in the lead's language when the brief says so.

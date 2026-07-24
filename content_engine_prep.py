@@ -242,14 +242,18 @@ def _in_outreach_copy(job: dict) -> dict:
         import content_engine_connectors as _c
         booking = cfg.get("booking_url") or _c._env(
             "EMAIL_BOOKING_URL", "https://anthropos-automation.com/free-audit/")
+        website = cfg.get("website") or _c._env("EMAIL_WEBSITE", "anthropos-automation.com")
     except Exception:
         booking = cfg.get("booking_url") or "https://anthropos-automation.com/free-audit/"
+        website = cfg.get("website") or "anthropos-automation.com"
     out = {
         "category": job.get("payload", {}).get("category", "other"),
         "lead": job.get("payload", {}).get("lead", {}),
         "our_offer": cfg.get("our_offer") or _brand(job).get("offer", ""),
         "proof_point": cfg.get("proof_point", ""),
-        "sender_name": cfg.get("sender_name", ""),
+        "sender_name": cfg.get("sender_name", "") or "Hasan",
+        "sender_company": cfg.get("sender_company") or _brand(job).get("brand_name", "") or "Anthropos Automation",
+        "website": website,
         "physical_address": cfg.get("physical_address", ""),
         "unsubscribe_token": job.get("payload", {}).get("unsubscribe_token", "{{unsubscribe_token}}"),
         "booking_url": booking,
