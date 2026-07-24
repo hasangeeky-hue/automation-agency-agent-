@@ -251,7 +251,7 @@ CONNECTOR_ENV_KEYS = [
     "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN",
     "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "CALCOM_API_KEY",
     "EMAIL_LOGO_URL", "EMAIL_BOOKING_URL", "EMAIL_MANAGE_URL", "EMAIL_UNSUBSCRIBE_URL",
-    "EMAIL_COMPANY", "EMAIL_ADDRESS", "EMAIL_BRAND_COLOR",
+    "EMAIL_COMPANY", "EMAIL_ADDRESS", "EMAIL_BRAND_COLOR", "EMAIL_HTML",
     "LINKEDIN_POST_TOKEN", "LINKEDIN_AUTHOR_URN", "TWITTER_BEARER_TOKEN",
     "META_PAGE_ID", "META_PAGE_TOKEN", "IG_USER_ID", "TIKTOK_ACCESS_TOKEN",
     "IMAGE_PROVIDER", "IMAGE_API_KEY", "IMAGE_MODEL", "IMAGE_API_URL",
@@ -483,7 +483,11 @@ class Emailer:
         # the agent tags each email's purpose; default cold outreach -> marketing.
         category = payload.get("email_category") or ("marketing" if is_outreach else None)
         unsub = payload.get("unsubscribe_url", "")
-        html = self._outreach_html(body, job) if is_outreach else None
+        # Cold email is PLAIN TEXT by default — it reads like a real person wrote
+        # it (higher replies, not flagged as scam/marketing). The branded HTML
+        # template is opt-in only via EMAIL_HTML=1.
+        use_html = is_outreach and _env("EMAIL_HTML", "0") == "1"
+        html = self._outreach_html(body, job) if use_html else None
         ref = self.send_message(
             to_addr, subject, body,
             extra_headers={"List-Unsubscribe": f"<{unsub}>" if unsub else ""},
