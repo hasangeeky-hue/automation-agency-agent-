@@ -425,6 +425,18 @@ class Emailer:
                     s.login(self.user, self.password)
                 s.send_message(msg)
 
+    def _fill_tokens(self, body: str) -> str:
+        """Mail-merge: replace the writer's placeholders with real, correct links.
+        The AI only writes the token, code inserts the URL — so a booking or
+        unsubscribe link can never come out missing or malformed."""
+        booking = _env("EMAIL_BOOKING_URL", "https://anthropos-automation.com/free-audit/")
+        unsub = _env("EMAIL_UNSUBSCRIBE_URL", "https://anthropos-automation.com/unsubscribe")
+        for tok in ("{{booking_url}}", "{{ booking_url }}"):
+            body = body.replace(tok, booking)
+        for tok in ("{{unsubscribe_token}}", "{{ unsubscribe_token }}", "{{unsubscribe_url}}"):
+            body = body.replace(tok, unsub)
+        return body
+
     def from_for(self, category: Optional[str]) -> str:
         """Pick the FROM address for an email's purpose so each type goes out on
         the right alias (newsletter@ / marketing@ / customercare@ / contact@).
@@ -458,9 +470,10 @@ class Emailer:
         for k, v in (extra_headers or {}).items():
             if v:
                 msg[k] = v
+        body = self._fill_tokens(body)   # swap {{booking_url}} / {{unsubscribe_token}} for real links
         msg.set_content(body)
         if html:
-            msg.add_alternative(html, subtype="html")
+            msg.add_alternative(self._fill_tokens(html), subtype="html")
         try:
             self._transport(msg)
             log.info("email sent to %s from %s (%s)", to_addr, msg["From"], category or "default")

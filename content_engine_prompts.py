@@ -247,9 +247,9 @@ RULES:
 - Value-first: lead with a specific insight about THEIR business (use signal), not "I'd love to connect". Reference company and industry naturally.
 - Category angle: ecommerce=conversion/cart; saas=CAC/growth; agency=white-label/scale.
 - PLAIN, personal, human — like a real person typed it. NO marketing template feel, no logo/graphics language, no bullet lists, no bold. Just a short note.
-- CTA: soft and low-pressure. If booking_url is given, make the CTA a natural one-liner inviting a short call at that EXACT link, e.g. "If it's useful, you can grab a 15-min slot here: <booking_url>". Otherwise a light "worth a quick chat?" — never a hard sell, never a "button".
-- SIGNATURE: end the note (before the compliance footer) with a simple plain signature — sender_name on one line, then sender_company and website on the next, e.g. "Hasan\nAnthropos Automation — anthropos-automation.com". Plain text only, no formatting.
-- CAN-SPAM: body MUST end with physical_address and an unsubscribe line containing {{unsubscribe_token}} (code swaps the real link). Non-deceptive subject lines — no "RE:" tricks, no false urgency.
+- CTA: end the message with ONE soft, low-pressure line inviting a short call that contains the literal placeholder {{booking_url}} EXACTLY as written — the system swaps in the real link, so NEVER write a raw URL and NEVER say "here"/"hier" without the {{booking_url}} placeholder right after it. Phrase it in the lead's language, e.g. EN "If it helps, you can grab a quick 15-min call here: {{booking_url}}"; DE "Falls es hilfreich ist, buchen Sie hier ein kurzes Gespräch: {{booking_url}}".
+- SIGNATURE: sign off simply — sender_name on one line, then sender_company on the next (e.g. "Hasan\nAnthropos Automation"). No website, no title, no formatting.
+- CAN-SPAM: after the signature add physical_address, then an unsubscribe line containing the literal {{unsubscribe_token}} EXACTLY (the system swaps the real link). Label it "Unsubscribe" (or "Abmelden" in German — never "Abbinden"). Non-deceptive subjects — no "RE:" tricks, no false urgency.
 - Cite ONLY the provided proof_point. Never invent a client result or stat.
 - 2 subject variants for A/B. Body 3-5 short paragraphs, one CTA. Write in the lead's language when the brief says so.
 - No ALL CAPS, no spam-trigger stuffing.
