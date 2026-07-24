@@ -620,31 +620,6 @@ def _media_card(jid, mb, approved=False, live=False, ads_on=False, history=None)
         + chat + "</div>")
 
 
-_ADS_KEYS = ("GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN",
-             "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET")
-
-
-def _ads_connect_card(ads_on):
-    """Connect your Google Ads account right here — no SSH, no other page."""
-    if ads_on:
-        return ("<div class='card full' style='margin-bottom:12px'>"
-                "<p class='ct'>🟢 Google Ads — connected</p>"
-                "<p class='cc'>Real spend, clicks and CPA flow in, and approved campaigns can be deployed with one click. "
-                "(Google must have approved your developer token for live campaign creation.)</p>"
-                f"<div class='ctrl'><button class='cbtn warn' onclick=\"disconnectWire('{','.join(_ADS_KEYS)}')\">Disconnect</button></div></div>")
-    fields = ""
-    for kk in _ADS_KEYS:
-        typ = "password" if any(x in kk for x in ("TOKEN", "SECRET", "REFRESH")) else "text"
-        pre = "🔑 " if typ == "password" else ""
-        fields += f"<input name='{kk}' type='{typ}' placeholder='{pre}{_esc(_FIELD_HINT.get(kk, kk))}'>"
-    return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>🔌 Connect your Google Ads account</p>"
-            "<p class='cc'>Paste the 5 values below and click Connect — it turns green in ~15s. You need a "
-            "<b>developer token</b> (Google Ads → API Center), your <b>customer ID</b> (10 digits, top-right of Google Ads), "
-            "and an <b>OAuth client id + secret + refresh token</b>. Nothing spends until you deploy a campaign.</p>"
-            f"<form class='cform' onsubmit='return saveConnect(this)'>{fields}"
-            "<button class='sbtn' type='submit'>Connect Google Ads · turns green in ~15s</button></form></div>")
-
-
 def _media_page(jobs, st):
     all_drafts = _media_campaigns(jobs)
     drafts = [(j, mb) for j, mb in all_drafts if j.get("status") != "aborted"]
@@ -672,7 +647,16 @@ def _media_page(jobs, st):
                  "<p class='cc'>Click <b>✍️ Draft a campaign now</b> above and the media buyer will draft a full "
                  "Google Ads campaign — with its reasoning — for you to review, chat about, and deploy in one click. "
                  "(It also drafts automatically whenever your image agents produce new creatives.)</p></div>")
-    return master + _ads_connect_card(ads_on) + cards
+    # Connections live ONLY on the System Map. Here we just show status + point there.
+    if not ads_on:
+        note = ("<div class='card full' style='margin-bottom:12px'><p class='ct'>🟠 Google Ads not connected</p>"
+                "<p class='cc'>You can draft, chat about and plan campaigns now. To <b>deploy</b> them live, connect "
+                "Google Ads on the <b>🗺️ System Map</b> page (that's where every wire connects). "
+                "Google must approve your developer token before live campaigns can be created.</p>"
+                "<div class='ctrl'><button class='cbtn' onclick=\"nav('map')\">Go to System Map →</button></div></div>")
+    else:
+        note = ""
+    return master + note + cards
 
 
 # ---------------------------------------------------------------------------

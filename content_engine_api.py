@@ -356,7 +356,7 @@ def api_media_activate(job_id):
     import content_engine_connectors as C
     ga = C.GoogleAds()
     if not ga.available():
-        return {"ok": False, "error": "Connect Google Ads first — use the form on this page."}
+        return {"ok": False, "error": "Connect Google Ads first on the System Map page, then deploy."}
     landing = (p.get("config", {}) or {}).get("landing_url", "")
     res = ga.create_campaign(draft, landing)
     if res.get("ok"):
