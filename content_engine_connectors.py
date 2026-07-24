@@ -252,7 +252,7 @@ CONNECTOR_ENV_KEYS = [
     "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "CALCOM_API_KEY",
     "EMAIL_LOGO_URL", "EMAIL_BOOKING_URL", "EMAIL_MANAGE_URL", "EMAIL_UNSUBSCRIBE_URL",
     "EMAIL_COMPANY", "EMAIL_ADDRESS", "EMAIL_BRAND_COLOR", "EMAIL_HTML", "EMAIL_WEBSITE",
-    "EMAIL_FROM_NAME",
+    "EMAIL_FROM_NAME", "EMAIL_SENDER_TITLE", "EMAIL_PHONE",
     "LINKEDIN_POST_TOKEN", "LINKEDIN_AUTHOR_URN", "TWITTER_BEARER_TOKEN",
     "META_PAGE_ID", "META_PAGE_TOKEN", "IG_USER_ID", "TIKTOK_ACCESS_TOKEN",
     "IMAGE_PROVIDER", "IMAGE_API_KEY", "IMAGE_MODEL", "IMAGE_API_URL",
@@ -362,25 +362,48 @@ def _html_escape(s: str) -> str:
 _LOGO_DEFAULT = "https://anthropos-automation.com/wp-content/uploads/2026/07/cropped-anthropos-logo-mark-transparent-1024-270x270.png"
 
 
-def _branded_email_html(body: str, *, logo, booking_url, unsub_url, manage_url,
-                        company, address, brand, sender) -> str:
-    """A branded, email-client-safe HTML wrapper: logo header, the written body,
-    a Book-an-appointment button, and a footer with address + manage/unsubscribe."""
+def _outreach_emails(body: str, *, lang, sender, title, company, website, phone,
+                     booking_url, address, unsub_url, logo, brand="#7A00DF"):
+    """Build the (plain_text, html) versions of a cold email: the writer's personal
+    body + a DETERMINISTIC professional signature (logo, name·title, website, a real
+    'Book a free consultation' link) + a small legal footer. Code owns the signature
+    so the consultation link is always attached and never malformed."""
+    de = str(lang).strip().lower() in ("de", "ch", "at", "germany", "switzerland", "austria", "german")
+    L = {
+        "regards": "Viele Grüße," if de else "Best regards,",
+        "book": "Kostenloses Beratungsgespräch buchen" if de else "Book a free consultation",
+        "unsub": "Abmelden" if de else "Unsubscribe",
+    }
+    web = (website or "").replace("https://", "").replace("http://", "").strip("/")
+    web_url = "https://" + web if web else ""
+    clean_body = body.strip()
+    phone_txt = f" | {phone}" if phone else ""
+
+    # ---- plain text (fallback) ----
+    plain = (clean_body + "\n\n" + L["regards"] + "\n" + sender + "\n"
+             + f"{title} · {company}\n{web} | {L['book']}: {booking_url}\n\n"
+             + f"{company} · {address}\n{L['unsub']}: {unsub_url}")
+
+    # ---- HTML (the signature the founder wants) ----
     paras = "".join(
-        f'<p style="margin:0 0 14px;color:#2b2b3a;font-size:15px;line-height:1.6">{_html_escape(p).strip()}</p>'
-        for p in body.split("\n") if p.strip())
-    return (
-        '<!doctype html><html><body style="margin:0;background:#f4f2fb">'
-        '<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f2fb;padding:24px 0"><tr><td align="center">'
-        '<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;max-width:600px">'
-        f'<tr><td style="background:{brand};padding:18px 28px"><img src="{logo}" alt="{_html_escape(company)}" height="38" style="height:38px;display:block;border:0"></td></tr>'
-        f'<tr><td style="padding:26px 28px 6px">{paras}</td></tr>'
-        f'<tr><td style="padding:8px 28px 24px"><a href="{booking_url}" style="background:{brand};color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:13px 26px;border-radius:10px;display:inline-block">\U0001F4C5 Book a free appointment</a></td></tr>'
-        f'<tr><td style="padding:0 28px 22px"><p style="margin:0;color:#8a8aa0;font-size:13px">— {_html_escape(sender)}, {_html_escape(company)}</p></td></tr>'
-        f'<tr><td style="background:#f4f2fb;padding:15px 28px;border-top:1px solid #eceafa">'
-        f'<p style="margin:0 0 6px;color:#9a9ab0;font-size:11px;line-height:1.5">{_html_escape(company)} · {_html_escape(address)}</p>'
-        f'<p style="margin:0;color:#9a9ab0;font-size:11px"><a href="{manage_url}" style="color:{brand}">Manage subscription</a> · <a href="{unsub_url}" style="color:{brand}">Unsubscribe</a></p>'
-        '</td></tr></table></td></tr></table></body></html>')
+        f'<p style="margin:0 0 14px">{_html_escape(p).strip()}</p>'
+        for p in clean_body.split("\n") if p.strip())
+    phone_html = f' | {_html_escape(phone)}' if phone else ""
+    html = (
+        '<div style="font-family:Arial,Helvetica,sans-serif;color:#2b2b3a;font-size:15px;line-height:1.6;max-width:620px">'
+        + paras
+        + f'<p style="margin:0 0 12px">{L["regards"]}</p>'
+        + '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr>'
+        + f'<td style="padding-right:13px;vertical-align:top"><img src="{logo}" width="48" height="48" alt="{_html_escape(company)}" style="width:48px;height:48px;border-radius:9px;display:block;border:0"></td>'
+        + f'<td style="vertical-align:top;border-left:3px solid {brand};padding-left:13px">'
+        + f'<div style="font-weight:bold;font-size:15px;color:#14142b">{_html_escape(sender)}</div>'
+        + f'<div style="font-size:12.5px;color:#6a6a80">{_html_escape(title)} · {_html_escape(company)}</div>'
+        + f'<div style="font-size:12.5px;margin-top:4px"><a href="{web_url}" style="color:{brand};text-decoration:none">{_html_escape(web)}</a>{phone_html}</div>'
+        + f'<div style="font-size:12.5px;margin-top:2px"><a href="{booking_url}" style="color:{brand};text-decoration:none;font-weight:bold">📅 {L["book"]}</a></div>'
+        + '</td></tr></table>'
+        + f'<p style="font-size:11px;color:#9a9ab0;margin-top:20px;border-top:1px solid #ececf5;padding-top:10px">{_html_escape(company)} · {_html_escape(address)}<br><a href="{unsub_url}" style="color:#9a9ab0">{L["unsub"]}</a></p>'
+        + '</div>')
+    return plain, html
 
 
 class Emailer:
@@ -499,34 +522,39 @@ class Emailer:
         # the agent tags each email's purpose; default cold outreach -> marketing.
         category = payload.get("email_category") or ("marketing" if is_outreach else None)
         unsub = payload.get("unsubscribe_url", "")
-        # Cold email is PLAIN TEXT by default — it reads like a real person wrote
-        # it (higher replies, not flagged as scam/marketing). The branded HTML
-        # template is opt-in only via EMAIL_HTML=1.
-        use_html = is_outreach and _env("EMAIL_HTML", "0") == "1"
-        html = self._outreach_html(body, job) if use_html else None
+        # Cold outreach: personal body + a deterministic branded signature (plain
+        # text + HTML). Code owns the signature so the consultation link is always
+        # attached. Replies stay plain.
+        if is_outreach:
+            plain, html = self.compose_outreach(body, job)
+        else:
+            plain, html = body, None
         ref = self.send_message(
-            to_addr, subject, body,
+            to_addr, subject, plain,
             extra_headers={"List-Unsubscribe": f"<{unsub}>" if unsub else ""},
             category=category, html=html)
         if is_outreach and isinstance(ref, str) and not ref.startswith(("suppressed:", "send_error")):
             _note_outreach_sent()   # count it toward today's warm-up cap
         return ref
 
-    def _outreach_html(self, body: str, job: dict) -> str:
-        """Wrap a cold-email body in the branded template (logo + booking button +
-        manage/unsubscribe). Defaults come from the live site; override via env."""
+    def compose_outreach(self, body: str, job: dict):
+        """Return (plain_text, html) for a cold email — the body + the branded
+        signature. Used by send() AND directly by the test command."""
         p = job.get("payload", {}) or {}
         cfg = p.get("config", {}) or {}
-        return _branded_email_html(
+        lead = p.get("lead", {}) or {}
+        return _outreach_emails(
             body,
-            logo=_env("EMAIL_LOGO_URL", _LOGO_DEFAULT),
+            lang=lead.get("country", ""),
+            sender=_env("EMAIL_FROM_NAME", "Hasan"),
+            title=_env("EMAIL_SENDER_TITLE", "Founder"),
+            company=_env("EMAIL_COMPANY", "") or cfg.get("sender_company") or "Anthropos Automation",
+            website=_env("EMAIL_WEBSITE", "anthropos-automation.com"),
+            phone=_env("EMAIL_PHONE", ""),
             booking_url=_env("EMAIL_BOOKING_URL", "https://anthropos-automation.com/free-audit/"),
+            address=cfg.get("physical_address") or _env("EMAIL_ADDRESS", "1309 Coffeen Ave STE 1200, Sheridan, WY 82801"),
             unsub_url=p.get("unsubscribe_url") or _env("EMAIL_UNSUBSCRIBE_URL", "https://anthropos-automation.com/unsubscribe"),
-            manage_url=_env("EMAIL_MANAGE_URL", "https://anthropos-automation.com/free-audit/"),
-            company=_env("EMAIL_COMPANY", "Anthropos Automation Service LLC"),
-            address=_env("EMAIL_ADDRESS", "1309 Coffeen Ave STE 1200, Sheridan, WY 82801"),
-            brand=_env("EMAIL_BRAND_COLOR", "#7A00DF"),
-            sender=cfg.get("sender_name") or _env("REPLY_SENDER_NAME", "Hasan"))
+            logo=_env("EMAIL_LOGO_URL", _LOGO_DEFAULT))
 
 
 # ---------------------------------------------------------------------------
