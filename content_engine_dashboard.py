@@ -121,6 +121,16 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .dfconn .line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--line2),var(--teal),var(--line2))}
 .dfconn::after{content:'';position:absolute;top:-2px;left:0;width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 7px var(--teal);animation:dfflow 1.7s linear infinite}
 @keyframes dfflow{0%{left:-4px;opacity:0}15%{opacity:1}85%{opacity:1}100%{left:100%;opacity:0}}
+.mcard{background:linear-gradient(180deg,#0d1a33,#0b111f);border-color:#22345a;margin-bottom:12px}
+.mhead{display:flex;align-items:center;gap:11px;margin-bottom:13px}
+.mi{font-size:22px}.mt{font-size:15px;font-weight:750;letter-spacing:-.01em}
+.mbody{display:flex;gap:20px;flex-wrap:wrap;align-items:center}
+.mstats{display:flex;gap:9px;flex-wrap:wrap;flex:1 1 260px}
+.mstat{background:var(--s2);border:1px solid var(--line);border-radius:10px;padding:9px 13px;min-width:88px}
+.msv{font-size:23px;font-weight:750;line-height:1}
+.msl{font-size:10px;color:var(--mut);margin-top:4px;letter-spacing:.02em}
+.mchart{flex:1 1 240px;min-width:220px}
+@media(max-width:860px){.mbody{flex-direction:column;align-items:stretch}}
 """
 
 
@@ -380,6 +390,19 @@ def _by_country(out_jobs):
 
 def _panel(title, desc, body):
     return f"<div class='card'><p class='ct'>{_esc(title)}</p><p class='cc'>{_esc(desc)}</p>{body}</div>"
+
+
+def _master(icon, title, sub, kpis, chart_html):
+    """The big at-a-glance summary card that sits on top of a section: a row of
+    headline KPI numbers + one summary chart. kpis = [(label, value, color)]."""
+    tiles = "".join(
+        f"<div class='mstat'><div class='msv tnum' style='color:{c}'>{v}</div>"
+        f"<div class='msl'>{_esc(l)}</div></div>" for l, v, c in kpis)
+    return (f"<div class='card full mcard'><div class='mhead'><span class='mi'>{icon}</span>"
+            f"<div><div class='mt'>{_esc(title)}</div>"
+            f"<div class='cc' style='margin:1px 0 0'>{_esc(sub)}</div></div></div>"
+            f"<div class='mbody'><div class='mstats'>{tiles}</div>"
+            f"<div class='mchart'>{chart_html}</div></div></div>")
 
 
 def _sparkline(vals, color, h=42, w=220):
@@ -653,7 +676,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     top_html = "".join(
         f"<div class='fe'><span>{_esc((j.get('payload',{}).get('content_producer',{}) or {}).get('title') or j.get('job_id'))}</span>"
         f"<span class='dim' style='margin-left:auto'>{_esc(j.get('status'))}</span></div>" for j in top)
-    p_content = grid(
+    m_content = _master("📝", "Content — at a glance", "How much you're producing and shipping.",
+        [("Made / month", made_month, "#EDF1FB"), ("Published", published, "#3FD98B"),
+         ("In progress", sum(pl[0:4]), "#F5B14C"), ("On pace for", proj, "#8B7CFF")],
+        _sparkline(content_series, "#4C8DFF") if content_jobs else _empty("Fills as pieces are made."))
+    p_content = m_content + grid(
         _panel("Pipeline — where each piece is", "Idea → written → checked → your approval → live → measured.",
                _funnel(list(zip(_STAGES, pl))) if sum(pl) else _empty("No content jobs yet.")),
         _panel("Content by stage", "How many pieces sit at each stage right now.",
@@ -664,7 +691,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                top_html or _empty("Nothing published yet.")))
 
     # ---- 2. LEAD MACHINE ----
-    p_leads = grid(
+    m_leads = _master("🧲", "Leads — at a glance", "Your pipeline from stranger to booked call.",
+        [("Found", leads_found, "#EDF1FB"), ("Emailed", emails_sent, "#4C8DFF"),
+         ("Replied", lead_rows[4][1], "#8B7CFF"), ("Booked", lead_rows[5][1], "#3FD98B")],
+        _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("Fills as leads flow in."))
+    p_leads = m_leads + grid(
         _panel("Lead funnel", "Stranger → verified → qualified → emailed → replied → booked.",
                _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("No leads yet — connect the lead finder.")),
         _panel("Leads by country — your 5 target markets",
@@ -684,7 +715,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     route_html = "".join(
         f"<div class='chip'><span class='nm'>{p}</span><span class='dim'>from {a}</span></div>"
         for p, a in _routing)
-    p_email = grid(
+    m_email = _master("✉️", "Outreach — at a glance", "Cold email → reply → booked → won.",
+        [("Sent", emails_sent, "#EDF1FB"), ("Replied", 0, "#8B7CFF"),
+         ("Booked", 0, "#F5B14C"), ("Won", o_cust, "#3FD98B")],
+        _funnel_skeleton([("Sent", emails_sent, 100), ("Replied", 0, 62),
+                          ("Booked", 0, 38), ("Won", o_cust, 20)], "Fills as replies land."))
+    p_email = m_email + grid(
         _panel("Sent vs replied", "Cold emails out, and how many replied.",
                _bars([("Sent", emails_sent), ("Replied", 0)], "#4C8DFF") if emails_sent else _empty("No emails sent yet.")),
         _panel("Sent by purpose → address", "The loop: your agent sends each email type from the right alias — all from your one inbox.", route_html),
@@ -697,7 +733,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                if emails_sent else _empty("Fills as outreach runs.")))
 
     # ---- 4. SOCIAL MEDIA ----
-    p_social = grid(
+    _social_live = sum(1 for k in ("social_linkedin", "social_twitter", "social_facebook",
+                                    "social_instagram", "social_tiktok") if st.get(k))
+    m_social = _master("📣", "Social — at a glance", "Posting across your channels.",
+        [("Channels live", f"{_social_live}/5", "#3FD98B" if _social_live else "#F5B14C"),
+         ("Posts", 0, "#EDF1FB"), ("Target / day", 15, "#8B7CFF")],
+        _bars([("LinkedIn", 0), ("X", 0), ("Facebook", 0), ("Instagram", 0), ("TikTok", 0)], "#8B7CFF"))
+    p_social = m_social + grid(
         _panel("Posts per channel", "Content pushed to each social channel.", _empty("Connect a social channel to post.")),
         _panel("Engagement", "Likes, comments, shares per channel.", _empty("Shows once posting is on.")),
         _panel("Schedule adherence", "Are you hitting 3 posts/channel/day?", _empty("Target 3/channel/day.")),
@@ -715,14 +757,22 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "◆ <b>Backlinks to chase:</b> local directories, niche bodies (dental / legal / tax associations), one guest post a month.",
         "◆ <b>Topic gaps:</b> once Search Console is live this turns data-driven — the keywords you rank #5–15 for are your easy wins.",
     ])
-    p_seo = grid(
+    m_seo = _master("🔎", "SEO / AEO / GEO — at a glance", "Visibility across Google & AI answers.",
+        [("Search traffic", "—", "#4C8DFF"), ("Avg rank", "—", "#8B7CFF"),
+         ("AI mentions", "—", "#2FE3D2"), ("Backlinks", "—", "#3FD98B")], mfunnel)
+    p_seo = m_seo + grid(
         _panel("Marketing funnel", "Traffic → interest → location → authority.", mfunnel),
         _panel("Keyword rankings", "Where your pages rank.", _empty("Connect Search Console.")),
         _panel("AI-answer mentions", "How often ChatGPT / Google AI quote you.", _empty("Shows once tracking is on.")),
         _panel("Content assistant — your next move", "What to publish and where to build backlinks.", assist))
 
     # ---- 6. ADS & GROWTH ----
-    p_ads = grid(
+    m_ads = _master("🎯", "Ads & growth — at a glance", "Paid campaigns, tuned by your SEO signals.",
+        [("Spend", "—", "#EDF1FB"), ("Clicks", "—", "#4C8DFF"),
+         ("Cost / lead", "—", "#8B7CFF"), ("ROAS", "—", "#3FD98B")],
+        _empty("Connect Google Ads on the System Map to fill this.") if not st.get("ads_api")
+        else _empty("Campaign data appears once ads run."))
+    p_ads = m_ads + grid(
         _panel("Spend by campaign", "Where the ad budget goes.", _empty("Feed ad data (ADS_JSON / n8n).")),
         _panel("Cost per result (CPA/ROAS)", "Efficiency per campaign.", _empty("Shows with ad data.")),
         _panel("Budget reallocation", "Move money to what works.", _empty("The ads agent suggests moves here.")),
@@ -742,7 +792,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                     f"<div class='br'><span class='bl'>Cost / customer</span><div class='track'><i style='width:60%;background:#4C8DFF'></i></div><span class='bv'>{cpc}</span></div></div>")
     else:
         roi_body = _empty("No results yet. Record leads/revenue per job (from your CRM or n8n → POST /jobs/{id}/outcome) to see ROI here.")
-    p_budget = grid(
+    m_budget = _master("💰", "Budget & cost — at a glance", "Every euro in and out, against your cap.",
+        [("Spent", f"${month_spent:.2f}", bcol), ("Cap", f"${month_cap:.0f}", "#8B7CFF"),
+         ("Today", f"${day_spent:.2f}", "#EDF1FB"), ("Earned", f"${o_rev:,.0f}", "#3FD98B")],
+        _sparkline(spend_series, bcol) if total_cost else _empty("Fills day by day."))
+    p_budget = m_budget + grid(
         _panel("This month vs $200 cap", "The engine pauses before it ever goes over.",
                "<div style='display:flex;align-items:center;gap:18px'>" + _donut(pct, bcol) +
                f"<div><div class='dim'>Today</div><div class='big tnum'>${day_spent:.2f}</div><div class='dim'>of ${day_cap:.0f}/day</div></div></div>"),
@@ -793,7 +847,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 f"<span class='dim' style='color:{col}'>{'ready' if live else 'needs a wire'}</span></div>")
     agents_live = sum(1 for _, _, dep in _AGENTS if dep is None or st.get(dep))
     agents_html = "".join(_agent_row(*a) for a in _AGENTS)
-    p_agents = grid(
+    m_agents = _master("❤️", "Agents & health — at a glance", "Is the machine alive and working?",
+        [("Agents ready", f"{agents_live}/16", "#3FD98B" if agents_live else "#F5B14C"),
+         ("Wires live", f"{live_conn}/{total_conn}", "#4C8DFF"),
+         ("Jobs done", outcomes["done"], "#8B7CFF"), ("Errors", outcomes["failed"], "#FF6B93")],
+        _bars([("Running", outcomes["running"]), ("Done", outcomes["done"]),
+               ("Failed", outcomes["failed"])], "#4C8DFF") if jobs else _empty("No jobs yet."))
+    p_agents = m_agents + grid(
         _panel("Engine health", "Live checks on the core parts.", hrows),
         _panel(f"Your 16 agents — {agents_live} ready", "Each worker, what it does, and whether it can run right now.", agents_html),
         _panel("Job outcomes", "Running vs done vs failed.",
@@ -804,7 +864,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     def ghub(k, name, what):
         on = st.get(k)
         return f"<div class='chip'><span class='nm'><span class='d' style='background:{'#3FD98B' if on else '#F5B14C'}'></span>{name}</span><span class='pill {'p-live' if on else 'p-need'}'>{'live' if on else 'needs key'}</span></div><div class='dim' style='padding:0 0 8px'>{what}</div>"
-    p_google = grid(
+    _hub_live = sum(1 for k in ("google_sheets", "google_drive", "email_send") if st.get(k))
+    m_google = _master("☁️", "Google hub — at a glance", "Your Sheets, Drive & Gmail data hub.",
+        [("Hub parts live", f"{_hub_live}/3", "#3FD98B" if _hub_live else "#F5B14C"),
+         ("Rows", len(jobs), "#EDF1FB"), ("Files", published, "#4C8DFF"), ("Emails sent", emails_sent, "#8B7CFF")],
+        _bars([("Job rows", len(jobs)), ("Content files", published), ("Emails sent", emails_sent)], "#2FE3D2")
+        if (jobs or emails_sent) else _empty("Fills as the hub connects + jobs run."))
+    p_google = m_google + grid(
         _panel("Google Sheets — data hub", "Every job, lead & metric mirrors here as rows.",
                ghub("google_sheets", "Sheets", "Your live spreadsheet dashboard.")
                + f"<div class='dim'>≈ <b style='color:var(--ink)'>{len(jobs)}</b> rows mirrored</div>"),
@@ -860,7 +926,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
              "② Each waits here for your <b>✓ Approve</b>.<br>"
              "③ Approved work publishes / sends right away (cold email is capped &amp; bounce-protected).<br>"
              "④ Flip on <b>Autonomy</b> only when you trust it — then it approves the safe ones itself.</div>")
-    p_appr = ("<div class='card full'><p class='ct'>✅ Waiting for your approval</p>"
+    m_appr = _master("✅", "Approvals — at a glance", "What needs you, right now.",
+        [("Waiting", len(waiting_jobs), "#F5B14C" if waiting_jobs else "#3FD98B"),
+         ("Rewrites", revs, "#8B7CFF"),
+         ("Autonomy", "ON" if autonomy else "OFF", "#3FD98B" if autonomy else "#59668A")],
+        _bars([("Waiting", len(waiting_jobs)), ("Rewrites", revs)], "#F5B14C")
+        if (waiting_jobs or revs) else _empty("All caught up — nothing needs you. 🎉"))
+    p_appr = m_appr + ("<div class='card full'><p class='ct'>✅ Waiting for your approval</p>"
               "<p class='cc'>Read the preview, then approve — nothing goes live without you.</p>" + ap_body + "</div>"
               + "<div class='grid g3' style='margin-top:12px'>"
               + _panel("Quick actions", "Real buttons — no code, no typing.", quick_body)
@@ -895,7 +967,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  + f"<div class='dim' style='margin-top:6px'>${(content_cost/max(len(content_jobs),1)):.3f} avg per piece · "
                    "target: down over time as it learns</div>")
                 if content_jobs else _empty("Fills as pieces are made."))
-    p_learn = grid(
+    m_learn = _master("🧠", "Learning — at a glance", "What the engine has figured out so far.",
+        [("Rules learned", len(rules), "#EDF1FB"), ("Themes", len(themes), "#4C8DFF"),
+         ("Top market", (top_c[0] if top_c and top_c[1] else "—"), "#8B7CFF"), ("ROI", f"${o_rev:,.0f}", "#3FD98B")],
+        _bars(themes, "#4C8DFF") if themes else _empty("Fills as content is produced."))
+    p_learn = m_learn + grid(
         _panel("Playbook — what the engine has learned", "Rules it builds from your WHOLE business — content, leads and money.", rules_html),
         _panel("Top content themes", "The subjects your machine writes about most (its growing expertise).",
                _bars(themes, "#4C8DFF") if themes else _empty("Fills as content is produced.")),
@@ -947,7 +1023,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     connect_card = ("<div class='card full' style='margin-top:12px'><p class='ct'>🔌 Connect your wires — paste keys, click Connect</p>"
                     "<p class='cc'>No SSH, no rebuild. Saved instantly; the wire turns green above within ~15 seconds. What each one needs (and unlocks) is in the table above.</p>"
                     "<div class='cgrid'>" + "".join(conn_rows) + "</div></div>")
-    p_map = ("<div class='card full'><p class='ct'>🗺️ System blueprint — every connection in your machine</p>"
+    _wired = round(live_conn / total_conn * 100) if total_conn else 0
+    m_map = _master("🗺️", "Wiring — at a glance", "How much of your machine is connected.",
+        [("Wires live", f"{live_conn}/{total_conn}", "#3FD98B"),
+         ("To connect", total_conn - live_conn, "#F5B14C"), ("Wired", f"{_wired}%", "#4C8DFF")],
+        f"<div class='prog' style='height:12px'><i style='width:{_wired}%'></i></div>"
+        f"<div class='dim' style='margin-top:6px'>{_wired}% of your machine is connected</div>")
+    p_map = m_map + ("<div class='card full'><p class='ct'>🗺️ System blueprint — every connection in your machine</p>"
              "<p class='cc'>Each card is one API, account or plugin — its icon, what kind of connection it is, one line of what it does, and whether it's live. Read left → right: inputs → brain → Google hub → outputs.</p>"
              + _blueprint(st) + "</div>"
              "<div class='card full' style='margin-top:12px'><p class='ct'>⚡ Live data flow — your two pipelines, stage by stage</p>"
@@ -986,7 +1068,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                   f"<div style='flex:1;min-width:220px'><div class='dim' style='margin-bottom:4px'>Spend · last 14 days</div>{_sparkline(spend_series, bcol)}</div>"
                   "</div>"
                   f"<div class='prog' style='margin-top:12px'><i style='width:{min(100,pct)}%;background:{bcol}'></i></div></div>")
-    overview = (setup_card + cost_meter + "<div class='ov'>"
+    m_overview = _master("📊", "Your business — at a glance", "The whole funnel, content to cash.",
+        [("Published", published, "#3FD98B"), ("Leads", leads_found, "#4C8DFF"),
+         ("Emails", emails_sent, "#8B7CFF"), ("Customers", o_cust, "#2FE3D2"),
+         ("Revenue", f"${o_rev:,.0f}", "#3FD98B")],
+        _funnel([("Content", published), ("Leads", leads_found), ("Emailed", emails_sent), ("Customers", o_cust)])
+        if (published or leads_found or emails_sent) else _empty("Fills as the engine runs."))
+    overview = (m_overview + setup_card + cost_meter + "<div class='ov'>"
                 + tile("content", "📝", "Content", published, "published this month", green if published else amber)
                 + tile("leads", "🧲", "Leads", leads_found, "collected", green if leads_found else amber)
                 + tile("email", "✉️", "Email", emails_sent, "sent", green if emails_sent else amber)
