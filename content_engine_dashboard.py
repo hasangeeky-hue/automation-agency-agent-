@@ -1472,7 +1472,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Email quota", "Daily Gmail send headroom.", _empty("Tracks as email sends.")))
 
     # ---- 10. APPROVALS & COMMANDS (human, with previews — no code) ----
-    waiting_jobs = [j for j in jobs if j.get("status") == "AWAITING_APPROVAL"]
+    # Content + outreach approvals only. Media campaigns are approved/deployed on
+    # the Media Buying page (they were showing here mislabeled as "Article").
+    waiting_jobs = [j for j in jobs if j.get("status") == "AWAITING_APPROVAL"
+                    and j.get("type") in ("content_piece", "outreach_campaign")]
 
     def _appr_card(j):
         jid = _esc(j.get("job_id"))
@@ -1500,6 +1503,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
             meta = (f"<div class='dim' style='margin-top:6px'>📄 Type: <b>Blog article</b> · "
                     f"~{words} words · publishes to your website</div>")
             snippet = body[:600]
+        # image preview, if the piece carries a generated hero image
+        _pimg = p.get("image")
+        img = ((p.get("content_producer", {}) or {}).get("image_url")
+               or p.get("image_url") or p.get("hero_image")
+               or (_pimg.get("url") if isinstance(_pimg, dict) else _pimg))
+        img_html = ""
+        if isinstance(img, str) and img.startswith("http"):
+            img_html = (f"<div style='margin-top:8px'><img src='{_esc(img)}' alt='preview' "
+                        "style='max-width:220px;max-height:150px;border-radius:9px;border:1px solid var(--line)'></div>")
         preview = (f"<div style='margin-top:8px;padding:11px 13px;border-radius:9px;background:var(--s3,rgba(255,255,255,.03));"
                    f"border:1px solid var(--line);max-height:230px;overflow:auto;white-space:pre-wrap;line-height:1.6;font-size:13px'>"
                    f"{_esc(snippet)}{'…' if len(snippet) >= 600 else ''}</div>"
@@ -1510,7 +1522,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 f"<button class='sbtn' style='margin-left:auto' onclick=\"approve('{jid}')\">✓ Approve</button></div>"
                 + meta
                 + f"<div class='dim' style='margin-top:6px'>📎 Basis: {_esc(_why_piece(j))}</div>"
-                + preview + "</div>")
+                + img_html + preview + "</div>")
 
     if waiting_jobs:
         ids = ",".join(str(j.get("job_id")) for j in waiting_jobs)
