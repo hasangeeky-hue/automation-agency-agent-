@@ -313,7 +313,7 @@ CONNECTOR_ENV_KEYS = [
     "ADS_JSON", "BACKLINKS_JSON",
     "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN",
     "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_LOGIN_CUSTOMER_ID",
-    "CALCOM_API_KEY",
+    "GOOGLE_ADS_API_VERSION", "CALCOM_API_KEY",
     "EMAIL_LOGO_URL", "EMAIL_BOOKING_URL", "EMAIL_MANAGE_URL", "EMAIL_UNSUBSCRIBE_URL",
     "EMAIL_COMPANY", "EMAIL_ADDRESS", "EMAIL_BRAND_COLOR", "EMAIL_HTML", "EMAIL_WEBSITE",
     "EMAIL_FROM_NAME", "EMAIL_SENDER_TITLE", "EMAIL_PHONE",
@@ -1514,6 +1514,13 @@ class GoogleAds:
         # optional: when the developer token belongs to a MANAGER (MCC) account
         # but ads run in a sub-account, Google needs the manager id as a header.
         self.login_cid = _env("GOOGLE_ADS_LOGIN_CUSTOMER_ID").replace("-", "")
+        # Google retires API versions after ~a year; make it configurable so a
+        # sunset version (404s) can be bumped without a code change. diag() probes
+        # for a live one and tells you which to set.
+        self.ver = _env("GOOGLE_ADS_API_VERSION", "v18") or "v18"
+
+    def _base(self) -> str:
+        return f"https://googleads.googleapis.com/{self.ver}/customers/{self.cid}"
 
     def available(self) -> bool:
         return bool(self.dev and self.cid and self.refresh
@@ -1562,24 +1569,43 @@ class GoogleAds:
         if not tok:
             return {"ok": False, "stage": "oauth",
                     "hint": "OAuth refused — the refresh token or client id/secret is wrong. Re-mint the refresh token."}
+        q = {"query": "SELECT campaign.id, campaign.name FROM campaign LIMIT 5"}
+        hdr = {**self._headers(tok), "User-Agent": _UA}
+
+        def _call(ver):
+            return rq.post(f"https://googleads.googleapis.com/{ver}/customers/{self.cid}/googleAds:searchStream",
+                           json=q, headers=hdr, timeout=_HTTP_TIMEOUT)
         try:
-            r = rq.post(f"https://googleads.googleapis.com/v17/customers/{self.cid}/googleAds:searchStream",
-                        json={"query": "SELECT campaign.id, campaign.name FROM campaign LIMIT 5"},
-                        headers={**self._headers(tok), "User-Agent": _UA}, timeout=_HTTP_TIMEOUT)
+            r = _call(self.ver)
+            used = self.ver
+            if r.status_code == 404:   # version sunset — probe for a live one
+                for v in ("v21", "v20", "v19", "v18", "v17", "v16"):
+                    if v == self.ver:
+                        continue
+                    rr = _call(v)
+                    if rr.status_code != 404:
+                        r, used = rr, v
+                        break
         except Exception as e:
             return {"ok": False, "stage": "network", "error": str(e)[:200]}
+        version_note = "" if used == self.ver else f" (set GOOGLE_ADS_API_VERSION={used} — {self.ver} is sunset)"
+        if r.status_code == 404:
+            return {"ok": False, "stage": "api_version",
+                    "hint": "Every Google Ads API version returned 404 — the Google Ads API is likely NOT enabled "
+                            "for your Cloud project. Enable 'Google Ads API' in Google Cloud Console → APIs & Services."}
         if r.status_code == 200:
             try:
                 n = sum(len(b.get("results", [])) for b in r.json())
             except Exception:
                 n = 0
-            return {"ok": True, "stage": "live", "campaigns_found": n,
+            return {"ok": True, "stage": "live", "api_version": used, "campaigns_found": n,
                     "manager_id_set": bool(self.login_cid),
-                    "hint": ("Google Ads API is live and returning data." if n
-                             else "Connected and authorized — but this account has no campaigns in the window yet.")}
-        return {"ok": False, "stage": "api", "status": r.status_code,
+                    "hint": (("Google Ads API is live and returning data." if n else
+                              "Connected and authorized — this account just has no campaigns in the window yet.")
+                             + version_note)}
+        return {"ok": False, "stage": "api", "status": r.status_code, "api_version": used,
                 "manager_id_set": bool(self.login_cid),
-                "error": r.text[:500], "hint": self._explain(r.status_code, r.text)}
+                "error": r.text[:500], "hint": self._explain(r.status_code, r.text) + version_note}
 
     def summary(self) -> dict:
         if not self.available():
@@ -1591,7 +1617,7 @@ class GoogleAds:
              "metrics.impressions, metrics.conversions FROM campaign "
              "WHERE segments.date DURING LAST_30_DAYS")
         j = _post_json(
-            f"https://googleads.googleapis.com/v17/customers/{self.cid}/googleAds:searchStream",
+            f"{self._base()}/googleAds:searchStream",
             {"query": q}, headers=self._headers(tok))
         if not j:
             return {}
@@ -1621,7 +1647,7 @@ class GoogleAds:
         if not tok:
             return {"ok": False, "error": "could not get a Google access token"}
         H = self._headers(tok)
-        base = f"https://googleads.googleapis.com/v17/customers/{self.cid}"
+        base = self._base()
 
         def mut(resource, ops):
             return _post_json(f"{base}/{resource}:mutate", {"operations": ops}, headers=H)
@@ -1681,7 +1707,7 @@ class GoogleAds:
         if not tok:
             return {"ok": False, "error": "could not get a Google access token"}
         H = self._headers(tok)
-        url = f"https://googleads.googleapis.com/v17/customers/{self.cid}/campaigns:mutate"
+        url = f"{self._base()}/campaigns:mutate"
         try:
             r = _post_json(url, {"operations": [{
                 "update": {"resourceName": campaign_ref, "status": "PAUSED"},
