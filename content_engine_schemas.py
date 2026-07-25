@@ -600,7 +600,9 @@ MEDIA_CHAT = {
     "properties": {
         "reply": {"type": "string"},
         "changed": {"type": "boolean"},
-        "campaign": {"type": "object"},
+        # full campaign shape (already additionalProperties:false) — a bare
+        # {"type":"object"} is rejected by structured output.
+        "campaign": MEDIA_BUYER,
     },
     "additionalProperties": False,
 }
