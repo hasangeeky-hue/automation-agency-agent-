@@ -96,6 +96,12 @@ def get_store():
             _B.set_ci_provider(_STORE.get_setting)
         except Exception:
             pass
+        try:   # live web-research spend counts toward the monthly cap/meters
+            import content_engine_providers as _P
+            if hasattr(_STORE, "add_daily_cost"):
+                _P.set_web_research_cost_sink(lambda cost, usage: _STORE.add_daily_cost(cost))
+        except Exception:
+            pass
     return _STORE
 
 

@@ -110,7 +110,7 @@ _MAX_TOKENS = {
 def _max_tokens_for(skill_name: str, payload: dict) -> int:
     # Content Producer copy: blog gets 2200, everything else 400.
     if skill_name in ("content_producer", "content_producer_copy"):
-        return 2200 if payload.get("type") == "blog" else 400
+        return 2600 if payload.get("type") == "blog" else 400
     # Lead Qualifier: ~130 tokens per lead (now also business/pain/offer), 25-batch.
     if skill_name == "lead_qualifier":
         n = len(payload.get("leads", []) or [])
@@ -282,6 +282,61 @@ def _get_anthropic():
     return _anthropic_client
 
 
+def web_research(topic: str, context: str = "", max_uses: int = 5) -> str:
+    """Best-effort LIVE web research for a content piece. Uses the web_search
+    server tool (free-form, no structured output) and returns a plain-text brief
+    of real, current facts + sources the writer must ground the article in.
+    Returns '' on ANY error, so the content pipeline never breaks if web search
+    is unavailable on the account — it just falls back to un-researched writing."""
+    topic = (topic or "").strip()
+    if not topic:
+        return ""
+    model = os.getenv("FRONTIER_MODEL", "claude-opus-4-8")
+    prompt = (
+        "You are researching for a B2B blog article. Search the web and return a "
+        "tight, factual brief the writer will ground the piece in.\n\n"
+        f"TOPIC: {topic}\n" + (f"AUDIENCE / ANGLE: {context}\n" if context else "") +
+        "\nReturn, using ONLY things you verified via search:\n"
+        "- 5-7 specific, current facts or stats (include the year and the number)\n"
+        "- 2-3 concrete real-world examples, named tools, or approaches\n"
+        "- 2 credible sources as 'Name — URL'\n"
+        "Be concrete and specific. No filler, no generic advice.")
+    for tool_type in ("web_search_20260209", "web_search_20250305"):
+        try:
+            client = _get_anthropic()
+            resp = client.messages.create(
+                model=model, max_tokens=1300,
+                tools=[{"type": tool_type, "name": "web_search", "max_uses": max_uses}],
+                messages=[{"role": "user", "content": prompt}],
+            )
+            brief = "\n".join(b.text for b in resp.content
+                              if getattr(b, "type", "") == "text" and getattr(b, "text", "")).strip()
+            try:
+                u = resp.usage
+                usage = {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
+                         "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", 0) or 0,
+                         "cache_read_input_tokens": getattr(u, "cache_read_input_tokens", 0) or 0}
+                cost, _ = _compute_cost(model, usage)
+                if _WEB_RESEARCH_COST_SINK:
+                    _WEB_RESEARCH_COST_SINK(cost, usage)
+            except Exception:
+                pass
+            if brief:
+                return brief
+        except Exception:
+            continue   # try the older tool type, then give up gracefully
+    return ""
+
+
+_WEB_RESEARCH_COST_SINK = None
+
+
+def set_web_research_cost_sink(fn):
+    """Register a callback(cost_usd, usage) so live-research spend hits the meters."""
+    global _WEB_RESEARCH_COST_SINK
+    _WEB_RESEARCH_COST_SINK = fn
+
+
 def anthropic_call(model: str, spec: PromptSpec) -> SkillResult:
     client = _get_anthropic()
     kwargs = dict(
@@ -396,7 +451,7 @@ if __name__ == "__main__":
     }
     checks = {
         "site_intelligence": 500,
-        "content_producer": 2200,          # payload.type == blog
+        "content_producer": 2600,          # payload.type == blog
         "content_producer_image": 300,
         "lead_qualifier": max(200, 60 * 2 + 100),
         "qa_compliance": 600,

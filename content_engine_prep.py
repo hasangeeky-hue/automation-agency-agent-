@@ -139,9 +139,50 @@ def _in_content_strategist(job: dict) -> dict:
     return out
 
 
+def _audience(job: dict) -> tuple[str, str]:
+    """Who the piece is for + their pain — from config/brand, else the Anthropos
+    ICP default. This is what makes the article specific, not generic."""
+    cfg, br = _cfg(job), _brand(job)
+    persona = (cfg.get("audience") or cfg.get("icp") or br.get("audience")
+               or br.get("icp") or "Owners and managers of small service businesses "
+               "(doctors, lawyers, dentists, tax consultants, Shopify stores, content "
+               "creators, marketing managers) in the US, UK, Germany, Switzerland and Canada.")
+    pain = (cfg.get("audience_pain") or br.get("audience_pain")
+            or "Drowning in manual admin (bookings, follow-ups, lead handling, reporting), "
+            "no time or in-house tech team, losing leads to slow response, unsure how AI/"
+            "automation actually applies to their specific business.")
+    return persona, pain
+
+
+def _content_research(job: dict, row: dict) -> str:
+    """Live web-research brief for THIS piece (cached on the job so it runs once).
+    Best-effort: '' if research is off or web search is unavailable."""
+    import os
+    if os.getenv("CONTENT_WEB_RESEARCH", "1") not in ("1", "true", "True"):
+        return ""
+    if row.get("type", "blog") not in ("blog", "email"):   # long-form only
+        return ""
+    idx = str(_cfg(job).get("produce_index", 0))
+    cache = job.setdefault("payload", {}).setdefault("_research", {})
+    if idx in cache:
+        return cache[idx] or ""
+    topic = row.get("working_title") or row.get("primary_keyword") or ""
+    persona, pain = _audience(job)
+    try:
+        from content_engine_providers import web_research
+        brief = web_research(topic, context=f"Audience: {persona} Pain: {pain}")
+    except Exception:
+        brief = ""
+    cache[idx] = brief
+    return brief
+
+
 def _in_content_producer(job: dict) -> dict:
     row = _chosen_row(job)
     ptype = row.get("type", "blog")
+    persona, pain = _audience(job)
+    comp = _result(job, "competitor_intel")
+    angles = [a.get("angle", "") for a in comp.get("differentiation_angles", []) if a.get("angle")]
     out = {
         "type": ptype,
         "working_title": row.get("working_title", ""),
@@ -150,6 +191,11 @@ def _in_content_producer(job: dict) -> dict:
         "business_goal": row.get("business_goal", _cfg(job).get("business_goal", "awareness")),
         "cta": _cfg(job).get("cta", ""),
         "length": _LENGTH_BY_TYPE.get(ptype, _LENGTH_BY_TYPE["blog"]),
+        # the levers that make it specific, not generic:
+        "audience_persona": persona,
+        "audience_pain": pain,
+        "differentiation_angles": angles[:3],
+        "research_brief": _content_research(job, row),
     }
     pb = _learnings(job)
     if pb:

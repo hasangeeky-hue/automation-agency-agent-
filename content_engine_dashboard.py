@@ -949,15 +949,69 @@ def _md_to_html(text):
     return "\n".join(out)
 
 
-def _blog_webview_srcdoc(title, body):
+def _brand_palette(ci_text=""):
+    """Pull brand colours from the saved CI text (any #hex codes), else fall back
+    to the Anthropos palette (deep slate + cyan/violet). Returns (ink, accent, accent2)."""
+    import re
+    hexes = re.findall(r"#[0-9A-Fa-f]{6}", ci_text or "")
+    ink = accent = None     # None = "not yet found from the CI"
+    # first dark-ish hex -> ink (headings/body), first vivid hex -> accent
+    for h in hexes:
+        r, g, b = int(h[1:3], 16), int(h[3:5], 16), int(h[5:7], 16)
+        lum = 0.299 * r + 0.587 * g + 0.114 * b
+        if lum < 90 and ink is None:
+            ink = h
+        elif lum >= 90 and accent is None:
+            accent = h
+    ink = ink or "#101A2E"          # deep slate default
+    accent = accent or "#12B5A6"    # cyan default
+    accent2 = hexes[2] if len(hexes) >= 3 else "#7C6BFF"   # violet default
+    return ink, accent, accent2
+
+
+def _blog_webview_srcdoc(title, body, ci_text="", hero_url="", kicker="ANTHROPOS · INSIGHTS"):
+    """Render the piece the way it lands on the website: a designed, on-brand
+    editorial layout (branded header band, accent headings, hero image, reading
+    typography, closing CTA) — not plain black-on-white."""
+    ink, accent, accent2 = _brand_palette(ci_text)
     inner = _md_to_html(body)
-    doc = ("<html><head><meta charset='utf-8'><style>"
-           "body{font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;max-width:720px;margin:0 auto;"
-           "padding:26px;color:#1a1a2e;line-height:1.75;background:#fff}"
-           "h1{font-size:30px;line-height:1.2;margin:0 0 16px}h2{font-size:22px;margin:26px 0 10px}"
-           "h3{font-size:18px;margin:20px 0 8px}p{margin:0 0 14px}img{max-width:100%;border-radius:10px}"
-           "a{color:#2F6BF0}ul{margin:0 0 14px 20px}li{margin:4px 0}</style></head><body>"
-           f"<h1>{_esc(title)}</h1>{inner}</body></html>")
+    hero = (f"<img class='hero' src='{_esc(hero_url)}' alt=''>"
+            if isinstance(hero_url, str) and hero_url.startswith("http") else "")
+    doc = (
+        "<html><head><meta charset='utf-8'><style>"
+        "*{box-sizing:border-box}"
+        "body{margin:0;background:#EEF1F6;color:" + ink + ";"
+        "font:17px/1.75 Georgia,'Iowan Old Style',Cambria,'Times New Roman',serif}"
+        ".band{background:linear-gradient(115deg," + ink + "," + accent2 + ");height:8px}"
+        ".wrap{max-width:760px;margin:0 auto;background:#fff;min-height:100%;"
+        "box-shadow:0 1px 40px rgba(16,26,46,.10)}"
+        ".head{padding:40px 46px 8px}"
+        ".kick{font:700 12px/1 -apple-system,Segoe UI,Roboto,sans-serif;letter-spacing:2.5px;"
+        "color:" + accent + ";text-transform:uppercase;margin-bottom:14px}"
+        "h1{font:800 34px/1.18 -apple-system,Segoe UI,Roboto,sans-serif;margin:0 0 6px;color:" + ink + "}"
+        ".hero{width:100%;height:auto;display:block;margin:22px 0 0}"
+        ".art{padding:14px 46px 40px}"
+        "h2{font:800 23px/1.3 -apple-system,Segoe UI,Roboto,sans-serif;margin:34px 0 12px;color:" + ink + ";"
+        "padding-left:14px;border-left:4px solid " + accent + "}"
+        "h3{font:700 19px/1.35 -apple-system,Segoe UI,Roboto,sans-serif;margin:24px 0 8px;color:" + ink + "}"
+        "p{margin:0 0 18px}a{color:" + accent2 + ";text-decoration:underline}"
+        "ul{margin:0 0 18px 4px;padding-left:22px}li{margin:7px 0}"
+        "li::marker{color:" + accent + "}"
+        "img{max-width:100%;border-radius:12px;margin:10px 0}"
+        "strong{color:" + ink + "}"
+        ".cta{margin:34px 46px 44px;padding:24px 26px;border-radius:14px;"
+        "background:linear-gradient(120deg," + ink + "," + accent2 + ");color:#fff;"
+        "font-family:-apple-system,Segoe UI,Roboto,sans-serif}"
+        ".cta b{display:block;font-size:19px;margin-bottom:6px}"
+        ".cta .btn{display:inline-block;margin-top:14px;background:" + accent + ";color:#04121a;"
+        "font-weight:700;padding:11px 20px;border-radius:9px;text-decoration:none}"
+        "</style></head><body><div class='band'></div><div class='wrap'>"
+        f"<div class='head'><div class='kick'>{_esc(kicker)}</div><h1>{_esc(title)}</h1></div>"
+        f"{hero}<div class='art'>{inner}</div>"
+        "<div class='cta'><b>Ready to put your growth on autopilot?</b>"
+        "See how Anthropos builds the automation that does this work for you."
+        "<a class='btn' href='#'>Book a free consultation →</a></div>"
+        "</div></body></html>")
     return doc.replace("&", "&amp;").replace('"', "&quot;")
 
 
@@ -1847,7 +1901,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         if body:
             webview = ""
             if is_article:
-                sd = _blog_webview_srcdoc(title, body)
+                sd = _blog_webview_srcdoc(title, body, ci_text=ci_text,
+                                          hero_url=(img if isinstance(img, str) else ""))
                 webview = (
                     "<details style='margin-top:6px'><summary style='cursor:pointer;color:#3FD98B;font-weight:600'>"
                     "🌐 See the web view (how it looks on your site — headings, images, layout)</summary>"

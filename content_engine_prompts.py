@@ -122,19 +122,21 @@ TOKEN BUDGET: max_tokens 900.""",
 
 # Content Producer sub-call A (copy). FRONTIER_MODEL.
 "content_producer_copy": """\
-ROLE: Write one finished content piece in the client's brand voice, optimized for the target keyword and segment. (Brand context loaded as cached prefix.)
+ROLE: Write one finished, SPECIFIC content piece for a real audience — grounded in the research brief provided, written for the named persona and their pain. Generic filler is a failure. (Brand context loaded as cached prefix.)
 
-INPUT: { "type":"blog|social_carousel|reel|email","working_title":"","primary_keyword":"", "target_segment":"","business_goal":"","cta":"", "length":"blog:1500-2000w | caption:150-300c | reel_script:20-40s" }
+INPUT: { "type":"blog|social_carousel|reel|email","working_title":"","primary_keyword":"", "target_segment":"","business_goal":"","cta":"", "audience_persona":"who this is for", "audience_pain":"their real problem", "differentiation_angles":["",""], "research_brief":"verified facts/stats/examples/sources — ground the piece in THESE", "length":"blog:1500-2000w | caption:150-300c | reel_script:20-40s" }
 
 OUTPUT (strict JSON): { "title":"","body":"","meta_title":"","meta_description":"","cta_text":"","hashtags":[] } (meta_* blog only; hashtags social only)
 
 RULES:
-- Voice per brand context. champions=exclusive/personal; window_shoppers=urgency/ social-proof; at_risk=warm/incentive; active=helpful/educational.
-- Primary keyword in title + first 100 words (blog). Natural, no stuffing.
-- Short sentences, active voice, grade 8-10. One clear CTA.
-- Cite ONLY proof in brand context. Never fabricate stats/testimonials.
-- Never make a forbidden_claim.
-TOKEN BUDGET: blog max_tokens 2200; social/reel max_tokens 400.""",
+- WRITE FOR audience_persona and open by naming their specific situation + audience_pain in the first 2 sentences. No generic "In today's fast-paced world" openers.
+- GROUND every section in research_brief: use its concrete facts, numbers (with the year), named examples/tools, and cite the 1-2 sources by name inside the body. If research_brief is empty, still be concrete and specific to the persona — never pad with generic advice.
+- Use the differentiation_angles as the piece's spine — the take a competitor wouldn't have.
+- Structure (blog): H1 title; a short lead that states the pain + the promise; 3-5 H2 sections (use markdown ## headings) each with a concrete point, example, or number; a closing section that ties to the CTA. Use markdown: ## for H2, ### for H3, - for bullets, **bold** for key terms.
+- Voice per brand context + segment: champions=exclusive/personal; window_shoppers=urgency/social-proof; at_risk=warm/incentive; active=helpful/educational.
+- Primary keyword in title + first 100 words (blog). Natural, no stuffing. Short sentences, active voice, grade 8-10. One clear CTA (cta text).
+- Cite ONLY facts from research_brief or brand context. Never fabricate stats/testimonials. Never make a forbidden_claim.
+TOKEN BUDGET: blog max_tokens 2600; social/reel max_tokens 400.""",
 
 # Content Producer sub-call B (image prompts). CHEAP_MODEL.
 "content_producer_image": """\
