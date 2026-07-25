@@ -1004,6 +1004,14 @@ def build_app():
     def autopilot_stop():
         return api_autopilot(False)
 
+    @app.post("/system/start")
+    def system_start():
+        return api_autopilot(True)   # THE one start: unpause + autonomy + publish + queue
+
+    @app.post("/system/stop")
+    def system_stop():
+        return api_autopilot(False)  # THE one stop: pause + autonomy off
+
     @app.post("/selftest")
     def selftest():
         try:

@@ -763,6 +763,105 @@ def _media_page(jobs, st, web_tracking=None):
 
 
 # ---------------------------------------------------------------------------
+# Pipeline health (plain English) + approval log + "why this piece"
+# ---------------------------------------------------------------------------
+_HEALTH_WIRES = [
+    ("claude_api", "🧠 Claude — the brain", "Agents can't think or write. Nothing runs."),
+    ("wordpress_publish", "📝 WordPress publishing", "Finished content can't deploy to your site."),
+    ("linkedin_leads", "🧲 Prospeo lead collection", "No new leads get sourced."),
+    ("email_send", "📧 Email sending", "Cold emails and replies can't go out."),
+    ("email_reply_inbound", "📥 Inbox (IMAP)", "Replies from prospects aren't read."),
+    ("google_gsc_ga4", "📈 Analytics + Search Console", "No website tracking or SEO data for the funnel."),
+    ("ads_api", "🎯 Google Ads", "Campaigns can't deploy; live ad spend won't show (needs Google token approval)."),
+    ("calcom_bookings", "📅 Cal.com bookings", "Booked-call data won't show."),
+]
+_HEALTH_CRITICAL = {"claude_api", "wordpress_publish", "email_send"}
+
+
+def _pipeline_health(st, jobs):
+    rows, down_critical = "", []
+    for k, name, why in _HEALTH_WIRES:
+        ok = bool(st.get(k))
+        if not ok and k in _HEALTH_CRITICAL:
+            down_critical.append(name)
+        badge = ("<span class='pill p-live'><span class='d' style='background:#3FD98B'></span>OK</span>" if ok
+                 else "<span class='pill p-need'><span class='d' style='background:#F5788A'></span>DOWN</span>")
+        rows += f"<tr><td>{name}</td><td>{badge}</td><td class='mut'>{'Working.' if ok else _esc(why)}</td></tr>"
+    fails = [j for j in jobs if j.get("status") in ("failed", "halted_budget")]
+    frows = ""
+    for j in fails[:8]:
+        reason = str(j.get("halt_reason") or "stopped (no reason recorded)")[:130]
+        plain = ("Budget cap reached — raise the cap or wait for the month to reset."
+                 if j.get("status") == "halted_budget"
+                 else "A step failed; the engine stopped this one job and kept the rest running.")
+        frows += (f"<tr><td>{_esc(j.get('job_id'))}</td><td class='mut'>{_esc(j.get('type',''))}</td>"
+                  f"<td class='mut'>{_esc(reason)}</td><td class='mut'>{plain}</td></tr>")
+    if down_critical:
+        banner = ("<div style='padding:10px 12px;border-radius:8px;background:#2c1420;border-left:4px solid #F5788A;margin-bottom:10px'>"
+                  f"<b style='color:#F5788A'>⛔ Can't run:</b> {', '.join(down_critical)} is down — connect it on the System Map.</div>")
+    elif not fails:
+        banner = ("<div style='padding:10px 12px;border-radius:8px;background:#10281c;border-left:4px solid #3FD98B;margin-bottom:10px'>"
+                  "<b style='color:#3FD98B'>✅ Pipeline healthy</b> — every critical wire is up and no jobs are stuck.</div>")
+    else:
+        banner = ""
+    fail_tbl = (f"<div class='dim' style='margin-top:12px'>Recent stops ({len(fails)})</div>"
+                "<div class='tbwrap'><table><thead><tr><th>Job</th><th>Type</th><th>Error / where it broke</th><th>Plain English</th></tr></thead><tbody>"
+                + frows + "</tbody></table></div>") if fails else ""
+    return ("<div class='card full'><p class='ct'>🩺 Pipeline health — is anything broken?</p>"
+            "<p class='cc'>Every wire and every recent stop in plain English. Green = go; red tells you exactly what's down and what it breaks.</p>"
+            + banner
+            + "<div class='tbwrap'><table><thead><tr><th>Wire</th><th>Status</th><th>What it means if down</th></tr></thead><tbody>"
+            + rows + "</tbody></table></div>" + fail_tbl
+            + "<div class='ctrl' style='margin-top:12px'><button class='cbtn' onclick='runSelftest()'>🔬 Test every agent live</button>"
+            "<span class='dim' style='align-self:center'>Runs all 18 agents and reports any that fail (~2 min, ~$0.25).</span></div></div>")
+
+
+def _why_piece(job):
+    """Plain-English 'on what basis was this made' — the data behind the piece."""
+    p = job.get("payload", {}) or {}
+    bits = []
+    if p.get("site_intelligence"):
+        bits.append("your site audited")
+    if p.get("competitor_intel"):
+        bits.append("competitors analyzed")
+    if p.get("content_strategist"):
+        bits.append("strategy set")
+    if p.get("seo_optimizer"):
+        bits.append("SEO-optimized")
+    cfg = p.get("config", {}) or {}
+    kw = cfg.get("target_keyword")
+    gsc = (p.get("audit", {}) or {}).get("top_gsc_queries") or []
+    tail = ""
+    if kw:
+        tail += f" · keyword: {kw}"
+    if gsc:
+        tail += f" · informed by {len(gsc)} Search Console queries"
+    return (", ".join(bits) + tail) if bits else "queued — its research/SEO basis appears as it runs"
+
+
+def _approval_log(jobs):
+    rel = [j for j in jobs if j.get("type") in ("content_piece", "outreach_campaign")]
+    rel = sorted(rel, key=lambda j: j.get("updated_at", ""), reverse=True)[:20]
+    rows = ""
+    for j in rel:
+        p = j.get("payload", {}) or {}
+        title = ((p.get("content_producer", {}) or {}).get("title")
+                 or (p.get("config", {}) or {}).get("chosen_topic") or j.get("job_id"))
+        appr = "✓ yes" if j.get("approved") else "—"
+        pub = (p.get("publisher", {}) or {}).get("published_ref") or ""
+        publink = (f"<a href='{_esc(pub)}' target='_blank' style='color:#4C8DFF'>view</a>"
+                   if str(pub).startswith("http") else ("sent" if j.get("status") == "sent" else "—"))
+        kind = "email" if j.get("type") == "outreach_campaign" else "blog"
+        rows += (f"<tr><td>{_esc(str(title)[:56])}</td><td class='mut'>{kind}</td>"
+                 f"<td>{_esc(j.get('status',''))}</td><td>{appr}</td><td>{publink}</td>"
+                 f"<td class='mut'>{_esc(str(j.get('updated_at','') or '')[:10])}</td></tr>")
+    return ("<div class='card full' style='margin-top:12px'><p class='ct'>🧾 Approval &amp; publish log</p>"
+            "<p class='cc'>Every piece: its status, whether you approved it, and where it published. Your audit trail.</p>"
+            "<div class='tbwrap'><table><thead><tr><th>Piece</th><th>Type</th><th>Status</th><th>Approved</th><th>Published</th><th>Updated</th></tr></thead><tbody>"
+            + (rows or "<tr><td colspan='6' class='mut'>No pieces yet.</td></tr>") + "</tbody></table></div></div>")
+
+
+# ---------------------------------------------------------------------------
 # system map (component-level, every labeled connection)
 # ---------------------------------------------------------------------------
 def _system_map(st):
@@ -1330,6 +1429,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'><span class='dim'>{kind}</span>"
                 f"<b style='font-size:13px'>{_esc(title)}</b>"
                 f"<button class='sbtn' style='margin-left:auto' onclick=\"approve('{jid}')\">✓ Approve</button></div>"
+                f"<div class='dim' style='margin-top:6px'>📎 Basis: {_esc(_why_piece(j))}</div>"
                 f"<div class='dim' style='margin-top:8px;line-height:1.55'>{_esc(snippet)}{'…' if snippet else '(preview appears once it is written)'}</div></div>")
 
     if waiting_jobs:
@@ -1370,7 +1470,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               + _panel("Turnaround", "How much is queued for you.",
                        f"<div class='big tnum'>{len(waiting_jobs)}</div><div class='dim'>waiting right now</div>" if waiting_jobs else _empty("All caught up."))
               + _panel("Decisions this week", "Your approval activity.", _empty("Builds as you approve."))
-              + "</div>")
+              + "</div>" + _approval_log(jobs))
 
     # ---- 11. LEARNING & RESULTS (cross-functional: content + leads + cost) ----
     themes = _themes(content_jobs)
@@ -1563,7 +1663,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 + tile("appr", "✅", "Approvals", waiting, "waiting for you", amber if waiting else green)
                 + tile("learn", "🧠", "Learning", "—", "improves monthly", green)
                 + tile("map", "🗺️", "System map", f"{total_conn-live_conn}", "wires to fix", amber if live_conn < total_conn else green)
-                + "</div>")
+                + "</div>" + _pipeline_health(st, jobs))
 
     # ---- nav + assembly ----
     PAGES = [
@@ -1619,8 +1719,19 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  else "<button class='cbtn' onclick=\"act('/control/pause')\">⏸ Pause all</button>")
     auto_btn = ("<button class='cbtn on' onclick=\"act('/control/autonomy?on=false')\">🟢 Autonomy ON</button>" if autonomy
                 else "<button class='cbtn' onclick=\"act('/control/autonomy?on=true')\">⚪ Autonomy OFF</button>")
-    ctrl_html = ("<div class='ctrl'><button class='cbtn' onclick=\"act('/tick')\">▶ Run now</button>"
-                 + pause_btn + auto_btn + "</div>")
+    # ONE start / ONE stop for the whole system. Granular controls tucked away.
+    if autopilot_on:
+        master_switch = ("<button class='cbtn warn' style='font-size:15px;font-weight:700;padding:11px 24px' "
+                         "onclick=\"if(confirm('Stop the whole system? Nothing new will publish or send until you start it again.'))act('/system/stop')\">■ STOP the whole system</button>"
+                         "<span class='pill p-live' style='align-self:center'><span class='d' style='background:#3FD98B'></span>running</span>")
+    else:
+        master_switch = ("<button class='cbtn on' style='font-size:15px;font-weight:700;padding:11px 24px' "
+                         "onclick=\"if(confirm('Start the whole system? It publishes content live and sends capped cold emails, and re-plans daily.'))act('/system/start')\">▶ START the whole system</button>"
+                         "<span class='pill p-need' style='align-self:center'><span class='d' style='background:#F5B14C'></span>stopped</span>")
+    ctrl_html = ("<div class='ctrl'>" + master_switch + "</div>"
+                 "<details style='margin-top:8px'><summary class='dim' style='cursor:pointer'>Advanced controls</summary>"
+                 "<div class='ctrl' style='margin-top:6px'><button class='cbtn' onclick=\"act('/tick')\">▶ Run one step</button>"
+                 + pause_btn + auto_btn + "</div></details>")
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
     script = ("<script>function nav(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
@@ -1638,6 +1749,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "alert('Disconnected — the box is editable again.');location.reload();}"
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "async function approve(id){await act('/jobs/'+id+'/approve');}"
+              "async function runSelftest(){if(!confirm('Test every agent live? ~2 minutes, about $0.25.'))return;alert('Running all 18 agents… I will pop the result when done.');"
+              "try{var r=await fetch('/selftest',{method:'POST'});var j=await r.json();var f=(j.failures||[]).map(function(x){return x.skill;}).join(', ');"
+              "alert('Agents: '+(j.summary||'done')+(f?('\\nFAILING: '+f):'  — all clean'));}catch(e){alert('Test failed: '+e);}}"
               "function mediaChat(id){var c=document.getElementById('mchat-'+id);if(c){c.style.display=(c.style.display==='none'?'block':'none');if(c.style.display==='block'){var i=document.getElementById('min-'+id);if(i)i.focus();}}}"
               "async function mediaSend(id){var el=document.getElementById('min-'+id),log=document.getElementById('mlog-'+id);if(!el||!log)return;var m=el.value.trim();if(!m)return;"
               "log.innerHTML+=\"<div class='fe'><span class='tm' style='min-width:44px'>You</span><span class='mut'>\"+m.replace(/</g,'&lt;')+\"</span></div>\";el.value='';"
