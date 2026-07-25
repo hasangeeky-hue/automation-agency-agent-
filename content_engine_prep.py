@@ -179,9 +179,22 @@ def _in_qa_compliance(job: dict) -> dict:
     # Pipeline B: the "piece" is the cold email from outreach_copy (CAN-SPAM path).
     if job.get("type") == "outreach_campaign":
         oc = _result(job, "outreach_copy")
+        body = oc.get("body", "")
+        # QA must review the REAL email that sends. The Emailer appends a compliant
+        # footer at send time (physical address + unsubscribe link — see
+        # _outreach_emails). Reviewing the raw body false-blocks EVERY cold email
+        # for "missing unsubscribe/address" that are actually there when it sends.
+        content = body
+        try:
+            import content_engine_connectors as _c
+            plain, _html = _c.Emailer().compose_outreach(body, job)
+            if plain:
+                content = plain
+        except Exception:
+            pass
         return {
             "content_type": "email_outreach",
-            "content": oc.get("body", ""),
+            "content": content,
             "cta": oc.get("cta", ""),
             "is_regulated": regulated,
             "required_disclaimers": disclaimers,
