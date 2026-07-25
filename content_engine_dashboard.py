@@ -17,6 +17,11 @@ states, never fake numbers.
 
 from __future__ import annotations
 
+# Bumped on every deploy so the running build is VISIBLE on the page — no more
+# guessing from terminal hashes. If the badge in the top bar doesn't match this,
+# the new code isn't live yet (re-pull + rebuild).
+BUILD_TAG = "2026-07-25 · v4 · email-cycle + on-brand blog"
+
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
 --ink:#EDF1FB;--mut:#8E9BBE;--dim:#59668A;--teal:#2FE3D2;--violet:#8B7CFF;
@@ -1076,10 +1081,26 @@ def _outbox(jobs):
                 status = "ready"
             items.append((j.get("job_id"), L, q, subj, raw, html, status, bool(ed), sent_n, nxt))
     if not items:
-        return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📬 Email outbox</p>"
-                "<p class='cc'>One personalized email per customer — built by your agent from each lead's persona "
-                "(business, pain, offer) — appears here, ready to send individually or all at once. Empty until a "
-                "batch is sourced, qualified and written.</p></div>")
+        # show the 3-email cycle even when empty, so the feature is always visible
+        # and the founder knows WHY it's empty (no written emails in the pipeline yet).
+        n_out = sum(1 for j in jobs if j.get("type") == "outreach_campaign")
+        n_leads = sum(len((j.get("payload", {}) or {}).get("leads") or [])
+                      for j in jobs if j.get("type") == "outreach_campaign")
+        why = ("No outreach campaigns yet — start the lead machine to source + write emails."
+               if n_out == 0 else
+               f"You have {n_out} campaign(s) with {n_leads} lead(s), but the emails aren't "
+               "written yet (the campaign hasn't reached the copywriting step). Once written, "
+               "every customer appears below with their 3-email cycle.")
+        return ("<div class='card full' style='margin-bottom:12px'>"
+                "<p class='ct'>📬 Email outbox — 3-email cycle per customer</p>"
+                "<div style='display:flex;gap:10px;flex-wrap:wrap;font-size:13px;margin:8px 0'>"
+                "<div class='fe' style='flex:1;min-width:150px'><b>1 · Intro</b><div class='dim'>The full personalized pitch</div></div>"
+                "<div class='fe' style='flex:1;min-width:150px'><b>2 · Follow-up</b><div class='dim'>A short bump if no reply</div></div>"
+                "<div class='fe' style='flex:1;min-width:150px'><b>3 · Final note</b><div class='dim'>A last soft close, then stop</div></div>"
+                "</div>"
+                "<p class='cc'>Each customer gets a <b>3-dot cycle</b> (●●●) you can track and send step by step — "
+                "and after the 3rd email we stop automatically. "
+                f"<b style='color:#F5B14C'>{_esc(why)}</b></p></div>")
     ready = sum(1 for it in items if it[6] == "ready")
     complete = sum(1 for it in items if it[6] == "complete")
     emails_sent = sum(it[8] for it in items)          # total emails sent across all steps
@@ -2325,7 +2346,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Business Control Center</title><style>" + CSS + "</style></head><body>"
         "<div class='top'><div class='brand'><div class='logo'>A</div><div><h1>Anthropos — Control Center</h1><small>Your automation, in plain English</small></div></div>"
-        "<div style='display:flex;gap:9px;align-items:center'><span class='status'><span class='d' style='background:"
+        "<div style='display:flex;gap:9px;align-items:center'>"
+        "<span title='Which build is live right now' style='font-size:11px;color:#59668A;"
+        "border:1px solid #1B2640;border-radius:7px;padding:3px 8px'>build " + _esc(BUILD_TAG) + "</span>"
+        "<span class='status'><span class='d' style='background:"
         + ("#3FD98B" if healthy else "#F5B14C") + "'></span>" + ("All systems nominal" if healthy else "Check health")
         + "</span>" + logout + "</div></div>"
         "<div class='shell'><div class='side'>" + nav + "</div><div class='main'>"
