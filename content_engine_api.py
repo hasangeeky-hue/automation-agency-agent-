@@ -898,7 +898,7 @@ if __name__ == "__main__":
 
     # dashboard renders HTML
     dash = api_dashboard_html()
-    assert dash.startswith("<!doctype html>") and "Content Engine" in dash
+    assert dash.startswith("<!doctype html>") and "Control Center" in dash
 
     # create -> tick to gate -> approve -> measure gate -> finish
     r = api_create_job("content_piece", {"brand_name": "Acme"},

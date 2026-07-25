@@ -320,6 +320,31 @@ def log_cost(job: dict, model: str, cost: float, store: JobStore) -> None:
 # Returns (data, total_cost). Raises on unrecoverable failure.
 # Overridable via _LLM_HOOK for tests.
 # ---------------------------------------------------------------------------
+import hashlib as _hashlib
+
+
+def _prompt_version(skill: str) -> str:
+    """Short, stable hash of a skill's prompt text — its version. A silent prompt
+    edit changes this, so every job records exactly which prompt produced it."""
+    try:
+        from content_engine_prompts import SKILL_PROMPTS
+        txt = SKILL_PROMPTS.get(skill, "") or ""
+        return _hashlib.sha1(txt.encode("utf-8")).hexdigest()[:8] if txt else ""
+    except Exception:
+        return ""
+
+
+def _stamp_run(job: dict, skill: str, model: str) -> None:
+    """S7 versioning: pin which model + prompt version produced this step, so a
+    silent prompt/model change on Tuesday isn't a debugging ghost on Wednesday."""
+    try:
+        runs = job.setdefault("_runs", {})
+        runs[skill] = {"model": model, "prompt_version": _prompt_version(skill),
+                       "at": _now().isoformat()}
+    except Exception:
+        pass
+
+
 def run_llm_skill(job: dict, skill: str, store: JobStore) -> tuple[dict, float]:
     route = ROUTES[skill]
     # Stage the skill-specific INPUT into the job payload the builder reads.
@@ -341,6 +366,7 @@ def run_llm_skill(job: dict, skill: str, store: JobStore) -> tuple[dict, float]:
             total_cost += result.cost_usd
             ok, _ = schema.validate(result.data) if schema else (True, [])
             if ok and "error" not in result.data:
+                _stamp_run(job, skill, model)   # S7 version stamp
                 return result.data, total_cost
             # invalid shape or model returned the {"error":...} escape -> retry/escalate
     raise SkillFailed(f"{skill}: no model produced a valid result")
@@ -388,6 +414,7 @@ def advance(job: dict, store: JobStore) -> str:
         elif step.kind == "code":
             out = CODE_HANDLERS[step.skill](job)
             job["payload"][step.skill] = out
+            _stamp_run(job, step.skill, "code")     # S7 version stamp
             job["status"] = step.next_status
 
         elif step.kind == "llm":
@@ -414,6 +441,20 @@ def advance(job: dict, store: JobStore) -> str:
     except SkillFailed as e:
         job["status"] = "failed"
         job["halt_reason"] = str(e)
+        job["needs_human"] = True
+    except Exception as e:
+        # S7 DEGRADED MODE: a dead tool, a network drop, an unexpected bug in ANY
+        # agent must never crash the tick and take the whole engine down. Narrow
+        # this one job to a clean stop, hand it to a human, and let the loop go on.
+        job["status"] = "failed"
+        job["halt_reason"] = f"degraded ({type(e).__name__}): {str(e)[:200]}"
+        job["needs_human"] = True
+        try:
+            import logging as _lg
+            _lg.getLogger("content_engine").exception(
+                "degraded: step failed for job %s", job.get("job_id"))
+        except Exception:
+            pass
 
     _maybe_stamp_measure(job)      # open a measurement window on arrival at published/sent
     job["updated_at"] = _now().isoformat()
