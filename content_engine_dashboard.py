@@ -827,17 +827,20 @@ _LEAD_STATUS = {
 
 
 def _collect_leads(jobs):
-    """Each lead record + its campaign status + its qualifier profile
-    (business/pain/offer/fit), matched by id (email)."""
+    """Each lead record + campaign status + qualifier profile + whether THIS lead
+    was actually emailed. The engine emails ONE primary contact per campaign, so
+    only that one is 'emailed'; the rest are sourced/queued (never a 25-blast)."""
     seen, out = set(), []
     for j in jobs:
         if j.get("type") != "outreach_campaign":
             continue
         js = j.get("status", "")
         p = j.get("payload", {}) or {}
+        sent_ref = p.get("send_ref") or (p.get("outreach_send", {}) or {}).get("send_ref")
         qmap = {}
         for r in ((p.get("lead_qualifier") or {}).get("results") or []):
             qmap[str(r.get("id", "")).strip().lower()] = r
+        first = True
         for L in (p.get("leads") or []):
             e = (L.get("email") or "").strip().lower()
             k = e or (L.get("company") or "").lower()
@@ -845,7 +848,10 @@ def _collect_leads(jobs):
                 continue
             seen.add(k)
             q = qmap.get(e) or qmap.get((L.get("company") or "").strip().lower()) or {}
-            out.append((L, js, q))
+            emailed = bool(sent_ref) and first        # only the primary contact was emailed
+            out.append((L, js, q, emailed))
+            if e:
+                first = False
     return out
 
 
@@ -856,10 +862,15 @@ def _leads_table(jobs):
                 "<p class='cc'>Each lead — with what their business does, their likely pain point, the offer to pitch "
                 "them, fit score, and outreach status — appears here once a batch is sourced + qualified. Saved on your "
                 "server; this reads it directly.</p></div>")
-    emailed = sum(1 for _, js, _ in triples if js in ("sent", "measuring", "measured", "optimized"))
+    emailed = sum(1 for _, _, _, em in triples if em)
     rows = ""
-    for L, js, q in triples[:200]:
-        label, col = _LEAD_STATUS.get(js, ("sourced", "#8E9BBE"))
+    for L, js, q, em in triples[:200]:
+        if em:
+            label, col = ("✉ emailed", "#3FD98B")
+        elif js in ("sent", "measuring", "measured", "optimized"):
+            label, col = ("in list · not emailed", "#8E9BBE")
+        else:
+            label, col = _LEAD_STATUS.get(js, ("sourced", "#8E9BBE"))
         fit = q.get("fit_score")
         fit_txt = f"{fit}/10" if fit not in (None, "") else "—"
         prio = q.get("priority", "")
@@ -876,9 +887,11 @@ def _leads_table(jobs):
                  f"<td class='mut'>{_esc(L.get('email','') or '—')}</td>"
                  f"<td><span style='color:{col};font-weight:600'>● {label}</span></td></tr>")
     return ("<div class='card full' style='margin-top:12px'>"
-            f"<p class='ct'>🧲 Your customer leads — {len(triples)} verified · {emailed} emailed</p>"
+            f"<p class='ct'>🧲 Your customer leads — {len(triples)} verified · {emailed} actually emailed</p>"
             "<p class='cc'>Real people from Prospeo, qualified by the agent: <b>what they do</b>, their likely "
-            "<b>pain point</b>, the <b>offer</b> to pitch them, a <b>fit score</b>, verified email, and outreach status.</p>"
+            "<b>pain point</b>, the <b>offer</b> to pitch them, a <b>fit score</b>, verified email, and outreach status. "
+            "The engine emails only the <b>primary contact</b> per approved campaign (conservative warm-up) — it never "
+            "blasts the whole list, so “emailed” shows exactly who was actually contacted.</p>"
             "<div class='tbwrap'><table><thead><tr><th>Lead</th><th>Company / what they do</th><th>Fit</th>"
             "<th>Likely pain point</th><th>Offer to pitch</th><th>Verified email</th><th>Status</th></tr></thead><tbody>"
             + rows + "</tbody></table></div></div>")
