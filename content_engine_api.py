@@ -994,6 +994,14 @@ def build_app():
     def autopilot_stop():
         return api_autopilot(False)
 
+    @app.post("/selftest")
+    def selftest():
+        try:
+            import content_engine_selftest as ST
+            return ST.run_smoke()
+        except Exception as e:
+            return {"error": str(e)[:200]}
+
     @app.post("/evals/run")
     def evals_run():
         return api_run_evals()
