@@ -20,7 +20,7 @@ from __future__ import annotations
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v11 · content factory = production line + always-on calendar"
+BUILD_TAG = "2026-07-26 · v12 · dynamic 3D 30-day content board (drag + click)"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -136,6 +136,11 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .msl{font-size:10px;color:var(--mut);margin-top:4px;letter-spacing:.02em}
 .mchart{flex:1 1 240px;min-width:220px}
 @media(max-width:860px){.mbody{flex-direction:column;align-items:stretch}}
+@keyframes cf-flow{0%,100%{opacity:.2;transform:translateX(-2px)}50%{opacity:1;transform:translateX(3px)}}
+@keyframes cf-pulse{0%,100%{box-shadow:0 0 0 0 rgba(47,227,210,0)}50%{box-shadow:0 0 16px -2px rgba(47,227,210,.55)}}
+.cf-arrow{animation:cf-flow 1.8s ease-in-out infinite}
+.cf-live{animation:cf-pulse 2.2s ease-in-out infinite}
+.cf-station{transition:transform .25s}.cf-station:hover{transform:translateY(-4px)}
 """
 
 
@@ -1518,10 +1523,11 @@ def _factory_line(content_jobs):
         col = "#2FE3D2" if active else "#3A4160"
         badge = (f"<span style='position:absolute;top:-8px;right:-8px;background:#2FE3D2;color:#04121a;"
                  f"font-weight:800;font-size:11px;border-radius:10px;padding:1px 7px'>{n}</span>" if active else "")
-        arrow = ("<div style='align-self:center;color:#3A4160;font-size:18px;flex:0 0 auto'>→</div>"
-                 if i < len(_FACTORY) - 1 else "")
+        arrow = (f"<div class='cf-arrow' style='align-self:center;color:#2FE3D2;font-size:18px;flex:0 0 auto;"
+                 f"animation-delay:{i * 0.22:.2f}s'>→</div>" if i < len(_FACTORY) - 1 else "")
         stations += (
-            f"<div style='position:relative;flex:0 0 150px;background:var(--s2);border:1px solid "
+            f"<div class='cf-station{' cf-live' if active else ''}' style='position:relative;flex:0 0 150px;"
+            f"background:var(--s2);border:1px solid "
             f"{'rgba(47,227,210,.4)' if active else 'var(--line)'};border-radius:11px;padding:11px 12px'>"
             f"{badge}<div style='font-size:20px'>{ic}</div>"
             f"<div style='font-weight:700;color:{col};margin-top:3px'>{nm}</div>"
@@ -1533,6 +1539,35 @@ def _factory_line(content_jobs):
             f"<p class='cc'>Each piece flows left-to-right through these 7 stations. The number on a station = how many "
             f"pieces are sitting there right now. <b>{total}</b> in the line today.</p>"
             "<div style='display:flex;gap:6px;overflow-x:auto;padding:14px 2px 4px'>" + stations + "</div></div>")
+
+
+_CF3D_CSS = """
+<style>
+.cf3d-wrap{margin-bottom:12px}
+.cf3d-scene{position:relative;perspective:1500px;perspective-origin:50% 32%;height:440px;overflow:hidden;
+ border-radius:16px;background:radial-gradient(ellipse at 50% 15%,#12203a 0%,#0a1120 55%,#070b14 100%);cursor:grab}
+.cf3d-scene:active{cursor:grabbing}
+.cf3d-board{position:absolute;left:50%;top:56%;width:660px;height:560px;margin:-280px 0 0 -330px;
+ transform-style:preserve-3d;display:grid;grid-template-columns:repeat(6,1fr);grid-auto-rows:78px;gap:13px;
+ transform:rotateX(54deg) rotateZ(0deg);transition:transform .08s linear;will-change:transform}
+.cf3d-tile{position:relative;transform-style:preserve-3d;transform:translateZ(var(--z,0px));
+ border-radius:10px;background:rgba(255,255,255,.028);border:1px solid var(--line);
+ display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;
+ transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s,filter .3s}
+.cf3d-has{background:rgba(255,255,255,.05);border-color:var(--c);
+ box-shadow:0 0 22px -5px var(--c),0 14px 26px rgba(0,0,0,.5)}
+.cf3d-tile:hover{transform:translateZ(calc(var(--z,0px) + 46px)) scale(1.06);filter:brightness(1.25);z-index:9}
+.cf3d-sel{outline:2px solid #fff;outline-offset:1px}
+.cf3d-dnum{font-weight:800;font-size:19px;color:#EDF1FB;line-height:1}
+.cf3d-dow{font-size:9px;color:#8E9BBE;text-transform:uppercase;letter-spacing:1.5px;margin-top:2px}
+.cf3d-cnt{position:absolute;top:-9px;right:-9px;color:#04121a;font-weight:800;font-size:11px;border-radius:10px;padding:1px 6px}
+.cf3d-dots{display:flex;gap:3px;margin-top:4px}
+.cf3d-dot{width:5px;height:5px;border-radius:50%}
+.cf3d-legend{position:absolute;top:12px;left:14px;display:flex;gap:12px;font-size:11px;color:#8E9BBE;z-index:5}
+.cf3d-lg{display:flex;align-items:center;gap:5px}.cf3d-sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+.cf3d-hint{position:absolute;bottom:10px;left:14px;color:#59668A;font-size:11px;z-index:5}
+.cf3d-reset{position:absolute;bottom:10px;right:14px;z-index:5}
+</style>"""
 
 
 def _content_calendar(content_jobs, content_plan):
@@ -1589,6 +1624,105 @@ def _content_calendar(content_jobs, content_plan):
             "<p class='ct'>🗓️ Content calendar — what posts, which day, which channel</p>"
             "<p class='cc'>Every planned + in-production piece on a timeline, with its channels and where it is in the "
             "machine. This is your production schedule.</p>" + rows + "</div>")
+
+
+def _factory_3d(content_jobs, content_plan):
+    """A dynamic, interactive 3D month-ahead board: each of the next 30 days is a
+    floating tile that RISES toward you the more content it carries, coloured by
+    channel. Drag to look around; click a day to see exactly what posts and where.
+    Pure CSS 3D — no libraries, works offline on the VPS."""
+    import json
+    from datetime import date, timedelta
+    today = date.today()
+    days = [today + timedelta(days=k) for k in range(30)]
+    daymap = {d.isoformat(): [] for d in days}
+
+    def _norm(chs):
+        out = []
+        for c in (chs or ["website"]):
+            c = str(c).lower()
+            out.append("Website" if c in ("website", "web", "blog", "wordpress") else
+                       ("LinkedIn" if c == "linkedin" else c.title()))
+        return out or ["Website"]
+
+    for j in content_jobs:
+        p = j.get("payload", {}) or {}
+        cfg = p.get("config", {}) or {}
+        d = cfg.get("publish_date") or (j.get("created_at") or "")[:10]
+        if d in daymap:
+            si = _factory_stage(j.get("status", ""))
+            daymap[d].append({"t": (p.get("content_producer", {}) or {}).get("title")
+                              or cfg.get("chosen_topic") or j.get("job_id"),
+                              "ch": _norm(cfg.get("deploy_channels")),
+                              "seg": (p.get("taxonomy") or {}).get("segment", ""),
+                              "stage": f"{_FACTORY[si][0]} {_FACTORY[si][1]}"})
+    if content_plan and content_plan.get("status") == "pending":
+        for it in content_plan.get("items", []):
+            d = (today + timedelta(days=int(it.get("day_offset", 0) or 0))).isoformat()
+            if d in daymap:
+                daymap[d].append({"t": it.get("title", ""), "ch": _norm(it.get("channels")),
+                                  "seg": it.get("segment", ""), "stage": "📋 Planned (awaiting approval)"})
+
+    total = sum(len(v) for v in daymap.values())
+    if not total:
+        return ""   # nothing to show in 3D yet — the flat calendar handles the empty state
+    tiles = ""
+    for d in days:
+        iso = d.isoformat()
+        items = daymap[iso]
+        n = len(items)
+        li = sum(1 for it in items if "LinkedIn" in it["ch"])
+        web = sum(1 for it in items if "Website" in it["ch"])
+        col = "#4C9AFF" if (li and li >= web) else ("#2FE3D2" if web else "#3A4160")
+        z = min(n, 7) * 16
+        dots = "".join(
+            f"<span class='cf3d-dot' style='background:{'#4C9AFF' if 'LinkedIn' in it['ch'] else '#2FE3D2'}'></span>"
+            for it in items[:5])
+        cnt = f"<div class='cf3d-cnt' style='background:{col}'>{n}</div>" if n else ""
+        tiles += (f"<div class='cf3d-tile{' cf3d-has' if n else ''}' data-date='{iso}' "
+                  f"style='--z:{z}px;--c:{col}' onclick='cf3dPick(this)'>{cnt}"
+                  f"<div class='cf3d-dnum'>{d.day}</div><div class='cf3d-dow'>{d.strftime('%a')}</div>"
+                  f"<div class='cf3d-dots'>{dots}</div></div>")
+    data_json = json.dumps(daymap).replace("</", "<\\/")
+    first_with = next((d.isoformat() for d in days if daymap[d.isoformat()]), days[0].isoformat())
+    scene = (
+        "<div class='cf3d-scene' id='cf3dScene'>"
+        "<div class='cf3d-legend'>"
+        "<span class='cf3d-lg'><span class='cf3d-sw' style='background:#2FE3D2'></span>Website</span>"
+        "<span class='cf3d-lg'><span class='cf3d-sw' style='background:#4C9AFF'></span>LinkedIn</span>"
+        "<span class='cf3d-lg'>taller = more content that day</span></div>"
+        "<div class='cf3d-board' id='cf3dBoard'>" + tiles + "</div>"
+        "<div class='cf3d-hint'>🖱️ drag to look around · click a day for detail</div>"
+        "<button class='cbtn cf3d-reset' onclick='cf3dReset()'>reset view</button></div>")
+    js = ("<script>(function(){var data=" + data_json + ";"
+          "var b=document.getElementById('cf3dBoard'),s=document.getElementById('cf3dScene');"
+          "if(!b||!s)return;var rx=54,rz=0,drag=false,px=0,py=0,idle=true;"
+          "function ap(){b.style.transform='rotateX('+rx+'deg) rotateZ('+rz+'deg)';}"
+          "window.cf3dReset=function(){rx=54;rz=0;ap();};"
+          "s.addEventListener('mousedown',function(e){drag=true;idle=false;px=e.clientX;py=e.clientY;});"
+          "window.addEventListener('mouseup',function(){drag=false;});"
+          "window.addEventListener('mousemove',function(e){if(!drag)return;rz+=(e.clientX-px)*0.45;"
+          "rx=Math.max(18,Math.min(74,rx-(e.clientY-py)*0.3));px=e.clientX;py=e.clientY;ap();});"
+          "function esc(x){return (''+(x||'')).replace(/&/g,'&amp;').replace(/</g,'&lt;');}"
+          "window.cf3dPick=function(el){idle=false;"
+          "document.querySelectorAll('.cf3d-tile').forEach(function(t){t.classList.remove('cf3d-sel');});"
+          "el.classList.add('cf3d-sel');var d=el.getAttribute('data-date');var it=data[d]||[];"
+          "var h=\"<div class='card full' style='margin-top:10px'><p class='ct'>📅 \"+d+' — '+it.length+' piece'+(it.length==1?'':'s')+'</p>';"
+          "if(!it.length){h+=\"<p class='cc'>Nothing scheduled this day.</p>\";}"
+          "else{it.forEach(function(x){var chs=(x.ch||[]).map(function(c){var col=c=='LinkedIn'?'#4C9AFF':'#2FE3D2';"
+          "return \"<span class='pill' style='background:\"+col+\"22;color:\"+col+\";padding:1px 8px'>\"+esc(c)+'</span>';}).join(' ');"
+          "h+=\"<div style='padding:9px 0;border-top:1px solid rgba(255,255,255,.06)'><div style='display:flex;gap:8px;flex-wrap:wrap;align-items:baseline'><b>\"+esc(x.t)+\"</b><span style='margin-left:auto'>\"+chs+'</span></div>'"
+          "+\"<div class='dim' style='margin-top:2px'>\"+esc(x.seg)+' · '+esc(x.stage)+'</div></div>';});}"
+          "h+='</div>';document.getElementById('cf3dDetail').innerHTML=h;};"
+          "ap();var _t=0;function idleSpin(){if(idle){_t+=0.012;rz=Math.sin(_t)*9;ap();}requestAnimationFrame(idleSpin);}requestAnimationFrame(idleSpin);"
+          "var f=document.querySelector('[data-date=\"" + first_with + "\"]');if(f)window.cf3dPick(f);"
+          "})();</script>")
+    return ("<div class='card full cf3d-wrap' style='margin-bottom:12px'>"
+            "<p class='ct'>🧊 Next 30 days — live 3D content board</p>"
+            f"<p class='cc'>Every day ahead as a floating tile: the more it carries, the higher it rises; colour shows "
+            f"the channel. <b>{total}</b> pieces scheduled across the month. Drag to look around, click any day for the "
+            f"full detail.</p>" + _CF3D_CSS + scene
+            + "<div id='cf3dDetail'></div></div>" + js)
 
 
 def _approval_log(jobs):
@@ -1898,9 +2032,14 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         + "<span class='dim' style='align-self:center'>Queues today's pieces, writes on-brand, and publishes the "
           "ones that pass QA — hands-free. Stop anytime.</span></div></div>")
 
+    _cal3d = _factory_3d(content_jobs, content_plan)
+    _callist = _content_calendar(content_jobs, content_plan)
+    _cal_block = (_cal3d + "<details style='margin-bottom:12px'><summary style='cursor:pointer;"
+                  "color:#8E9BBE;font-weight:600;margin-bottom:8px'>📋 Same schedule as a plain list</summary>"
+                  + _callist + "</details>") if _cal3d else _callist
     p_content = (m_content
                  + _factory_line(content_jobs)
-                 + _content_calendar(content_jobs, content_plan)
+                 + _cal_block
                  + plan_card + autopilot_card + grid(
         _panel("Pipeline — where each piece is", "Idea → written → checked → your approval → live → measured.",
                _funnel(list(zip(_STAGES, pl))) if sum(pl) else _empty("No content jobs yet.")),
