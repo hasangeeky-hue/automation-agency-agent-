@@ -974,48 +974,58 @@ def _brand_palette(ci_text=""):
     return ink, accent, accent2
 
 
-def _blog_webview_srcdoc(title, body, ci_text="", hero_url="", kicker="ANTHROPOS · INSIGHTS"):
-    """Render the piece the way it lands on the website: a designed, on-brand
-    editorial layout (branded header band, accent headings, hero image, reading
-    typography, closing CTA) — not plain black-on-white."""
-    ink, accent, accent2 = _brand_palette(ci_text)
+def _blog_webview_srcdoc(title, body, ci_text="", hero_url="", kicker="ANTHROPOS · FIELD NOTES"):
+    """Render the piece EXACTLY like a real post on anthropos-automation.com:
+    dark theme (#080B14), Sora headings + Instrument Sans body, teal/coral
+    accents, 760px column, rounded images, teal booking CTA. Matched from the
+    live site's computed styles — not an invented template."""
+    # real site palette (accent overridable via saved CI hexes)
+    _, accent, _a2 = _brand_palette(ci_text)
+    if not ci_text.strip():
+        accent = "#2FE3D2"                    # site teal
+    BG, INK, MUT, CORAL = "#080B14", "#EAF0FF", "#9AA6C6", "#FF5C8A"
     inner = _md_to_html(body)
     hero = (f"<img class='hero' src='{_esc(hero_url)}' alt=''>"
             if isinstance(hero_url, str) and hero_url.startswith("http") else "")
     doc = (
-        "<html><head><meta charset='utf-8'><style>"
-        "*{box-sizing:border-box}"
-        "body{margin:0;background:#EEF1F6;color:" + ink + ";"
-        "font:17px/1.75 Georgia,'Iowan Old Style',Cambria,'Times New Roman',serif}"
-        ".band{background:linear-gradient(115deg," + ink + "," + accent2 + ");height:8px}"
-        ".wrap{max-width:760px;margin:0 auto;background:#fff;min-height:100%;"
-        "box-shadow:0 1px 40px rgba(16,26,46,.10)}"
-        ".head{padding:40px 46px 8px}"
-        ".kick{font:700 12px/1 -apple-system,Segoe UI,Roboto,sans-serif;letter-spacing:2.5px;"
-        "color:" + accent + ";text-transform:uppercase;margin-bottom:14px}"
-        "h1{font:800 34px/1.18 -apple-system,Segoe UI,Roboto,sans-serif;margin:0 0 6px;color:" + ink + "}"
-        ".hero{width:100%;height:auto;display:block;margin:22px 0 0}"
-        ".art{padding:14px 46px 40px}"
-        "h2{font:800 23px/1.3 -apple-system,Segoe UI,Roboto,sans-serif;margin:34px 0 12px;color:" + ink + ";"
-        "padding-left:14px;border-left:4px solid " + accent + "}"
-        "h3{font:700 19px/1.35 -apple-system,Segoe UI,Roboto,sans-serif;margin:24px 0 8px;color:" + ink + "}"
-        "p{margin:0 0 18px}a{color:" + accent2 + ";text-decoration:underline}"
-        "ul{margin:0 0 18px 4px;padding-left:22px}li{margin:7px 0}"
+        "<html><head><meta charset='utf-8'>"
+        "<link rel='preconnect' href='https://fonts.googleapis.com'>"
+        "<link href='https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&"
+        "family=Instrument+Sans:wght@400;500;600&display=swap' rel='stylesheet'>"
+        "<style>*{box-sizing:border-box}"
+        "body{margin:0;background:" + BG + ";color:" + INK + ";"
+        "font:18px/1.7 'Instrument Sans',system-ui,-apple-system,Segoe UI,sans-serif}"
+        ".wrap{max-width:760px;margin:0 auto;padding:38px 22px 60px}"
+        ".kick{font:700 12px/1 'Instrument Sans',sans-serif;letter-spacing:2.5px;"
+        "color:" + CORAL + ";text-transform:uppercase;margin-bottom:16px}"
+        "h1{font-family:'Sora',system-ui,sans-serif;font-weight:800;font-size:38px;line-height:1.15;"
+        "margin:0 0 14px;color:" + INK + "}"
+        ".hero{width:100%;height:auto;display:block;border-radius:16px;margin:24px 0 8px;"
+        "border:1px solid rgba(255,255,255,.09)}"
+        "h2{font-family:'Sora',system-ui,sans-serif;font-weight:700;font-size:27px;line-height:1.2;"
+        "margin:40px 0 14px;color:" + INK + "}"
+        "h3{font-family:'Sora',system-ui,sans-serif;font-weight:600;font-size:21px;"
+        "margin:28px 0 10px;color:" + INK + "}"
+        "p{margin:0 0 20px;color:" + INK + "}"
+        "a{color:" + accent + ";text-decoration:underline}"
+        "ul{margin:0 0 20px;padding-left:22px}li{margin:9px 0;color:" + INK + "}"
         "li::marker{color:" + accent + "}"
-        "img{max-width:100%;border-radius:12px;margin:10px 0}"
-        "strong{color:" + ink + "}"
-        ".cta{margin:34px 46px 44px;padding:24px 26px;border-radius:14px;"
-        "background:linear-gradient(120deg," + ink + "," + accent2 + ");color:#fff;"
-        "font-family:-apple-system,Segoe UI,Roboto,sans-serif}"
-        ".cta b{display:block;font-size:19px;margin-bottom:6px}"
-        ".cta .btn{display:inline-block;margin-top:14px;background:" + accent + ";color:#04121a;"
-        "font-weight:700;padding:11px 20px;border-radius:9px;text-decoration:none}"
-        "</style></head><body><div class='band'></div><div class='wrap'>"
-        f"<div class='head'><div class='kick'>{_esc(kicker)}</div><h1>{_esc(title)}</h1></div>"
-        f"{hero}<div class='art'>{inner}</div>"
-        "<div class='cta'><b>Ready to put your growth on autopilot?</b>"
-        "See how Anthropos builds the automation that does this work for you."
-        "<a class='btn' href='#'>Book a free consultation →</a></div>"
+        "img{max-width:100%;border-radius:14px;margin:14px 0;border:1px solid rgba(255,255,255,.09)}"
+        "strong{color:#fff;font-weight:600}"
+        ".cta{margin-top:44px;padding:28px;border-radius:18px;"
+        "background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.09)}"
+        ".cta .ek{font:700 11px/1 'Instrument Sans',sans-serif;letter-spacing:2px;color:" + accent + ";"
+        "text-transform:uppercase}"
+        ".cta b{display:block;font-family:'Sora',sans-serif;font-size:22px;font-weight:700;margin:8px 0 6px;color:#fff}"
+        ".cta p{color:" + MUT + ";margin:0}"
+        ".cta .btn{display:inline-block;margin-top:16px;background:" + accent + ";color:#05121a;"
+        "font-weight:700;padding:12px 22px;border-radius:10px;text-decoration:none}"
+        "</style></head><body><div class='wrap'>"
+        f"<div class='kick'>{_esc(kicker)}</div><h1>{_esc(title)}</h1>"
+        f"{hero}{inner}"
+        "<div class='cta'><div class='ek'>Prefer it done?</div>"
+        "<b>Book a non-binding call</b><p>We map your biggest leak in 30 minutes.</p>"
+        "<a class='btn' href='#'>Book a Free Consultation →</a></div>"
         "</div></body></html>")
     return doc.replace("&", "&amp;").replace('"', "&quot;")
 
@@ -1054,23 +1064,31 @@ def _outbox(jobs):
             hist = sent.get(e)
             sent_n, last = _C.touch_stats(hist)
             nxt = _C.next_touch(hist)            # next step to send (0 = done/blocked)
-            disp_touch = nxt or _C.SEQUENCE_TOUCHES   # which email to show/preview
             base_subj = (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0]
-            if disp_touch <= 1 and ed and ed.get("body"):   # founder's manual edit wins (intro only)
-                subj, raw = ed.get("subject") or "", ed.get("body")
-            else:
+            _tname = {1: "Intro", 2: "Follow-up", 3: "Final note"}
+            # build ALL THREE emails so each can be previewed (sent + upcoming)
+            touches = []
+            for step in (1, 2, 3):
+                if step == 1 and ed and ed.get("body"):   # founder's manual edit wins (intro only)
+                    tsubj, traw = ed.get("subject") or "", ed.get("body")
+                else:
+                    try:
+                        tsubj, traw = _C.outreach_touch(L, q, base_subj, oc.get("body", ""), step)
+                    except Exception:
+                        tsubj, traw = base_subj, oc.get("body", "")
+                thtml = None
                 try:
-                    subj, raw = _C.outreach_touch(L, q, base_subj, oc.get("body", ""), disp_touch)
+                    _pl, thtml = _mailer.compose_outreach(traw, j)
+                    if sample_html is None and thtml:
+                        sample_html = thtml
                 except Exception:
-                    subj, raw = base_subj, oc.get("body", "")
-            # compose the REAL email the customer receives (body + branded footer).
-            html = None
-            try:
-                _plain, html = _mailer.compose_outreach(raw, j)
-                if sample_html is None and html:
-                    sample_html = html
-            except Exception:
-                pass
+                    pass
+                tstate = "sent" if step <= sent_n else ("next" if step == nxt else "pending")
+                touches.append({"step": step, "name": _tname[step], "subj": tsubj,
+                                "raw": traw, "html": thtml, "state": tstate})
+            # the email shown in the row summary = the next one (or the last if done)
+            cur = touches[(nxt or _C.SEQUENCE_TOUCHES) - 1]
+            subj, raw, html = cur["subj"], cur["raw"], cur["html"]
             if nxt == 0 and last == "blocked":
                 status = "blocked"
             elif nxt == 0:
@@ -1079,7 +1097,7 @@ def _outbox(jobs):
                 status = "held"              # warm-up cap — retries same step
             else:
                 status = "ready"
-            items.append((j.get("job_id"), L, q, subj, raw, html, status, bool(ed), sent_n, nxt))
+            items.append((j.get("job_id"), L, q, subj, raw, html, status, bool(ed), sent_n, nxt, touches))
     if not items:
         # show the 3-email cycle even when empty, so the feature is always visible
         # and the founder knows WHY it's empty (no written emails in the pipeline yet).
@@ -1119,21 +1137,22 @@ def _outbox(jobs):
                   "<div class='dim' style='margin-top:6px'>The footer signature (name, company, address, booking link, "
                   "unsubscribe) is added automatically to every email. To show your logo + brand colour there, set "
                   "<code>EMAIL_LOGO_URL</code> and <code>EMAIL_BRAND_COLOR</code> on the System Map.</div></details>")
+    PAGE = 20                       # customers per page
+    npages = (len(items) + PAGE - 1) // PAGE
     rows = ""
     _tlabel = {1: "intro", 2: "follow-up", 3: "final note"}
-    for i, (jid, L, q, subj, raw, html, status, was_edited, sent_n, nxt) in enumerate(items[:200]):
+    _tstatecol = {"sent": "#3FD98B", "next": "#F5B14C", "pending": "#8E9BBE"}
+    _tstatelbl = {"sent": "✓ sent", "next": "→ next to send", "pending": "queued"}
+    for i, (jid, L, q, subj, raw, html, status, was_edited, sent_n, nxt, touches) in enumerate(items):
+        pg = i // PAGE
         day = i // 15 + 1
         sched = f"Day {day} · {9 + ((i % 15) // 3):02d}:{(i % 3) * 20:02d}"
         stcol = {"complete": "#3FD98B", "ready": "#F5B14C", "held": "#8E9BBE", "blocked": "#F5788A"}.get(status, "#8E9BBE")
-        # the 3-dot sequence tracker: filled = sent, hollow = pending
         dots = "".join(f"<span style='color:{'#3FD98B' if k < sent_n else '#3A4160'}'>●</span>" for k in range(3))
         _steplbl = _tlabel.get(nxt, "")
-        stlabel = {
-            "complete": "✓ 3/3 done",
-            "ready": f"○ next: {_steplbl}" if _steplbl else "○ ready",
-            "held": "held (cap)",
-            "blocked": "stopped",
-        }.get(status, status)
+        stlabel = {"complete": "✓ 3/3 done",
+                   "ready": f"○ next: {_steplbl}" if _steplbl else "○ ready",
+                   "held": "held (cap)", "blocked": "stopped"}.get(status, status)
         email = L.get("email") or ""
         chk = (f"<input type='checkbox' class='obx' value='{_esc(email)}' data-job='{_esc(jid)}'>"
                if status == "ready" else "")
@@ -1141,21 +1160,32 @@ def _outbox(jobs):
         sendbtn = (f"<button class='cbtn' style='padding:3px 10px' onclick=\"sendOne('{_esc(jid)}','{_esc(email)}')\">{sendlbl}</button>"
                    if status == "ready" else "")
         edited_tag = " <span class='pill p-live' style='padding:1px 7px'>edited by you</span>" if was_edited else ""
-        # attribute-escape the composed HTML for the preview iframe
-        html_attr = (html or "").replace("&", "&amp;").replace('"', "&quot;")
+        # --- all 3 emails, each previewable (sent + upcoming) ---
+        tblocks = ""
+        for t in touches:
+            thtml_attr = (t["html"] or "").replace("&", "&amp;").replace('"', "&quot;")
+            scol = _tstatecol.get(t["state"], "#8E9BBE")
+            slbl = _tstatelbl.get(t["state"], t["state"])
+            tblocks += (
+                f"<div style='border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px'>"
+                f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'>"
+                f"<b>{t['step']} · {t['name']}</b>"
+                f"<span style='color:{scol};font-weight:600;font-size:12px'>{slbl}</span>"
+                f"<span class='dim' style='flex:1;min-width:120px'>{_esc(t['subj'])}</span>"
+                f"<button class='cbtn' style='padding:2px 9px' onclick=\"toggleEl('tv-{i}-{t['step']}')\">👁 preview</button></div>"
+                f"<div id='tv-{i}-{t['step']}' style='display:none;margin-top:6px'>"
+                f"<iframe srcdoc=\"{thtml_attr}\" style='width:100%;max-width:600px;height:480px;"
+                "border:1px solid var(--line);border-radius:9px;background:#fff'></iframe></div></div>")
+        all3 = (f"<button class='cbtn' style='padding:3px 10px' onclick=\"toggleEl('tch-{i}')\">📧 See all 3 emails</button>"
+                f"<div id='tch-{i}' style='display:none;margin-top:8px'>"
+                "<div class='dim' style='margin-bottom:6px'>The full 3-email cycle for this customer — "
+                "what was sent and what's coming next. Click any to preview exactly how it lands.</div>"
+                f"{tblocks}</div>")
         actions = (
-            f"{sendbtn}"
-            f"<button class='cbtn' style='padding:3px 10px' onclick=\"previewEmail({i})\">👁 Preview</button>"
-            + (f"<button class='cbtn' style='padding:3px 10px' onclick=\"editEmail({i})\">✏️ Edit</button>"
-               if status != "sent" else "")
-            + (f"<button class='cbtn warn' style='padding:3px 10px' onclick=\"trashEmail('{_esc(jid)}','{_esc(email)}')\">🗑 Delete</button>"
-               if status != "sent" else "")
-            # hidden preview iframe (rendered on click)
-            + f"<div id='pv-{i}' style='display:none;margin-top:8px'>"
-              f"<iframe srcdoc=\"{html_attr}\" style='width:100%;max-width:600px;height:520px;border:1px solid var(--line);"
-              "border-radius:9px;background:#fff'></iframe>"
-              "<div class='dim' style='margin-top:4px'>This is exactly how it lands in the customer's inbox.</div></div>"
-            # hidden inline editor
+            f"{sendbtn}{all3}"
+            + (f"<button class='cbtn' style='padding:3px 10px' onclick=\"editEmail({i})\">✏️ Edit next</button>"
+               if status != "complete" else "")
+            + (f"<button class='cbtn warn' style='padding:3px 10px' onclick=\"trashEmail('{_esc(jid)}','{_esc(email)}')\">🗑 Delete</button>")
             + (f"<div id='ed-{i}' style='display:none;margin-top:8px'>"
                f"<input id='eds-{i}' value='{_esc(subj)}' style='width:100%;margin-bottom:6px' placeholder='Subject'>"
                f"<textarea id='edb-{i}' style='width:100%;min-height:150px;font-family:inherit'>{_esc(raw)}</textarea>"
@@ -1163,8 +1193,8 @@ def _outbox(jobs):
                f"<button class='sbtn' onclick=\"saveEdit('{_esc(jid)}','{_esc(email)}',{i})\">💾 Save edit</button>"
                f"<button class='cbtn' onclick=\"editEmail({i})\">Cancel</button></div>"
                "<div class='dim' style='margin-top:4px'>Edit the message only — the branded footer (name, address, "
-               "booking button, unsubscribe) is added automatically.</div></div>" if status != "sent" else ""))
-        rows += (f"<tr><td>{chk}</td>"
+               "booking button, unsubscribe) is added automatically.</div></div>" if status != "complete" else ""))
+        rows += (f"<tr class='obxrow' data-pg='{pg}'{'' if pg == 0 else ' style=display:none'}><td>{chk}</td>"
                  f"<td><b>{_esc(L.get('name',''))}</b><div class='dim'>{_esc(L.get('company',''))}</div></td>"
                  f"<td class='mut'>{_esc(q.get('business') or q.get('category') or '—')}</td>"
                  f"<td class='mut' style='max-width:240px'>{_esc(subj)}{edited_tag}</td>"
@@ -1172,20 +1202,28 @@ def _outbox(jobs):
                  f"<td style='white-space:nowrap'><span style='font-size:13px;letter-spacing:2px'>{dots}</span>"
                  f"<div style='color:{stcol};font-weight:600;font-size:12px'>{stlabel}</div></td>"
                  f"<td style='min-width:230px'>{actions}</td></tr>")
-    # the follow-up cadence explainer — how the 3-email cycle works
+    # pager (client-side, 20 customers per page)
+    pager = ""
+    if npages > 1:
+        pager = ("<div class='ctrl' id='obx-pager' style='margin-top:10px;align-items:center'>"
+                 "<button class='cbtn' onclick='pageOutbox(-1)'>‹ Prev</button>"
+                 "<span class='dim' style='align-self:center'>Page <b id='obx-pg'>1</b> of "
+                 f"{npages} · {len(items)} customers</span>"
+                 "<button class='cbtn' onclick='pageOutbox(1)'>Next ›</button></div>")
+    # the follow-up cadence explainer — COLLAPSIBLE so it doesn't eat the screen
     cadence = (
-        "<div class='card' style='margin-bottom:10px;background:rgba(76,141,255,.06);border-left:4px solid #4C8DFF'>"
-        "<p class='ct' style='margin-bottom:6px'>🔁 3-email follow-up cycle (then we stop)</p>"
-        "<div style='display:flex;gap:10px;flex-wrap:wrap;font-size:13px'>"
+        "<details class='card' open style='margin-bottom:10px;background:rgba(76,141,255,.06);border-left:4px solid #4C8DFF'>"
+        "<summary style='cursor:pointer;font-weight:700;list-style:none'>🔁 3-email follow-up cycle (then we stop) "
+        "<span class='dim' style='font-weight:400'>— click to fold/unfold</span></summary>"
+        "<div style='display:flex;gap:10px;flex-wrap:wrap;font-size:13px;margin-top:10px'>"
         "<div class='fe' style='flex:1;min-width:150px'><b>1 · Intro</b><div class='dim'>The full personalized pitch</div></div>"
         "<div class='fe' style='flex:1;min-width:150px'><b>2 · Follow-up</b><div class='dim'>A short bump if no reply</div></div>"
         "<div class='fe' style='flex:1;min-width:150px'><b>3 · Final note</b><div class='dim'>A last soft close, then stop</div></div>"
         "</div>"
         f"<p class='cc' style='margin-top:8px'>Each customer gets <b>at most 3 emails</b>, each one different. "
-        f"After the 3rd, that customer is done — <b>no more emails</b>. The dots (●●●) below track where each "
-        f"person is in their cycle.</p>"
+        f"After the 3rd, that customer is done — <b>no more emails</b>. The dots (●●●) track where each person is.</p>"
         f"<div class='dim' style='margin-top:6px'>{customers} customers · <b style='color:#3FD98B'>{emails_sent} emails sent</b> · "
-        f"<b style='color:#F5B14C'>{remaining} still to send</b> across all cycles · {complete} finished all 3.</div></div>")
+        f"<b style='color:#F5B14C'>{remaining} still to send</b> across all cycles · {complete} finished all 3.</div></details>")
     return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📬 Email outbox — your agent's emails, per customer</p>"
             f"<p class='cc'>One personalized email per lead, built from their persona (business · pain · offer), "
             f"sent as a <b>3-step sequence</b>. <b style='color:#F5B14C'>{ready} ready for their next email</b> · "
@@ -1200,7 +1238,7 @@ def _outbox(jobs):
             "<button class='cbtn' onclick='sendAllOutbox()'>📤 Send all ready</button></div>"
             "<div class='tbwrap'><table><thead><tr><th></th><th>Customer</th><th>Persona</th><th>Next email</th>"
             "<th>Scheduled</th><th>Cycle 1·2·3</th><th>Actions</th></tr></thead><tbody>"
-            + rows + "</tbody></table></div>" + _junk_box(trashed_items) + "</div>")
+            + rows + "</tbody></table></div>" + pager + _junk_box(trashed_items) + "</div>")
 
 
 def _junk_box(trashed_items):
@@ -1927,8 +1965,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 webview = (
                     "<details style='margin-top:6px'><summary style='cursor:pointer;color:#3FD98B;font-weight:600'>"
                     "🌐 See the web view (how it looks on your site — headings, images, layout)</summary>"
-                    f"<iframe srcdoc=\"{sd}\" style='width:100%;max-width:720px;height:560px;border:1px solid var(--line);"
-                    "border-radius:9px;background:#fff;margin-top:8px'></iframe></details>")
+                    f"<iframe srcdoc=\"{sd}\" style='width:100%;max-width:760px;height:620px;border:1px solid var(--line);"
+                    "border-radius:9px;background:#080B14;margin-top:8px'></iframe>"
+                    "<div class='dim' style='margin-top:4px'>Rendered in your live blog's real design "
+                    "(dark theme, Sora headings, teal accents) — matched from anthropos-automation.com.</div></details>")
             preview = (
                 f"<div class='dim' style='margin-top:8px;line-height:1.55'>{_esc(teaser)}…</div>"
                 f"<details style='margin-top:6px'><summary style='cursor:pointer;color:#4C8DFF;font-weight:600'>"
@@ -2269,8 +2309,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "async function trashEmail(job,email){if(!confirm('Delete this email? It moves to the junk box (recoverable, never lost).'))return;"
               "try{await fetch('/outreach/trash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email})});location.reload();}catch(e){alert('Failed: '+e);}}"
               "async function restoreEmail(job,email){try{await fetch('/outreach/trash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email,restore:true})});location.reload();}catch(e){alert('Failed: '+e);}}"
-              "function previewEmail(i){var d=document.getElementById('pv-'+i);if(d)d.style.display=(d.style.display==='none'?'block':'none');}"
-              "function editEmail(i){var d=document.getElementById('ed-'+i);if(d)d.style.display=(d.style.display==='none'?'block':'none');}"
+              "function previewEmail(i){toggleEl('pv-'+i);}"
+              "function toggleEl(id){var d=document.getElementById(id);if(d)d.style.display=(d.style.display==='none'?'block':'none');}"
+              "var _obxPg=0;function pageOutbox(dir){var rows=document.querySelectorAll('.obxrow');var pages=0;rows.forEach(function(r){pages=Math.max(pages,+r.getAttribute('data-pg'));});"
+              "_obxPg=Math.max(0,Math.min(pages,_obxPg+dir));rows.forEach(function(r){r.style.display=(+r.getAttribute('data-pg')===_obxPg?'':'none');});"
+              "var lbl=document.getElementById('obx-pg');if(lbl)lbl.textContent=(_obxPg+1);window.scrollTo({top:0});}"
+              "function editEmail(i){toggleEl('ed-'+i);}"
               "async function saveEdit(job,email,i){var s=(document.getElementById('eds-'+i)||{}).value||'';var b=(document.getElementById('edb-'+i)||{}).value||'';"
               "if(b.trim().length<10){alert('The email body looks too short.');return;}"
               "try{var r=await fetch('/outreach/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email,subject:s,body:b})});var j=await r.json();"
