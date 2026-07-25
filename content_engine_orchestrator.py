@@ -72,6 +72,7 @@ ROUTES = {
     "media_chat":         {"engine": FRONTIER_MODEL, "fallback": FRONTIER_ALT},  # discuss + revise the draft
     "reply_responder":    {"engine": CHEAP_MODEL, "fallback": FRONTIER_ALT},  # customer-facing
     "judge":              {"engine": CHEAP_MODEL, "fallback": CHEAP_ALT},  # S1 evaluator — cheap on purpose
+    "content_planner":    {"engine": FRONTIER_ALT, "fallback": CHEAP_MODEL},  # proposes a plan you approve
     "orchestrator":       {"engine": "code"},
 }
 

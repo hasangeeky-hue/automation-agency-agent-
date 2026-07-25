@@ -360,6 +360,85 @@ def api_media_chat(job_id, message):
     return {"reply": reply, "changed": bool(changed)}
 
 
+def _brand_dict():
+    """Brand identity for content jobs — name + offer from settings, defaults else."""
+    store = get_store()
+    g = getattr(store, "get_setting", lambda *a: None)
+    return {"brand_name": g("brand_name") or "Anthropos Automation",
+            "offer": g("brand_offer") or "AI & automation systems for small businesses"}
+
+
+def api_plan_content(count=8):
+    """Ask the planner to propose a batch of on-brand pieces for you to approve.
+    Stores the plan as 'pending' — no jobs are created until you approve it."""
+    store = get_store()
+    g = getattr(store, "get_setting", lambda *a: None)
+    recent = []
+    try:
+        for j in (store.list_jobs() if hasattr(store, "list_jobs") else []):
+            t = ((j.get("payload", {}) or {}).get("content_producer", {}) or {}).get("title")
+            if t:
+                recent.append(t)
+    except Exception:
+        pass
+    icp = g("icp") or {"verticals": ["doctors", "lawyers", "Shopify stores", "tax consultants",
+                                     "content creators", "marketing managers"],
+                       "countries": ["USA", "UK", "Germany", "Switzerland", "Canada"],
+                       "deal_size": "$2,000-$10,000"}
+    payload = {"count": int(count), "goal": "authority + leads", "icp": icp,
+               "recent_titles": recent[-30:], "site_signals": {}}
+    try:
+        from content_engine_providers import build_prompt, call_provider
+        mdl = (orch.ROUTES.get("content_planner", {}) or {}).get("engine") or orch.FRONTIER_ALT
+        spec = build_prompt("content_planner", {"payload": payload, "brand": _brand_dict()})
+        data = call_provider(mdl, spec).data or {}
+    except Exception as e:
+        return {"error": f"planner failed: {str(e)[:140]}"}
+    items = [it for it in (data.get("plan") or []) if it.get("title")]
+    if not items:
+        return {"error": "the planner returned no pieces — try again"}
+    plan = {"status": "pending", "period": data.get("period", ""), "items": items}
+    if hasattr(store, "set_setting"):
+        store.set_setting("content_plan", plan)
+    return {"ok": True, "count": len(items), "plan": plan}
+
+
+def api_approve_plan():
+    """Approve the pending plan: create one content job per piece. They then flow
+    through the normal pipeline (write -> QA -> publish)."""
+    store = get_store()
+    plan = getattr(store, "get_setting", lambda *a: None)("content_plan")
+    if not plan or not plan.get("items"):
+        return {"error": "no pending plan to approve"}
+    if plan.get("status") == "approved":
+        return {"error": "this plan is already approved"}
+    brand = _brand_dict()
+    created = []
+    for it in plan["items"]:
+        title = (it.get("title") or "").strip()
+        if not title:
+            continue
+        directive = (f"Write this exact piece: '{title}'. Angle: {it.get('angle','')}. "
+                     f"Target keyword: {it.get('target_keyword','')}. Type: {it.get('type','blog')}.")
+        payload = {"type": it.get("type", "blog"),
+                   "config": {"weekly_priorities": directive, "chosen_topic": title,
+                              "target_keyword": it.get("target_keyword", ""), "pieces_this_week": 1}}
+        jid = f"plan_{abs(hash(title)) % 10_000_000}"
+        api_create_job("content_piece", brand, payload, job_id=jid)
+        created.append(jid)
+    plan["status"] = "approved"
+    if hasattr(store, "set_setting"):
+        store.set_setting("content_plan", plan)
+    return {"ok": True, "created": len(created), "jobs": created}
+
+
+def api_clear_plan():
+    store = get_store()
+    if hasattr(store, "set_setting"):
+        store.set_setting("content_plan", {"status": "cleared", "items": []})
+    return {"ok": True}
+
+
 def api_save_ci(text, drive_folder=None, inspiration=None):
     """Save the brand/CI the content agents write on-brand from (dashboard)."""
     store = get_store()
@@ -721,6 +800,10 @@ def api_dashboard_html() -> str:
     except Exception:
         ci_text, ci_drive, wp_live = "", "", False
     autopilot_on = bool(settings["autonomy"]) and not bool(settings["paused"]) and wp_live
+    try:
+        content_plan = store.get_setting("content_plan", None) if hasattr(store, "get_setting") else None
+    except Exception:
+        content_plan = None
     import content_engine_dashboard as D
     return D.dashboard_html(
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
@@ -729,7 +812,7 @@ def api_dashboard_html() -> str:
         autonomy=settings["autonomy"], bookings=bookings, ads=ads,
         needles=needles, last_eval=last_eval, meters=meters, api_limits=api_limits,
         ci_text=ci_text if isinstance(ci_text, str) else "", ci_drive=ci_drive or "",
-        autopilot_on=autopilot_on)
+        autopilot_on=autopilot_on, content_plan=content_plan)
 
 
 # ---------------------------------------------------------------------------
@@ -886,6 +969,22 @@ def build_app():
             data = {}
         return api_save_ci(data.get("text", ""), data.get("drive_folder"),
                            data.get("inspiration"))
+
+    @app.post("/plan/content")
+    async def plan_content(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_plan_content(int(data.get("count", 8) or 8))
+
+    @app.post("/plan/approve")
+    def plan_approve():
+        return api_approve_plan()
+
+    @app.post("/plan/clear")
+    def plan_clear():
+        return api_clear_plan()
 
     @app.post("/autopilot/run")
     def autopilot_run():

@@ -605,6 +605,32 @@ MEDIA_CHAT = {
     "additionalProperties": False,
 }
 
+CONTENT_PLANNER = {
+    "type": "object",
+    "required": ["plan"],
+    "properties": {
+        "period": {"type": "string"},
+        "plan": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                    "title": {"type": "string"},
+                    "type": {"type": "string"},
+                    "target_keyword": {"type": "string"},
+                    "angle": {"type": "string"},
+                    "audience": {"type": "string"},
+                    "funnel": {"type": "string"},
+                    "rationale": {"type": "string"},
+                },
+                "additionalProperties": True,
+            },
+        },
+    },
+    "additionalProperties": True,
+}
+
 JUDGE = {
     "type": "object",
     "required": ["score", "verdict"],
@@ -678,6 +704,7 @@ SCHEMAS = {
     "media_buyer":             Schema("media_buyer", MEDIA_BUYER),
     "media_chat":              Schema("media_chat", MEDIA_CHAT),
     "judge":                   Schema("judge", JUDGE),
+    "content_planner":         Schema("content_planner", CONTENT_PLANNER),
     "reply_responder":         Schema("reply_responder", REPLY_RESPONDER),
 }
 

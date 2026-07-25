@@ -103,6 +103,7 @@ _MAX_TOKENS = {
     "media_chat": 1500,     # discuss + return a possibly-revised campaign
     "reply_responder": 500,  # one inbound reply per call
     "judge": 500,            # S1 evaluator — compact verdict only
+    "content_planner": 1800,  # a batch of proposed pieces to approve
 }
 
 

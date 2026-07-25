@@ -800,13 +800,15 @@ def login_html(error=""):
 def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_cap,
                    taste_skills, has_password=False, paused=False, autonomy=False,
                    bookings=None, ads=None, needles=None, last_eval=None,
-                   meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False):
+                   meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
+                   content_plan=None):
     from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
     bookings, ads = bookings or {}, ads or {}
     needles, last_eval = needles or {}, last_eval or {}
     meters, api_limits = meters or {}, api_limits or {}
     ci_text, ci_drive = ci_text or "", ci_drive or ""
+    content_plan = content_plan or {}
     booked = int(bookings.get("booked", 0) or 0)
     o_leads, o_rev, o_cust = _outcomes(jobs)
     content_jobs = [j for j in jobs if j.get("type") != "outreach_campaign"]
@@ -849,6 +851,41 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         [("Made / month", made_month, "#EDF1FB"), ("Published", published, "#3FD98B"),
          ("In progress", sum(pl[0:4]), "#F5B14C"), ("On pace for", proj, "#8B7CFF")],
         _sparkline(content_series, "#4C8DFF") if content_jobs else _empty("Fills as pieces are made."))
+    # ---- CONTENT PLAN (agent proposes -> you approve -> pieces get created) ----
+    _pending = content_plan.get("status") == "pending" and content_plan.get("items")
+    if _pending:
+        rows = ""
+        for i, it in enumerate(content_plan["items"], 1):
+            rows += (
+                "<div style='padding:11px 0;border-top:1px solid rgba(255,255,255,.06)'>"
+                f"<div style='display:flex;gap:10px;align-items:baseline;flex-wrap:wrap'>"
+                f"<span class='tnum dim'>{i:02d}</span><b>{_esc(it.get('title',''))}</b>"
+                f"<span class='pill p-need' style='margin-left:auto'>{_esc(it.get('funnel','') or it.get('type','blog'))}</span></div>"
+                f"<div class='dim' style='margin-top:3px'>🔑 {_esc(it.get('target_keyword','') or '—')} · "
+                f"{_esc(it.get('angle',''))}</div>"
+                + (f"<div class='dim' style='margin-top:2px'>Why: {_esc(it.get('rationale',''))}</div>" if it.get('rationale') else "")
+                + "</div>")
+        plan_card = (
+            "<div class='card full' style='margin-bottom:12px;border-left:4px solid #4C8DFF'>"
+            f"<p class='ct'>🗒️ Proposed content plan — {len(content_plan['items'])} pieces, awaiting your approval</p>"
+            "<p class='cc'>The planner drafted these on-brand for your ICP. Approve to create them all (they'll be "
+            "written, QA-checked, then published); or discard and re-plan.</p>"
+            + rows +
+            "<div class='ctrl' style='margin-top:14px'>"
+            "<button class='sbtn' onclick='approvePlan()'>✓ Approve — create these pieces</button>"
+            "<button class='cbtn warn' onclick='clearPlan()'>✗ Discard</button></div></div>")
+    else:
+        plan_card = (
+            "<div class='card full' style='margin-bottom:12px'>"
+            "<p class='ct'>🗒️ Content plan — let the agent propose, you approve</p>"
+            "<p class='cc'>The planner proposes a batch of on-brand pieces for your ICP. You review the list and "
+            "approve before anything is written — nothing runs without your yes.</p>"
+            "<div class='ctrl'><span class='dim' style='align-self:center'>How many pieces? </span>"
+            "<input id='plan-count' value='8' style='width:60px' inputmode='numeric'>"
+            "<button class='sbtn' id='planbtn' onclick='planContent()'>🗒️ Plan my content</button>"
+            + (f"<span class='dim' style='align-self:center'>Last plan: {_esc(content_plan.get('status',''))}</span>"
+               if content_plan.get("status") else "") + "</div></div>")
+
     # ---- BRAND / CI + 1-CLICK AUTOPILOT ----
     _ci_has = bool(ci_text.strip())
     ap_state = ("<span class='pill p-live'><span class='d' style='background:#3FD98B'></span>Autopilot ON — creating & publishing live</span>"
@@ -875,7 +912,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         + "<span class='dim' style='align-self:center'>Queues today's pieces, writes on-brand, and publishes the "
           "ones that pass QA — hands-free. Stop anytime.</span></div></div>")
 
-    p_content = m_content + autopilot_card + grid(
+    p_content = m_content + plan_card + autopilot_card + grid(
         _panel("Pipeline — where each piece is", "Idea → written → checked → your approval → live → measured.",
                _funnel(list(zip(_STAGES, pl))) if sum(pl) else _empty("No content jobs yet.")),
         _panel("Content by stage", "How many pieces sit at each stage right now.",
@@ -1556,6 +1593,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/media/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:jid,message:m})});var j=await r.json();"
               "var w=document.getElementById(wid);var t=(j.reply||j.error||'(no reply)').replace(/</g,'&lt;');w.innerHTML=\"<span class='tm' style='min-width:44px'>Agent</span><span class='mut'>\"+t+\"</span>\";log.scrollTop=log.scrollHeight;"
               "if(j.changed){setTimeout(function(){location.reload();},1200);}}catch(e){var w2=document.getElementById(wid);if(w2)w2.innerHTML=\"<span class='mut'>Error: \"+e+\"</span>\";}}"
+              "async function planContent(){var c=parseInt((document.getElementById('plan-count')||{}).value||'8')||8;var b=document.getElementById('planbtn');if(b){b.disabled=true;b.textContent='Planning… ~15s';}"
+              "try{var r=await fetch('/plan/content',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({count:c})});var j=await r.json();"
+              "if(j.error){alert('Plan failed: '+j.error);if(b){b.disabled=false;b.textContent='🗒️ Plan my content';}}else{alert('Planned '+j.count+' pieces — review and approve below.');location.reload();}}"
+              "catch(e){alert('Plan failed: '+e);if(b){b.disabled=false;b.textContent='🗒️ Plan my content';}}}"
+              "async function approvePlan(){if(!confirm('Approve this plan? Each piece will be created, written on-brand, QA-checked, and published.'))return;"
+              "try{var r=await fetch('/plan/approve',{method:'POST'});var j=await r.json();if(j.error){alert(j.error);}else{alert('✓ Approved — created '+j.created+' pieces. They\\'re now in the pipeline.');location.reload();}}catch(e){alert('Failed: '+e);}}"
+              "async function clearPlan(){if(!confirm('Discard this plan?'))return;try{await fetch('/plan/clear',{method:'POST'});location.reload();}catch(e){alert('Failed: '+e);}}"
               "async function saveCI(){var t=(document.getElementById('ci-text')||{}).value||'';var d=(document.getElementById('ci-drive')||{}).value||'';"
               "try{var r=await fetch('/brand/ci',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,drive_folder:d})});var j=await r.json();"
               "if(j.error){alert('Save failed: '+j.error);}else{alert('Brand saved ('+(j.chars||0)+' chars). Every agent now writes on-brand.');location.reload();}}catch(e){alert('Save failed: '+e);}}"
