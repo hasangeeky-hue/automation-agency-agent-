@@ -20,7 +20,7 @@ from __future__ import annotations
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v6 · reply inbox + send timeline + follow-up approvals"
+BUILD_TAG = "2026-07-26 · v7 · outreach numbers audited + fixed (sent/replied/rate)"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -440,6 +440,23 @@ def _daybuckets(jobs, pred, days=14, valfn=None):
         ca = (j.get("created_at") or "")[:10]
         if ca in idx:
             vals[idx[ca]] += (valfn(j) if valfn else 1)
+    return vals
+
+
+def _send_daybuckets(out_jobs, days=14):
+    """Real emails-sent-per-day from the sent_at timestamps (intro + follow-ups),
+    not campaign-created dates — so the send-volume chart reflects actual sends."""
+    from datetime import date, timedelta
+    today = date.today()
+    idx = {(today - timedelta(days=days - 1 - i)).isoformat(): i for i in range(days)}
+    vals = [0.0] * days
+    for j in out_jobs:
+        at = (j.get("payload", {}) or {}).get("sent_at", {}) or {}
+        for times in at.values():
+            for t in (times if isinstance(times, list) else [times]):
+                d = str(t)[:10]
+                if d in idx:
+                    vals[idx[d]] += 1
     return vals
 
 
@@ -1604,11 +1621,34 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     out_jobs = [j for j in jobs if j.get("type") == "outreach_campaign"]
     pl = _pipeline(jobs)
     lead_rows = list(_lead_funnel(jobs))
+    # --- ACCURATE outreach counters (single source of truth) ---
+    # emails_sent = every real send recorded in sent_to (intro + follow-ups);
+    # leads_emailed = unique people reached >=1; replied = customer replies read.
+    try:
+        import content_engine_connectors as _Cc
+        _tstats = _Cc.touch_stats
+    except Exception:
+        _tstats = lambda v: (len(v) if isinstance(v, list) else (1 if v else 0), "")
+    real_emails_sent = leads_emailed = 0
+    for j in out_jobs:
+        sm = (j.get("payload", {}) or {}).get("sent_to", {}) or {}
+        for v in sm.values():
+            n = _tstats(v)[0]
+            if n > 0:
+                leads_emailed += 1
+                real_emails_sent += n
+    replied = len(reply_drafts or [])
+    # fold the real numbers into the people-funnel (Emailed = people, + Replied)
+    lead_rows[3] = ("Emailed", leads_emailed or lead_rows[3][1])
+    lead_rows[4] = ("Replied", replied)
     if booked:
         lead_rows[5] = ("Booked", booked)   # real Cal.com consultations
     published = sum(1 for j in content_jobs if _STAGE_OF.get(j.get("status", "")) in (4, 5))
     leads_found = lead_rows[0][1]
-    emails_sent = lead_rows[3][1]
+    # 'emails_sent' now means TOTAL emails sent (volume), not campaigns; fall back
+    # to the campaign count only if nothing has a send record yet.
+    emails_sent = real_emails_sent or lead_rows[3][1]
+    reply_rate = round(replied / leads_emailed * 100) if leads_emailed else 0
     waiting = sum(1 for j in jobs if j.get("status") == "AWAITING_APPROVAL")
     pct = round(month_spent / month_cap * 100) if month_cap else 0
     bcol = "#3FD98B" if pct < 70 else ("#F5B14C" if pct < 90 else "#FF6B93")
@@ -1721,7 +1761,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
 
     # ---- 2. LEAD MACHINE ----
     m_leads = _master("🧲", "Leads — at a glance", "Your pipeline from stranger to booked call.",
-        [("Found", leads_found, "#EDF1FB"), ("Emailed", emails_sent, "#4C8DFF"),
+        [("Found", leads_found, "#EDF1FB"), ("Emailed", leads_emailed, "#4C8DFF"),
          ("Replied", lead_rows[4][1], "#8B7CFF"), ("Booked", lead_rows[5][1], "#3FD98B")],
         _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("Fills as leads flow in."))
     p_leads = m_leads + _outbox_pointer(jobs) + _leads_table(jobs) + grid(
@@ -1753,27 +1793,30 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         f"<div class='chip'><span class='nm'>{p}</span><span class='dim'>from {a}</span></div>"
         for p, a in _routing)
     m_email = _master("✉️", "Outreach — at a glance", "Cold email → reply → booked → won.",
-        [("Sent", emails_sent, "#EDF1FB"), ("Replied", 0, "#8B7CFF"),
+        [("Emails sent", emails_sent, "#EDF1FB"), ("Replied", replied, "#8B7CFF"),
          ("Booked", booked, "#F5B14C"), ("Won", o_cust, "#3FD98B")],
-        _funnel_skeleton([("Sent", emails_sent, 100), ("Replied", 0, 62),
+        _funnel_skeleton([("People emailed", leads_emailed, 100), ("Replied", replied, 62),
                           ("Booked", booked, 38), ("Won", o_cust, 20)], "Fills as replies land."))
     p_email = m_email + _outbox(jobs) + _replies_inbox(reply_drafts) + _leads_table(jobs) + grid(
-        _panel("Sent vs replied", "Cold emails out, and how many replied.",
-               _bars([("Sent", emails_sent), ("Replied", 0)], "#4C8DFF") if emails_sent else _empty("No emails sent yet.")),
+        _panel("Sent vs replied", "Emails out, and customers who replied.",
+               _bars([("Emails sent", emails_sent), ("People emailed", leads_emailed), ("Replied", replied)], "#4C8DFF")
+               if emails_sent else _empty("No emails sent yet.")),
         _panel("Sent by purpose → address", "The loop: your agent sends each email type from the right alias — all from your one inbox.", route_html),
         _panel("Deal conversion — the money moment", "Email → reply → booked consultation → paying customer.",
-               _funnel_skeleton([("Emailed", emails_sent, 100), ("Replied", 0, 62),
+               _funnel_skeleton([("People emailed", leads_emailed, 100), ("Replied", replied, 62),
                                  ("Consultation booked", booked, 38), ("Customer won", o_cust, 20)],
                                 "Booked consultations come live from Cal.com; replies + won come as outcomes are recorded.")),
-        _panel("Send volume over time", "Emails sent per day.",
-               _sparkline(_daybuckets(out_jobs, lambda j: bool((j.get('payload',{}) or {}).get('send_ref')), 14), "#4C8DFF")
+        _panel("Send volume over time", "Emails actually sent per day (intro + follow-ups).",
+               _sparkline(_send_daybuckets(out_jobs, 14), "#4C8DFF")
                if emails_sent else _empty("Fills as outreach runs.")),
-        _panel("Reply rate", "Share of cold emails that get a reply.",
-               f"<div class='big tnum'>0%</div><div class='dim'>of {emails_sent} sent · fills as replies land</div>" if emails_sent else _empty("Fills as outreach runs.")),
+        _panel("Reply rate", "Share of emailed customers who reply.",
+               f"<div class='big tnum'>{reply_rate}%</div><div class='dim'>{replied} of {leads_emailed} people emailed replied</div>"
+               if leads_emailed else _empty("Fills as outreach runs.")),
         _panel("Deliverability guard", "How your domain stays out of spam.",
                "<div class='dim' style='line-height:1.8'>✔️ Dead addresses drop automatically (bounce suppression)<br>✔️ Daily send cap ramps up as the domain warms<br>✔️ A suppressed address is never emailed again</div>"),
         _panel("Volume by sender alias", "Which address each email went out from.",
-               _bars([("newsletter@", 0), ("marketing@", 0), ("customercare@", 0), ("contact@", emails_sent)], "#8B7CFF") if emails_sent else _empty("Fills as outreach runs.")),
+               _bars([("marketing@ (outreach)", emails_sent), ("customercare@ (replies)", replied),
+                      ("newsletter@", 0), ("contact@", 0)], "#8B7CFF") if emails_sent else _empty("Fills as outreach runs.")),
         _panel("Best subject lines", "Which openers win the most replies.",
                _empty("Ranks your subject lines once replies come in.")),
         _panel("Consultations booked (Cal.com)", "Real calls booked off your outreach.",
