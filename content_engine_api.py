@@ -474,12 +474,18 @@ def api_plan_content(count=8):
     Stores the plan as 'pending' — no jobs are created until you approve it."""
     store = get_store()
     g = getattr(store, "get_setting", lambda *a: None)
+    import content_engine_site_taxonomy as TAX
     recent = []
+    coverage = {s["name"]: 0 for s in TAX.SEGMENTS}   # balance target: even across all 7
     try:
         for j in (store.list_jobs() if hasattr(store, "list_jobs") else []):
-            t = ((j.get("payload", {}) or {}).get("content_producer", {}) or {}).get("title")
+            pl = j.get("payload", {}) or {}
+            t = (pl.get("content_producer", {}) or {}).get("title")
             if t:
                 recent.append(t)
+            seg = (pl.get("taxonomy") or {}).get("segment") or (pl.get("config", {}) or {}).get("segment")
+            if seg in coverage:
+                coverage[seg] += 1
     except Exception:
         pass
     icp = g("icp") or {"verticals": ["doctors", "lawyers", "Shopify stores", "tax consultants",
@@ -487,6 +493,7 @@ def api_plan_content(count=8):
                        "countries": ["USA", "UK", "Germany", "Switzerland", "Canada"],
                        "deal_size": "$2,000-$10,000"}
     payload = {"count": int(count), "goal": "authority + leads", "icp": icp,
+               "segments": TAX.SEGMENT_NAMES, "pillars": TAX.PILLAR_NAMES, "coverage": coverage,
                "recent_titles": recent[-30:], "site_signals": {}}
     try:
         from content_engine_providers import build_prompt, call_provider
@@ -520,10 +527,13 @@ def api_approve_plan():
         if not title:
             continue
         directive = (f"Write this exact piece: '{title}'. Angle: {it.get('angle','')}. "
-                     f"Target keyword: {it.get('target_keyword','')}. Type: {it.get('type','blog')}.")
+                     f"Target keyword: {it.get('target_keyword','')}. Type: {it.get('type','blog')}. "
+                     f"Audience segment: {it.get('segment','')}. Service pillar: {it.get('pillar','')}.")
         payload = {"type": it.get("type", "blog"),
                    "config": {"weekly_priorities": directive, "chosen_topic": title,
-                              "target_keyword": it.get("target_keyword", ""), "pieces_this_week": 1}}
+                              "target_keyword": it.get("target_keyword", ""), "pieces_this_week": 1,
+                              # carry the planner's segment+pillar so the piece stays on-target
+                              "segment": it.get("segment", ""), "pillar": it.get("pillar", "")}}
         jid = f"plan_{abs(hash(title)) % 10_000_000}"
         api_create_job("content_piece", brand, payload, job_id=jid)
         created.append(jid)

@@ -619,13 +619,15 @@ CONTENT_PLANNER = {
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["title"],
+                "required": ["title", "segment", "pillar"],
                 "properties": {
                     "title": {"type": "string"},
                     "type": {"type": "string"},
                     "target_keyword": {"type": "string"},
                     "angle": {"type": "string"},
                     "audience": {"type": "string"},
+                    "segment": {"type": "string"},
+                    "pillar": {"type": "string"},
                     "funnel": {"type": "string"},
                     "rationale": {"type": "string"},
                 },

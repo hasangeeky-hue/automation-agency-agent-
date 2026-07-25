@@ -20,7 +20,7 @@ from __future__ import annotations
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v8 · content targets website segments + on-brand blog images"
+BUILD_TAG = "2026-07-26 · v9 · balanced plan across all 7 website segments"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -1684,22 +1684,41 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     _pending = content_plan.get("status") == "pending" and content_plan.get("items")
     if _pending:
         rows = ""
+        seg_counts = {}
         for i, it in enumerate(content_plan["items"], 1):
+            seg = it.get("segment", "")
+            pil = it.get("pillar", "")
+            if seg:
+                seg_counts[seg] = seg_counts.get(seg, 0) + 1
+            tags = ""
+            if seg or pil:
+                tags = (f"<div style='margin-top:4px;display:flex;gap:6px;flex-wrap:wrap'>"
+                        + (f"<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>👤 {_esc(seg)}</span>" if seg else "")
+                        + (f"<span class='pill' style='background:rgba(139,124,255,.14);color:#8B7CFF;padding:1px 8px'>🎯 {_esc(pil)}</span>" if pil else "")
+                        + "</div>")
             rows += (
                 "<div style='padding:11px 0;border-top:1px solid rgba(255,255,255,.06)'>"
                 f"<div style='display:flex;gap:10px;align-items:baseline;flex-wrap:wrap'>"
                 f"<span class='tnum dim'>{i:02d}</span><b>{_esc(it.get('title',''))}</b>"
                 f"<span class='pill p-need' style='margin-left:auto'>{_esc(it.get('funnel','') or it.get('type','blog'))}</span></div>"
                 f"<div class='dim' style='margin-top:3px'>🔑 {_esc(it.get('target_keyword','') or '—')} · "
-                f"{_esc(it.get('angle',''))}</div>"
+                f"{_esc(it.get('angle',''))}</div>" + tags
                 + (f"<div class='dim' style='margin-top:2px'>Why: {_esc(it.get('rationale',''))}</div>" if it.get('rationale') else "")
                 + "</div>")
+        # coverage bar: how evenly the plan spans the 7 segments
+        cov = ""
+        if seg_counts:
+            chips = " ".join(f"<span class='pill' style='background:rgba(47,227,210,.12);color:#2FE3D2;padding:1px 8px'>"
+                             f"{_esc(s)} ×{n}</span>" for s, n in sorted(seg_counts.items(), key=lambda x: -x[1]))
+            cov = (f"<div style='margin:8px 0 4px'><span class='dim'>Coverage across your website segments:</span> "
+                   f"<div style='margin-top:5px;display:flex;gap:6px;flex-wrap:wrap'>{chips}</div></div>")
         plan_card = (
             "<div class='card full' style='margin-bottom:12px;border-left:4px solid #4C8DFF'>"
             f"<p class='ct'>🗒️ Proposed content plan — {len(content_plan['items'])} pieces, awaiting your approval</p>"
-            "<p class='cc'>The planner drafted these on-brand for your ICP. Approve to create them all (they'll be "
-            "written, QA-checked, then published); or discard and re-plan.</p>"
-            + rows +
+            "<p class='cc'>The planner drafted these to <b>cover your 7 website segments evenly</b> across the service "
+            "pillars. Each is tagged with who it's for + which service. Approve to create them all (written, QA-checked, "
+            "on-brand image, published to the right section); or discard and re-plan.</p>"
+            + cov + rows +
             "<div class='ctrl' style='margin-top:14px'>"
             "<button class='sbtn' onclick='approvePlan()'>✓ Approve — create these pieces</button>"
             "<button class='cbtn warn' onclick='clearPlan()'>✗ Discard</button></div></div>")

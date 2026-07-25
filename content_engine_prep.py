@@ -188,9 +188,13 @@ def _in_content_producer(job: dict) -> dict:
     tax = {}
     try:
         import content_engine_site_taxonomy as TAX
-        tax = TAX.resolve(row.get("segment") or row.get("target_segment", ""),
-                          row.get("pillar") or row.get("service", ""),
-                          row.get("working_title", ""), row.get("primary_keyword", ""))
+        cfg = _cfg(job)
+        # prefer the approved plan's explicit segment/pillar, else the strategist
+        # row, else classify from the title/keyword — so it is ALWAYS on-target.
+        tax = TAX.resolve(cfg.get("segment") or row.get("segment") or row.get("target_segment", ""),
+                          cfg.get("pillar") or row.get("pillar") or row.get("service", ""),
+                          row.get("working_title", "") or cfg.get("chosen_topic", ""),
+                          row.get("primary_keyword", "") or cfg.get("target_keyword", ""))
         job.setdefault("payload", {})["taxonomy"] = tax   # persists for the publisher
     except Exception:
         tax = {}
