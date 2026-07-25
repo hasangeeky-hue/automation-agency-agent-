@@ -816,41 +816,56 @@ def _pipeline_health(st, jobs):
             "<span class='dim' style='align-self:center'>Runs all 18 agents and reports any that fail (~2 min, ~$0.25).</span></div></div>")
 
 
+_LEAD_STATUS = {
+    "sent": ("emailed", "#3FD98B"), "measuring": ("emailed", "#3FD98B"),
+    "measured": ("emailed", "#3FD98B"), "optimized": ("emailed", "#3FD98B"),
+    "AWAITING_APPROVAL": ("email ready — awaiting your OK", "#F5B14C"),
+    "drafted": ("writing email", "#4C8DFF"), "segmented": ("qualified", "#8B7CFF"),
+    "qualified": ("qualified", "#8B7CFF"), "revision_needed": ("email held (QA)", "#F5788A"),
+    "failed": ("stopped", "#F5788A"), "created": ("sourced", "#8E9BBE"),
+}
+
+
 def _collect_leads(jobs):
-    """Every real lead record saved on outreach jobs (payload['leads']), deduped."""
+    """Every real lead record on outreach jobs (payload['leads']), with the
+    outreach status of its campaign, deduped by email/company."""
     seen, out = set(), []
     for j in jobs:
         if j.get("type") != "outreach_campaign":
             continue
+        js = j.get("status", "")
         for L in ((j.get("payload", {}) or {}).get("leads") or []):
             e = (L.get("email") or "").strip().lower()
             k = e or (L.get("company") or "").lower()
             if not k or k in seen:
                 continue
             seen.add(k)
-            out.append(L)
+            out.append((L, js))
     return out
 
 
 def _leads_table(jobs):
-    leads = _collect_leads(jobs)
-    if not leads:
-        return ("<div class='card full' style='margin-top:12px'><p class='ct'>🧲 Your leads</p>"
-                "<p class='cc'>The real lead records (name, role, company, verified work email) appear here once an "
-                "outreach batch sources them. They ARE saved on your server — this table reads them straight from it.</p></div>")
+    pairs = _collect_leads(jobs)
+    if not pairs:
+        return ("<div class='card full' style='margin-top:12px'><p class='ct'>🧲 Your customer leads</p>"
+                "<p class='cc'>The real lead records — name, role, company, verified work email, and outreach "
+                "status — appear here once a batch sources them. They ARE saved on your server; this reads them directly.</p></div>")
+    emailed = sum(1 for _, js in pairs if js in ("sent", "measuring", "measured", "optimized"))
     rows = ""
-    for L in leads[:150]:
-        rows += (f"<tr><td>{_esc(L.get('name','') or '—')}</td>"
+    for L, js in pairs[:200]:
+        label, col = _LEAD_STATUS.get(js, ("sourced", "#8E9BBE"))
+        rows += (f"<tr><td><b>{_esc(L.get('name','') or '—')}</b></td>"
                  f"<td class='mut'>{_esc(L.get('title','') or '—')}</td>"
                  f"<td>{_esc(L.get('company','') or '—')}</td>"
                  f"<td class='mut'>{_esc(L.get('email','') or '—')}</td>"
-                 f"<td class='mut'>{_esc(L.get('domain','') or L.get('source','') or '—')}</td></tr>")
+                 f"<td class='mut'>{_esc(L.get('domain','') or '—')}</td>"
+                 f"<td><span style='color:{col};font-weight:600'>● {label}</span></td></tr>")
     return ("<div class='card full' style='margin-top:12px'>"
-            f"<p class='ct'>🧲 Your leads — {len(leads)} collected &amp; verified</p>"
-            "<p class='cc'>Real records from Prospeo, saved in your database (this table reads them directly). "
-            "Name · role · company · verified work email.</p>"
+            f"<p class='ct'>🧲 Your customer leads — {len(pairs)} verified · {emailed} emailed</p>"
+            "<p class='cc'>Real records from Prospeo, saved in your database. Name · role · company · verified work "
+            "email · and where each one is in your outreach.</p>"
             "<div class='tbwrap'><table><thead><tr><th>Name</th><th>Title</th><th>Company</th>"
-            "<th>Verified email</th><th>Domain / source</th></tr></thead><tbody>"
+            "<th>Verified email</th><th>Domain</th><th>Outreach status</th></tr></thead><tbody>"
             + rows + "</tbody></table></div></div>")
 
 
@@ -1172,7 +1187,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          ("Booked", booked, "#F5B14C"), ("Won", o_cust, "#3FD98B")],
         _funnel_skeleton([("Sent", emails_sent, 100), ("Replied", 0, 62),
                           ("Booked", booked, 38), ("Won", o_cust, 20)], "Fills as replies land."))
-    p_email = m_email + grid(
+    p_email = m_email + _leads_table(jobs) + grid(
         _panel("Sent vs replied", "Cold emails out, and how many replied.",
                _bars([("Sent", emails_sent), ("Replied", 0)], "#4C8DFF") if emails_sent else _empty("No emails sent yet.")),
         _panel("Sent by purpose → address", "The loop: your agent sends each email type from the right alias — all from your one inbox.", route_html),
