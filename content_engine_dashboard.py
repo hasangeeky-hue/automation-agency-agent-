@@ -906,7 +906,12 @@ def _leads_table(jobs):
 def _outbox(jobs):
     """The mailbox: one personalized email per lead (built from their persona),
     each ready to send individually, in bulk, or all at once."""
-    items = []
+    try:
+        import content_engine_connectors as _C
+        _mailer = _C.Emailer()
+    except Exception:
+        _C, _mailer = None, None
+    items, sample_html = [], None
     for j in jobs:
         if j.get("type") != "outreach_campaign":
             continue
@@ -923,11 +928,20 @@ def _outbox(jobs):
                 continue
             q = qmap.get(e) or {}
             try:
-                import content_engine_connectors as _C
-                subj, body = _C.personalize_outreach(
+                subj, raw = _C.personalize_outreach(
                     L, q, (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0], oc.get("body", ""))
             except Exception:
-                subj, body = (oc.get("subject_variants") or ["Quick idea"])[0], oc.get("body", "")
+                subj, raw = (oc.get("subject_variants") or ["Quick idea"])[0], oc.get("body", "")
+            # compose the REAL email the customer receives (body + branded footer:
+            # Hassan, company, address, booking link, unsubscribe, logo).
+            body = raw
+            try:
+                plain, html = _mailer.compose_outreach(raw, j)
+                body = plain or raw
+                if sample_html is None and html:
+                    sample_html = html
+            except Exception:
+                pass
             ref = str(sent.get(e, "") or "")
             if ref and not ref.startswith(("suppressed", "send_error", "blocked", "held")):
                 status = "sent"
@@ -945,6 +959,19 @@ def _outbox(jobs):
                 "batch is sourced, qualified and written.</p></div>")
     ready = sum(1 for it in items if it[5] == "ready")
     sentn = sum(1 for it in items if it[5] == "sent")
+    # a real rendered preview of the branded email — exactly how the customer sees
+    # it: logo, body, and the footer signature (Hassan, company, address, booking,
+    # unsubscribe). srcdoc renders the actual HTML on a white 'inbox' background.
+    sample = ""
+    if sample_html:
+        _sd = sample_html.replace("&", "&amp;").replace('"', "&quot;")
+        sample = ("<details style='margin-bottom:12px'><summary style='cursor:pointer;color:#4C8DFF;font-weight:600'>"
+                  "🎨 Preview how your email looks to the customer (branded)</summary>"
+                  f"<iframe srcdoc=\"{_sd}\" style='width:100%;max-width:640px;height:560px;border:1px solid var(--line);"
+                  "border-radius:9px;background:#fff;margin-top:8px'></iframe>"
+                  "<div class='dim' style='margin-top:6px'>The footer signature (name, company, address, booking link, "
+                  "unsubscribe) is added automatically to every email. To show your logo + brand colour there, set "
+                  "<code>EMAIL_LOGO_URL</code> and <code>EMAIL_BRAND_COLOR</code> on the System Map.</div></details>")
     rows = ""
     for i, (jid, L, q, subj, body, status) in enumerate(items[:200]):
         day = i // 15 + 1
@@ -972,7 +999,8 @@ def _outbox(jobs):
             f"<b style='color:#F5B14C'>{ready} ready</b> · <b style='color:#3FD98B'>{sentn} sent</b>. "
             "Send one, tick several and send selected, or send all — warm-up capped so day-one stays safe. "
             "Nothing sends until you click.</p>"
-            "<div class='ctrl' style='margin-bottom:8px'>"
+            + sample
+            + "<div class='ctrl' style='margin-bottom:8px'>"
             "<label class='dim' style='align-self:center'><input type='checkbox' id='obx-all' onclick='toggleOutbox(this)'> select all ready</label>"
             "<button class='sbtn' onclick='sendSelected()'>📨 Send selected</button>"
             "<button class='cbtn' onclick='sendAllOutbox()'>📤 Send all ready</button></div>"
