@@ -409,9 +409,13 @@ def advance(job: dict, store: JobStore) -> str:
 
     try:
         if step.kind == "wait":
-            if not _wait_open(job, step):
-                return status                      # blocked on a gate
-            job["status"] = step.next_status
+            if _wait_open(job, step):
+                job["status"] = step.next_status
+            # else: gate not open — DON'T early-return. Fall through to the save
+            # below so updated_at is bumped and this parked job rotates to the
+            # BACK of the claim queue. A time-gated 'published' job that keeps its
+            # old updated_at pins the front of ORDER BY updated_at ASC and gets
+            # re-claimed forever, busy-looping the worker and starving newer jobs.
 
         elif step.kind == "gate":
             job["status"] = step.next_status
@@ -535,7 +539,20 @@ def tick(store: JobStore) -> Optional[str]:
     job = store.claim_next()
     if job is None:
         return None
-    return run_until_blocked(job, store)
+    before = job["status"]
+    status = run_until_blocked(job, store)
+    # If the job made NO forward progress and is parked on a time gate (an
+    # already-'published' job re-touched while it waits days for its measurement
+    # window), report idle so the worker sleeps instead of busy-spinning. It has
+    # already rotated to the back of the queue, so active jobs get claimed first
+    # next cycle. A job that genuinely advanced this tick (even ending at
+    # 'published') still reports its real status.
+    if status == before:
+        step = flow_for(job).get(status)
+        if step is not None and step.kind == "wait" and getattr(step, "time_gate", False) \
+                and not _wait_open(job, step):
+            return None
+    return status
 
 
 def new_job(job_id: str, job_type: str, brand: dict, payload: dict) -> dict:
