@@ -440,7 +440,7 @@ LEAD_QUALIFIER = {
             "items": {
                 "type": "object",
                 "required": ["id", "category", "fit_score", "priority", "reason",
-                             "disqualify_reason"],
+                             "disqualify_reason", "business", "pain_point", "offer"],
                 "properties": {
                     "id": {"type": "string"},
                     "category": {"enum": ["ecommerce", "saas", "agency",
@@ -449,6 +449,9 @@ LEAD_QUALIFIER = {
                     "priority": {"enum": ["urgent", "high", "medium", "low"]},
                     "reason": {"type": "string"},
                     "disqualify_reason": {"type": ["string", "null"]},
+                    "business": {"type": "string"},      # what they actually do
+                    "pain_point": {"type": "string"},    # their likely problem
+                    "offer": {"type": "string"},         # the angle we pitch them
                 },
                 "additionalProperties": False,
             },

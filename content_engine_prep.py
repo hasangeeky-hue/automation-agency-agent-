@@ -238,10 +238,21 @@ def _in_optimizer(job: dict) -> dict:
 # ---------------------------------------------------------------------------
 def _in_lead_qualifier(job: dict) -> dict:
     cfg = _cfg(job)
+    # give each lead a stable id (its email) + the fields the qualifier profiles on,
+    # so its per-lead results (business/pain/offer) map back to the lead record.
+    src = job.get("payload", {}).get("leads", []) or []
+    leads = []
+    for L in src:
+        leads.append({
+            "id": (L.get("email") or L.get("company") or "").strip().lower(),
+            "company": L.get("company", ""), "title": L.get("title", ""),
+            "industry": L.get("industry", "") or L.get("domain", ""),
+            "size": L.get("size", ""), "signals": L.get("signal", "") or L.get("source", ""),
+        })
     return {
         "our_offer": cfg.get("our_offer") or _brand(job).get("offer", ""),
         "icp": cfg.get("icp", {"ideal_size": "", "ideal_industries": [], "pains_we_solve": []}),
-        "leads": job.get("payload", {}).get("leads", []),
+        "leads": leads,
     }
 
 

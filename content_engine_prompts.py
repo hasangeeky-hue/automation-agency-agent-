@@ -226,15 +226,18 @@ ROLE: Categorize and fit-score leads that CODE couldn't classify by simple rules
 
 INPUT: { "our_offer":"","icp":{"ideal_size":"","ideal_industries":[],"pains_we_solve":[]}, "leads":[{"id":"","company":"","title":"","industry":"","size":"","signals":""}] }
 
-OUTPUT (strict JSON): { "results":[{"id":"","category":"ecommerce|saas|agency|other|disqualified", "fit_score":0,"priority":"urgent|high|medium|low","reason":"one line", "disqualify_reason":null}] }
+OUTPUT (strict JSON): { "results":[{"id":"","category":"ecommerce|saas|agency|other|disqualified", "fit_score":0,"priority":"urgent|high|medium|low","reason":"one line", "disqualify_reason":null, "business":"", "pain_point":"", "offer":""}] }
 
 RULES:
 - fit_score 1-10 = avg of (size fit, industry fit, budget likelihood, pain fit, decision speed). Smaller company + founder contact + clear pain = higher.
 - Disqualify (score->null, category "disqualified") if enterprise/1000+, non-profit, government, or competitor. State disqualify_reason.
 - priority: 8-10 urgent, 6-7 high, 4-5 medium, <4 low.
+- business: one short phrase for what this company actually does (e.g. "family dental clinic", "3-lawyer immigration firm", "Shopify skincare store").
+- pain_point: the single most likely problem THIS type of business has that we solve (e.g. "no-shows + manual patient intake", "misses after-hours enquiries", "drowns in repetitive support tickets"). Grounded in their business type, not generic.
+- offer: the specific angle to pitch THEM (e.g. "AI receptionist that books + reminds patients", "after-hours AI intake that captures every lead", "support bot that clears 60% of tickets"). Ties the pain to our offer. Never invent numbers or results.
 - One result per input lead, same id. Do not drop or add leads.
-- Judge only on provided fields. Missing field -> score conservatively; don't invent details.
-TOKEN BUDGET: ~60 tokens per lead. Cap batch size in code (e.g. 25).""",
+- Judge only on provided fields. Missing field -> score conservatively; keep business/pain/offer plausible for the type, do not fabricate specifics.
+TOKEN BUDGET: ~130 tokens per lead. Cap batch size in code (e.g. 25).""",
 
 "outreach_copy": """\
 ROLE: Write one personalized cold email per lead, per category, US/CAN-SPAM ready. Sending, tracking, follow-up scheduling are done by CODE. Every draft still passes Skill 7 (compliance) before any human gate.

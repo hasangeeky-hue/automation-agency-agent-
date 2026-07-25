@@ -111,10 +111,10 @@ def _max_tokens_for(skill_name: str, payload: dict) -> int:
     # Content Producer copy: blog gets 2200, everything else 400.
     if skill_name in ("content_producer", "content_producer_copy"):
         return 2200 if payload.get("type") == "blog" else 400
-    # Lead Qualifier: ~60 tokens per lead, capped at a 25-lead batch, floor 200.
+    # Lead Qualifier: ~130 tokens per lead (now also business/pain/offer), 25-batch.
     if skill_name == "lead_qualifier":
         n = len(payload.get("leads", []) or [])
-        return max(200, 60 * min(n, 25) + 100)  # +100 for JSON envelope overhead
+        return max(400, 140 * min(n, 25) + 150)  # room for the qualitative fields
     return _MAX_TOKENS.get(skill_name, 800)
 
 

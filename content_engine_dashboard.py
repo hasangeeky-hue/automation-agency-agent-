@@ -827,45 +827,60 @@ _LEAD_STATUS = {
 
 
 def _collect_leads(jobs):
-    """Every real lead record on outreach jobs (payload['leads']), with the
-    outreach status of its campaign, deduped by email/company."""
+    """Each lead record + its campaign status + its qualifier profile
+    (business/pain/offer/fit), matched by id (email)."""
     seen, out = set(), []
     for j in jobs:
         if j.get("type") != "outreach_campaign":
             continue
         js = j.get("status", "")
-        for L in ((j.get("payload", {}) or {}).get("leads") or []):
+        p = j.get("payload", {}) or {}
+        qmap = {}
+        for r in ((p.get("lead_qualifier") or {}).get("results") or []):
+            qmap[str(r.get("id", "")).strip().lower()] = r
+        for L in (p.get("leads") or []):
             e = (L.get("email") or "").strip().lower()
             k = e or (L.get("company") or "").lower()
             if not k or k in seen:
                 continue
             seen.add(k)
-            out.append((L, js))
+            q = qmap.get(e) or qmap.get((L.get("company") or "").strip().lower()) or {}
+            out.append((L, js, q))
     return out
 
 
 def _leads_table(jobs):
-    pairs = _collect_leads(jobs)
-    if not pairs:
+    triples = _collect_leads(jobs)
+    if not triples:
         return ("<div class='card full' style='margin-top:12px'><p class='ct'>🧲 Your customer leads</p>"
-                "<p class='cc'>The real lead records — name, role, company, verified work email, and outreach "
-                "status — appear here once a batch sources them. They ARE saved on your server; this reads them directly.</p></div>")
-    emailed = sum(1 for _, js in pairs if js in ("sent", "measuring", "measured", "optimized"))
+                "<p class='cc'>Each lead — with what their business does, their likely pain point, the offer to pitch "
+                "them, fit score, and outreach status — appears here once a batch is sourced + qualified. Saved on your "
+                "server; this reads it directly.</p></div>")
+    emailed = sum(1 for _, js, _ in triples if js in ("sent", "measuring", "measured", "optimized"))
     rows = ""
-    for L, js in pairs[:200]:
+    for L, js, q in triples[:200]:
         label, col = _LEAD_STATUS.get(js, ("sourced", "#8E9BBE"))
-        rows += (f"<tr><td><b>{_esc(L.get('name','') or '—')}</b></td>"
-                 f"<td class='mut'>{_esc(L.get('title','') or '—')}</td>"
-                 f"<td>{_esc(L.get('company','') or '—')}</td>"
+        fit = q.get("fit_score")
+        fit_txt = f"{fit}/10" if fit not in (None, "") else "—"
+        prio = q.get("priority", "")
+        pcol = {"urgent": "#F5788A", "high": "#F5B14C", "medium": "#4C8DFF", "low": "#8E9BBE"}.get(prio, "#8E9BBE")
+        biz = q.get("business") or (q.get("category") if q.get("category") != "disqualified" else "") or "—"
+        pain = q.get("pain_point") or "—"
+        offer = q.get("offer") or "—"
+        rows += (f"<tr><td><b>{_esc(L.get('name','') or '—')}</b>"
+                 f"<div class='dim'>{_esc(L.get('title','') or '')}</div></td>"
+                 f"<td>{_esc(L.get('company','') or '—')}<div class='dim'>{_esc(biz)}</div></td>"
+                 f"<td class='tnum'>{fit_txt}<div class='dim' style='color:{pcol}'>{_esc(prio)}</div></td>"
+                 f"<td class='mut' style='max-width:220px'>{_esc(pain)}</td>"
+                 f"<td class='mut' style='max-width:220px'>{_esc(offer)}</td>"
                  f"<td class='mut'>{_esc(L.get('email','') or '—')}</td>"
-                 f"<td class='mut'>{_esc(L.get('domain','') or '—')}</td>"
                  f"<td><span style='color:{col};font-weight:600'>● {label}</span></td></tr>")
     return ("<div class='card full' style='margin-top:12px'>"
-            f"<p class='ct'>🧲 Your customer leads — {len(pairs)} verified · {emailed} emailed</p>"
-            "<p class='cc'>Real records from Prospeo, saved in your database. Name · role · company · verified work "
-            "email · and where each one is in your outreach.</p>"
-            "<div class='tbwrap'><table><thead><tr><th>Name</th><th>Title</th><th>Company</th>"
-            "<th>Verified email</th><th>Domain</th><th>Outreach status</th></tr></thead><tbody>"
+            f"<p class='ct'>🧲 Your customer leads — {len(triples)} verified · {emailed} emailed</p>"
+            "<p class='cc'>Real people from Prospeo, qualified by the agent: <b>what they do</b>, their likely "
+            "<b>pain point</b>, the <b>offer</b> to pitch them, a <b>fit score</b>, verified email, and outreach status.</p>"
+            "<div class='tbwrap'><table><thead><tr><th>Lead</th><th>Company / what they do</th><th>Fit</th>"
+            "<th>Likely pain point</th><th>Offer to pitch</th><th>Verified email</th><th>Status</th></tr></thead><tbody>"
             + rows + "</tbody></table></div></div>")
 
 
