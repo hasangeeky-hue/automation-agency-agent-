@@ -804,6 +804,16 @@ def api_dashboard_html() -> str:
         content_plan = store.get_setting("content_plan", None) if hasattr(store, "get_setting") else None
     except Exception:
         content_plan = None
+    # real website tracking (GA4 + Search Console) for the Media Buying funnel
+    try:
+        import content_engine_connectors as _C3
+        _g = _C3.Google()
+        if _g.available():
+            web_tracking = {"ga4": _g.ga4_summary(), "gsc": _g.gsc_top_queries()}
+        else:
+            web_tracking = {}
+    except Exception:
+        web_tracking = {}
     import content_engine_dashboard as D
     return D.dashboard_html(
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
@@ -812,7 +822,7 @@ def api_dashboard_html() -> str:
         autonomy=settings["autonomy"], bookings=bookings, ads=ads,
         needles=needles, last_eval=last_eval, meters=meters, api_limits=api_limits,
         ci_text=ci_text if isinstance(ci_text, str) else "", ci_drive=ci_drive or "",
-        autopilot_on=autopilot_on, content_plan=content_plan)
+        autopilot_on=autopilot_on, content_plan=content_plan, web_tracking=web_tracking)
 
 
 # ---------------------------------------------------------------------------

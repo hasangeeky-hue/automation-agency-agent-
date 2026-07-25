@@ -556,6 +556,39 @@ def _media_campaigns(jobs):
     return out
 
 
+def _media_funnel(mb):
+    """Estimated funnel from the drafted campaign: budget -> impressions -> clicks
+    -> leads -> customers, with real numbers derived from the media buyer's own
+    estimates. This is the 'funnel visualized with estimated data'."""
+    import re
+
+    def _mid(s, default):
+        vals = [float(n) for n in re.findall(r"[0-9]+\.?[0-9]*", str(s or ""))]
+        return (sum(vals) / len(vals)) if vals else default
+
+    monthly = float(mb.get("monthly_budget") or 0) or (float(mb.get("daily_budget") or 10) * 30)
+    cpc = _mid(mb.get("estimated_cpc_range"), 2.0) or 2.0
+    clicks = int(monthly / cpc) if cpc else 0
+    impressions = int(clicks / 0.05) if clicks else 0            # ~5% CTR assumption
+    leads = int(_mid(mb.get("estimated_leads_range"), max(1, clicks * 0.05)))
+    customers = max(0, round(leads * 0.2))                       # ~20% close assumption
+    cpl = (monthly / leads) if leads else 0
+    stages = [("Impressions", impressions, "#4C8DFF"), ("Clicks", clicks, "#2FE3D2"),
+              ("Leads", leads, "#8B7CFF"), ("Customers", customers, "#46E08B")]
+    mx = max(impressions, 1)
+    bars = ""
+    for label, val, col in stages:
+        w = max(4, round(100 * val / mx))
+        bars += (f"<div class='br'><span class='bl'>{label}</span>"
+                 f"<div class='track'><i style='width:{w}%;background:{col}'></i></div>"
+                 f"<span class='bv tnum'>{val:,}</span></div>")
+    return ("<div style='margin-top:12px;padding:12px;border-radius:9px;background:rgba(76,141,255,.06)'>"
+            f"<div class='dim'>📊 Estimated monthly funnel · ${monthly:,.0f} budget · ~${cpc:.2f} CPC</div>"
+            f"<div class='bars' style='margin-top:8px'>{bars}</div>"
+            f"<div class='dim' style='margin-top:6px'>≈ <b>${cpl:.0f}</b> per lead · ≈ <b>{customers}</b> customers/mo "
+            "<span style='opacity:.7'>(estimated — real numbers replace these once the campaign runs)</span></div></div>")
+
+
 def _media_card(jid, mb, approved=False, live=False, ads_on=False, history=None):
     ags = mb.get("ad_groups", []) or []
     themes = " · ".join(a.get("theme", "") for a in ags[:6])
@@ -627,8 +660,11 @@ def _media_card(jid, mb, approved=False, live=False, ads_on=False, history=None)
         f"<div style='margin-top:4px'>{_esc(' · '.join(heads[:4]))}</div></div>"
         f"<div style='flex:1;min-width:240px'><div class='dim'>💡 Why the agent built it this way</div>"
         f"<div style='margin-top:4px;line-height:1.6'>{_esc(mb.get('rationale',''))}</div>{risks}"
-        f"<div class='dim' style='margin-top:8px'>Estimate: {_esc(mb.get('estimated_cpc_range',''))} CPC · "
+        f"<div class='dim' style='margin-top:8px'>🎯 Targeting: {_esc(', '.join(mb.get('locations',[]) or []) or 'not set')}"
+        f" · {_esc(', '.join(mb.get('languages',[]) or []))}</div>"
+        f"<div class='dim' style='margin-top:4px'>Estimate: {_esc(mb.get('estimated_cpc_range',''))} CPC · "
         f"{_esc(mb.get('estimated_leads_range',''))}</div></div></div>"
+        + _media_funnel(mb)
         + quality
         + (f"<div style='margin-top:10px'><div class='dim'>Check before you approve:</div>{checks}</div>" if checks else "")
         + "<div class='ctrl' style='margin-top:12px'>" + action
@@ -637,7 +673,38 @@ def _media_card(jid, mb, approved=False, live=False, ads_on=False, history=None)
         + chat + "</div>")
 
 
-def _media_page(jobs, st):
+def _media_tracking_panel(web):
+    """Real website tracking from the connected GA4 + Search Console (the data the
+    service-account keys unlock). This is 'tracking inside the website'."""
+    web = web or {}
+    ga4 = web.get("ga4") or {}
+    gsc = web.get("gsc") or []
+    m = ga4.get("metrics") or {}
+    sessions = m.get("sessions") or 0
+    top_pages = m.get("top_pages") or []
+    if not sessions and not gsc:
+        return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📈 Website tracking</p>"
+                "<p class='cc'>Live sessions and top search queries appear here from your connected Google "
+                "Analytics + Search Console. It's empty because GA4/GSC returned no data for the last 28 days yet "
+                "(new property, or low traffic). The wires are green — data fills in as visits accrue.</p></div>")
+    pages = "".join(f"<div class='fe'><span class='mut'>{_esc(p.get('page',''))}</span>"
+                    f"<span class='dim' style='margin-left:auto'>{p.get('sessions',0):,} sessions</span></div>"
+                    for p in top_pages[:6]) or _empty("No page data yet.")
+    queries = "".join(f"<div class='fe'><span class='mut'>{_esc(q.get('query',''))}</span>"
+                      f"<span class='dim' style='margin-left:auto'>{q.get('clicks',0)} clicks · pos {q.get('position',0)}</span></div>"
+                      for q in gsc[:8]) or _empty("No query data yet.")
+    return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📈 Website tracking (live)</p>"
+            f"<p class='cc'>Real data from your Google Analytics + Search Console · {_esc(ga4.get('period','last 28d'))}. "
+            "This is what your funnel is built on.</p>"
+            "<div style='display:flex;gap:22px;flex-wrap:wrap'>"
+            f"<div style='flex:1;min-width:240px'><div class='dim'>Sessions</div>"
+            f"<div class='big tnum' style='color:#2FE3D2'>{sessions:,}</div>"
+            f"<div class='dim' style='margin-top:8px'>Top pages</div>{pages}</div>"
+            f"<div style='flex:1;min-width:240px'><div class='dim'>Top search queries (Search Console)</div>"
+            f"<div style='margin-top:4px'>{queries}</div></div></div></div>")
+
+
+def _media_page(jobs, st, web_tracking=None):
     all_drafts = _media_campaigns(jobs)
     drafts = [(j, mb) for j, mb in all_drafts if j.get("status") != "aborted"]
     ads_on = bool(st.get("ads_api"))
@@ -692,7 +759,7 @@ def _media_page(jobs, st):
                 "<div class='ctrl'><button class='cbtn' onclick=\"nav('map')\">Go to System Map →</button></div></div>")
     else:
         note = ""
-    return master + chat_card + note + cards
+    return master + _media_tracking_panel(web_tracking) + chat_card + note + cards
 
 
 # ---------------------------------------------------------------------------
@@ -801,7 +868,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    taste_skills, has_password=False, paused=False, autonomy=False,
                    bookings=None, ads=None, needles=None, last_eval=None,
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
-                   content_plan=None):
+                   content_plan=None, web_tracking=None):
     from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
     bookings, ads = bookings or {}, ads or {}
@@ -1446,7 +1513,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
              + diag + connect_card)
 
     # ---- MEDIA BUYING (drafted Google Ads campaigns) ----
-    p_media = _media_page(jobs, st)
+    p_media = _media_page(jobs, st, web_tracking)
 
     # ---- OVERVIEW (mother) ----
     def tile(nav, icon, label, val, sub, dot):
