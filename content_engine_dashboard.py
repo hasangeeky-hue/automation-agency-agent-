@@ -20,7 +20,7 @@ from __future__ import annotations
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v13 · always-on weekly agency calendar + 1-week plan"
+BUILD_TAG = "2026-07-26 · v14 · calendar is now a control panel (CTAs + honest state)"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -1600,23 +1600,34 @@ def _week_calendar(content_jobs, content_plan):
                        else ("LinkedIn" if c == "linkedin" else c.title()))
         return out or ["Website"]
 
+    waiting = inprod = live = 0
     for j in content_jobs:
         p = j.get("payload", {}) or {}
         cfg = p.get("config", {}) or {}
         d = cfg.get("publish_date") or (j.get("created_at") or "")[:10]
+        st = j.get("status", "")
+        si = _factory_stage(st)
+        if st == "AWAITING_APPROVAL":
+            waiting += 1
+        elif si >= 5:
+            live += 1
+        else:
+            inprod += 1
         if d in daymap:
-            si = _factory_stage(j.get("status", ""))
             daymap[d].append({"t": (p.get("content_producer", {}) or {}).get("title")
                               or cfg.get("chosen_topic") or j.get("job_id"),
                               "ch": _norm(cfg.get("deploy_channels")),
                               "seg": (p.get("taxonomy") or {}).get("segment", ""),
-                              "stage": f"{_FACTORY[si][0]} {_FACTORY[si][1]}"})
+                              "si": si, "status": st, "jid": j.get("job_id"),
+                              "ref": p.get("published_ref") or (p.get("publisher") or {}).get("published_ref") or ""})
+    planned_n = 0
     if content_plan and content_plan.get("status") == "pending":
         for it in content_plan.get("items", []):
+            planned_n += 1
             d = (today + timedelta(days=int(it.get("day_offset", 0) or 0))).isoformat()
             if d in daymap:
                 daymap[d].append({"t": it.get("title", ""), "ch": _norm(it.get("channels")),
-                                  "seg": it.get("segment", ""), "stage": "📋 Planned"})
+                                  "seg": it.get("segment", ""), "si": 0, "status": "plan", "jid": "", "ref": ""})
 
     def _chip(label):
         col = "#4C9AFF" if label == "LinkedIn" else "#2FE3D2"
@@ -1627,8 +1638,7 @@ def _week_calendar(content_jobs, content_plan):
         iso = d.isoformat()
         items = daymap[iso]
         is_today = (d == today)
-        is_wknd = d.weekday() >= 5
-        cls = "wkcol" + (" today" if is_today else "") + (" wknd" if is_wknd else "")
+        cls = "wkcol" + (" today" if is_today else "") + (" wknd" if d.weekday() >= 5 else "")
         head = (f"<div class='wkhead'><span>{d.strftime('%a')}<small>{d.strftime('%b %d')}</small></span>"
                 + ("<span class='tdy'>TODAY</span>" if is_today else "") + "</div>")
         if items:
@@ -1637,21 +1647,50 @@ def _week_calendar(content_jobs, content_plan):
                 col = "#4C9AFF" if ("LinkedIn" in it["ch"] and "Website" not in it["ch"]) else "#2FE3D2"
                 chips = "".join(_chip(c) for c in it["ch"])
                 seg = f"<div class='dim' style='font-size:10px;margin-top:3px'>{_esc(it['seg'])}</div>" if it.get("seg") else ""
+                si = it.get("si", 0)
+                stage = f"{_FACTORY[si][0]} {_FACTORY[si][1]}"
+                # per-card CTA — act right here, no hunting
+                jid, st, ref = it.get("jid", ""), it.get("status", ""), it.get("ref", "")
+                if st == "AWAITING_APPROVAL":
+                    cta = (f"<div style='margin-top:5px;display:flex;gap:4px'>"
+                           f"<button class='sbtn' style='padding:2px 8px;font-size:11px' onclick=\"approve('{_esc(jid)}')\">✓ Approve</button>"
+                           f"<button class='cbtn' style='padding:2px 8px;font-size:11px' onclick=\"nav('appr')\">👁 Review</button></div>")
+                    stg_col = "#F5B14C"
+                elif st == "plan":
+                    cta = (f"<div style='margin-top:5px'><button class='sbtn' style='padding:2px 8px;font-size:11px' "
+                           f"onclick=\"nav('appr')\">Approve the plan →</button></div>")
+                    stg_col = "#8B7CFF"
+                elif isinstance(ref, str) and ref.startswith("http"):
+                    cta = (f"<div style='margin-top:5px'><a class='cbtn' style='padding:2px 8px;font-size:11px' "
+                           f"href='{_esc(ref)}' target='_blank'>🔗 View live</a></div>")
+                    stg_col = "#3FD98B"
+                else:
+                    cta = ""
+                    stg_col = "#8E9BBE"
                 body += (f"<div class='wkcard' style='--c:{col}'><b>{_esc(str(it['t'])[:64])}</b>{chips}{seg}"
-                         f"<div class='dim' style='font-size:10px;margin-top:3px'>{_esc(it['stage'])}</div></div>")
+                         f"<div style='font-size:10px;margin-top:3px;color:{stg_col};font-weight:600'>{stage}</div>{cta}</div>")
         else:
             body = "<div class='wkempty'>— no post —</div>"
         cols += f"<div class='{cls}'>{head}{body}</div>"
 
     total = sum(len(v) for v in daymap.values())
     span = f"{days[0].strftime('%b %d')} → {days[-1].strftime('%b %d')}"
-    note = (f"<b style='color:#3FD98B'>{total}</b> pieces scheduled this week." if total
-            else "Nothing scheduled yet — click <b>Plan my content</b> below to fill the week, agency-style.")
+    # honest production summary (the real state, not just a drawing)
+    if total:
+        summary = (f"<b style='color:#F5B14C'>{waiting} waiting for you</b> · "
+                   f"<b style='color:#4C8DFF'>{inprod} in production</b> · "
+                   f"<b style='color:#3FD98B'>{live} live</b>"
+                   + (f" · <b style='color:#8B7CFF'>{planned_n} planned (not yet approved)</b>" if planned_n else ""))
+    else:
+        summary = "Nothing in the factory yet — hit <b>Plan my week</b> below to fill it, agency-style."
+    stuck = (inprod and False)   # placeholder for an engine-off signal
+    honest = ("<div class='dim' style='margin-top:8px;font-size:11.5px'>ℹ️ The day shown is each piece's "
+              "<b>target</b> day. Right now a piece goes live the moment you <b>Approve</b> it — turn on "
+              "<b>scheduled publishing</b> (ask me) to make it hold and post automatically on its day.</div>")
     return ("<div class='card full' style='margin-bottom:12px'>"
             f"<p class='ct'>🗓️ This week's content calendar · {span}</p>"
-            f"<p class='cc'>Your production week at a glance — what posts each day, on which channel, for which "
-            f"customer segment, and where it is in the machine. {note}</p>"
-            "<div class='wkgrid'>" + cols + "</div></div>")
+            f"<p class='cc'>{summary}</p>"
+            "<div class='wkgrid'>" + cols + "</div>" + honest + "</div>")
 
 
 def _content_calendar(content_jobs, content_plan):
@@ -2021,42 +2060,37 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
             "web": "<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>🌐 Website</span>",
         }
         seg_counts, chan_counts = {}, {}
-        # group items by their scheduled day for a real calendar
-        by_day = {}
+        # flat review list (the WEEK CALENDAR above shows the day-by-day layout —
+        # this card is just the review-and-approve list, no second calendar).
+        rows = ""
         for i, it in enumerate(content_plan["items"], 1):
-            d = int(it.get("day_offset", 0) or 0)
-            by_day.setdefault(d, []).append((i, it))
-            if it.get("segment"):
-                seg_counts[it["segment"]] = seg_counts.get(it["segment"], 0) + 1
+            seg, pil = it.get("segment", ""), it.get("pillar", "")
+            if seg:
+                seg_counts[seg] = seg_counts.get(seg, 0) + 1
             for c in (it.get("channels") or ["website"]):
                 c = str(c).lower()
                 c = "website" if c in ("web", "blog", "wordpress") else c
                 chan_counts[c] = chan_counts.get(c, 0) + 1
-        rows = ""
-        for d in sorted(by_day):
-            daylabel = (date.today() + timedelta(days=d)).strftime("%a %b %d")
-            rows += (f"<div style='margin-top:12px;margin-bottom:4px'><span class='pill' "
-                     f"style='background:rgba(139,124,255,.16);color:#8B7CFF;padding:2px 10px;font-weight:700'>"
-                     f"📅 {daylabel}</span></div>")
-            for i, it in by_day[d]:
-                seg, pil = it.get("segment", ""), it.get("pillar", "")
-                chans = [str(c).lower() for c in (it.get("channels") or ["website"])]
-                chan_html = " ".join(_chan_badge.get("website" if c in ("web", "blog", "wordpress") else c, "") for c in chans)
-                tags = ""
-                if seg or pil:
-                    tags = ("<div style='margin-top:4px;display:flex;gap:6px;flex-wrap:wrap'>"
-                            + (f"<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>👤 {_esc(seg)}</span>" if seg else "")
-                            + (f"<span class='pill' style='background:rgba(139,124,255,.14);color:#8B7CFF;padding:1px 8px'>🎯 {_esc(pil)}</span>" if pil else "")
-                            + "</div>")
-                rows += (
-                    "<div style='padding:9px 0 9px 14px;border-left:2px solid rgba(255,255,255,.08);margin-left:6px'>"
-                    f"<div style='display:flex;gap:10px;align-items:baseline;flex-wrap:wrap'>"
-                    f"<span class='tnum dim'>{i:02d}</span><b>{_esc(it.get('title',''))}</b>"
-                    f"<span style='margin-left:auto;display:flex;gap:5px'>{chan_html}</span></div>"
-                    f"<div class='dim' style='margin-top:3px'>🔑 {_esc(it.get('target_keyword','') or '—')} · "
-                    f"{_esc(it.get('angle',''))}</div>" + tags
-                    + (f"<div class='dim' style='margin-top:2px'>Why: {_esc(it.get('rationale',''))}</div>" if it.get('rationale') else "")
-                    + "</div>")
+            d = int(it.get("day_offset", 0) or 0)
+            daypill = (f"<span class='pill' style='background:rgba(139,124,255,.16);color:#8B7CFF;padding:1px 8px'>"
+                       f"📅 {(date.today() + timedelta(days=d)).strftime('%a')}</span>")
+            chans = [str(c).lower() for c in (it.get("channels") or ["website"])]
+            chan_html = " ".join(_chan_badge.get("website" if c in ("web", "blog", "wordpress") else c, "") for c in chans)
+            tags = ""
+            if seg or pil:
+                tags = ("<div style='margin-top:4px;display:flex;gap:6px;flex-wrap:wrap'>"
+                        + (f"<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>👤 {_esc(seg)}</span>" if seg else "")
+                        + (f"<span class='pill' style='background:rgba(139,124,255,.14);color:#8B7CFF;padding:1px 8px'>🎯 {_esc(pil)}</span>" if pil else "")
+                        + "</div>")
+            rows += (
+                "<div style='padding:10px 0;border-top:1px solid rgba(255,255,255,.06)'>"
+                f"<div style='display:flex;gap:8px;align-items:baseline;flex-wrap:wrap'>"
+                f"<span class='tnum dim'>{i:02d}</span>{daypill}<b>{_esc(it.get('title',''))}</b>"
+                f"<span style='margin-left:auto;display:flex;gap:5px'>{chan_html}</span></div>"
+                f"<div class='dim' style='margin-top:3px'>🔑 {_esc(it.get('target_keyword','') or '—')} · "
+                f"{_esc(it.get('angle',''))}</div>" + tags
+                + (f"<div class='dim' style='margin-top:2px'>Why: {_esc(it.get('rationale',''))}</div>" if it.get('rationale') else "")
+                + "</div>")
         # coverage bar: how evenly the plan spans the 7 segments + which channels
         cov = ""
         if seg_counts:
@@ -2070,10 +2104,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    f"<b style='color:#4C9AFF'>{li_n} LinkedIn</b></div></div>")
         plan_card = (
             "<div class='card full' style='margin-bottom:12px;border-left:4px solid #4C8DFF'>"
-            f"<p class='ct'>🗓️ Content calendar — {len(content_plan['items'])} pieces, awaiting your approval</p>"
-            "<p class='cc'>Planned <b>by day</b> and <b>by channel</b>, covering your 7 website segments evenly. Each "
-            "piece shows when it posts and where (🌐 Website + in LinkedIn). Approve to schedule them all (written, "
-            "QA-checked, on-brand image + LinkedIn post, published to the right section); or discard and re-plan.</p>"
+            f"<p class='ct'>✅ Review &amp; approve this week — {len(content_plan['items'])} pieces</p>"
+            "<p class='cc'>The day-by-day layout is in the <b>calendar above</b>; this is the review list. Each piece is "
+            "tagged with its day, channels, segment &amp; pillar. Approve to create them all (written, QA-checked, "
+            "on-brand image + LinkedIn post, published to the right section); or discard and re-plan.</p>"
             + cov + rows +
             "<div class='ctrl' style='margin-top:14px'>"
             "<button class='sbtn' onclick='approvePlan()'>✓ Approve — create these pieces</button>"
