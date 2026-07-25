@@ -99,8 +99,8 @@ _MAX_TOKENS = {
     "optimizer": 700,
     "segmenter": 400,
     "outreach_copy": 800,   # per lead; room for a full email (incl. German)
-    "media_buyer": 1200,    # drafts a full Google Ads campaign + rationale
-    "media_chat": 1500,     # discuss + return a possibly-revised campaign
+    "media_buyer": 4000,    # a full campaign (ad groups + kw + headlines) must not truncate
+    "media_chat": 4000,     # discuss + return the FULL revised campaign (same size)
     "reply_responder": 500,  # one inbound reply per call
     "judge": 500,            # S1 evaluator — compact verdict only
     "content_planner": 1800,  # a batch of proposed pieces to approve

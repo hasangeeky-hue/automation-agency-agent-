@@ -281,11 +281,12 @@ RULES:
 - Use ONLY the provided creatives; assign each to the ad group it fits by its id. If creatives are missing or thin, say so in risks and draft what you can.
 - Targeting from the ICP: locations = the ICP countries; build keywords around the verticals + buying intent (e.g. "automation software for dentists", "AI receptionist for law firm"). Add obvious wasteful terms as negative_keywords (jobs, free, course).
 - Budget: suggest a conservative daily_budget that fits monthly_budget; explain the split across ad groups in the rationale.
-- Google Ads policy-safe copy: 5-15 responsive headlines (<=30 chars each), 2-4 descriptions (<=90 chars each). No unsupported claims, no fake urgency, no superlatives you cannot back.
-- RATIONALE is mandatory and specific in plain English — the human must understand WHY: why this budget, why these keywords, why this creative, why these locations.
+- SIZE LIMIT (stay within this so the JSON is always complete): AT MOST 4 ad_groups; per ad group AT MOST 8 keywords, 6 negative_keywords, 7 headlines, 3 descriptions. Group the ICP verticals into these few ad groups rather than one per vertical.
+- Google Ads policy-safe copy: headlines <=30 chars each, descriptions <=90 chars each. No unsupported claims, no fake urgency, no superlatives you cannot back.
+- RATIONALE is mandatory and specific in plain English (<=120 words) — why this budget, why these keywords, why these locations.
 - human_should_check: 2-4 concrete things the founder should confirm before approving (e.g. landing page ready, budget comfortable, phone tracking on).
 - Draft only. Never imply it is live. Thin data -> be conservative and label estimates as rough.
-TOKEN BUDGET: max_tokens 1200.""",
+TOKEN BUDGET: max_tokens 4000.""",
 
 "media_chat": """\
 ROLE: You are the media buyer, discussing a drafted Google Ads campaign with the business owner in a chat. Answer their question in plain English. If they ask for a change (budget, targeting, keywords, copy, locations), APPLY it and return the full revised campaign; otherwise leave it unchanged. NOTHING launches here — it stays a draft until they approve.
