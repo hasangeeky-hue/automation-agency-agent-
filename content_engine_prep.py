@@ -183,6 +183,17 @@ def _in_content_producer(job: dict) -> dict:
     persona, pain = _audience(job)
     comp = _result(job, "competitor_intel")
     angles = [a.get("angle", "") for a in comp.get("differentiation_angles", []) if a.get("angle")]
+    # Tag this piece to the REAL website taxonomy (segment + service pillar) so it
+    # targets the right audience/section instead of being a generic article.
+    tax = {}
+    try:
+        import content_engine_site_taxonomy as TAX
+        tax = TAX.resolve(row.get("segment") or row.get("target_segment", ""),
+                          row.get("pillar") or row.get("service", ""),
+                          row.get("working_title", ""), row.get("primary_keyword", ""))
+        job.setdefault("payload", {})["taxonomy"] = tax   # persists for the publisher
+    except Exception:
+        tax = {}
     out = {
         "type": ptype,
         "working_title": row.get("working_title", ""),
@@ -196,6 +207,10 @@ def _in_content_producer(job: dict) -> dict:
         "audience_pain": pain,
         "differentiation_angles": angles[:3],
         "research_brief": _content_research(job, row),
+        # WEBSITE-AWARE targeting: who this is for + which service it belongs to
+        "audience_segment": tax.get("segment", ""),
+        "service_pillar": tax.get("pillar", ""),
+        "service_promise": tax.get("service", ""),
     }
     pb = _learnings(job)
     if pb:
@@ -204,7 +219,44 @@ def _in_content_producer(job: dict) -> dict:
     return out
 
 
+def _ensure_hero_image(job: dict) -> None:
+    """Generate ONE on-brand hero image for the blog (matching the website's dark
+    cyan/violet look) and embed it at the top of the body, so the piece is never
+    image-less. Best-effort + cached: runs once, skips if no image API. Gated by
+    CONTENT_IMAGES (default on) and blog/guide types only."""
+    import os
+    if os.getenv("CONTENT_IMAGES", "1") not in ("1", "true", "True"):
+        return
+    p = job.setdefault("payload", {})
+    piece = p.get("content_producer") or {}
+    if not piece or piece.get("image_url"):
+        return
+    if _chosen_row(job).get("type", "blog") not in ("blog", "guide"):
+        return
+    title = piece.get("title") or _chosen_row(job).get("working_title", "")
+    try:
+        import content_engine_site_taxonomy as TAX
+        import content_engine_connectors as C
+        import content_engine_brand as B
+        ci = ""
+        try:
+            ci = B.get_ci_block() if hasattr(B, "get_ci_block") else ""
+        except Exception:
+            ci = ""
+        url = C.generate_image(TAX.image_prompt(title, ci))
+    except Exception:
+        url = ""
+    if url:
+        piece["image_url"] = url
+        body = piece.get("body", "") or ""
+        if url not in body:                     # embed a markdown hero at the top
+            piece["body"] = f"![{title}]({url})\n\n{body}"
+        p["content_producer"] = piece
+        p["image_url"] = url                    # dashboard web-view reads this too
+
+
 def _in_seo_optimizer(job: dict) -> dict:
+    _ensure_hero_image(job)                     # add the hero image before SEO/approval
     row = _chosen_row(job)
     cfg = _cfg(job)
     intent = cfg.get("intent") or _INTENT_BY_GOAL.get(

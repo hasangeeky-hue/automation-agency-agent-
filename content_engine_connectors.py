@@ -388,29 +388,94 @@ class WordPress:
     def available(self) -> bool:
         return bool(self.base and self.user and self.app_password and _requests())
 
+    def _auth(self):
+        return (self.user, self.app_password)
+
+    def _category_ids(self, names: list) -> list:
+        """Resolve category NAMES -> WordPress term IDs, creating any that are
+        missing, so a piece lands in the right site sections (Blog / a service
+        pillar / an audience segment). Best-effort — returns whatever it can."""
+        rq = _requests()
+        ids = []
+        for name in names:
+            if not name:
+                continue
+            try:
+                r = rq.get(f"{self.base}/wp-json/wp/v2/categories",
+                           params={"search": name}, auth=self._auth(),
+                           headers={"User-Agent": _UA}, timeout=_HTTP_TIMEOUT)
+                match = next((c for c in (r.json() if r.ok else [])
+                             if c.get("name", "").lower() == name.lower()), None)
+                if match:
+                    ids.append(match["id"]); continue
+                cr = rq.post(f"{self.base}/wp-json/wp/v2/categories",
+                             json={"name": name}, auth=self._auth(),
+                             headers={"User-Agent": _UA}, timeout=_HTTP_TIMEOUT)
+                if cr.ok:
+                    ids.append(cr.json().get("id"))
+            except Exception as e:
+                log.warning("wp category '%s' failed: %s", name, e)
+        return [i for i in ids if i]
+
+    def _featured_media(self, image_url: str, title: str) -> int:
+        """Sideload the hero image into the WP media library and return its id
+        (so it becomes the post's featured image). 0 on any failure."""
+        if not image_url:
+            return 0
+        rq = _requests()
+        try:
+            img = rq.get(image_url, timeout=_HTTP_TIMEOUT)
+            if not img.ok:
+                return 0
+            fn = (title or "hero").strip()[:60].replace('"', "") or "hero"
+            r = rq.post(
+                f"{self.base}/wp-json/wp/v2/media",
+                data=img.content, auth=self._auth(),
+                headers={"User-Agent": _UA, "Content-Type": img.headers.get("Content-Type", "image/png"),
+                         "Content-Disposition": f'attachment; filename="{fn}.png"'},
+                timeout=_HTTP_TIMEOUT)
+            return r.json().get("id", 0) if r.ok else 0
+        except Exception as e:
+            log.warning("wp media upload failed: %s", e)
+            return 0
+
     def publish(self, job: dict, piece: dict) -> str:
         rq = _requests()
         title = piece.get("title") or piece.get("meta_title") or "Untitled"
         body = piece.get("body") or ""
-        # SEO fields the theme/Yoast can read from excerpt/meta if configured.
         excerpt = piece.get("meta_description", "")
         data = {"title": title, "content": body, "status": self.status,
                 "excerpt": excerpt}
+        # Route to the right site sections (Blog / service pillar / audience segment)
+        try:
+            import content_engine_site_taxonomy as TAX
+            tax = (job.get("payload", {}) or {}).get("taxonomy") or {}
+            cats = TAX.wp_categories(
+                piece.get("type") or (job.get("payload", {}) or {}).get("config", {}).get("type", "blog"),
+                tax.get("segment", ""), tax.get("pillar", ""),
+                title, piece.get("primary_keyword", ""))
+            cat_ids = self._category_ids(cats)
+            if cat_ids:
+                data["categories"] = cat_ids
+        except Exception as e:
+            log.warning("wp categorisation skipped: %s", e)
+        # Attach the on-brand hero image as the featured image (best-effort)
+        media_id = self._featured_media(piece.get("image_url", ""), title)
+        if media_id:
+            data["featured_media"] = media_id
         try:
             r = rq.post(
                 f"{self.base}/wp-json/wp/v2/posts",
-                json=data,
-                auth=(self.user, self.app_password),
-                headers={"User-Agent": _UA},
-                timeout=_HTTP_TIMEOUT,
+                json=data, auth=self._auth(),
+                headers={"User-Agent": _UA}, timeout=_HTTP_TIMEOUT,
             )
             r.raise_for_status()
             j = r.json()
             ref = j.get("link") or f"wp:{j.get('id')}"
-            log.info("published to WordPress (%s): %s", self.status, ref)
+            log.info("published to WordPress (%s, cats=%s, media=%s): %s",
+                     self.status, data.get("categories"), media_id, ref)
             return ref
         except Exception as e:
-            # Never crash the pipeline; surface a clear ref so the human notices.
             log.error("WordPress publish failed: %s", e)
             return f"wp_error:{job.get('job_id')}"
 

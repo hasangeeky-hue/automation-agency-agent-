@@ -124,11 +124,12 @@ TOKEN BUDGET: max_tokens 900.""",
 "content_producer_copy": """\
 ROLE: Write one finished, SPECIFIC content piece for a real audience — grounded in the research brief provided, written for the named persona and their pain. Generic filler is a failure. (Brand context loaded as cached prefix.)
 
-INPUT: { "type":"blog|social_carousel|reel|email","working_title":"","primary_keyword":"", "target_segment":"","business_goal":"","cta":"", "audience_persona":"who this is for", "audience_pain":"their real problem", "differentiation_angles":["",""], "research_brief":"verified facts/stats/examples/sources — ground the piece in THESE", "length":"blog:1500-2000w | caption:150-300c | reel_script:20-40s" }
+INPUT: { "type":"blog|social_carousel|reel|email","working_title":"","primary_keyword":"", "audience_segment":"the website customer group this serves (e.g. Medical Professionals)", "service_pillar":"the website service this belongs to (e.g. Never Lose a Lead)", "service_promise":"the concrete outcome that pillar sells", "target_segment":"","business_goal":"","cta":"", "audience_persona":"who this is for", "audience_pain":"their real problem", "differentiation_angles":["",""], "research_brief":"verified facts/stats/examples/sources — ground the piece in THESE", "length":"blog:1500-2000w | caption:150-300c | reel_script:20-40s" }
 
 OUTPUT (strict JSON): { "title":"","body":"","meta_title":"","meta_description":"","cta_text":"","hashtags":[] } (meta_* blog only; hashtags social only)
 
 RULES:
+- THIS PIECE SERVES a specific website audience (audience_segment) and a specific service (service_pillar → service_promise). Write squarely for THAT group about THAT service outcome — do not write a generic all-audiences article. Use their industry's real language and examples.
 - WRITE FOR audience_persona and open by naming their specific situation + audience_pain in the first 2 sentences. No generic "In today's fast-paced world" openers.
 - GROUND every section in research_brief: use its concrete facts, numbers (with the year), named examples/tools, and cite the 1-2 sources by name inside the body. If research_brief is empty, still be concrete and specific to the persona — never pad with generic advice.
 - Use the differentiation_angles as the piece's spine — the take a competitor wouldn't have.

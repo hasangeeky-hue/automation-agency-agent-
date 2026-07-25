@@ -20,7 +20,7 @@ from __future__ import annotations
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v7 · outreach numbers audited + fixed (sent/replied/rate)"
+BUILD_TAG = "2026-07-26 · v8 · content targets website segments + on-brand blog images"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2128,8 +2128,14 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
             title = cp.get("title") or j.get("job_id")
             body = (cp.get("body") or cp.get("content") or cp.get("summary") or "")
             words = len(body.split())
-            meta = (f"<div class='dim' style='margin-top:6px'>📄 Type: <b>Blog article</b> · "
-                    f"~{words} words · publishes to your website</div>")
+            tax = p.get("taxonomy") or {}
+            seg, pil = tax.get("segment", ""), tax.get("pillar", "")
+            cats_txt = (f" · <b style='color:#2FE3D2'>{_esc(pil)}</b> → <b>{_esc(seg)}</b>"
+                        if (seg or pil) else "")
+            has_img = bool((cp.get("image_url") or p.get("image_url") or ""))
+            img_txt = " · 🖼 on-brand image ready" if has_img else " · ⏳ image pending"
+            meta = (f"<div class='dim' style='margin-top:6px'>📄 <b>Blog article</b> · ~{words} words"
+                    f"{cats_txt}{img_txt} · posts to the matching website section</div>")
             snippet = body[:600]
         # image preview, if the piece carries a generated hero image
         _pimg = p.get("image")
@@ -2146,8 +2152,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         if body:
             webview = ""
             if is_article:
+                _kick = (f"{(p.get('taxonomy') or {}).get('pillar','')} · {(p.get('taxonomy') or {}).get('segment','')}"
+                         .strip(" ·").upper() or "ANTHROPOS · FIELD NOTES")
                 sd = _blog_webview_srcdoc(title, body, ci_text=ci_text,
-                                          hero_url=(img if isinstance(img, str) else ""))
+                                          hero_url=(img if isinstance(img, str) else ""), kicker=_kick)
                 webview = (
                     "<details style='margin-top:6px'><summary style='cursor:pointer;color:#3FD98B;font-weight:600'>"
                     "🌐 See the web view (how it looks on your site — headings, images, layout)</summary>"
