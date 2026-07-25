@@ -1517,7 +1517,7 @@ class GoogleAds:
         # Google retires API versions after ~a year; make it configurable so a
         # sunset version (404s) can be bumped without a code change. diag() probes
         # for a live one and tells you which to set.
-        self.ver = _env("GOOGLE_ADS_API_VERSION", "v18") or "v18"
+        self.ver = _env("GOOGLE_ADS_API_VERSION", "v21") or "v21"
 
     def _base(self) -> str:
         return f"https://googleads.googleapis.com/{self.ver}/customers/{self.cid}"
