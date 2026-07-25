@@ -661,13 +661,20 @@ def api_dashboard_html() -> str:
         needles = _E.needles(store, last_eval)
     except Exception:
         last_eval, needles = None, {}
+    # per-API usage meters (spend vs your top-up cap, so you're warned before it runs out)
+    try:
+        import content_engine_connectors as _C2
+        meters = _C2.api_meters()
+        api_limits = _C2.api_limits()
+    except Exception:
+        meters, api_limits = {}, {}
     import content_engine_dashboard as D
     return D.dashboard_html(
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
         autonomy=settings["autonomy"], bookings=bookings, ads=ads,
-        needles=needles, last_eval=last_eval)
+        needles=needles, last_eval=last_eval, meters=meters, api_limits=api_limits)
 
 
 # ---------------------------------------------------------------------------
@@ -819,6 +826,18 @@ def build_app():
     @app.post("/evals/run")
     def evals_run():
         return api_run_evals()
+
+    @app.post("/api-limits/set")
+    async def api_limits_set(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        try:
+            import content_engine_connectors as C
+            return {"limits": C.set_api_limit(str(data.get("api", "")), float(data.get("usd", 0)))}
+        except Exception as e:
+            return {"error": str(e)[:120]}
 
     @app.post("/media/draft")
     def media_draft():

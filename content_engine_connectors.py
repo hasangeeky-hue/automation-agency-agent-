@@ -133,6 +133,69 @@ def _record_cost(usd: float, kind: str = "") -> None:
             log.info("external spend metered: $%.4f (%s)", usd, kind)
     except Exception:
         pass
+    record_api_spend(kind or "other", usd)   # per-API meter (was dropped before)
+
+
+# --- per-API usage meters --------------------------------------------------
+# Every paid API accrues into a per-month, per-API counter stored in settings,
+# so the dashboard can show "spent this month vs your top-up cap" and warn you
+# BEFORE an API runs out. We can meter what WE spend; a provider's exact remaining
+# balance isn't exposed by most APIs, so the cap you set is the early-warning line.
+DEFAULT_API_LIMITS = {
+    "anthropic": 120.0, "prospeo": 30.0, "image": 20.0, "video": 20.0,
+    "search": 10.0, "google_ads": 200.0, "other": 20.0,
+}
+
+
+def _month_key() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def record_api_spend(api: str, usd) -> None:
+    """Accrue one API charge into this month's meter for that API."""
+    try:
+        usd = float(usd or 0)
+    except Exception:
+        return
+    if not api or usd <= 0:
+        return
+    try:
+        month = _month_key()
+        meters = _setting("api_meters", {}) or {}
+        m = meters.get(api) or {}
+        if m.get("month") != month:      # new month -> reset that API's meter
+            m = {"month": month, "spent": 0.0, "calls": 0}
+        m["spent"] = round(float(m.get("spent", 0)) + usd, 5)
+        m["calls"] = int(m.get("calls", 0)) + 1
+        meters[api] = m
+        _set_setting("api_meters", meters)
+    except Exception:
+        pass
+
+
+def api_meters() -> dict:
+    """This month's per-API spend + call counts."""
+    return _setting("api_meters", {}) or {}
+
+
+def api_limits() -> dict:
+    """Per-API monthly caps (defaults, overridable by the user from the dashboard)."""
+    lim = dict(DEFAULT_API_LIMITS)
+    for k, v in (_setting("api_limits", {}) or {}).items():
+        try:
+            lim[k] = float(v)
+        except Exception:
+            pass
+    return lim
+
+
+def set_api_limit(api: str, usd) -> dict:
+    """User sets an API's monthly cap (their top-up / warn line)."""
+    over = _setting("api_limits", {}) or {}
+    over[api] = float(usd)
+    _set_setting("api_limits", over)
+    return over
 
 
 def _setting(key: str, default=None):

@@ -799,11 +799,13 @@ def login_html(error=""):
 # ---------------------------------------------------------------------------
 def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_cap,
                    taste_skills, has_password=False, paused=False, autonomy=False,
-                   bookings=None, ads=None, needles=None, last_eval=None):
+                   bookings=None, ads=None, needles=None, last_eval=None,
+                   meters=None, api_limits=None):
     from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
     bookings, ads = bookings or {}, ads or {}
     needles, last_eval = needles or {}, last_eval or {}
+    meters, api_limits = meters or {}, api_limits or {}
     booked = int(bookings.get("booked", 0) or 0)
     o_leads, o_rev, o_cust = _outcomes(jobs)
     content_jobs = [j for j in jobs if j.get("type") != "outreach_campaign"]
@@ -1005,11 +1007,69 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                     f"<div class='br'><span class='bl'>Cost / customer</span><div class='track'><i style='width:60%;background:#4C8DFF'></i></div><span class='bv'>{cpc}</span></div></div>")
     else:
         roi_body = _empty("No results yet. Record leads/revenue per job (from your CRM or n8n → POST /jobs/{id}/outcome) to see ROI here.")
+    # ---- API METERS: per-API spend vs your top-up cap, so nothing runs out silently ----
+    _API_META = [
+        ("anthropic", "🧠", "Claude — the brain", "writing · judging · chat"),
+        ("prospeo", "🧲", "Prospeo — leads", "per verified lead"),
+        ("image", "🎨", "Image generation", "per image"),
+        ("video", "🎬", "Video generation", "per video"),
+        ("search", "🔎", "Web search", "per query"),
+    ]
+    api_warnings = []
+
+    def _meter_row(icon, label, note, spent, cap, calls, api):
+        p = round(100 * spent / cap) if cap else 0
+        col = "#3FD98B" if p < 70 else ("#F5B14C" if p < 90 else "#F5788A")
+        state = ("✓ healthy" if p < 70 else ("⚠ getting low" if p < 90 else "⛔ nearly out — top up"))
+        if cap and p >= 80:
+            api_warnings.append(f"{label} at {p}% of its ${cap:.0f} cap")
+        calls_txt = f" · {calls} calls" if calls not in (None, 0) else ""
+        return (
+            "<div style='padding:12px 0;border-top:1px solid rgba(255,255,255,.06)'>"
+            "<div style='display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap'>"
+            f"<div><b>{icon} {_esc(label)}</b> <span class='dim'>· {_esc(note)}{calls_txt}</span></div>"
+            f"<div class='tnum' style='color:{col};font-weight:700'>${spent:.2f} <span class='dim'>/ ${cap:.0f}</span></div></div>"
+            f"<div class='track' style='margin-top:7px'><i style='width:{min(p,100)}%;background:{col}'></i></div>"
+            "<div style='display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap'>"
+            f"<span class='dim' style='color:{col}'>{state} · {p}%</span>"
+            "<span class='dim'>Cap $"
+            f"<input id='lim-{api}' value='{cap:.0f}' style='width:64px;padding:2px 6px' inputmode='numeric'> "
+            f"<button class='cbtn' style='padding:3px 9px' onclick=\"setApiLimit('{api}')\">Save</button></span></div></div>")
+
+    meter_rows = ""
+    for api, icon, label, note in _API_META:
+        m = meters.get(api) or {}
+        spent = float(m.get("spent", 0) or 0)
+        cap = float(api_limits.get(api, 0) or 0)
+        # always show Claude + Prospeo; show image/video/search only once used
+        if api in ("image", "video", "search") and spent <= 0 and not m:
+            continue
+        meter_rows += _meter_row(icon, label, note, spent, cap, m.get("calls", 0), api)
+    # Google Ads = money paid to Google (their API doesn't bill you for credits, but
+    # your ad SPEND is the number to watch) — sourced from the live Ads summary.
+    adspend = float((ads or {}).get("spend", 0) or 0)
+    if adspend > 0 or st.get("ads_api"):
+        meter_rows += _meter_row("🎯", "Google Ads — ad spend", "paid to Google (last 30d)",
+                                 adspend, float(api_limits.get("google_ads", 200)), None, "google_ads")
+    warn_banner = ""
+    if api_warnings:
+        warn_banner = ("<div class='card full' style='margin-bottom:12px;border-left:4px solid #F5788A'>"
+                       "<p class='ct' style='color:#F5788A'>⚠ API top-up warning</p><p class='cc'>"
+                       + " · ".join(_esc(w) for w in api_warnings)
+                       + ". Top up that account (or raise its cap) before it stops the agents.</p></div>")
+    meters_card = warn_banner + (
+        "<div class='card full' style='margin-bottom:12px'>"
+        "<p class='ct'>🔌 API meters — usage vs your top-up cap</p>"
+        "<p class='cc'>What each paid API has spent this month. Set each cap to your comfort line — you get "
+        "an amber warning at 80% and red near the limit, so no API ever runs out on you unnoticed. "
+        "(We meter what the engine spends; a provider's exact remaining balance isn't exposed by most APIs.)</p>"
+        + (meter_rows or _empty("No paid-API usage yet this month.")) + "</div>")
+
     m_budget = _master("💰", "Budget & cost — at a glance", "Every euro in and out, against your cap.",
         [("Spent", f"${month_spent:.2f}", bcol), ("Cap", f"${month_cap:.0f}", "#8B7CFF"),
          ("Today", f"${day_spent:.2f}", "#EDF1FB"), ("Earned", f"${o_rev:,.0f}", "#3FD98B")],
         _sparkline(spend_series, bcol) if total_cost else _empty("Fills day by day."))
-    p_budget = m_budget + grid(
+    p_budget = m_budget + meters_card + grid(
         _panel("This month vs $200 cap", "The engine pauses before it ever goes over.",
                "<div style='display:flex;align-items:center;gap:18px'>" + _donut(pct, bcol) +
                f"<div><div class='dim'>Today</div><div class='big tnum'>${day_spent:.2f}</div><div class='dim'>of ${day_cap:.0f}/day</div></div></div>"),
@@ -1413,6 +1473,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         alerts.append(("#F5B14C", "🔌", f"{broken} connection(s) not wired", "map"))
     if pct >= 80:
         alerts.append(("#FF6B93" if pct >= 95 else "#F5B14C", "💰", f"Budget at {pct}% of ${month_cap:.0f}", "budget"))
+    if api_warnings:
+        alerts.append(("#FF6B93", "🔌", f"API top-up: {api_warnings[0]}", "budget"))
     if failed:
         alerts.append(("#FF6B93", "✕", f"{failed} job(s) failed or paused", "agents"))
     if not alerts:
@@ -1467,6 +1529,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/media/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:jid,message:m})});var j=await r.json();"
               "var w=document.getElementById(wid);var t=(j.reply||j.error||'(no reply)').replace(/</g,'&lt;');w.innerHTML=\"<span class='tm' style='min-width:44px'>Agent</span><span class='mut'>\"+t+\"</span>\";log.scrollTop=log.scrollHeight;"
               "if(j.changed){setTimeout(function(){location.reload();},1200);}}catch(e){var w2=document.getElementById(wid);if(w2)w2.innerHTML=\"<span class='mut'>Error: \"+e+\"</span>\";}}"
+              "async function setApiLimit(api){var el=document.getElementById('lim-'+api);if(!el)return;var v=parseFloat(el.value);if(!(v>0)){alert('Enter a number.');return;}"
+              "try{var r=await fetch('/api-limits/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api:api,usd:v})});var j=await r.json();"
+              "if(j.error){alert('Could not save: '+j.error);}else{location.reload();}}catch(e){alert('Save failed: '+e);}}"
               "async function runEvals(){var b=document.getElementById('evalbtn');if(b){b.disabled=true;b.textContent='Running evals… ~30s';}"
               "try{var r=await fetch('/evals/run',{method:'POST'});var j=await r.json();"
               "if(j.error){alert('Eval run failed: '+j.error);}else{alert('Evals: '+j.passed+'/'+j.total+' passed ('+j.score+'%) · cost $'+(j.cost_usd||0).toFixed(3));location.reload();}}"

@@ -313,6 +313,11 @@ def log_cost(job: dict, model: str, cost: float, store: JobStore) -> None:
     job["cost_so_far_usd"] = round(job.get("cost_so_far_usd", 0.0) + cost, 6)
     job.setdefault("model_log", []).append({"model": model, "cost_usd": cost})
     store.add_daily_cost(cost)
+    try:                                   # per-API meter: Claude/Anthropic spend
+        import content_engine_connectors as _C
+        _C.record_api_spend("anthropic", cost)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
