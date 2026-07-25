@@ -529,6 +529,18 @@ class Emailer:
             plain, html = self.compose_outreach(body, job)
         else:
             plain, html = body, None
+        # S4: last gate before an irreversible send — never let a broken/hijacked
+        # or off-domain email leave the building.
+        try:
+            import content_engine_safety as _safety
+            allowed = [_env("EMAIL_WEBSITE", "anthropos-automation.com"),
+                       "anthropos-automation.com"]
+            ok, why = _safety.validate_email(subject, plain, allowed)
+            if not ok:
+                log.error("email BLOCKED for %s — %s", job.get("job_id"), why)
+                return f"blocked_quality:{why}"
+        except Exception as _e:   # safety must never break sending on its own bug
+            log.warning("email validation skipped (%s)", _e)
         ref = self.send_message(
             to_addr, subject, plain,
             extra_headers={"List-Unsubscribe": f"<{unsub}>" if unsub else ""},
@@ -1435,6 +1447,9 @@ class GoogleAds:
         self.refresh = _env("GOOGLE_ADS_REFRESH_TOKEN")
         self.client_id = _env("GOOGLE_ADS_CLIENT_ID")
         self.client_secret = _env("GOOGLE_ADS_CLIENT_SECRET")
+        # optional: when the developer token belongs to a MANAGER (MCC) account
+        # but ads run in a sub-account, Google needs the manager id as a header.
+        self.login_cid = _env("GOOGLE_ADS_LOGIN_CUSTOMER_ID").replace("-", "")
 
     def available(self) -> bool:
         return bool(self.dev and self.cid and self.refresh
@@ -1445,6 +1460,12 @@ class GoogleAds:
             "client_id": self.client_id, "client_secret": self.client_secret,
             "refresh_token": self.refresh, "grant_type": "refresh_token"})
         return (j or {}).get("access_token", "")
+
+    def _headers(self, tok: str) -> dict:
+        h = {"Authorization": f"Bearer {tok}", "developer-token": self.dev}
+        if self.login_cid:
+            h["login-customer-id"] = self.login_cid
+        return h
 
     def summary(self) -> dict:
         if not self.available():
@@ -1457,8 +1478,7 @@ class GoogleAds:
              "WHERE segments.date DURING LAST_30_DAYS")
         j = _post_json(
             f"https://googleads.googleapis.com/v17/customers/{self.cid}/googleAds:searchStream",
-            {"query": q},
-            headers={"Authorization": f"Bearer {tok}", "developer-token": self.dev})
+            {"query": q}, headers=self._headers(tok))
         if not j:
             return {}
         spend = clicks = impr = conv = 0.0
@@ -1486,7 +1506,7 @@ class GoogleAds:
         tok = self._access_token()
         if not tok:
             return {"ok": False, "error": "could not get a Google access token"}
-        H = {"Authorization": f"Bearer {tok}", "developer-token": self.dev}
+        H = self._headers(tok)
         base = f"https://googleads.googleapis.com/v17/customers/{self.cid}"
 
         def mut(resource, ops):
@@ -1546,7 +1566,7 @@ class GoogleAds:
         tok = self._access_token()
         if not tok:
             return {"ok": False, "error": "could not get a Google access token"}
-        H = {"Authorization": f"Bearer {tok}", "developer-token": self.dev}
+        H = self._headers(tok)
         url = f"https://googleads.googleapis.com/v17/customers/{self.cid}/campaigns:mutate"
         try:
             r = _post_json(url, {"operations": [{

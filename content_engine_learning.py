@@ -35,6 +35,9 @@ def _empty_playbook() -> dict:
         "platform_focus": [],
         "winning_topics": [],   # topics/angles that performed
         "avoid": [],            # reduce_or_cut items
+        # S2 — the money agents now learn too:
+        "winning_email_subjects": [],   # subject lines that booked calls
+        "winning_campaign_themes": [],  # ad campaign themes that hit CPA
     }
 
 
@@ -82,6 +85,26 @@ def _apply_optimizer(record: dict, optimizer_output: dict, at: Optional[str]) ->
     return record
 
 
+_OUTCOME_FIELD = {
+    "email_subject": "winning_email_subjects",
+    "campaign_theme": "winning_campaign_themes",
+}
+
+
+def _apply_outcome(record: dict, kind: str, item: str, at: Optional[str]) -> dict:
+    """Fold one real RESULT (a subject line that booked a call, a campaign theme
+    that hit CPA) into the playbook so the money agents get smarter."""
+    field = _OUTCOME_FIELD.get(kind)
+    if not field or not item:
+        return record
+    pb = record["playbook"]
+    pb.setdefault(field, [])
+    pb[field] = _merge_list(pb[field], [str(item)], cap=15)
+    record["history"].append({"cycle": record.get("cycles", 0), "outcome": {kind: item}, "at": at})
+    record["history"] = record["history"][-50:]
+    return record
+
+
 class InMemoryLearningStore:
     def __init__(self):
         self._d: dict[str, dict] = {}
@@ -101,6 +124,12 @@ class InMemoryLearningStore:
                      at: Optional[str] = None) -> dict:
         rec = self.get(client_id)
         self._d[client_id] = _apply_optimizer(rec, optimizer_output, at)
+        return self._d[client_id]
+
+    def record_outcome(self, client_id: str, kind: str, item: str,
+                       at: Optional[str] = None) -> dict:
+        rec = self.get(client_id)
+        self._d[client_id] = _apply_outcome(rec, kind, item, at)
         return self._d[client_id]
 
 
@@ -156,6 +185,21 @@ class PgLearningStore:
         self._conn.commit()
         return rec
 
+    def record_outcome(self, client_id: str, kind: str, item: str,
+                       at: Optional[str] = None) -> dict:
+        import json
+        rec = _apply_outcome(self.get(client_id), kind, item, at)
+        with self._conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO learnings (client_id, playbook, history, cycles, updated_at)
+                VALUES (%s, %s, %s, %s, now())
+                ON CONFLICT (client_id) DO UPDATE SET
+                    playbook=EXCLUDED.playbook, history=EXCLUDED.history, updated_at=now()
+            """, (client_id, json.dumps(rec["playbook"]),
+                  json.dumps(rec["history"]), rec.get("cycles", 0)))
+        self._conn.commit()
+        return rec
+
 
 # --- module singleton the rest of the engine talks to ----------------------
 ACTIVE = InMemoryLearningStore()
@@ -172,6 +216,15 @@ def get_playbook(client_id: str) -> dict:
 
 def record_cycle(client_id: str, optimizer_output: dict, at: Optional[str] = None) -> dict:
     return ACTIVE.record_cycle(client_id or "", optimizer_output, at)
+
+
+def record_outcome(client_id: str, kind: str, item: str, at: Optional[str] = None) -> dict:
+    """kind: 'email_subject' (a subject that booked a call) or 'campaign_theme'
+    (a campaign that performed). Feeds outreach_copy + media_buyer next time."""
+    fn = getattr(ACTIVE, "record_outcome", None)
+    if fn is None:
+        return {}
+    return fn(client_id or "", kind, item, at)
 
 
 if __name__ == "__main__":

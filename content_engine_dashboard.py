@@ -582,6 +582,22 @@ def _media_card(jid, mb, approved=False, live=False, ads_on=False, history=None)
                   f"<button class='sbtn' onclick=\"activateCampaign('{_esc(jid)}')\">🚀 Activate (connect Google Ads first)</button>")
     risks = (f"<div class='dim' style='margin-top:8px'>⚠ Risks</div>"
              f"<div style='margin-top:4px'>{_esc(mb.get('risks',''))}</div>") if mb.get("risks") else ""
+    # S1: the judge's verdict on this draft (cheap-model quality check)
+    q = mb.get("_quality") or {}
+    if q:
+        sc = int(q.get("score", 0) or 0)
+        weak = q.get("verdict") in ("revise", "block") or sc < 75
+        qcol, qbg = (("#F5B14C", "#3a2c10") if weak else ("#3FD98B", "#10281c"))
+        qissues = "".join(f"<div class='fe'><span class='mut'>• {_esc(x)}</span></div>"
+                          for x in (q.get("issues") or [])[:3])
+        quality = (f"<div style='margin-top:12px;padding:10px 12px;border-radius:9px;background:{qbg}'>"
+                   f"<span class='pill' style='background:transparent;color:{qcol}'>"
+                   f"{'⚠ Weak' if weak else '✓ Looks good'} · judge score {sc}/100</span>"
+                   + (f"<div style='margin-top:6px'>{qissues}</div>" if qissues else "")
+                   + (f"<div class='dim' style='margin-top:4px'>Fix: {_esc(q.get('suggestion',''))}</div>" if q.get('suggestion') else "")
+                   + "</div>")
+    else:
+        quality = ""
     # chat log (hidden until the user opens it)
     log = ""
     for h in (history or [])[-8:]:
@@ -613,6 +629,7 @@ def _media_card(jid, mb, approved=False, live=False, ads_on=False, history=None)
         f"<div style='margin-top:4px;line-height:1.6'>{_esc(mb.get('rationale',''))}</div>{risks}"
         f"<div class='dim' style='margin-top:8px'>Estimate: {_esc(mb.get('estimated_cpc_range',''))} CPC · "
         f"{_esc(mb.get('estimated_leads_range',''))}</div></div></div>"
+        + quality
         + (f"<div style='margin-top:10px'><div class='dim'>Check before you approve:</div>{checks}</div>" if checks else "")
         + "<div class='ctrl' style='margin-top:12px'>" + action
         + f"<button class='cbtn' onclick=\"mediaChat('{_esc(jid)}')\">💬 Discuss / request changes</button>"
@@ -782,10 +799,11 @@ def login_html(error=""):
 # ---------------------------------------------------------------------------
 def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_cap,
                    taste_skills, has_password=False, paused=False, autonomy=False,
-                   bookings=None, ads=None):
+                   bookings=None, ads=None, needles=None, last_eval=None):
     from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
     bookings, ads = bookings or {}, ads or {}
+    needles, last_eval = needles or {}, last_eval or {}
     booked = int(bookings.get("booked", 0) or 0)
     o_leads, o_rev, o_cust = _outcomes(jobs)
     content_jobs = [j for j in jobs if j.get("type") != "outreach_campaign"]
@@ -1193,7 +1211,44 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         [("Rules learned", len(rules), "#EDF1FB"), ("Themes", len(themes), "#4C8DFF"),
          ("Top market", (top_c[0] if top_c and top_c[1] else "—"), "#8B7CFF"), ("ROI", f"${o_rev:,.0f}", "#3FD98B")],
         _bars(themes, "#4C8DFF") if themes else _empty("Fills as content is produced."))
-    p_learn = m_learn + grid(
+    # ---- S5 instruments: 3 drift needles + the eval runner ----
+    def _needle(label, val, sub, col):
+        return (f"<div class='card' style='flex:1;min-width:150px'><div class='dim'>{label}</div>"
+                f"<div class='tnum' style='font-size:30px;font-weight:800;color:{col};margin-top:2px'>{val}</div>"
+                f"<div class='dim' style='margin-top:2px'>{sub}</div></div>")
+    ts = needles.get("task_success")
+    ts_txt = "—" if ts is None else f"{ts}%"
+    tk = needles.get("takeover_rate", 0)
+    cpt = needles.get("cost_per_task", 0.0)
+    ev_total = last_eval.get("total", 0)
+    ev_pass = last_eval.get("passed", 0)
+    ev_cost = last_eval.get("cost_usd", 0.0)
+    fails = [c for c in (last_eval.get("cases") or []) if not c.get("pass")]
+    if last_eval:
+        ev_line = (f"Last run: <b>{ev_pass}/{ev_total}</b> passed ({last_eval.get('score',0)}%) · "
+                   f"cost ${ev_cost:.3f}")
+        fail_html = ("".join(
+            f"<div class='fe'><span class='mut'>✗ {_esc(c['name'])} — scored {c.get('score',0)}"
+            + (f" · {_esc('; '.join(c.get('issues',[])[:2]))}" if c.get('issues') else "") + "</span></div>"
+            for c in fails[:6]) or "<div class='fe'><span class='mut' style='color:#3FD98B'>✓ every eval passed</span></div>")
+    else:
+        ev_line = "Never run yet. Click <b>Run evals</b> — grades the engine on ~7 real tasks with a cheap judge."
+        fail_html = _empty("No eval results yet.")
+    instruments = (
+        "<div class='card full' style='margin-bottom:12px'>"
+        "<p class='ct'>🔬 Instruments — is it actually working?</p>"
+        "<p class='cc'>The three needles every serious system watches. “An agent without evals is a rumor.”</p>"
+        "<div style='display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px'>"
+        + _needle("Task success", ts_txt, "eval pass-rate", "#3FD98B" if (ts or 0) >= 80 else "#F5B14C")
+        + _needle("Human takeover", f"{tk}%", "jobs you aborted/edited", "#3FD98B" if tk <= 20 else "#F5B14C")
+        + _needle("Cost per task", f"${cpt:.3f}", f"across {needles.get('jobs',0)} jobs", "#8B7CFF")
+        + "</div>"
+        f"<div class='dim' style='margin-bottom:6px'>{ev_line}</div>{fail_html}"
+        "<div class='ctrl' style='margin-top:12px'>"
+        "<button class='sbtn' id='evalbtn' onclick='runEvals()'>▶ Run evals</button>"
+        "<span class='dim' style='align-self:center'>~7 tasks, cheap judge — a few cents, ~30s.</span></div></div>")
+
+    p_learn = m_learn + instruments + grid(
         _panel("Playbook — what the engine has learned", "Rules it builds from your WHOLE business — content, leads and money.", rules_html),
         _panel("Top content themes", "The subjects your machine writes about most (its growing expertise).",
                _bars(themes, "#4C8DFF") if themes else _empty("Fills as content is produced.")),
@@ -1412,6 +1467,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/media/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:jid,message:m})});var j=await r.json();"
               "var w=document.getElementById(wid);var t=(j.reply||j.error||'(no reply)').replace(/</g,'&lt;');w.innerHTML=\"<span class='tm' style='min-width:44px'>Agent</span><span class='mut'>\"+t+\"</span>\";log.scrollTop=log.scrollHeight;"
               "if(j.changed){setTimeout(function(){location.reload();},1200);}}catch(e){var w2=document.getElementById(wid);if(w2)w2.innerHTML=\"<span class='mut'>Error: \"+e+\"</span>\";}}"
+              "async function runEvals(){var b=document.getElementById('evalbtn');if(b){b.disabled=true;b.textContent='Running evals… ~30s';}"
+              "try{var r=await fetch('/evals/run',{method:'POST'});var j=await r.json();"
+              "if(j.error){alert('Eval run failed: '+j.error);}else{alert('Evals: '+j.passed+'/'+j.total+' passed ('+j.score+'%) · cost $'+(j.cost_usd||0).toFixed(3));location.reload();}}"
+              "catch(e){alert('Eval run failed: '+e);}if(b){b.disabled=false;b.textContent='▶ Run evals';}}"
               "async function draftCampaign(){var b=document.getElementById('draftbtn');if(b){b.disabled=true;b.textContent='Drafting… ~15s';}"
               "try{var r=await fetch('/media/draft',{method:'POST'});var j=await r.json();"
               "if(j.ok){alert('Drafted: '+(j.campaign||'campaign')+'. Scroll down to review it.');location.reload();}else{alert('Could not draft: '+(j.error||'unknown error'));if(b){b.disabled=false;b.textContent='✍️ Draft a campaign now';}}}"

@@ -264,6 +264,20 @@ def api_record_outcome(job_id: str, leads: int = 0, revenue: float = 0.0,
     oc["revenue"] = round(float(oc.get("revenue", 0.0)) + float(revenue), 2)
     oc["customers"] = int(oc.get("customers", 0)) + int(customers)
     store.save(job)
+    # S2: a real WIN feeds the learning loop so the money agents get smarter.
+    if int(leads) > 0 or float(revenue) > 0:
+        try:
+            import content_engine_learning as L
+            p = job.get("payload", {}) or {}
+            client = job.get("client_id") or (job.get("brand", {}) or {}).get("brand_name", "")
+            mb = p.get("media_buyer")
+            if isinstance(mb, dict) and mb.get("campaign_name"):
+                L.record_outcome(client, "campaign_theme", mb["campaign_name"])
+            subj = ((p.get("email", {}) or {}).get("subject_variants") or [None])[0] or p.get("subject")
+            if subj:
+                L.record_outcome(client, "email_subject", subj)
+        except Exception:
+            pass
     return {"job_id": job_id, "outcome": oc}
 
 
@@ -339,6 +353,23 @@ def api_media_chat(job_id, message):
         except Exception:
             pass
     return {"reply": reply, "changed": bool(changed)}
+
+
+def api_run_evals():
+    """S5: run the eval set, grade with the judge, store the result so the
+    dashboard needles update. Costs a few cents."""
+    try:
+        import content_engine_evals as E
+        result = E.run_evals()
+    except Exception as e:
+        return {"error": f"eval run failed: {str(e)[:140]}"}
+    try:
+        store = get_store()
+        if hasattr(store, "set_setting"):
+            store.set_setting("last_eval_run", result)
+    except Exception:
+        pass
+    return result
 
 
 def api_media_activate(job_id):
@@ -435,6 +466,12 @@ def api_media_draft():
         return {"ok": False, "error": f"agent error: {str(e)[:140]}"}
     if not draft.get("campaign_name"):
         return {"ok": False, "error": "the agent did not return a campaign — try again"}
+    # S1: judge the draft before it's shown for approval (cheap model).
+    try:
+        from content_engine_judge import judge
+        draft["_quality"] = judge("campaign", draft)
+    except Exception:
+        pass
     jid = f"media_{abs(hash(str(draft))) % 10_000_000}"
     job = {"job_id": jid, "type": "media_campaign", "status": "AWAITING_APPROVAL",
            "approved": False, "brand": {},
@@ -617,12 +654,20 @@ def api_dashboard_html() -> str:
         ads = _C.GoogleAds().summary()
     except Exception:
         bookings, ads = {}, {}
+    # S5: the three drift needles + last eval run
+    try:
+        import content_engine_evals as _E
+        last_eval = store.get_setting("last_eval_run", None) if hasattr(store, "get_setting") else None
+        needles = _E.needles(store, last_eval)
+    except Exception:
+        last_eval, needles = None, {}
     import content_engine_dashboard as D
     return D.dashboard_html(
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
-        autonomy=settings["autonomy"], bookings=bookings, ads=ads)
+        autonomy=settings["autonomy"], bookings=bookings, ads=ads,
+        needles=needles, last_eval=last_eval)
 
 
 # ---------------------------------------------------------------------------
@@ -770,6 +815,10 @@ def build_app():
             data = {}
         keys = data.get("keys") if isinstance(data, dict) else None
         return api_disconnect(keys)
+
+    @app.post("/evals/run")
+    def evals_run():
+        return api_run_evals()
 
     @app.post("/media/draft")
     def media_draft():

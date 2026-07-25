@@ -246,9 +246,14 @@ def _in_outreach_copy(job: dict) -> dict:
     except Exception:
         booking = cfg.get("booking_url") or "https://anthropos-automation.com/free-audit/"
         website = cfg.get("website") or "anthropos-automation.com"
+    try:
+        import content_engine_safety as _safety
+        _lead = _safety.clean_lead(job.get("payload", {}).get("lead", {}))
+    except Exception:
+        _lead = job.get("payload", {}).get("lead", {})
     out = {
         "category": job.get("payload", {}).get("category", "other"),
-        "lead": job.get("payload", {}).get("lead", {}),
+        "lead": _lead,   # S4: external lead text cleaned before it enters the prompt
         "our_offer": cfg.get("our_offer") or _brand(job).get("offer", ""),
         "proof_point": cfg.get("proof_point", ""),
         "sender_name": cfg.get("sender_name", "") or "Hasan",
@@ -261,6 +266,8 @@ def _in_outreach_copy(job: dict) -> dict:
     pb = _learnings(job)
     if pb and pb.get("winning_email_subject_style"):
         out["winning_subject_style"] = pb["winning_email_subject_style"]
+    if pb and pb.get("winning_email_subjects"):
+        out["winning_subjects"] = pb["winning_email_subjects"]   # S2: subjects that booked calls
     return out
 
 
@@ -306,6 +313,7 @@ def _in_media_buyer(job: dict) -> dict:
         "creatives": p.get("creatives", []),
         "past_learnings": {
             "winning_keywords": pb.get("winning_topics", []),
+            "winning_campaign_themes": pb.get("winning_campaign_themes", []),  # S2
             "notes": pb.get("notes", ""),
         },
     }

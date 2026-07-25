@@ -71,6 +71,7 @@ ROUTES = {
     "media_buyer":        {"engine": FRONTIER_MODEL, "fallback": FRONTIER_ALT},  # drafts paid campaigns = judgment
     "media_chat":         {"engine": FRONTIER_MODEL, "fallback": FRONTIER_ALT},  # discuss + revise the draft
     "reply_responder":    {"engine": CHEAP_MODEL, "fallback": FRONTIER_ALT},  # customer-facing
+    "judge":              {"engine": CHEAP_MODEL, "fallback": CHEAP_ALT},  # S1 evaluator — cheap on purpose
     "orchestrator":       {"engine": "code"},
 }
 

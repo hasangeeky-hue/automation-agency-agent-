@@ -605,6 +605,18 @@ MEDIA_CHAT = {
     "additionalProperties": False,
 }
 
+JUDGE = {
+    "type": "object",
+    "required": ["score", "verdict"],
+    "properties": {
+        "score": {"type": "number"},
+        "verdict": {"type": "string", "enum": ["pass", "revise", "block"]},
+        "issues": {"type": "array", "items": {"type": "string"}},
+        "suggestion": {"type": "string"},
+    },
+    "additionalProperties": False,
+}
+
 
 # ---------------------------------------------------------------------------
 # Validator wrapper: .validate(obj) -> (ok: bool, errors: list[str])
@@ -665,6 +677,7 @@ SCHEMAS = {
     "ads_optimizer":           Schema("ads_optimizer", ADS_OPTIMIZER),
     "media_buyer":             Schema("media_buyer", MEDIA_BUYER),
     "media_chat":              Schema("media_chat", MEDIA_CHAT),
+    "judge":                   Schema("judge", JUDGE),
     "reply_responder":         Schema("reply_responder", REPLY_RESPONDER),
 }
 
