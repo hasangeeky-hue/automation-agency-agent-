@@ -624,11 +624,11 @@ CONTENT_PLANNER = {
                     "funnel": {"type": "string"},
                     "rationale": {"type": "string"},
                 },
-                "additionalProperties": True,
+                "additionalProperties": False,
             },
         },
     },
-    "additionalProperties": True,
+    "additionalProperties": False,
 }
 
 JUDGE = {
