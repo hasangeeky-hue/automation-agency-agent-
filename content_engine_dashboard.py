@@ -20,7 +20,7 @@ from __future__ import annotations
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v12 · dynamic 3D 30-day content board (drag + click)"
+BUILD_TAG = "2026-07-26 · v13 · always-on weekly agency calendar + 1-week plan"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -136,6 +136,18 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .msl{font-size:10px;color:var(--mut);margin-top:4px;letter-spacing:.02em}
 .mchart{flex:1 1 240px;min-width:220px}
 @media(max-width:860px){.mbody{flex-direction:column;align-items:stretch}}
+.wkgrid{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:8px;overflow-x:auto;padding-bottom:4px}
+.wkcol{background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:8px;min-height:130px;display:flex;flex-direction:column}
+.wkcol.today{border-color:#2FE3D2;box-shadow:0 0 16px -5px rgba(47,227,210,.55)}
+.wkcol.wknd{opacity:.72}
+.wkhead{font-weight:700;font-size:12px;color:var(--ink);padding:2px 2px 8px;border-bottom:1px solid var(--line);margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline}
+.wkhead small{color:var(--mut);font-weight:500;font-size:10px}
+.wkhead .tdy{color:#2FE3D2;font-size:9px;letter-spacing:1px}
+.wkcard{background:rgba(255,255,255,.04);border-radius:8px;padding:7px 8px;margin-bottom:6px;border-left:3px solid var(--c,#2FE3D2);transition:transform .15s}
+.wkcard:hover{transform:translateX(2px);background:rgba(255,255,255,.07)}
+.wkcard b{font-size:12px;line-height:1.32;display:block;color:var(--ink)}
+.wkchip{display:inline-block;font-size:9.5px;padding:0 6px;border-radius:6px;margin-top:4px;margin-right:3px}
+.wkempty{color:#3A4160;font-size:11px;text-align:center;margin:auto 0;padding:10px 0}
 @keyframes cf-flow{0%,100%{opacity:.2;transform:translateX(-2px)}50%{opacity:1;transform:translateX(3px)}}
 @keyframes cf-pulse{0%,100%{box-shadow:0 0 0 0 rgba(47,227,210,0)}50%{box-shadow:0 0 16px -2px rgba(47,227,210,.55)}}
 .cf-arrow{animation:cf-flow 1.8s ease-in-out infinite}
@@ -1570,6 +1582,78 @@ _CF3D_CSS = """
 </style>"""
 
 
+def _week_calendar(content_jobs, content_plan):
+    """The agency week board — the next 7 days as columns, each showing what posts
+    that day (title · channel · segment · where it is in the machine). Always
+    visible: an empty week shows the 7-day skeleton so you know what 'Plan my
+    content' will fill."""
+    from datetime import date, timedelta
+    today = date.today()
+    days = [today + timedelta(days=k) for k in range(7)]
+    daymap = {d.isoformat(): [] for d in days}
+
+    def _norm(chs):
+        out = []
+        for c in (chs or ["website"]):
+            c = str(c).lower()
+            out.append("Website" if c in ("website", "web", "blog", "wordpress")
+                       else ("LinkedIn" if c == "linkedin" else c.title()))
+        return out or ["Website"]
+
+    for j in content_jobs:
+        p = j.get("payload", {}) or {}
+        cfg = p.get("config", {}) or {}
+        d = cfg.get("publish_date") or (j.get("created_at") or "")[:10]
+        if d in daymap:
+            si = _factory_stage(j.get("status", ""))
+            daymap[d].append({"t": (p.get("content_producer", {}) or {}).get("title")
+                              or cfg.get("chosen_topic") or j.get("job_id"),
+                              "ch": _norm(cfg.get("deploy_channels")),
+                              "seg": (p.get("taxonomy") or {}).get("segment", ""),
+                              "stage": f"{_FACTORY[si][0]} {_FACTORY[si][1]}"})
+    if content_plan and content_plan.get("status") == "pending":
+        for it in content_plan.get("items", []):
+            d = (today + timedelta(days=int(it.get("day_offset", 0) or 0))).isoformat()
+            if d in daymap:
+                daymap[d].append({"t": it.get("title", ""), "ch": _norm(it.get("channels")),
+                                  "seg": it.get("segment", ""), "stage": "📋 Planned"})
+
+    def _chip(label):
+        col = "#4C9AFF" if label == "LinkedIn" else "#2FE3D2"
+        return f"<span class='wkchip' style='background:{col}22;color:{col}'>{'in ' if label=='LinkedIn' else '🌐 '}{_esc(label)}</span>"
+
+    cols = ""
+    for d in days:
+        iso = d.isoformat()
+        items = daymap[iso]
+        is_today = (d == today)
+        is_wknd = d.weekday() >= 5
+        cls = "wkcol" + (" today" if is_today else "") + (" wknd" if is_wknd else "")
+        head = (f"<div class='wkhead'><span>{d.strftime('%a')}<small>{d.strftime('%b %d')}</small></span>"
+                + ("<span class='tdy'>TODAY</span>" if is_today else "") + "</div>")
+        if items:
+            body = ""
+            for it in items:
+                col = "#4C9AFF" if ("LinkedIn" in it["ch"] and "Website" not in it["ch"]) else "#2FE3D2"
+                chips = "".join(_chip(c) for c in it["ch"])
+                seg = f"<div class='dim' style='font-size:10px;margin-top:3px'>{_esc(it['seg'])}</div>" if it.get("seg") else ""
+                body += (f"<div class='wkcard' style='--c:{col}'><b>{_esc(str(it['t'])[:64])}</b>{chips}{seg}"
+                         f"<div class='dim' style='font-size:10px;margin-top:3px'>{_esc(it['stage'])}</div></div>")
+        else:
+            body = "<div class='wkempty'>— no post —</div>"
+        cols += f"<div class='{cls}'>{head}{body}</div>"
+
+    total = sum(len(v) for v in daymap.values())
+    span = f"{days[0].strftime('%b %d')} → {days[-1].strftime('%b %d')}"
+    note = (f"<b style='color:#3FD98B'>{total}</b> pieces scheduled this week." if total
+            else "Nothing scheduled yet — click <b>Plan my content</b> below to fill the week, agency-style.")
+    return ("<div class='card full' style='margin-bottom:12px'>"
+            f"<p class='ct'>🗓️ This week's content calendar · {span}</p>"
+            f"<p class='cc'>Your production week at a glance — what posts each day, on which channel, for which "
+            f"customer segment, and where it is in the machine. {note}</p>"
+            "<div class='wkgrid'>" + cols + "</div></div>")
+
+
 def _content_calendar(content_jobs, content_plan):
     """The always-on calendar: what posts which day, on which channel, and where it
     is in the machine. Combines scheduled/in-flight pieces with the pending plan."""
@@ -1997,12 +2081,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     else:
         plan_card = (
             "<div class='card full' style='margin-bottom:12px'>"
-            "<p class='ct'>🗒️ Content plan — let the agent propose, you approve</p>"
-            "<p class='cc'>The planner proposes a batch of on-brand pieces for your ICP. You review the list and "
-            "approve before anything is written — nothing runs without your yes.</p>"
-            "<div class='ctrl'><span class='dim' style='align-self:center'>How many pieces? </span>"
-            "<input id='plan-count' value='8' style='width:60px' inputmode='numeric'>"
-            "<button class='sbtn' id='planbtn' onclick='planContent()'>🗒️ Plan my content</button>"
+            "<p class='ct'>🗒️ Plan my content — one production-ready week</p>"
+            "<p class='cc'>Like an agency: the planner lays out a full <b>week</b> of on-brand pieces — spread across "
+            "your 7 customer segments and scheduled day-by-day (Website + LinkedIn) — for you to review and approve. "
+            "Nothing is written until your yes.</p>"
+            "<div class='ctrl'><span class='dim' style='align-self:center'>Pieces this week: </span>"
+            "<input id='plan-count' value='10' style='width:60px' inputmode='numeric'>"
+            "<button class='sbtn' id='planbtn' onclick='planContent()'>🗓️ Plan my week</button>"
             + (f"<span class='dim' style='align-self:center'>Last plan: {_esc(content_plan.get('status',''))}</span>"
                if content_plan.get("status") else "") + "</div></div>")
 
@@ -2032,14 +2117,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         + "<span class='dim' style='align-self:center'>Queues today's pieces, writes on-brand, and publishes the "
           "ones that pass QA — hands-free. Stop anytime.</span></div></div>")
 
-    _cal3d = _factory_3d(content_jobs, content_plan)
-    _callist = _content_calendar(content_jobs, content_plan)
-    _cal_block = (_cal3d + "<details style='margin-bottom:12px'><summary style='cursor:pointer;"
-                  "color:#8E9BBE;font-weight:600;margin-bottom:8px'>📋 Same schedule as a plain list</summary>"
-                  + _callist + "</details>") if _cal3d else _callist
     p_content = (m_content
                  + _factory_line(content_jobs)
-                 + _cal_block
+                 + _week_calendar(content_jobs, content_plan)
                  + plan_card + autopilot_card + grid(
         _panel("Pipeline — where each piece is", "Idea → written → checked → your approval → live → measured.",
                _funnel(list(zip(_STAGES, pl))) if sum(pl) else _empty("No content jobs yet.")),
@@ -2897,10 +2977,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/media/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:jid,message:m})});var j=await r.json();"
               "var w=document.getElementById(wid);var t=(j.reply||j.error||'(no reply)').replace(/</g,'&lt;');w.innerHTML=\"<span class='tm' style='min-width:44px'>Agent</span><span class='mut'>\"+t+\"</span>\";log.scrollTop=log.scrollHeight;"
               "if(j.changed){setTimeout(function(){location.reload();},1200);}}catch(e){var w2=document.getElementById(wid);if(w2)w2.innerHTML=\"<span class='mut'>Error: \"+e+\"</span>\";}}"
-              "async function planContent(){var c=parseInt((document.getElementById('plan-count')||{}).value||'8')||8;var b=document.getElementById('planbtn');if(b){b.disabled=true;b.textContent='Planning… ~15s';}"
+              "async function planContent(){var c=parseInt((document.getElementById('plan-count')||{}).value||'10')||10;var b=document.getElementById('planbtn');if(b){b.disabled=true;b.textContent='Planning your week… ~15s';}"
               "try{var r=await fetch('/plan/content',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({count:c})});var j=await r.json();"
-              "if(j.error){alert('Plan failed: '+j.error);if(b){b.disabled=false;b.textContent='🗒️ Plan my content';}}else{alert('Planned '+j.count+' pieces — review and approve below.');location.reload();}}"
-              "catch(e){alert('Plan failed: '+e);if(b){b.disabled=false;b.textContent='🗒️ Plan my content';}}}"
+              "if(j.error){alert('Plan failed: '+j.error);if(b){b.disabled=false;b.textContent='🗓️ Plan my week';}}else{alert('Planned '+j.count+' pieces for the week — review the calendar and approve below.');location.reload();}}"
+              "catch(e){alert('Plan failed: '+e);if(b){b.disabled=false;b.textContent='🗓️ Plan my week';}}}"
               "async function approvePlan(){if(!confirm('Approve this plan? Each piece will be created, written on-brand, QA-checked, and published.'))return;"
               "try{var r=await fetch('/plan/approve',{method:'POST'});var j=await r.json();if(j.error){alert(j.error);}else{alert('✓ Approved — created '+j.created+' pieces. They\\'re now in the pipeline.');location.reload();}}catch(e){alert('Failed: '+e);}}"
               "async function clearPlan(){if(!confirm('Discard this plan?'))return;try{await fetch('/plan/clear',{method:'POST'});location.reload();}catch(e){alert('Failed: '+e);}}"
