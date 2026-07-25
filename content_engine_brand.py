@@ -26,11 +26,48 @@ from __future__ import annotations
 import json
 import os
 
-_CACHE = None  # parsed once per process
+_CACHE = None  # parsed once per process (env/file path only)
+_SETTING_GET = None  # dashboard-saved CI comes through here (settings store)
+
+
+def set_ci_provider(fn) -> None:
+    """Wire the settings store so CI pasted in the dashboard is read live (and
+    shared across the api + worker processes via Postgres)."""
+    global _SETTING_GET
+    _SETTING_GET = fn
+
+
+def _from_setting() -> "dict | None":
+    """Dashboard-saved brand CI (setting 'brand_ci'): a dict, a JSON string, or
+    freeform text. None when unset."""
+    if _SETTING_GET is None:
+        return None
+    try:
+        v = _SETTING_GET("brand_ci")
+    except Exception:
+        return None
+    if not v:
+        return None
+    if isinstance(v, dict):
+        return v
+    if isinstance(v, str):
+        s = v.strip()
+        if s.startswith("{"):
+            try:
+                return json.loads(s)
+            except Exception:
+                pass
+        return {"_freeform": s}
+    return None
 
 
 def _load() -> dict:
     global _CACHE
+    # Settings-first (dashboard), read live so an edit takes effect without a
+    # restart and both processes see it. Env/file is the fallback + is cached.
+    s = _from_setting()
+    if s is not None:
+        return s
     if _CACHE is not None:
         return _CACHE
     ci: dict = {}
@@ -73,10 +110,19 @@ def get_ci_block() -> str:
     """Compact brand-identity guidance appended to the cached prompt prefix.
     Empty string when no CI is configured (agents then use built-in defaults)."""
     ci = _load()
-    if not ci:
+    insp = ""
+    try:
+        if _SETTING_GET is not None:
+            notes = _SETTING_GET("brand_ci_inspiration")
+            if notes:
+                insp_val = "; ".join(notes) if isinstance(notes, (list, tuple)) else str(notes)
+                insp = "\nDesign inspiration to echo (visual style, mood): " + insp_val
+    except Exception:
+        insp = ""
+    if not ci and not insp:
         return ""
     if ci.get("_freeform"):
-        return "BRAND IDENTITY (follow this voice exactly):\n" + ci["_freeform"]
+        return "BRAND IDENTITY (follow this voice exactly):\n" + ci["_freeform"] + insp
     out = ["BRAND IDENTITY (follow this exactly):"]
     out.append(_lines("Brand", ci.get("brand_name")))
     out.append(_lines("Tagline", ci.get("tagline")))
@@ -89,7 +135,7 @@ def get_ci_block() -> str:
     out.append(_lines("Always do", ci.get("do")))
     out.append(_lines("Never do", ci.get("dont")))
     out.append(_lines("Never use these words", ci.get("banned_words")))
-    return "".join(p for p in out if p).strip()
+    return ("".join(p for p in out if p).strip() + insp).strip()
 
 
 if __name__ == "__main__":

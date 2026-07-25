@@ -800,12 +800,13 @@ def login_html(error=""):
 def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_cap,
                    taste_skills, has_password=False, paused=False, autonomy=False,
                    bookings=None, ads=None, needles=None, last_eval=None,
-                   meters=None, api_limits=None):
+                   meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False):
     from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
     bookings, ads = bookings or {}, ads or {}
     needles, last_eval = needles or {}, last_eval or {}
     meters, api_limits = meters or {}, api_limits or {}
+    ci_text, ci_drive = ci_text or "", ci_drive or ""
     booked = int(bookings.get("booked", 0) or 0)
     o_leads, o_rev, o_cust = _outcomes(jobs)
     content_jobs = [j for j in jobs if j.get("type") != "outreach_campaign"]
@@ -848,7 +849,33 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         [("Made / month", made_month, "#EDF1FB"), ("Published", published, "#3FD98B"),
          ("In progress", sum(pl[0:4]), "#F5B14C"), ("On pace for", proj, "#8B7CFF")],
         _sparkline(content_series, "#4C8DFF") if content_jobs else _empty("Fills as pieces are made."))
-    p_content = m_content + grid(
+    # ---- BRAND / CI + 1-CLICK AUTOPILOT ----
+    _ci_has = bool(ci_text.strip())
+    ap_state = ("<span class='pill p-live'><span class='d' style='background:#3FD98B'></span>Autopilot ON — creating & publishing live</span>"
+                if autopilot_on else
+                "<span class='pill p-need'><span class='d' style='background:#F5B14C'></span>Autopilot off</span>")
+    autopilot_card = (
+        "<div class='card full' style='margin-bottom:12px'>"
+        "<p class='ct'>🎨 Brand & Autopilot — feed your identity, publish on-brand in one click</p>"
+        f"<p class='cc'>{ap_state} &nbsp; Everything the agents write follows the brand you paste below. "
+        "Quality is still gated automatically (QA agent + judge) — <b>auto never means unchecked</b>.</p>"
+        "<div class='dim' style='margin-bottom:4px'>Your brand / CI — voice, tone, always-do, never-do, proof points"
+        + ("  ✓ saved" if _ci_has else "  (empty — paste it once)") + "</div>"
+        f"<textarea id='ci-text' style='width:100%;min-height:120px;font-family:inherit' "
+        f"placeholder='e.g. Voice: plain, confident, no hype. Never: invent client results or use jargon. "
+        f"Proof points: runs on n8n, one dashboard. Colors: deep slate + cyan…'>{_esc(ci_text)}</textarea>"
+        "<div class='ctrl' style='margin-top:8px'>"
+        "<span class='dim'>Design-inspiration Drive folder ID (images to echo): </span>"
+        f"<input id='ci-drive' value='{_esc(ci_drive)}' placeholder='1AbC…' style='min-width:220px'>"
+        "<button class='cbtn' onclick='saveCI()'>💾 Save brand</button></div>"
+        "<div class='ctrl' style='margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px'>"
+        + ("<button class='sbtn' style='background:#F5788A' onclick='stopAutopilot()'>■ Stop autopilot</button>"
+           if autopilot_on else
+           "<button class='sbtn' onclick='runAutopilot()'>🚀 Autopilot: create &amp; publish on-brand (1 click)</button>")
+        + "<span class='dim' style='align-self:center'>Queues today's pieces, writes on-brand, and publishes the "
+          "ones that pass QA — hands-free. Stop anytime.</span></div></div>")
+
+    p_content = m_content + autopilot_card + grid(
         _panel("Pipeline — where each piece is", "Idea → written → checked → your approval → live → measured.",
                _funnel(list(zip(_STAGES, pl))) if sum(pl) else _empty("No content jobs yet.")),
         _panel("Content by stage", "How many pieces sit at each stage right now.",
@@ -1529,6 +1556,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/media/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:jid,message:m})});var j=await r.json();"
               "var w=document.getElementById(wid);var t=(j.reply||j.error||'(no reply)').replace(/</g,'&lt;');w.innerHTML=\"<span class='tm' style='min-width:44px'>Agent</span><span class='mut'>\"+t+\"</span>\";log.scrollTop=log.scrollHeight;"
               "if(j.changed){setTimeout(function(){location.reload();},1200);}}catch(e){var w2=document.getElementById(wid);if(w2)w2.innerHTML=\"<span class='mut'>Error: \"+e+\"</span>\";}}"
+              "async function saveCI(){var t=(document.getElementById('ci-text')||{}).value||'';var d=(document.getElementById('ci-drive')||{}).value||'';"
+              "try{var r=await fetch('/brand/ci',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,drive_folder:d})});var j=await r.json();"
+              "if(j.error){alert('Save failed: '+j.error);}else{alert('Brand saved ('+(j.chars||0)+' chars). Every agent now writes on-brand.');location.reload();}}catch(e){alert('Save failed: '+e);}}"
+              "async function runAutopilot(){if(!confirm('Turn on Autopilot? The agents will create today\\'s content on-brand and PUBLISH the pieces that pass QA straight to your website — no approval step. You can Stop anytime.'))return;"
+              "try{var r=await fetch('/autopilot/run',{method:'POST'});var j=await r.json();"
+              "if(j.ok){alert('🚀 Autopilot ON. Queued today\\'s work — pieces will publish as they pass QA.');location.reload();}else{alert('Could not start: '+(j.error||'unknown'));}}catch(e){alert('Failed: '+e);}}"
+              "async function stopAutopilot(){try{var r=await fetch('/autopilot/stop',{method:'POST'});var j=await r.json();if(j.ok){alert('■ Autopilot stopped. Nothing new will publish.');location.reload();}}catch(e){alert('Failed: '+e);}}"
               "async function setApiLimit(api){var el=document.getElementById('lim-'+api);if(!el)return;var v=parseFloat(el.value);if(!(v>0)){alert('Enter a number.');return;}"
               "try{var r=await fetch('/api-limits/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api:api,usd:v})});var j=await r.json();"
               "if(j.error){alert('Could not save: '+j.error);}else{location.reload();}}catch(e){alert('Save failed: '+e);}}"

@@ -91,6 +91,11 @@ def get_store():
                 _C.set_settings_writer(_STORE.set_setting)     # suppression + send caps
         except Exception:
             pass
+        try:   # dashboard-saved brand CI feeds every content agent
+            import content_engine_brand as _B
+            _B.set_ci_provider(_STORE.get_setting)
+        except Exception:
+            pass
     return _STORE
 
 
@@ -353,6 +358,46 @@ def api_media_chat(job_id, message):
         except Exception:
             pass
     return {"reply": reply, "changed": bool(changed)}
+
+
+def api_save_ci(text, drive_folder=None, inspiration=None):
+    """Save the brand/CI the content agents write on-brand from (dashboard)."""
+    store = get_store()
+    if not hasattr(store, "set_setting"):
+        return {"error": "store cannot save settings"}
+    store.set_setting("brand_ci", text or "")
+    if drive_folder is not None:
+        store.set_setting("brand_ci_drive", drive_folder)
+    if inspiration is not None:
+        store.set_setting("brand_ci_inspiration", inspiration)
+    try:
+        import content_engine_brand as _B
+        _B.reset_cache()
+    except Exception:
+        pass
+    return {"ok": True, "saved": True, "chars": len(text or "")}
+
+
+def api_autopilot(on=True):
+    """1-click autonomous on-brand publishing. ON: autonomy + publish-live + queue
+    today's work (QA + judge still gate quality, so 'auto' is never 'unchecked').
+    OFF: stop everything."""
+    store = get_store()
+    if not hasattr(store, "set_setting"):
+        return {"error": "store cannot save settings"}
+    if on:
+        store.set_setting("autonomy", True)
+        store.set_setting("paused", False)
+        store.set_setting("WP_STATUS", "publish")   # approved+QA-passed pieces go live
+        try:
+            import content_engine_scheduler as scheduler
+            planned = scheduler.plan_today(store, force=True)
+        except Exception as e:
+            planned = {"error": str(e)[:120]}
+        return {"ok": True, "autopilot": "on", "planned": planned}
+    store.set_setting("paused", True)
+    store.set_setting("autonomy", False)
+    return {"ok": True, "autopilot": "off"}
 
 
 def api_run_evals():
@@ -668,13 +713,23 @@ def api_dashboard_html() -> str:
         api_limits = _C2.api_limits()
     except Exception:
         meters, api_limits = {}, {}
+    # brand/CI + autopilot state
+    try:
+        ci_text = store.get_setting("brand_ci", "") if hasattr(store, "get_setting") else ""
+        ci_drive = store.get_setting("brand_ci_drive", "") if hasattr(store, "get_setting") else ""
+        wp_live = (store.get_setting("WP_STATUS", "draft") if hasattr(store, "get_setting") else "draft") == "publish"
+    except Exception:
+        ci_text, ci_drive, wp_live = "", "", False
+    autopilot_on = bool(settings["autonomy"]) and not bool(settings["paused"]) and wp_live
     import content_engine_dashboard as D
     return D.dashboard_html(
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
         autonomy=settings["autonomy"], bookings=bookings, ads=ads,
-        needles=needles, last_eval=last_eval, meters=meters, api_limits=api_limits)
+        needles=needles, last_eval=last_eval, meters=meters, api_limits=api_limits,
+        ci_text=ci_text if isinstance(ci_text, str) else "", ci_drive=ci_drive or "",
+        autopilot_on=autopilot_on)
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +877,23 @@ def build_app():
             data = {}
         keys = data.get("keys") if isinstance(data, dict) else None
         return api_disconnect(keys)
+
+    @app.post("/brand/ci")
+    async def brand_ci(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_save_ci(data.get("text", ""), data.get("drive_folder"),
+                           data.get("inspiration"))
+
+    @app.post("/autopilot/run")
+    def autopilot_run():
+        return api_autopilot(True)
+
+    @app.post("/autopilot/stop")
+    def autopilot_stop():
+        return api_autopilot(False)
 
     @app.post("/evals/run")
     def evals_run():
