@@ -837,6 +837,11 @@ def _collect_leads(jobs):
         js = j.get("status", "")
         p = j.get("payload", {}) or {}
         sent_ref = p.get("send_ref") or (p.get("outreach_send", {}) or {}).get("send_ref")
+        sent_map = p.get("sent_to", {}) or {}
+        try:
+            import content_engine_connectors as _C
+        except Exception:
+            _C = None
         qmap = {}
         for r in ((p.get("lead_qualifier") or {}).get("results") or []):
             qmap[str(r.get("id", "")).strip().lower()] = r
@@ -848,7 +853,8 @@ def _collect_leads(jobs):
                 continue
             seen.add(k)
             q = qmap.get(e) or qmap.get((L.get("company") or "").strip().lower()) or {}
-            emailed = bool(sent_ref) and first        # only the primary contact was emailed
+            n_sent = (_C.touch_stats(sent_map.get(e))[0] if _C else 0)   # manual sequence sends
+            emailed = n_sent > 0 or (bool(sent_ref) and first)  # primary auto-send OR any manual touch
             out.append((L, js, q, emailed))
             if e:
                 first = False
@@ -985,14 +991,19 @@ def _outbox(jobs):
                 continue
             q = qmap.get(e) or {}
             ed = edits.get(e)
-            if ed and ed.get("body"):     # founder's manual edit wins
+            # where is this lead in their 3-email cycle?
+            hist = sent.get(e)
+            sent_n, last = _C.touch_stats(hist)
+            nxt = _C.next_touch(hist)            # next step to send (0 = done/blocked)
+            disp_touch = nxt or _C.SEQUENCE_TOUCHES   # which email to show/preview
+            base_subj = (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0]
+            if disp_touch <= 1 and ed and ed.get("body"):   # founder's manual edit wins (intro only)
                 subj, raw = ed.get("subject") or "", ed.get("body")
             else:
                 try:
-                    subj, raw = _C.personalize_outreach(
-                        L, q, (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0], oc.get("body", ""))
+                    subj, raw = _C.outreach_touch(L, q, base_subj, oc.get("body", ""), disp_touch)
                 except Exception:
-                    subj, raw = (oc.get("subject_variants") or ["Quick idea"])[0], oc.get("body", "")
+                    subj, raw = base_subj, oc.get("body", "")
             # compose the REAL email the customer receives (body + branded footer).
             html = None
             try:
@@ -1001,23 +1012,25 @@ def _outbox(jobs):
                     sample_html = html
             except Exception:
                 pass
-            ref = str(sent.get(e, "") or "")
-            if ref and not ref.startswith(("suppressed", "send_error", "blocked", "held")):
-                status = "sent"
-            elif ref.startswith("held"):
-                status = "held"
-            elif ref.startswith(("blocked", "suppressed")):
+            if nxt == 0 and last == "blocked":
                 status = "blocked"
+            elif nxt == 0:
+                status = "complete"          # all 3 emails sent
+            elif last == "held":
+                status = "held"              # warm-up cap — retries same step
             else:
                 status = "ready"
-            items.append((j.get("job_id"), L, q, subj, raw, html, status, bool(ed)))
+            items.append((j.get("job_id"), L, q, subj, raw, html, status, bool(ed), sent_n, nxt))
     if not items:
         return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📬 Email outbox</p>"
                 "<p class='cc'>One personalized email per customer — built by your agent from each lead's persona "
                 "(business, pain, offer) — appears here, ready to send individually or all at once. Empty until a "
                 "batch is sourced, qualified and written.</p></div>")
     ready = sum(1 for it in items if it[6] == "ready")
-    sentn = sum(1 for it in items if it[6] == "sent")
+    complete = sum(1 for it in items if it[6] == "complete")
+    emails_sent = sum(it[8] for it in items)          # total emails sent across all steps
+    customers = len(items)
+    remaining = sum(max(0, _C.SEQUENCE_TOUCHES - it[8]) for it in items if it[6] != "blocked")
     # a real rendered preview of the branded email — exactly how the customer sees
     # it: logo, body, and the footer signature (Hassan, company, address, booking,
     # unsubscribe). srcdoc renders the actual HTML on a white 'inbox' background.
@@ -1032,15 +1045,25 @@ def _outbox(jobs):
                   "unsubscribe) is added automatically to every email. To show your logo + brand colour there, set "
                   "<code>EMAIL_LOGO_URL</code> and <code>EMAIL_BRAND_COLOR</code> on the System Map.</div></details>")
     rows = ""
-    for i, (jid, L, q, subj, raw, html, status, was_edited) in enumerate(items[:200]):
+    _tlabel = {1: "intro", 2: "follow-up", 3: "final note"}
+    for i, (jid, L, q, subj, raw, html, status, was_edited, sent_n, nxt) in enumerate(items[:200]):
         day = i // 15 + 1
         sched = f"Day {day} · {9 + ((i % 15) // 3):02d}:{(i % 3) * 20:02d}"
-        stcol = {"sent": "#3FD98B", "ready": "#F5B14C", "held": "#8E9BBE", "blocked": "#F5788A"}.get(status, "#8E9BBE")
-        stlabel = {"sent": "✓ sent", "ready": "○ ready", "held": "held (cap)", "blocked": "blocked"}.get(status, status)
+        stcol = {"complete": "#3FD98B", "ready": "#F5B14C", "held": "#8E9BBE", "blocked": "#F5788A"}.get(status, "#8E9BBE")
+        # the 3-dot sequence tracker: filled = sent, hollow = pending
+        dots = "".join(f"<span style='color:{'#3FD98B' if k < sent_n else '#3A4160'}'>●</span>" for k in range(3))
+        _steplbl = _tlabel.get(nxt, "")
+        stlabel = {
+            "complete": "✓ 3/3 done",
+            "ready": f"○ next: {_steplbl}" if _steplbl else "○ ready",
+            "held": "held (cap)",
+            "blocked": "stopped",
+        }.get(status, status)
         email = L.get("email") or ""
         chk = (f"<input type='checkbox' class='obx' value='{_esc(email)}' data-job='{_esc(jid)}'>"
                if status == "ready" else "")
-        sendbtn = (f"<button class='cbtn' style='padding:3px 10px' onclick=\"sendOne('{_esc(jid)}','{_esc(email)}')\">Send</button>"
+        sendlbl = f"Send {_steplbl}" if _steplbl else "Send"
+        sendbtn = (f"<button class='cbtn' style='padding:3px 10px' onclick=\"sendOne('{_esc(jid)}','{_esc(email)}')\">{sendlbl}</button>"
                    if status == "ready" else "")
         edited_tag = " <span class='pill p-live' style='padding:1px 7px'>edited by you</span>" if was_edited else ""
         # attribute-escape the composed HTML for the preview iframe
@@ -1071,20 +1094,37 @@ def _outbox(jobs):
                  f"<td class='mut'>{_esc(q.get('business') or q.get('category') or '—')}</td>"
                  f"<td class='mut' style='max-width:240px'>{_esc(subj)}{edited_tag}</td>"
                  f"<td class='dim tnum'>{sched}</td>"
-                 f"<td><span style='color:{stcol};font-weight:600'>{stlabel}</span></td>"
+                 f"<td style='white-space:nowrap'><span style='font-size:13px;letter-spacing:2px'>{dots}</span>"
+                 f"<div style='color:{stcol};font-weight:600;font-size:12px'>{stlabel}</div></td>"
                  f"<td style='min-width:230px'>{actions}</td></tr>")
+    # the follow-up cadence explainer — how the 3-email cycle works
+    cadence = (
+        "<div class='card' style='margin-bottom:10px;background:rgba(76,141,255,.06);border-left:4px solid #4C8DFF'>"
+        "<p class='ct' style='margin-bottom:6px'>🔁 3-email follow-up cycle (then we stop)</p>"
+        "<div style='display:flex;gap:10px;flex-wrap:wrap;font-size:13px'>"
+        "<div class='fe' style='flex:1;min-width:150px'><b>1 · Intro</b><div class='dim'>The full personalized pitch</div></div>"
+        "<div class='fe' style='flex:1;min-width:150px'><b>2 · Follow-up</b><div class='dim'>A short bump if no reply</div></div>"
+        "<div class='fe' style='flex:1;min-width:150px'><b>3 · Final note</b><div class='dim'>A last soft close, then stop</div></div>"
+        "</div>"
+        f"<p class='cc' style='margin-top:8px'>Each customer gets <b>at most 3 emails</b>, each one different. "
+        f"After the 3rd, that customer is done — <b>no more emails</b>. The dots (●●●) below track where each "
+        f"person is in their cycle.</p>"
+        f"<div class='dim' style='margin-top:6px'>{customers} customers · <b style='color:#3FD98B'>{emails_sent} emails sent</b> · "
+        f"<b style='color:#F5B14C'>{remaining} still to send</b> across all cycles · {complete} finished all 3.</div></div>")
     return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📬 Email outbox — your agent's emails, per customer</p>"
-            f"<p class='cc'>One personalized email per lead, built from their persona (business · pain · offer). "
-            f"<b style='color:#F5B14C'>{ready} ready</b> · <b style='color:#3FD98B'>{sentn} sent</b>. "
+            f"<p class='cc'>One personalized email per lead, built from their persona (business · pain · offer), "
+            f"sent as a <b>3-step sequence</b>. <b style='color:#F5B14C'>{ready} ready for their next email</b> · "
+            f"<b style='color:#3FD98B'>{emails_sent} emails sent</b>. "
             "Send one, tick several and send selected, or send all — warm-up capped so day-one stays safe. "
             "Nothing sends until you click.</p>"
+            + cadence
             + sample
             + "<div class='ctrl' style='margin-bottom:8px'>"
             "<label class='dim' style='align-self:center'><input type='checkbox' id='obx-all' onclick='toggleOutbox(this)'> select all ready</label>"
-            "<button class='sbtn' onclick='sendSelected()'>📨 Send selected</button>"
+            "<button class='sbtn' onclick='sendSelected()'>📨 Send selected (next step)</button>"
             "<button class='cbtn' onclick='sendAllOutbox()'>📤 Send all ready</button></div>"
-            "<div class='tbwrap'><table><thead><tr><th></th><th>Customer</th><th>Persona</th><th>Subject</th>"
-            "<th>Scheduled</th><th>Status</th><th>Actions</th></tr></thead><tbody>"
+            "<div class='tbwrap'><table><thead><tr><th></th><th>Customer</th><th>Persona</th><th>Next email</th>"
+            "<th>Scheduled</th><th>Cycle 1·2·3</th><th>Actions</th></tr></thead><tbody>"
             + rows + "</tbody></table></div>" + _junk_box(trashed_items) + "</div>")
 
 
@@ -1107,6 +1147,12 @@ def _junk_box(trashed_items):
 
 
 def _outbox_ready_count(jobs):
+    """How many emails are ready to send right now — i.e. leads whose next
+    sequence step (1, 2 or 3) is due and not yet sent."""
+    try:
+        import content_engine_connectors as _C
+    except Exception:
+        _C = None
     n = 0
     for j in jobs:
         if j.get("type") != "outreach_campaign":
@@ -1117,7 +1163,9 @@ def _outbox_ready_count(jobs):
         sent = p.get("sent_to", {}) or {}
         for L in (p.get("leads") or []):
             e = (L.get("email") or "").strip().lower()
-            if e and e not in sent:
+            if not e or e in set(str(x).lower() for x in (p.get("email_trashed") or [])):
+                continue
+            if _C and _C.next_touch(sent.get(e)) > 0:
                 n += 1
     return n
 

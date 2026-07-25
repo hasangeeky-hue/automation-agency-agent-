@@ -454,6 +454,65 @@ def personalize_outreach(lead: dict, qual: dict, subject: str, body: str):
     return subj, "\n".join(lines).strip()
 
 
+SEQUENCE_TOUCHES = 3   # each customer gets at most 3 emails, then we stop.
+
+
+def touch_stats(v):
+    """Read a lead's send history. `v` is a list of refs (one per touch sent),
+    or a legacy single ref string, or None. Returns (sent_count, last_status)
+    where last_status is one of: ready | sent | held | blocked | error."""
+    if not v:
+        return 0, "ready"
+    refs = v if isinstance(v, list) else [v]
+    sent, last = 0, "ready"
+    for r in refs:
+        r = str(r or "")
+        if r.startswith(("suppressed", "blocked")):
+            last = "blocked"
+        elif r.startswith("held"):
+            last = "held"
+        elif r.startswith("send_error"):
+            last = "error"
+        elif r:
+            sent += 1
+            last = "sent"
+    return sent, last
+
+
+def next_touch(v):
+    """The next email step to send this lead (1..3), or 0 if the sequence is done
+    (3 already sent) or blocked (suppressed). A held/error state retries the same
+    step, so it does not advance the counter."""
+    sent, last = touch_stats(v)
+    if last == "blocked":
+        return 0
+    if sent >= SEQUENCE_TOUCHES:
+        return 0
+    return sent + 1
+
+
+def outreach_touch(lead: dict, qual: dict, subject: str, body: str, touch: int):
+    """The email for step 1/2/3 of the follow-up sequence. Touch 1 is the full
+    personalized pitch; touch 2 is a short bump; touch 3 is a final soft close.
+    Each is different so the customer never gets the same email twice."""
+    subj1, body1 = personalize_outreach(lead, qual, subject, body)
+    if touch <= 1:
+        return subj1, body1
+    name = ((lead.get("name") or "there").split(" ") or ["there"])[0]
+    qual = qual or {}
+    offer = (qual.get("offer") or "AI automation that saves hours each week").rstrip(".")
+    pain = (qual.get("pain_point") or "").rstrip(".")
+    rsubj = subj1 if subj1.lower().startswith("re:") else "Re: " + subj1
+    if touch == 2:
+        body2 = (f"Hi {name},\n\nJust floating this back to the top of your inbox in case it slipped by.\n\n"
+                 f"{offer}. Worth a quick 15-minute call to see if it's a fit for you?")
+        return rsubj, body2
+    body3 = (f"Hi {name},\n\nLast note from me, I promise, I know inboxes are relentless.\n\n"
+             + (f"If {pain} isn't a priority right now, no worries at all. " if pain else "")
+             + "If it ever is, the link below is the fastest way to grab a time.")
+    return rsubj, body3
+
+
 def _outreach_emails(body: str, *, lang, sender, title, company, website, phone,
                      booking_url, address, unsub_url, logo, brand="#7A00DF"):
     """Build the (plain_text, html) versions of a cold email: the writer's personal

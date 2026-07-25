@@ -439,9 +439,10 @@ def api_clear_plan():
     return {"ok": True}
 
 
-def _outreach_email_for(job, email):
-    """(lead, qual, subject, body) for one recipient. Uses the founder's manual
-    edit (payload['email_edits'][email]) if present, else the agent's version."""
+def _outreach_email_for(job, email, touch=1):
+    """(lead, qual, subject, body) for one recipient at a given sequence step
+    (1=intro, 2=bump, 3=final). Touch 1 uses the founder's manual edit
+    (payload['email_edits'][email]) if present; touches 2 & 3 are follow-ups."""
     p = job.get("payload", {}) or {}
     leads = p.get("leads") or []
     lead = next((L for L in leads if (L.get("email") or "").strip().lower() == email.lower()), None)
@@ -449,13 +450,27 @@ def _outreach_email_for(job, email):
         return None
     qmap = {str(r.get("id", "")).lower(): r for r in ((p.get("lead_qualifier") or {}).get("results") or [])}
     q = qmap.get(email.lower()) or {}
-    edit = (p.get("email_edits", {}) or {}).get(email.lower())
-    if edit and edit.get("body"):
-        return (lead, q, edit.get("subject") or "", edit.get("body") or "")
-    oc = p.get("outreach_copy", {}) or {}
-    subj = (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0]
     import content_engine_connectors as C
-    return (lead, q) + C.personalize_outreach(lead, q, subj, oc.get("body", ""))
+    oc = p.get("outreach_copy", {}) or {}
+    base_subj = (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0]
+    if touch <= 1:
+        edit = (p.get("email_edits", {}) or {}).get(email.lower())
+        if edit and edit.get("body"):
+            return (lead, q, edit.get("subject") or "", edit.get("body") or "")
+    return (lead, q) + C.outreach_touch(lead, q, base_subj, oc.get("body", ""), touch)
+
+
+def _append_ref(p, email, ref):
+    """Record a send in the touch history (sent_to[email] is a LIST, one ref per
+    email sent — this is what tracks the 3-email cycle)."""
+    m = p.setdefault("sent_to", {})
+    cur = m.get(email)
+    if isinstance(cur, list):
+        cur.append(ref)
+    elif cur:                       # migrate a legacy single ref -> list
+        m[email] = [cur, ref]
+    else:
+        m[email] = [ref]
 
 
 def api_outreach_edit(job_id, email, subject, body):
@@ -478,32 +493,37 @@ def api_outreach_edit(job_id, email, subject, body):
     return {"ok": True, "email": email}
 
 
-def api_outreach_send_one(job_id, email):
-    """Send ONE personalized email to a specific lead (mailbox 'Send' button)."""
+def api_outreach_send_one(job_id, email, touch=None):
+    """Send the NEXT email in this lead's 3-step sequence (or a specific `touch`).
+    Steps: 1=intro, 2=follow-up bump, 3=final note. After 3, we stop."""
     store = get_store()
     try:
         job = store.get(job_id)
     except Exception:
         return {"ok": False, "error": "campaign not found"}
     email = (email or "").strip()
-    got = _outreach_email_for(job, email)
+    import content_engine_connectors as C
+    p = job.setdefault("payload", {})
+    step = int(touch) if touch else C.next_touch((p.get("sent_to") or {}).get(email.lower()))
+    if not step or step > C.SEQUENCE_TOUCHES:
+        return {"ok": False, "error": "sequence complete — 3 emails already sent (or stopped)"}
+    got = _outreach_email_for(job, email, step)
     if not got:
         return {"ok": False, "error": "lead not in this campaign"}
     _lead, _q, subj, body = got
-    import content_engine_connectors as C
     ref = C.Emailer().send_personalized(email, subj, body, job)
-    p = job.setdefault("payload", {})
-    p.setdefault("sent_to", {})[email.lower()] = ref
+    _append_ref(p, email.lower(), ref)
     try:
         store.save(job)
     except Exception:
         pass
     ok = isinstance(ref, str) and not ref.startswith(("suppressed:", "send_error", "blocked_quality:", "held_"))
-    return {"ok": ok, "ref": ref, "email": email}
+    return {"ok": ok, "ref": ref, "email": email, "touch": step}
 
 
 def api_outreach_send_batch(job_id, emails=None):
-    """Send to a list of leads (or ALL leads if emails is None). Honors warm-up cap."""
+    """Send the NEXT sequence step to a list of leads (or ALL leads). Each lead
+    advances one step (1->2->3) per run; leads already at 3 are skipped. Cap-honored."""
     store = get_store()
     try:
         job = store.get(job_id)
@@ -513,20 +533,24 @@ def api_outreach_send_batch(job_id, emails=None):
     leads = p.get("leads") or []
     targets = [e.strip().lower() for e in emails] if emails else \
         [(L.get("email") or "").strip().lower() for L in leads if L.get("email")]
-    sent, held, failed = 0, 0, 0
+    sent, held, failed, done = 0, 0, 0, 0
     import content_engine_connectors as C
     mailer = C.Emailer()
     sent_map = p.setdefault("sent_to", {})
     for email in targets:
-        if not email or email in sent_map:
+        if not email:
             continue
-        got = _outreach_email_for(job, email)
+        step = C.next_touch(sent_map.get(email))
+        if not step:                 # sequence complete or blocked -> skip
+            done += 1
+            continue
+        got = _outreach_email_for(job, email, step)
         if not got:
             failed += 1
             continue
         _l, _q, subj, body = got
         ref = mailer.send_personalized(email, subj, body, job)
-        sent_map[email] = ref
+        _append_ref(p, email, ref)
         if isinstance(ref, str) and ref.startswith("held_"):
             held += 1
         elif isinstance(ref, str) and not ref.startswith(("suppressed:", "send_error", "blocked_quality:")):
@@ -537,7 +561,8 @@ def api_outreach_send_batch(job_id, emails=None):
         store.save(job)
     except Exception:
         pass
-    return {"ok": True, "sent": sent, "held_by_cap": held, "failed": failed, "total": len(targets)}
+    return {"ok": True, "sent": sent, "held_by_cap": held, "failed": failed,
+            "already_done": done, "total": len(targets)}
 
 
 def api_outreach_send_all():
@@ -1168,7 +1193,7 @@ def build_app():
             data = await request.json()
         except Exception:
             data = {}
-        return api_outreach_send_one(data.get("job_id"), data.get("email", ""))
+        return api_outreach_send_one(data.get("job_id"), data.get("email", ""), data.get("touch"))
 
     @app.post("/outreach/send_batch")
     async def outreach_send_batch(request: Request):
