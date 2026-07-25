@@ -312,7 +312,8 @@ CONNECTOR_ENV_KEYS = [
     "GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_SHEETS_ID", "GDRIVE_FOLDER_ID",
     "ADS_JSON", "BACKLINKS_JSON",
     "GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CUSTOMER_ID", "GOOGLE_ADS_REFRESH_TOKEN",
-    "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "CALCOM_API_KEY",
+    "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_LOGIN_CUSTOMER_ID",
+    "CALCOM_API_KEY",
     "EMAIL_LOGO_URL", "EMAIL_BOOKING_URL", "EMAIL_MANAGE_URL", "EMAIL_UNSUBSCRIBE_URL",
     "EMAIL_COMPANY", "EMAIL_ADDRESS", "EMAIL_BRAND_COLOR", "EMAIL_HTML", "EMAIL_WEBSITE",
     "EMAIL_FROM_NAME", "EMAIL_SENDER_TITLE", "EMAIL_PHONE",
@@ -1529,6 +1530,56 @@ class GoogleAds:
         if self.login_cid:
             h["login-customer-id"] = self.login_cid
         return h
+
+    def _explain(self, code: int, body: str) -> str:
+        b = (body or "").lower()
+        if any(s in b for s in ("developer_token_not_approved", "not approved", "test account", "developer token")):
+            return ("Your developer token is still in TEST access. In Google Ads → Tools → API Center, click "
+                    "'Apply for basic access'. Google must approve it before live campaign data flows.")
+        if any(s in b for s in ("login-customer-id", "login customer", "user_permission_denied",
+                                "does not have permission", "not associated")):
+            return ("Your token is on a MANAGER account but the customer id is a sub-account. Set the manager "
+                    "(login customer) id — GOOGLE_ADS_LOGIN_CUSTOMER_ID — to your manager account, e.g. 4514413394.")
+        if any(s in b for s in ("customer_not_found", "invalid_customer_id", "customer id")):
+            return "The customer id looks wrong. Use your operating ad account's 10-digit id, no dashes."
+        if code == 401 or "unauthenticated" in b:
+            return "Auth failed — re-mint the OAuth refresh token (client id/secret/refresh mismatch)."
+        return "See the error above. First-connect issues are usually: token not yet approved, or missing manager (login-customer) id."
+
+    def diag(self) -> dict:
+        """Plain-English reason Google Ads has (or hasn't) got data. For the dashboard
+        'why is Ads empty?' diagnostic — surfaces the real API error, not a silent {}."""
+        rq = _requests()
+        if not rq:
+            return {"ok": False, "stage": "deps", "hint": "The 'requests' library isn't installed."}
+        if not self.available():
+            missing = [n for n, v in (("developer token", self.dev), ("customer id", self.cid),
+                                      ("refresh token", self.refresh), ("client id", self.client_id),
+                                      ("client secret", self.client_secret)) if not v]
+            return {"ok": False, "stage": "credentials", "missing": missing,
+                    "hint": f"Missing on the System Map: {', '.join(missing)}."}
+        tok = self._access_token()
+        if not tok:
+            return {"ok": False, "stage": "oauth",
+                    "hint": "OAuth refused — the refresh token or client id/secret is wrong. Re-mint the refresh token."}
+        try:
+            r = rq.post(f"https://googleads.googleapis.com/v17/customers/{self.cid}/googleAds:searchStream",
+                        json={"query": "SELECT campaign.id, campaign.name FROM campaign LIMIT 5"},
+                        headers={**self._headers(tok), "User-Agent": _UA}, timeout=_HTTP_TIMEOUT)
+        except Exception as e:
+            return {"ok": False, "stage": "network", "error": str(e)[:200]}
+        if r.status_code == 200:
+            try:
+                n = sum(len(b.get("results", [])) for b in r.json())
+            except Exception:
+                n = 0
+            return {"ok": True, "stage": "live", "campaigns_found": n,
+                    "manager_id_set": bool(self.login_cid),
+                    "hint": ("Google Ads API is live and returning data." if n
+                             else "Connected and authorized — but this account has no campaigns in the window yet.")}
+        return {"ok": False, "stage": "api", "status": r.status_code,
+                "manager_id_set": bool(self.login_cid),
+                "error": r.text[:500], "hint": self._explain(r.status_code, r.text)}
 
     def summary(self) -> dict:
         if not self.available():

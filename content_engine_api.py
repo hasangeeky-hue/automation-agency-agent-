@@ -1004,6 +1004,14 @@ def build_app():
     def autopilot_stop():
         return api_autopilot(False)
 
+    @app.post("/ads/test")
+    def ads_test():
+        try:
+            import content_engine_connectors as C
+            return C.GoogleAds().diag()
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200]}
+
     @app.post("/system/start")
     def system_start():
         return api_autopilot(True)   # THE one start: unpause + autonomy + publish + queue
