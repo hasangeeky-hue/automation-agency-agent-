@@ -20,7 +20,7 @@ from __future__ import annotations
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v10 · approve/decline notes + content calendar + LinkedIn posts"
+BUILD_TAG = "2026-07-26 · v11 · content factory = production line + always-on calendar"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -1478,6 +1478,119 @@ def _why_piece(job):
     return (", ".join(bits) + tail) if bits else "queued — its research/SEO basis appears as it runs"
 
 
+# The content assembly line — the 7 stations every piece passes through, in order.
+# Each station: (icon, name, what-happens-here, {statuses that sit at this station}).
+_FACTORY = [
+    ("📋", "Plan", "Idea picked + tagged to a customer segment & service pillar",
+     {"created", "site_ready", "competitor_ready", "planned", "site_intelligence"}),
+    ("✍️", "Write", "Researched (web + your site) and written on-brand for that audience",
+     {"produced"}),
+    ("🎨", "Image + LinkedIn", "On-brand hero image made + a native LinkedIn post written",
+     set()),
+    ("🔎", "SEO", "Keyword, headings, meta — checked for search",
+     {"seo_checked"}),
+    ("✅", "Your approval", "You review, then Approve or Decline with notes",
+     {"AWAITING_APPROVAL"}),
+    ("🚀", "Publish", "Website (right category) + LinkedIn on its scheduled day",
+     {"publishing", "published"}),
+    ("📊", "Measure", "Real traffic + learnings feed the next batch",
+     {"measuring", "tracking", "measured", "tracked", "learned", "optimized"}),
+]
+
+
+def _factory_stage(status):
+    for i, (_ic, _nm, _d, sts) in enumerate(_FACTORY):
+        if status in sts:
+            return i
+    return 0
+
+
+def _factory_line(content_jobs):
+    """The production line — every station a piece flows through, with a live count
+    of how many pieces sit at each one. This IS the machine: what it makes and how."""
+    counts = [0] * len(_FACTORY)
+    for j in content_jobs:
+        counts[_factory_stage(j.get("status", ""))] += 1
+    stations = ""
+    for i, (ic, nm, desc, _s) in enumerate(_FACTORY):
+        n = counts[i]
+        active = n > 0
+        col = "#2FE3D2" if active else "#3A4160"
+        badge = (f"<span style='position:absolute;top:-8px;right:-8px;background:#2FE3D2;color:#04121a;"
+                 f"font-weight:800;font-size:11px;border-radius:10px;padding:1px 7px'>{n}</span>" if active else "")
+        arrow = ("<div style='align-self:center;color:#3A4160;font-size:18px;flex:0 0 auto'>→</div>"
+                 if i < len(_FACTORY) - 1 else "")
+        stations += (
+            f"<div style='position:relative;flex:0 0 150px;background:var(--s2);border:1px solid "
+            f"{'rgba(47,227,210,.4)' if active else 'var(--line)'};border-radius:11px;padding:11px 12px'>"
+            f"{badge}<div style='font-size:20px'>{ic}</div>"
+            f"<div style='font-weight:700;color:{col};margin-top:3px'>{nm}</div>"
+            f"<div class='dim' style='font-size:11.5px;line-height:1.4;margin-top:4px'>{desc}</div></div>"
+            + arrow)
+    total = sum(counts)
+    return ("<div class='card full' style='margin-bottom:12px'>"
+            "<p class='ct'>🏭 The content machine — how every piece is made</p>"
+            f"<p class='cc'>Each piece flows left-to-right through these 7 stations. The number on a station = how many "
+            f"pieces are sitting there right now. <b>{total}</b> in the line today.</p>"
+            "<div style='display:flex;gap:6px;overflow-x:auto;padding:14px 2px 4px'>" + stations + "</div></div>")
+
+
+def _content_calendar(content_jobs, content_plan):
+    """The always-on calendar: what posts which day, on which channel, and where it
+    is in the machine. Combines scheduled/in-flight pieces with the pending plan."""
+    from datetime import date, timedelta
+
+    def _chan_badges(chs):
+        out = ""
+        for c in chs or ["website"]:
+            c = str(c).lower()
+            if c in ("website", "web", "blog", "wordpress"):
+                out += "<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 7px'>🌐 Website</span> "
+            elif c == "linkedin":
+                out += "<span class='pill' style='background:rgba(10,102,194,.16);color:#4C9AFF;padding:1px 7px'>in LinkedIn</span> "
+        return out
+
+    by_day = {}   # iso date -> list of (title, channels, stage_label, is_plan)
+    for j in content_jobs:
+        p = j.get("payload", {}) or {}
+        cfg = p.get("config", {}) or {}
+        d = cfg.get("publish_date") or (j.get("created_at") or "")[:10]
+        if not d:
+            continue
+        title = (p.get("content_producer", {}) or {}).get("title") or cfg.get("chosen_topic") or j.get("job_id")
+        si = _factory_stage(j.get("status", ""))
+        stage = f"{_FACTORY[si][0]} {_FACTORY[si][1]}"
+        by_day.setdefault(d, []).append((str(title), cfg.get("deploy_channels") or ["website"], stage, False))
+    # pending plan (not yet created)
+    if content_plan and content_plan.get("status") == "pending":
+        for it in content_plan.get("items", []):
+            d = (date.today() + timedelta(days=int(it.get("day_offset", 0) or 0))).isoformat()
+            by_day.setdefault(d, []).append((it.get("title", ""), it.get("channels") or ["website"], "📋 Planned (awaiting approval)", True))
+    if not by_day:
+        return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>🗓️ Content calendar</p>"
+                "<p class='cc'>Your posting schedule — which piece, which day, which channel — appears here once you "
+                "plan a batch. Hit <b>Plan content</b> below to fill it.</p></div>")
+    rows = ""
+    for d in sorted(by_day)[:21]:
+        try:
+            lbl = date.fromisoformat(d).strftime("%a · %b %d")
+        except Exception:
+            lbl = d
+        items = ""
+        for title, chans, stage, is_plan in by_day[d]:
+            items += (
+                "<div style='padding:8px 0 8px 14px;border-left:2px solid rgba(255,255,255,.08);margin:6px 0 6px 6px'>"
+                f"<div style='display:flex;gap:8px;align-items:baseline;flex-wrap:wrap'><b>{_esc(str(title)[:80])}</b>"
+                f"<span style='margin-left:auto'>{_chan_badges(chans)}</span></div>"
+                f"<div class='dim' style='margin-top:2px'>{_esc(stage)}</div></div>")
+        rows += (f"<div style='margin-top:10px'><span class='pill' style='background:rgba(139,124,255,.16);"
+                 f"color:#8B7CFF;padding:2px 10px;font-weight:700'>📅 {lbl}</span>{items}</div>")
+    return ("<div class='card full' style='margin-bottom:12px'>"
+            "<p class='ct'>🗓️ Content calendar — what posts, which day, which channel</p>"
+            "<p class='cc'>Every planned + in-production piece on a timeline, with its channels and where it is in the "
+            "machine. This is your production schedule.</p>" + rows + "</div>")
+
+
 def _approval_log(jobs):
     rel = [j for j in jobs if j.get("type") in ("content_piece", "outreach_campaign")]
     rel = sorted(rel, key=lambda j: j.get("updated_at", ""), reverse=True)[:20]
@@ -1785,7 +1898,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         + "<span class='dim' style='align-self:center'>Queues today's pieces, writes on-brand, and publishes the "
           "ones that pass QA — hands-free. Stop anytime.</span></div></div>")
 
-    p_content = m_content + plan_card + autopilot_card + grid(
+    p_content = (m_content
+                 + _factory_line(content_jobs)
+                 + _content_calendar(content_jobs, content_plan)
+                 + plan_card + autopilot_card + grid(
         _panel("Pipeline — where each piece is", "Idea → written → checked → your approval → live → measured.",
                _funnel(list(zip(_STAGES, pl))) if sum(pl) else _empty("No content jobs yet.")),
         _panel("Content by stage", "How many pieces sit at each stage right now.",
@@ -1801,7 +1917,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Where pieces sit", "Count at each stage of the line.",
                _bars(list(zip(_STAGES, pl)), "#4C8DFF") if sum(pl) else _empty("Nothing in production yet.")),
         _panel("Monthly pace", "Made so far vs projected by month-end.",
-               f"<div class='big tnum'>{made_month}<small> / {proj}</small></div><div class='dim'>this month · projected</div>" if content_jobs else _empty("Fills as pieces are made.")))
+               f"<div class='big tnum'>{made_month}<small> / {proj}</small></div><div class='dim'>this month · projected</div>" if content_jobs else _empty("Fills as pieces are made."))))
 
     # ---- 2. LEAD MACHINE ----
     m_leads = _master("🧲", "Leads — at a glance", "Your pipeline from stranger to booked call.",
