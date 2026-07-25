@@ -360,7 +360,14 @@ def run_llm_skill(job: dict, skill: str, store: JobStore) -> tuple[dict, float]:
     schema = SCHEMAS.get(skill)
 
     total_cost = 0.0
-    models = [route["engine"], route.get("fallback")]
+    # "code+narrate" skills (site_intelligence, authority_backlinks) carry
+    # engine="code" — the heavy work is in prepare_input; the LLM part runs on the
+    # narrate/label model. Resolve that here (mirrors api_taste_skill) so the real
+    # pipeline never hands "code" to the LLM provider.
+    engine = route["engine"]
+    if engine == "code":
+        engine = route.get("narrate") or route.get("label") or CHEAP_MODEL
+    models = [engine, route.get("fallback")]
     for model in models:
         if not model:
             break
