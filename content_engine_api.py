@@ -439,6 +439,83 @@ def api_clear_plan():
     return {"ok": True}
 
 
+def _outreach_email_for(job, email):
+    """(lead, qual, subject, body) for one recipient in an outreach job."""
+    p = job.get("payload", {}) or {}
+    leads = p.get("leads") or []
+    lead = next((L for L in leads if (L.get("email") or "").strip().lower() == email.lower()), None)
+    if not lead:
+        return None
+    qmap = {str(r.get("id", "")).lower(): r for r in ((p.get("lead_qualifier") or {}).get("results") or [])}
+    q = qmap.get(email.lower()) or {}
+    oc = p.get("outreach_copy", {}) or {}
+    subj = (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0]
+    import content_engine_connectors as C
+    return (lead, q) + C.personalize_outreach(lead, q, subj, oc.get("body", ""))
+
+
+def api_outreach_send_one(job_id, email):
+    """Send ONE personalized email to a specific lead (mailbox 'Send' button)."""
+    store = get_store()
+    try:
+        job = store.get(job_id)
+    except Exception:
+        return {"ok": False, "error": "campaign not found"}
+    email = (email or "").strip()
+    got = _outreach_email_for(job, email)
+    if not got:
+        return {"ok": False, "error": "lead not in this campaign"}
+    _lead, _q, subj, body = got
+    import content_engine_connectors as C
+    ref = C.Emailer().send_personalized(email, subj, body, job)
+    p = job.setdefault("payload", {})
+    p.setdefault("sent_to", {})[email.lower()] = ref
+    try:
+        store.save(job)
+    except Exception:
+        pass
+    ok = isinstance(ref, str) and not ref.startswith(("suppressed:", "send_error", "blocked_quality:", "held_"))
+    return {"ok": ok, "ref": ref, "email": email}
+
+
+def api_outreach_send_batch(job_id, emails=None):
+    """Send to a list of leads (or ALL leads if emails is None). Honors warm-up cap."""
+    store = get_store()
+    try:
+        job = store.get(job_id)
+    except Exception:
+        return {"ok": False, "error": "campaign not found"}
+    p = job.get("payload", {}) or {}
+    leads = p.get("leads") or []
+    targets = [e.strip().lower() for e in emails] if emails else \
+        [(L.get("email") or "").strip().lower() for L in leads if L.get("email")]
+    sent, held, failed = 0, 0, 0
+    import content_engine_connectors as C
+    mailer = C.Emailer()
+    sent_map = p.setdefault("sent_to", {})
+    for email in targets:
+        if not email or email in sent_map:
+            continue
+        got = _outreach_email_for(job, email)
+        if not got:
+            failed += 1
+            continue
+        _l, _q, subj, body = got
+        ref = mailer.send_personalized(email, subj, body, job)
+        sent_map[email] = ref
+        if isinstance(ref, str) and ref.startswith("held_"):
+            held += 1
+        elif isinstance(ref, str) and not ref.startswith(("suppressed:", "send_error", "blocked_quality:")):
+            sent += 1
+        else:
+            failed += 1
+    try:
+        store.save(job)
+    except Exception:
+        pass
+    return {"ok": True, "sent": sent, "held_by_cap": held, "failed": failed, "total": len(targets)}
+
+
 def api_save_ci(text, drive_folder=None, inspiration=None):
     """Save the brand/CI the content agents write on-brand from (dashboard)."""
     store = get_store()
@@ -1003,6 +1080,22 @@ def build_app():
     @app.post("/autopilot/stop")
     def autopilot_stop():
         return api_autopilot(False)
+
+    @app.post("/outreach/send_one")
+    async def outreach_send_one(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_outreach_send_one(data.get("job_id"), data.get("email", ""))
+
+    @app.post("/outreach/send_batch")
+    async def outreach_send_batch(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_outreach_send_batch(data.get("job_id"), data.get("emails"))
 
     @app.post("/ads/test")
     def ads_test():

@@ -903,6 +903,111 @@ def _leads_table(jobs):
             + rows + "</tbody></table></div></div>")
 
 
+def _outbox(jobs):
+    """The mailbox: one personalized email per lead (built from their persona),
+    each ready to send individually, in bulk, or all at once."""
+    items = []
+    for j in jobs:
+        if j.get("type") != "outreach_campaign":
+            continue
+        p = j.get("payload", {}) or {}
+        leads = p.get("leads") or []
+        oc = p.get("outreach_copy") or {}
+        if not leads or not oc.get("body"):
+            continue
+        qmap = {str(r.get("id", "")).lower(): r for r in ((p.get("lead_qualifier") or {}).get("results") or [])}
+        sent = p.get("sent_to", {}) or {}
+        for L in leads:
+            e = (L.get("email") or "").strip().lower()
+            if not e:
+                continue
+            q = qmap.get(e) or {}
+            try:
+                import content_engine_connectors as _C
+                subj, body = _C.personalize_outreach(
+                    L, q, (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0], oc.get("body", ""))
+            except Exception:
+                subj, body = (oc.get("subject_variants") or ["Quick idea"])[0], oc.get("body", "")
+            ref = str(sent.get(e, "") or "")
+            if ref and not ref.startswith(("suppressed", "send_error", "blocked", "held")):
+                status = "sent"
+            elif ref.startswith("held"):
+                status = "held"
+            elif ref.startswith(("blocked", "suppressed")):
+                status = "blocked"
+            else:
+                status = "ready"
+            items.append((j.get("job_id"), L, q, subj, body, status))
+    if not items:
+        return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📬 Email outbox</p>"
+                "<p class='cc'>One personalized email per customer — built by your agent from each lead's persona "
+                "(business, pain, offer) — appears here, ready to send individually or all at once. Empty until a "
+                "batch is sourced, qualified and written.</p></div>")
+    ready = sum(1 for it in items if it[5] == "ready")
+    sentn = sum(1 for it in items if it[5] == "sent")
+    rows = ""
+    for i, (jid, L, q, subj, body, status) in enumerate(items[:200]):
+        day = i // 15 + 1
+        sched = f"Day {day} · {9 + ((i % 15) // 3):02d}:{(i % 3) * 20:02d}"
+        stcol = {"sent": "#3FD98B", "ready": "#F5B14C", "held": "#8E9BBE", "blocked": "#F5788A"}.get(status, "#8E9BBE")
+        stlabel = {"sent": "✓ sent", "ready": "○ ready", "held": "held (cap)", "blocked": "blocked"}.get(status, status)
+        email = L.get("email") or ""
+        chk = (f"<input type='checkbox' class='obx' value='{_esc(email)}' data-job='{_esc(jid)}'>"
+               if status == "ready" else "")
+        sendbtn = (f"<button class='cbtn' style='padding:3px 10px' onclick=\"sendOne('{_esc(jid)}','{_esc(email)}')\">Send</button>"
+                   if status == "ready" else "")
+        rows += (f"<tr><td>{chk}</td>"
+                 f"<td><b>{_esc(L.get('name',''))}</b><div class='dim'>{_esc(L.get('company',''))}</div></td>"
+                 f"<td class='mut'>{_esc(q.get('business') or q.get('category') or '—')}</td>"
+                 f"<td class='mut' style='max-width:240px'>{_esc(subj)}</td>"
+                 f"<td class='dim tnum'>{sched}</td>"
+                 f"<td><span style='color:{stcol};font-weight:600'>{stlabel}</span></td>"
+                 f"<td>{sendbtn}<details style='margin-top:4px'>"
+                 f"<summary style='cursor:pointer;color:#4C8DFF'>view email</summary>"
+                 f"<div style='white-space:pre-wrap;max-height:300px;overflow:auto;font-size:12.5px;"
+                 f"margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:8px'>{_esc(body)}</div>"
+                 "</details></td></tr>")
+    return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📬 Email outbox — your agent's emails, per customer</p>"
+            f"<p class='cc'>One personalized email per lead, built from their persona (business · pain · offer). "
+            f"<b style='color:#F5B14C'>{ready} ready</b> · <b style='color:#3FD98B'>{sentn} sent</b>. "
+            "Send one, tick several and send selected, or send all — warm-up capped so day-one stays safe. "
+            "Nothing sends until you click.</p>"
+            "<div class='ctrl' style='margin-bottom:8px'>"
+            "<label class='dim' style='align-self:center'><input type='checkbox' id='obx-all' onclick='toggleOutbox(this)'> select all ready</label>"
+            "<button class='sbtn' onclick='sendSelected()'>📨 Send selected</button>"
+            "<button class='cbtn' onclick='sendAllOutbox()'>📤 Send all ready</button></div>"
+            "<div class='tbwrap'><table><thead><tr><th></th><th>Customer</th><th>Persona</th><th>Subject</th>"
+            "<th>Scheduled</th><th>Status</th><th>Send / preview</th></tr></thead><tbody>"
+            + rows + "</tbody></table></div></div>")
+
+
+def _outbox_ready_count(jobs):
+    n = 0
+    for j in jobs:
+        if j.get("type") != "outreach_campaign":
+            continue
+        p = j.get("payload", {}) or {}
+        if not (p.get("outreach_copy") or {}).get("body"):
+            continue
+        sent = p.get("sent_to", {}) or {}
+        for L in (p.get("leads") or []):
+            e = (L.get("email") or "").strip().lower()
+            if e and e not in sent:
+                n += 1
+    return n
+
+
+def _outbox_pointer(jobs):
+    n = _outbox_ready_count(jobs)
+    if not n:
+        return ""
+    return ("<div class='card full' style='margin-bottom:12px;border-left:4px solid #F5B14C'>"
+            f"<p class='ct'>📬 {n} personalized email{'s' if n != 1 else ''} ready to send</p>"
+            "<p class='cc'>Your agent has written one on-brand email per customer (from their persona). Review + send "
+            "them from the outbox — individually, selected, or all at once.</p>"
+            "<div class='ctrl'><button class='cbtn' onclick=\"nav('email')\">📬 Open the email outbox →</button></div></div>")
+
+
 def _why_piece(job):
     """Plain-English 'on what basis was this made' — the data behind the piece."""
     p = job.get("payload", {}) or {}
@@ -1188,7 +1293,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         [("Found", leads_found, "#EDF1FB"), ("Emailed", emails_sent, "#4C8DFF"),
          ("Replied", lead_rows[4][1], "#8B7CFF"), ("Booked", lead_rows[5][1], "#3FD98B")],
         _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("Fills as leads flow in."))
-    p_leads = m_leads + _leads_table(jobs) + grid(
+    p_leads = m_leads + _outbox_pointer(jobs) + _leads_table(jobs) + grid(
         _panel("Lead funnel", "Stranger → verified → qualified → emailed → replied → booked.",
                _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("No leads yet — connect the lead finder.")),
         _panel("Leads by country — your 5 target markets",
@@ -1221,7 +1326,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          ("Booked", booked, "#F5B14C"), ("Won", o_cust, "#3FD98B")],
         _funnel_skeleton([("Sent", emails_sent, 100), ("Replied", 0, 62),
                           ("Booked", booked, 38), ("Won", o_cust, 20)], "Fills as replies land."))
-    p_email = m_email + _leads_table(jobs) + grid(
+    p_email = m_email + _outbox(jobs) + _leads_table(jobs) + grid(
         _panel("Sent vs replied", "Cold emails out, and how many replied.",
                _bars([("Sent", emails_sent), ("Replied", 0)], "#4C8DFF") if emails_sent else _empty("No emails sent yet.")),
         _panel("Sent by purpose → address", "The loop: your agent sends each email type from the right alias — all from your one inbox.", route_html),
@@ -1605,7 +1710,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          ("Autonomy", "ON" if autonomy else "OFF", "#3FD98B" if autonomy else "#59668A")],
         _bars([("Waiting", len(waiting_jobs)), ("Rewrites", revs)], "#F5B14C")
         if (waiting_jobs or revs) else _empty("All caught up — nothing needs you. 🎉"))
-    p_appr = m_appr + ("<div class='card full'><p class='ct'>✅ Waiting for your approval</p>"
+    p_appr = m_appr + _outbox_pointer(jobs) + ("<div class='card full'><p class='ct'>✅ Waiting for your approval</p>"
               "<p class='cc'>Read the preview, then approve — nothing goes live without you.</p>" + ap_body + "</div>"
               + "<div class='grid g3' style='margin-top:12px'>"
               + _panel("Quick actions", "Real buttons — no code, no typing.", quick_body)
@@ -1898,6 +2003,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "alert('Disconnected — the box is editable again.');location.reload();}"
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "async function approve(id){await act('/jobs/'+id+'/approve');}"
+              "function toggleOutbox(cb){document.querySelectorAll('.obx').forEach(function(x){x.checked=cb.checked;});}"
+              "async function sendOne(job,email){if(!confirm('Send this email to '+email+'?'))return;"
+              "try{var r=await fetch('/outreach/send_one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email})});var j=await r.json();"
+              "alert(j.ok?('✓ Sent to '+email):('Not sent: '+(j.ref||j.error||'unknown')));location.reload();}catch(e){alert('Failed: '+e);}}"
+              "async function sendSelected(){var sel=Array.prototype.slice.call(document.querySelectorAll('.obx:checked'));if(!sel.length){alert('Tick some emails first.');return;}"
+              "var job=sel[0].getAttribute('data-job');var emails=sel.map(function(x){return x.value;});if(!confirm('Send '+emails.length+' email(s) now?'))return;"
+              "try{var r=await fetch('/outreach/send_batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,emails:emails})});var j=await r.json();"
+              "alert('Sent '+j.sent+' of '+j.total+(j.held_by_cap?(' · '+j.held_by_cap+' held by the daily warm-up cap'):''));location.reload();}catch(e){alert('Failed: '+e);}}"
+              "async function sendAllOutbox(){var all=Array.prototype.slice.call(document.querySelectorAll('.obx'));if(!all.length){alert('Nothing ready to send.');return;}"
+              "var job=all[0].getAttribute('data-job');if(!confirm('Send ALL '+all.length+' ready emails? The daily warm-up cap applies (the rest send over the next days).'))return;"
+              "try{var r=await fetch('/outreach/send_batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job})});var j=await r.json();"
+              "alert('Sent '+j.sent+' of '+j.total+(j.held_by_cap?(' · '+j.held_by_cap+' held by cap'):''));location.reload();}catch(e){alert('Failed: '+e);}}"
               "async function runSelftest(){if(!confirm('Test every agent live? ~2 minutes, about $0.25.'))return;alert('Running all 18 agents… I will pop the result when done.');"
               "try{var r=await fetch('/selftest',{method:'POST'});var j=await r.json();var f=(j.failures||[]).map(function(x){return x.skill;}).join(', ');"
               "alert('Agents: '+(j.summary||'done')+(f?('\\nFAILING: '+f):'  — all clean'));}catch(e){alert('Test failed: '+e);}}"

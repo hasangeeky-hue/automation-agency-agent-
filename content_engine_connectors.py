@@ -426,6 +426,34 @@ def _html_escape(s: str) -> str:
 _LOGO_DEFAULT = "https://anthropos-automation.com/wp-content/uploads/2026/07/cropped-anthropos-logo-mark-transparent-1024-270x270.png"
 
 
+def personalize_outreach(lead: dict, qual: dict, subject: str, body: str):
+    """Build ONE customer's email from the campaign template + their qualifier
+    profile (business/pain/offer). Deterministic — the mailbox shows exactly what
+    sends. Returns (subject, body)."""
+    lead = lead or {}
+    qual = qual or {}
+    name = ((lead.get("name") or "there").split(" ") or ["there"])[0]
+    company = lead.get("company") or ""
+    biz = qual.get("business") or ""
+    pain = (qual.get("pain_point") or "").rstrip(".")
+    offer = (qual.get("offer") or "").rstrip(".")
+    lines = [f"Hi {name},", ""]
+    if pain and offer:
+        lines.append(f"Running {('a ' + biz) if biz else 'a business like yours'}, "
+                     f"you likely deal with {pain}.")
+        lines.append(f"{offer}.")
+        lines.append("")
+    b = (body or "").strip()
+    for g in ("Hi there,", "Hi there", "Hello there,", "Hello,", "Hi,"):
+        if b.startswith(g):
+            b = b[len(g):].lstrip()
+            break
+    b = b.replace("{{name}}", name).replace("{{company}}", company)
+    lines.append(b)
+    subj = (subject or "Quick idea for {{company}}").replace("{{company}}", company or "your team")
+    return subj, "\n".join(lines).strip()
+
+
 def _outreach_emails(body: str, *, lang, sender, title, company, website, phone,
                      booking_url, address, unsub_url, logo, brand="#7A00DF"):
     """Build the (plain_text, html) versions of a cold email: the writer's personal
@@ -568,6 +596,31 @@ class Emailer:
         except Exception as e:
             log.error("email send failed: %s", e)
             return f"send_error:{to_addr}"
+
+    def send_personalized(self, to_addr: str, subject: str, body: str, job: dict) -> str:
+        """Send ONE outreach email to a SPECIFIC lead (the mailbox 'send' button).
+        Respects suppression + warm-up cap + the CAN-SPAM validator, and appends
+        the branded signature (address + unsubscribe). Returns a ref string."""
+        to_addr = (to_addr or "").strip()
+        if not to_addr:
+            return "send_error_no_recipient"
+        if is_suppressed(to_addr):
+            return f"suppressed:{to_addr}"
+        if not outreach_send_allowed():
+            return "held_daily_cap"
+        plain, html = self.compose_outreach(body, job)
+        try:
+            import content_engine_safety as _safety
+            allowed = [_env("EMAIL_WEBSITE", "anthropos-automation.com"), "anthropos-automation.com"]
+            ok, why = _safety.validate_email(subject, plain, allowed)
+            if not ok:
+                return f"blocked_quality:{why}"
+        except Exception:
+            pass
+        ref = self.send_message(to_addr, subject, plain, category="marketing", html=html)
+        if isinstance(ref, str) and not ref.startswith(("suppressed:", "send_error", "blocked_quality:")):
+            _note_outreach_sent()
+        return ref
 
     def send(self, job: dict, email: dict) -> str:
         to_addr = self._recipient(job)
