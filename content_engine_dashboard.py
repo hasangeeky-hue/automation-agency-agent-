@@ -878,10 +878,15 @@ def _leads_table(jobs):
         biz = q.get("business") or (q.get("category") if q.get("category") != "disqualified" else "") or "—"
         pain = q.get("pain_point") or "—"
         offer = q.get("offer") or "—"
+        reason = q.get("reason") or ""
+        web = (L.get("domain") or "").strip()
+        weblink = (f"<div class='dim'>🌐 <a href='https://{_esc(web)}' target='_blank' "
+                   f"style='color:#4C8DFF'>{_esc(web)}</a></div>") if web else ""
+        reason_html = (f"<div class='dim' style='margin-top:3px'>Why: {_esc(reason)}</div>") if reason else ""
         rows += (f"<tr><td><b>{_esc(L.get('name','') or '—')}</b>"
                  f"<div class='dim'>{_esc(L.get('title','') or '')}</div></td>"
-                 f"<td>{_esc(L.get('company','') or '—')}<div class='dim'>{_esc(biz)}</div></td>"
-                 f"<td class='tnum'>{fit_txt}<div class='dim' style='color:{pcol}'>{_esc(prio)}</div></td>"
+                 f"<td>{_esc(L.get('company','') or '—')}<div class='dim'>{_esc(biz)}</div>{weblink}</td>"
+                 f"<td class='tnum'>{fit_txt}<div class='dim' style='color:{pcol}'>{_esc(prio)}</div>{reason_html}</td>"
                  f"<td class='mut' style='max-width:220px'>{_esc(pain)}</td>"
                  f"<td class='mut' style='max-width:220px'>{_esc(offer)}</td>"
                  f"<td class='mut'>{_esc(L.get('email','') or '—')}</td>"
@@ -892,8 +897,9 @@ def _leads_table(jobs):
             "<b>pain point</b>, the <b>offer</b> to pitch them, a <b>fit score</b>, verified email, and outreach status. "
             "The engine emails only the <b>primary contact</b> per approved campaign (conservative warm-up) — it never "
             "blasts the whole list, so “emailed” shows exactly who was actually contacted.</p>"
-            "<div class='tbwrap'><table><thead><tr><th>Lead</th><th>Company / what they do</th><th>Fit</th>"
-            "<th>Likely pain point</th><th>Offer to pitch</th><th>Verified email</th><th>Status</th></tr></thead><tbody>"
+            "<div class='tbwrap'><table><thead><tr><th>Lead</th><th>Company · website · what they do</th>"
+            "<th>Fit + why</th><th>Likely pain point</th><th>Offer to pitch</th><th>Verified email</th>"
+            "<th>Status</th></tr></thead><tbody>"
             + rows + "</tbody></table></div></div>")
 
 
@@ -1555,10 +1561,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         if isinstance(img, str) and img.startswith("http"):
             img_html = (f"<div style='margin-top:8px'><img src='{_esc(img)}' alt='preview' "
                         "style='max-width:220px;max-height:150px;border-radius:9px;border:1px solid var(--line)'></div>")
-        preview = (f"<div style='margin-top:8px;padding:11px 13px;border-radius:9px;background:var(--s3,rgba(255,255,255,.03));"
-                   f"border:1px solid var(--line);max-height:230px;overflow:auto;white-space:pre-wrap;line-height:1.6;font-size:13px'>"
-                   f"{_esc(snippet)}{'…' if len(snippet) >= 600 else ''}</div>"
-                   if snippet else "<div class='dim' style='margin-top:8px'>(preview appears once it is written)</div>")
+        whatis = "email" if j.get("type") == "outreach_campaign" else "article"
+        teaser = body[:220]
+        if body:
+            preview = (
+                f"<div class='dim' style='margin-top:8px;line-height:1.55'>{_esc(teaser)}…</div>"
+                f"<details style='margin-top:6px'><summary style='cursor:pointer;color:#4C8DFF;font-weight:600'>"
+                f"📖 Read the full {whatis} here</summary>"
+                "<div style='margin-top:8px;padding:13px 15px;border-radius:9px;background:var(--panel,rgba(255,255,255,.03));"
+                "border:1px solid var(--line);max-height:460px;overflow:auto;white-space:pre-wrap;line-height:1.65;font-size:13.5px'>"
+                f"{_esc(body)}</div></details>")
+        else:
+            preview = "<div class='dim' style='margin-top:8px'>(preview appears once it is written)</div>"
         return ("<div style='background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px'>"
                 f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'><span class='dim'>{kind}</span>"
                 f"<b style='font-size:13px'>{_esc(title)}</b>"
