@@ -20,7 +20,7 @@ from __future__ import annotations
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v5 · real blog design + preview all 3 emails + paging"
+BUILD_TAG = "2026-07-26 · v6 · reply inbox + send timeline + follow-up approvals"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -1049,6 +1049,7 @@ def _outbox(jobs):
             continue
         qmap = {str(r.get("id", "")).lower(): r for r in ((p.get("lead_qualifier") or {}).get("results") or [])}
         sent = p.get("sent_to", {}) or {}
+        sent_at = p.get("sent_at", {}) or {}
         edits = p.get("email_edits", {}) or {}
         trashed = set(str(x).lower() for x in (p.get("email_trashed") or []))
         for L in leads:
@@ -1066,6 +1067,7 @@ def _outbox(jobs):
             nxt = _C.next_touch(hist)            # next step to send (0 = done/blocked)
             base_subj = (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0]
             _tname = {1: "Intro", 2: "Follow-up", 3: "Final note"}
+            sched = _C.sequence_schedule(sent_at.get(e))   # real 3-step timeline (dates)
             # build ALL THREE emails so each can be previewed (sent + upcoming)
             touches = []
             for step in (1, 2, 3):
@@ -1084,8 +1086,10 @@ def _outbox(jobs):
                 except Exception:
                     pass
                 tstate = "sent" if step <= sent_n else ("next" if step == nxt else "pending")
+                _s = sched[step - 1] if step - 1 < len(sched) else {}
                 touches.append({"step": step, "name": _tname[step], "subj": tsubj,
-                                "raw": traw, "html": thtml, "state": tstate})
+                                "raw": traw, "html": thtml, "state": tstate,
+                                "date": _s.get("date", ""), "when": _s.get("state", "")})
             # the email shown in the row summary = the next one (or the last if done)
             cur = touches[(nxt or _C.SEQUENCE_TOUCHES) - 1]
             subj, raw, html = cur["subj"], cur["raw"], cur["html"]
@@ -1143,10 +1147,16 @@ def _outbox(jobs):
     _tlabel = {1: "intro", 2: "follow-up", 3: "final note"}
     _tstatecol = {"sent": "#3FD98B", "next": "#F5B14C", "pending": "#8E9BBE"}
     _tstatelbl = {"sent": "✓ sent", "next": "→ next to send", "pending": "queued"}
+    _whenlbl = {"sent": "sent", "due": "due now", "scheduled": "scheduled"}
     for i, (jid, L, q, subj, raw, html, status, was_edited, sent_n, nxt, touches) in enumerate(items):
         pg = i // PAGE
-        day = i // 15 + 1
-        sched = f"Day {day} · {9 + ((i % 15) // 3):02d}:{(i % 3) * 20:02d}"
+        # real schedule for the NEXT email (the row's "Scheduled" column)
+        nt = next((t for t in touches if t["step"] == nxt), None)
+        if nt:
+            sched = (f"{_whenlbl.get(nt['when'], nt['when'])} {nt['date']}"
+                     if nt["when"] != "due" else "⏰ due now")
+        else:
+            sched = "✓ complete"
         stcol = {"complete": "#3FD98B", "ready": "#F5B14C", "held": "#8E9BBE", "blocked": "#F5788A"}.get(status, "#8E9BBE")
         dots = "".join(f"<span style='color:{'#3FD98B' if k < sent_n else '#3A4160'}'>●</span>" for k in range(3))
         _steplbl = _tlabel.get(nxt, "")
@@ -1166,11 +1176,18 @@ def _outbox(jobs):
             thtml_attr = (t["html"] or "").replace("&", "&amp;").replace('"', "&quot;")
             scol = _tstatecol.get(t["state"], "#8E9BBE")
             slbl = _tstatelbl.get(t["state"], t["state"])
+            # the real date this step went out / is due / is scheduled
+            when = t.get("when", "")
+            wtxt = ("sent " + t.get("date", "") if when == "sent"
+                    else "⏰ due now" if when == "due"
+                    else "scheduled " + t.get("date", "") if t.get("date") else "")
+            timeline = (f"<span class='dim tnum' style='font-size:12px'>📅 {wtxt}</span>" if wtxt else "")
             tblocks += (
                 f"<div style='border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px'>"
                 f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'>"
                 f"<b>{t['step']} · {t['name']}</b>"
                 f"<span style='color:{scol};font-weight:600;font-size:12px'>{slbl}</span>"
+                f"{timeline}"
                 f"<span class='dim' style='flex:1;min-width:120px'>{_esc(t['subj'])}</span>"
                 f"<button class='cbtn' style='padding:2px 9px' onclick=\"toggleEl('tv-{i}-{t['step']}')\">👁 preview</button></div>"
                 f"<div id='tv-{i}-{t['step']}' style='display:none;margin-top:6px'>"
@@ -1237,7 +1254,7 @@ def _outbox(jobs):
             "<button class='sbtn' onclick='sendSelected()'>📨 Send selected (next step)</button>"
             "<button class='cbtn' onclick='sendAllOutbox()'>📤 Send all ready</button></div>"
             "<div class='tbwrap'><table><thead><tr><th></th><th>Customer</th><th>Persona</th><th>Next email</th>"
-            "<th>Scheduled</th><th>Cycle 1·2·3</th><th>Actions</th></tr></thead><tbody>"
+            "<th>Next send</th><th>Cycle 1·2·3</th><th>Actions</th></tr></thead><tbody>"
             + rows + "</tbody></table></div>" + pager + _junk_box(trashed_items) + "</div>")
 
 
@@ -1257,6 +1274,131 @@ def _junk_box(trashed_items):
             "<div style='margin-top:8px'>" + rows + "</div>"
             "<div class='dim' style='margin-top:6px'>Deleting an email moves it here (it's never permanently lost). "
             "Restore any time.</div></details>")
+
+
+def _replies_inbox(reply_drafts):
+    """Customer replies, drafted by the agent and HELD for you to review, edit,
+    and send. Nothing to a customer goes out until you click 'Approve & send'."""
+    drafts = reply_drafts or []
+    pending = [d for d in drafts if d.get("status") == "pending"]
+    done = [d for d in drafts if d.get("status") in ("sent", "dismissed")]
+    head = ("<div class='card full' style='margin-bottom:12px'>"
+            "<p class='ct'>💬 Customer replies — review, edit &amp; send</p>"
+            "<p class='cc'>When a customer replies, your agent reads it and <b>drafts an answer</b> — "
+            "but it's held here for you. Read their message, fix the draft if needed, then approve &amp; send. "
+            "Replies go out from <code>customercare@</code>, threaded to their email.</p>"
+            "<div class='ctrl' style='margin:8px 0'>"
+            "<button class='sbtn' onclick='refreshReplies()'>🔄 Check for new replies</button>"
+            f"<span class='dim' style='align-self:center'>{len(pending)} waiting · {sum(1 for d in done if d.get('status')=='sent')} sent</span></div>")
+    if not pending and not done:
+        return (head + "<div class='fe'><span class='mut'>No replies yet. When customers reply to your emails, "
+                "their message + a ready-to-edit draft answer will appear here.</span></div></div>")
+    _icol = {"interested": "#3FD98B", "question": "#4C8DFF", "objection": "#F5B14C",
+             "unsubscribe": "#FF6B93", "complaint": "#FF6B93", "not_interested": "#8E9BBE"}
+    rows = ""
+    for i, d in enumerate(pending):
+        rid = _esc(d.get("id", ""))
+        intent = d.get("intent") or "reply"
+        icol = _icol.get(intent, "#8E9BBE")
+        hflag = (" <span class='pill' style='background:rgba(255,107,147,.15);color:#FF6B93;padding:1px 7px'>"
+                 "needs your judgement</span>" if d.get("needs_human") else "")
+        edited = " <span class='pill p-live' style='padding:1px 7px'>edited</span>" if d.get("edited") else ""
+        rows += (
+            "<div style='border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px'>"
+            f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'>"
+            f"<b>{_esc(d.get('from_name') or d.get('from_email'))}</b>"
+            f"<span class='dim'>{_esc(d.get('from_email'))}</span>"
+            f"<span class='pill' style='background:{icol}22;color:{icol};padding:1px 8px'>{_esc(intent)}</span>"
+            f"{hflag}</div>"
+            # what the customer wrote
+            f"<div style='margin-top:8px;padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.03);"
+            "border-left:3px solid #3A4160'>"
+            f"<div class='dim' style='font-size:12px'>They wrote — re: {_esc(d.get('subject_in',''))}</div>"
+            f"<div style='white-space:pre-wrap;margin-top:3px;font-size:13.5px'>{_esc((d.get('message_in') or '')[:1200])}</div></div>"
+            # the editable draft answer
+            f"<div style='margin-top:10px'><div class='dim' style='font-size:12px'>Your agent's draft answer{edited} "
+            "— edit anything, then send:</div>"
+            f"<input id='rs-{i}' value='{_esc(d.get('draft_subject',''))}' style='width:100%;margin:6px 0' placeholder='Subject'>"
+            f"<textarea id='rb-{i}' style='width:100%;min-height:130px;font-family:inherit'>{_esc(d.get('draft_body',''))}</textarea></div>"
+            "<div class='ctrl' style='margin-top:8px'>"
+            f"<button class='sbtn' onclick=\"sendReply('{rid}',{i})\">✓ Approve &amp; send</button>"
+            f"<button class='cbtn' onclick=\"saveReply('{rid}',{i})\">💾 Save draft</button>"
+            f"<button class='cbtn warn' onclick=\"dismissReply('{rid}')\">🗑 Dismiss</button></div></div>")
+    donebox = ""
+    if done:
+        drows = ""
+        for d in done[-40:][::-1]:
+            tag = "✓ sent" if d.get("status") == "sent" else "dismissed"
+            tcol = "#3FD98B" if d.get("status") == "sent" else "#8E9BBE"
+            drows += (f"<div class='fe'><span class='mut'>{_esc(d.get('from_name') or d.get('from_email'))} "
+                      f"<span class='dim'>— re: {_esc(d.get('subject_in',''))}</span></span>"
+                      f"<span style='margin-left:auto;color:{tcol};font-weight:600'>{tag}</span></div>")
+        donebox = ("<details style='margin-top:8px'><summary style='cursor:pointer;color:#8E9BBE;font-weight:600'>"
+                   f"History ({len(done)})</summary><div style='margin-top:8px'>" + drows + "</div></details>")
+    return head + rows + donebox + "</div>"
+
+
+def _followups_due(jobs):
+    """The follow-up approval board: email #2 / #3 that are DUE per each customer's
+    timeline, shown with a preview and an 'Approve & send' button — so no follow-up
+    goes out until you OK it."""
+    try:
+        import content_engine_connectors as _C
+        mailer = _C.Emailer()
+    except Exception:
+        return ""
+    _tname = {2: "Follow-up (email 2)", 3: "Final note (email 3)"}
+    cards = ""
+    n = 0
+    for j in jobs:
+        if j.get("type") != "outreach_campaign":
+            continue
+        p = j.get("payload", {}) or {}
+        leads = p.get("leads") or []
+        oc = p.get("outreach_copy") or {}
+        if not leads or not oc.get("body"):
+            continue
+        sent = p.get("sent_to", {}) or {}
+        sent_at = p.get("sent_at", {}) or {}
+        trashed = set(str(x).lower() for x in (p.get("email_trashed") or []))
+        qmap = {str(r.get("id", "")).lower(): r for r in ((p.get("lead_qualifier") or {}).get("results") or [])}
+        for L in leads:
+            e = (L.get("email") or "").strip().lower()
+            if not e or e in trashed:
+                continue
+            nxt = _C.next_touch(sent.get(e))
+            if nxt < 2:                       # intro is approved elsewhere; only follow-ups here
+                continue
+            s = _C.sequence_schedule(sent_at.get(e))
+            step_info = s[nxt - 1] if nxt - 1 < len(s) else {}
+            if step_info.get("state") != "due":   # only when the timeline says it's time
+                continue
+            n += 1
+            if n > 30:                        # keep the board readable
+                continue
+            q = qmap.get(e) or {}
+            try:
+                subj, raw = _C.outreach_touch(L, q, (oc.get("subject_variants") or ["Follow-up"])[0], oc.get("body", ""), nxt)
+                _pl, html = mailer.compose_outreach(raw, j)
+            except Exception:
+                subj, html = "(follow-up)", ""
+            html_attr = (html or "").replace("&", "&amp;").replace('"', "&quot;")
+            cards += (
+                "<div style='background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px'>"
+                f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'>"
+                f"<span class='pill' style='background:rgba(245,177,76,.15);color:#F5B14C;padding:1px 8px'>⏰ {_tname.get(nxt,'Follow-up')} due</span>"
+                f"<b>{_esc(L.get('name',''))}</b><span class='dim'>{_esc(L.get('company',''))} · {_esc(e)}</span>"
+                f"<button class='sbtn' style='margin-left:auto' onclick=\"sendOne('{_esc(j.get('job_id'))}','{_esc(e)}')\">✓ Approve &amp; send</button></div>"
+                f"<div class='dim' style='margin-top:6px'>Subject: <b>{_esc(subj)}</b></div>"
+                f"<details style='margin-top:6px'><summary style='cursor:pointer;color:#4C8DFF;font-weight:600'>👁 Preview this follow-up</summary>"
+                f"<iframe srcdoc=\"{html_attr}\" style='width:100%;max-width:600px;height:460px;border:1px solid var(--line);"
+                "border-radius:9px;background:#fff;margin-top:8px'></iframe></details></div>")
+    if not n:
+        return ""
+    return ("<div class='card full' style='margin-bottom:12px;border-left:4px solid #F5B14C'>"
+            f"<p class='ct'>⏰ Follow-ups due for approval ({n})</p>"
+            "<p class='cc'>These customers are due for their next email in the 3-step cycle (they haven't replied). "
+            "Preview each follow-up and approve it — nothing sends on its own.</p>" + cards + "</div>")
 
 
 def _outbox_ready_count(jobs):
@@ -1447,7 +1589,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    taste_skills, has_password=False, paused=False, autonomy=False,
                    bookings=None, ads=None, needles=None, last_eval=None,
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
-                   content_plan=None, web_tracking=None):
+                   content_plan=None, web_tracking=None, reply_drafts=None):
+    reply_drafts = reply_drafts or []
     from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
     bookings, ads = bookings or {}, ads or {}
@@ -1614,7 +1757,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          ("Booked", booked, "#F5B14C"), ("Won", o_cust, "#3FD98B")],
         _funnel_skeleton([("Sent", emails_sent, 100), ("Replied", 0, 62),
                           ("Booked", booked, 38), ("Won", o_cust, 20)], "Fills as replies land."))
-    p_email = m_email + _outbox(jobs) + _leads_table(jobs) + grid(
+    p_email = m_email + _outbox(jobs) + _replies_inbox(reply_drafts) + _leads_table(jobs) + grid(
         _panel("Sent vs replied", "Cold emails out, and how many replied.",
                _bars([("Sent", emails_sent), ("Replied", 0)], "#4C8DFF") if emails_sent else _empty("No emails sent yet.")),
         _panel("Sent by purpose → address", "The loop: your agent sends each email type from the right alias — all from your one inbox.", route_html),
@@ -2010,7 +2153,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          ("Autonomy", "ON" if autonomy else "OFF", "#3FD98B" if autonomy else "#59668A")],
         _bars([("Waiting", len(waiting_jobs)), ("Rewrites", revs)], "#F5B14C")
         if (waiting_jobs or revs) else _empty("All caught up — nothing needs you. 🎉"))
-    p_appr = m_appr + _outbox_pointer(jobs) + ("<div class='card full'><p class='ct'>✅ Waiting for your approval</p>"
+    p_appr = m_appr + _outbox_pointer(jobs) + _followups_due(jobs) + ("<div class='card full'><p class='ct'>✅ Waiting for your approval</p>"
               "<p class='cc'>Read the preview, then approve — nothing goes live without you.</p>" + ap_body + "</div>"
               + "<div class='grid g3' style='margin-top:12px'>"
               + _panel("Quick actions", "Real buttons — no code, no typing.", quick_body)
@@ -2315,6 +2458,20 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "_obxPg=Math.max(0,Math.min(pages,_obxPg+dir));rows.forEach(function(r){r.style.display=(+r.getAttribute('data-pg')===_obxPg?'':'none');});"
               "var lbl=document.getElementById('obx-pg');if(lbl)lbl.textContent=(_obxPg+1);window.scrollTo({top:0});}"
               "function editEmail(i){toggleEl('ed-'+i);}"
+              "async function refreshReplies(){try{var r=await fetch('/replies/refresh',{method:'POST'});var j=await r.json();"
+              "if(j.ok){alert('Checked replies — '+ (j.added||0) +' new, '+(j.pending||0)+' waiting for you.');location.reload();}"
+              "else{alert('Could not read replies: '+(j.error||'')+' (needs IMAP connected).');}}catch(e){alert('Failed: '+e);}}"
+              "async function saveReply(id,i){var s=(document.getElementById('rs-'+i)||{}).value||'';var b=(document.getElementById('rb-'+i)||{}).value||'';"
+              "try{var r=await fetch('/reply/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,subject:s,body:b})});var j=await r.json();"
+              "alert(j.ok?'✓ Draft saved.':'Save failed: '+(j.error||''));}catch(e){alert('Failed: '+e);}}"
+              "async function sendReply(id,i){var s=(document.getElementById('rs-'+i)||{}).value||'';var b=(document.getElementById('rb-'+i)||{}).value||'';"
+              "if(b.trim().length<5){alert('The reply looks empty.');return;}"
+              "if(!confirm('Send this reply to the customer?'))return;"
+              "try{await fetch('/reply/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,subject:s,body:b})});"
+              "var r=await fetch('/reply/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})});var j=await r.json();"
+              "alert(j.ok?'✓ Reply sent to the customer.':'Not sent: '+(j.ref||j.error||''));location.reload();}catch(e){alert('Failed: '+e);}}"
+              "async function dismissReply(id){if(!confirm('Dismiss this reply (no answer)?'))return;"
+              "try{await fetch('/reply/dismiss',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})});location.reload();}catch(e){alert('Failed: '+e);}}"
               "async function saveEdit(job,email,i){var s=(document.getElementById('eds-'+i)||{}).value||'';var b=(document.getElementById('edb-'+i)||{}).value||'';"
               "if(b.trim().length<10){alert('The email body looks too short.');return;}"
               "try{var r=await fetch('/outreach/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email,subject:s,body:b})});var j=await r.json();"

@@ -121,6 +121,10 @@ def answer_replies(limit: int = 20, auto_send: Optional[bool] = None,
 
         entry = {
             "from": m.get("from_email", ""),
+            "from_name": m.get("from_name", "") or m.get("from", ""),
+            "message_id": m.get("message_id") or m.get("uid") or "",
+            "subject_in": m.get("subject", ""),
+            "message_in": m.get("message", ""),
             "intent": data.get("intent"),
             "needs_human": bool(data.get("needs_human")),
             "reply_subject": data.get("reply_subject", ""),

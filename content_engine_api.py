@@ -232,6 +232,101 @@ def api_answer_replies(limit: int = 20, dry_run: bool = False) -> dict:
     return reply_agent.answer_replies(limit=limit, dry_run=dry_run)
 
 
+# ---------------------------------------------------------------------------
+# Customer replies: draft-and-hold for the founder to review, edit, and send.
+# Drafts live in the 'reply_drafts' setting so the dashboard can show them.
+# ---------------------------------------------------------------------------
+def _reply_drafts():
+    st = get_store()
+    return list((getattr(st, "get_setting", lambda *a: [])("reply_drafts", []) or []))
+
+
+def _save_reply_drafts(drafts):
+    st = get_store()
+    if hasattr(st, "set_setting"):
+        st.set_setting("reply_drafts", drafts)
+
+
+def api_replies_refresh(limit: int = 20) -> dict:
+    """Read unread customer replies, have the agent DRAFT an answer to each
+    (never auto-sent), and store them for the founder to review/edit/send."""
+    res = api_answer_replies(limit=limit, dry_run=True)
+    if res.get("status") != "ok":
+        return {"ok": False, "error": res.get("reason") or res.get("status") or "reply read failed"}
+    drafts = _reply_drafts()
+    seen = {d.get("id") for d in drafts}
+    from datetime import datetime, timezone
+    added = 0
+    for r in res.get("results", []):
+        if r.get("status") == "bounce_suppressed":
+            continue
+        rid = r.get("message_id") or (r.get("from", "") + "|" + (r.get("subject_in") or ""))
+        if not rid or rid in seen:
+            continue
+        drafts.append({
+            "id": rid, "from_email": r.get("from", ""), "from_name": r.get("from_name", ""),
+            "subject_in": r.get("subject_in", ""), "message_in": r.get("message_in", ""),
+            "draft_subject": r.get("reply_subject", ""), "draft_body": r.get("reply_body", ""),
+            "intent": r.get("intent", ""), "needs_human": bool(r.get("needs_human")),
+            "status": "pending", "at": datetime.now(timezone.utc).isoformat(),
+        })
+        seen.add(rid)
+        added += 1
+    _save_reply_drafts(drafts)
+    return {"ok": True, "added": added, "pending": sum(1 for d in drafts if d.get("status") == "pending")}
+
+
+def api_reply_edit(reply_id, subject, body) -> dict:
+    """Save the founder's edit of a drafted reply (fix the agent before sending)."""
+    drafts = _reply_drafts()
+    for d in drafts:
+        if d.get("id") == reply_id:
+            if subject is not None:
+                d["draft_subject"] = subject
+            if body is not None:
+                d["draft_body"] = body
+            d["edited"] = True
+            _save_reply_drafts(drafts)
+            return {"ok": True, "id": reply_id}
+    return {"ok": False, "error": "reply not found"}
+
+
+def api_reply_send(reply_id) -> dict:
+    """Send the (edited) reply to the customer from customercare@, threaded to
+    their original message. Marks the draft sent."""
+    drafts = _reply_drafts()
+    d = next((x for x in drafts if x.get("id") == reply_id), None)
+    if not d:
+        return {"ok": False, "error": "reply not found"}
+    if d.get("status") == "sent":
+        return {"ok": False, "error": "already sent"}
+    import content_engine_connectors as C
+    to = d.get("from_email", "")
+    if not to:
+        return {"ok": False, "error": "no recipient address on this reply"}
+    ref = C.Emailer().send_message(
+        to, d.get("draft_subject", "") or ("Re: " + (d.get("subject_in") or "")),
+        d.get("draft_body", ""),
+        extra_headers={"In-Reply-To": d.get("id", ""), "References": d.get("id", "")},
+        category="support")
+    ok = isinstance(ref, str) and not ref.startswith(("suppressed", "send_error", "blocked", "held"))
+    d["status"] = "sent" if ok else "error"
+    d["send_ref"] = ref
+    _save_reply_drafts(drafts)
+    return {"ok": ok, "ref": ref, "id": reply_id}
+
+
+def api_reply_dismiss(reply_id) -> dict:
+    """Dismiss a reply draft (no answer needed). Kept as 'dismissed', not deleted."""
+    drafts = _reply_drafts()
+    for d in drafts:
+        if d.get("id") == reply_id:
+            d["status"] = "dismissed"
+            _save_reply_drafts(drafts)
+            return {"ok": True, "id": reply_id}
+    return {"ok": False, "error": "reply not found"}
+
+
 def _settings():
     st = get_store()
     return {"paused": bool(getattr(st, "get_setting", lambda *a: False)("paused", False)),
@@ -468,7 +563,9 @@ def _outreach_email_for(job, email, touch=1):
 
 def _append_ref(p, email, ref):
     """Record a send in the touch history (sent_to[email] is a LIST, one ref per
-    email sent — this is what tracks the 3-email cycle)."""
+    email sent — this is what tracks the 3-email cycle) plus the send TIME in a
+    parallel sent_at[email] list, which drives the follow-up schedule/timeline."""
+    from datetime import datetime, timezone
     m = p.setdefault("sent_to", {})
     cur = m.get(email)
     if isinstance(cur, list):
@@ -477,6 +574,10 @@ def _append_ref(p, email, ref):
         m[email] = [cur, ref]
     else:
         m[email] = [ref]
+    ok = isinstance(ref, str) and not ref.startswith(("suppressed", "send_error", "blocked", "held"))
+    if ok:                          # only stamp a time for a real send
+        at = p.setdefault("sent_at", {})
+        at.setdefault(email, []).append(datetime.now(timezone.utc).isoformat())
 
 
 def api_outreach_edit(job_id, email, subject, body):
@@ -982,6 +1083,10 @@ def api_dashboard_html() -> str:
             web_tracking = {}
     except Exception:
         web_tracking = {}
+    try:
+        reply_drafts = list(st.get_setting("reply_drafts", []) or []) if hasattr(st, "get_setting") else []
+    except Exception:
+        reply_drafts = []
     import content_engine_dashboard as D
     return D.dashboard_html(
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
@@ -990,7 +1095,8 @@ def api_dashboard_html() -> str:
         autonomy=settings["autonomy"], bookings=bookings, ads=ads,
         needles=needles, last_eval=last_eval, meters=meters, api_limits=api_limits,
         ci_text=ci_text if isinstance(ci_text, str) else "", ci_drive=ci_drive or "",
-        autopilot_on=autopilot_on, content_plan=content_plan, web_tracking=web_tracking)
+        autopilot_on=autopilot_on, content_plan=content_plan, web_tracking=web_tracking,
+        reply_drafts=reply_drafts)
 
 
 # ---------------------------------------------------------------------------
@@ -1097,6 +1203,34 @@ def build_app():
     @app.post("/replies/answer")
     def answer_replies(limit: int = 20, dry_run: bool = False):
         return api_answer_replies(limit=limit, dry_run=dry_run)
+
+    @app.post("/replies/refresh")
+    def replies_refresh(limit: int = 20):
+        return api_replies_refresh(limit=limit)
+
+    @app.post("/reply/edit")
+    async def reply_edit(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_reply_edit(data.get("id"), data.get("subject"), data.get("body"))
+
+    @app.post("/reply/send")
+    async def reply_send(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_reply_send(data.get("id"))
+
+    @app.post("/reply/dismiss")
+    async def reply_dismiss(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_reply_dismiss(data.get("id"))
 
     @app.post("/control/pause")
     def control_pause():

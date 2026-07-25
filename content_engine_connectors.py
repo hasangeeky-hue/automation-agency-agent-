@@ -491,6 +491,41 @@ def next_touch(v):
     return sent + 1
 
 
+SEQUENCE_GAP_DAYS = 3   # wait this many days between emails (intro -> +3 -> +3)
+
+
+def sequence_schedule(sent_at, gap_days: int = SEQUENCE_GAP_DAYS):
+    """The real timeline for a lead's 3-email cycle. `sent_at` is the list of ISO
+    timestamps of the emails already sent (parallel to sent_to). Returns a 3-item
+    list: [{step, state, date}] where state is sent | due | scheduled and date is
+    the actual send date (past) or the projected send date (future, ISO 'YYYY-MM-DD').
+    Follow-up N is scheduled gap_days after the previous email actually went out."""
+    from datetime import datetime, timedelta, timezone
+
+    def _parse(t):
+        try:
+            return datetime.fromisoformat(str(t).replace("Z", "+00:00"))
+        except Exception:
+            return None
+    times = [d for d in (_parse(t) for t in (sent_at or [])) if d]
+    now = datetime.now(timezone.utc)
+    n_sent = len(times)
+    out = []
+    for step in (1, 2, 3):
+        if step <= n_sent:
+            out.append({"step": step, "state": "sent",
+                        "date": times[step - 1].date().isoformat()})
+        else:
+            base = times[-1] if times else now
+            # step (n_sent+1) is the next; each further step adds another gap
+            due = base + timedelta(days=gap_days * (step - n_sent)) if times \
+                else now + timedelta(days=gap_days * (step - 1))
+            is_next = (step == n_sent + 1)
+            state = "due" if (is_next and due <= now) else "scheduled"
+            out.append({"step": step, "state": state, "date": due.date().isoformat()})
+    return out
+
+
 def outreach_touch(lead: dict, qual: dict, subject: str, body: str, touch: int):
     """The email for step 1/2/3 of the follow-up sequence. Touch 1 is the full
     personalized pitch; touch 2 is a short bump; touch 3 is a final soft close.
