@@ -481,9 +481,17 @@ def _outreach_emails(body: str, *, lang, sender, title, company, website, phone,
         f'<p style="margin:0 0 14px">{_html_escape(p).strip()}</p>'
         for p in clean_body.split("\n") if p.strip())
     phone_html = f' | {_html_escape(phone)}' if phone else ""
+    # The conversion CTA — a big, obvious booking BUTTON (this is what turns a
+    # reader into a booked call). Placed before the sign-off so it never gets lost.
+    cta_btn = (
+        f'<table cellpadding="0" cellspacing="0" style="margin:6px 0 18px"><tr><td '
+        f'style="background:{brand};border-radius:10px"><a href="{booking_url}" '
+        f'style="display:inline-block;padding:13px 26px;color:#ffffff;font-weight:bold;'
+        f'font-size:15px;text-decoration:none">📅 {L["book"]} →</a></td></tr></table>')
     html = (
         '<div style="font-family:Arial,Helvetica,sans-serif;color:#2b2b3a;font-size:15px;line-height:1.6;max-width:620px">'
         + paras
+        + cta_btn
         + f'<p style="margin:0 0 12px">{L["regards"]}</p>'
         + '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr>'
         + f'<td style="padding-right:13px;vertical-align:top"><img src="{logo}" width="48" height="48" alt="{_html_escape(company)}" style="width:48px;height:48px;border-radius:9px;display:block;border:0"></td>'

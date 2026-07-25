@@ -440,7 +440,8 @@ def api_clear_plan():
 
 
 def _outreach_email_for(job, email):
-    """(lead, qual, subject, body) for one recipient in an outreach job."""
+    """(lead, qual, subject, body) for one recipient. Uses the founder's manual
+    edit (payload['email_edits'][email]) if present, else the agent's version."""
     p = job.get("payload", {}) or {}
     leads = p.get("leads") or []
     lead = next((L for L in leads if (L.get("email") or "").strip().lower() == email.lower()), None)
@@ -448,10 +449,33 @@ def _outreach_email_for(job, email):
         return None
     qmap = {str(r.get("id", "")).lower(): r for r in ((p.get("lead_qualifier") or {}).get("results") or [])}
     q = qmap.get(email.lower()) or {}
+    edit = (p.get("email_edits", {}) or {}).get(email.lower())
+    if edit and edit.get("body"):
+        return (lead, q, edit.get("subject") or "", edit.get("body") or "")
     oc = p.get("outreach_copy", {}) or {}
     subj = (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0]
     import content_engine_connectors as C
     return (lead, q) + C.personalize_outreach(lead, q, subj, oc.get("body", ""))
+
+
+def api_outreach_edit(job_id, email, subject, body):
+    """Save the founder's manual edit of one email (fix the agent's text). The
+    edited version is what previews AND what sends."""
+    store = get_store()
+    try:
+        job = store.get(job_id)
+    except Exception:
+        return {"ok": False, "error": "campaign not found"}
+    email = (email or "").strip().lower()
+    if not email:
+        return {"ok": False, "error": "no recipient"}
+    p = job.setdefault("payload", {})
+    p.setdefault("email_edits", {})[email] = {"subject": subject or "", "body": body or ""}
+    try:
+        store.save(job)
+    except Exception:
+        pass
+    return {"ok": True, "email": email}
 
 
 def api_outreach_send_one(job_id, email):
@@ -1080,6 +1104,15 @@ def build_app():
     @app.post("/autopilot/stop")
     def autopilot_stop():
         return api_autopilot(False)
+
+    @app.post("/outreach/edit")
+    async def outreach_edit(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_outreach_edit(data.get("job_id"), data.get("email", ""),
+                                 data.get("subject", ""), data.get("body", ""))
 
     @app.post("/outreach/send_one")
     async def outreach_send_one(request: Request):

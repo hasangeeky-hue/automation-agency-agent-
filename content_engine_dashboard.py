@@ -922,22 +922,25 @@ def _outbox(jobs):
             continue
         qmap = {str(r.get("id", "")).lower(): r for r in ((p.get("lead_qualifier") or {}).get("results") or [])}
         sent = p.get("sent_to", {}) or {}
+        edits = p.get("email_edits", {}) or {}
         for L in leads:
             e = (L.get("email") or "").strip().lower()
             if not e:
                 continue
             q = qmap.get(e) or {}
+            ed = edits.get(e)
+            if ed and ed.get("body"):     # founder's manual edit wins
+                subj, raw = ed.get("subject") or "", ed.get("body")
+            else:
+                try:
+                    subj, raw = _C.personalize_outreach(
+                        L, q, (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0], oc.get("body", ""))
+                except Exception:
+                    subj, raw = (oc.get("subject_variants") or ["Quick idea"])[0], oc.get("body", "")
+            # compose the REAL email the customer receives (body + branded footer).
+            html = None
             try:
-                subj, raw = _C.personalize_outreach(
-                    L, q, (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0], oc.get("body", ""))
-            except Exception:
-                subj, raw = (oc.get("subject_variants") or ["Quick idea"])[0], oc.get("body", "")
-            # compose the REAL email the customer receives (body + branded footer:
-            # Hassan, company, address, booking link, unsubscribe, logo).
-            body = raw
-            try:
-                plain, html = _mailer.compose_outreach(raw, j)
-                body = plain or raw
+                _plain, html = _mailer.compose_outreach(raw, j)
                 if sample_html is None and html:
                     sample_html = html
             except Exception:
@@ -951,14 +954,14 @@ def _outbox(jobs):
                 status = "blocked"
             else:
                 status = "ready"
-            items.append((j.get("job_id"), L, q, subj, body, status))
+            items.append((j.get("job_id"), L, q, subj, raw, html, status, bool(ed)))
     if not items:
         return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📬 Email outbox</p>"
                 "<p class='cc'>One personalized email per customer — built by your agent from each lead's persona "
                 "(business, pain, offer) — appears here, ready to send individually or all at once. Empty until a "
                 "batch is sourced, qualified and written.</p></div>")
-    ready = sum(1 for it in items if it[5] == "ready")
-    sentn = sum(1 for it in items if it[5] == "sent")
+    ready = sum(1 for it in items if it[6] == "ready")
+    sentn = sum(1 for it in items if it[6] == "sent")
     # a real rendered preview of the branded email — exactly how the customer sees
     # it: logo, body, and the footer signature (Hassan, company, address, booking,
     # unsubscribe). srcdoc renders the actual HTML on a white 'inbox' background.
@@ -973,7 +976,7 @@ def _outbox(jobs):
                   "unsubscribe) is added automatically to every email. To show your logo + brand colour there, set "
                   "<code>EMAIL_LOGO_URL</code> and <code>EMAIL_BRAND_COLOR</code> on the System Map.</div></details>")
     rows = ""
-    for i, (jid, L, q, subj, body, status) in enumerate(items[:200]):
+    for i, (jid, L, q, subj, raw, html, status, was_edited) in enumerate(items[:200]):
         day = i // 15 + 1
         sched = f"Day {day} · {9 + ((i % 15) // 3):02d}:{(i % 3) * 20:02d}"
         stcol = {"sent": "#3FD98B", "ready": "#F5B14C", "held": "#8E9BBE", "blocked": "#F5788A"}.get(status, "#8E9BBE")
@@ -983,17 +986,35 @@ def _outbox(jobs):
                if status == "ready" else "")
         sendbtn = (f"<button class='cbtn' style='padding:3px 10px' onclick=\"sendOne('{_esc(jid)}','{_esc(email)}')\">Send</button>"
                    if status == "ready" else "")
+        edited_tag = " <span class='pill p-live' style='padding:1px 7px'>edited by you</span>" if was_edited else ""
+        # attribute-escape the composed HTML for the preview iframe
+        html_attr = (html or "").replace("&", "&amp;").replace('"', "&quot;")
+        actions = (
+            f"{sendbtn}"
+            f"<button class='cbtn' style='padding:3px 10px' onclick=\"previewEmail({i})\">👁 Preview</button>"
+            + (f"<button class='cbtn' style='padding:3px 10px' onclick=\"editEmail({i})\">✏️ Edit</button>"
+               if status != "sent" else "")
+            # hidden preview iframe (rendered on click)
+            + f"<div id='pv-{i}' style='display:none;margin-top:8px'>"
+              f"<iframe srcdoc=\"{html_attr}\" style='width:100%;max-width:600px;height:520px;border:1px solid var(--line);"
+              "border-radius:9px;background:#fff'></iframe>"
+              "<div class='dim' style='margin-top:4px'>This is exactly how it lands in the customer's inbox.</div></div>"
+            # hidden inline editor
+            + (f"<div id='ed-{i}' style='display:none;margin-top:8px'>"
+               f"<input id='eds-{i}' value='{_esc(subj)}' style='width:100%;margin-bottom:6px' placeholder='Subject'>"
+               f"<textarea id='edb-{i}' style='width:100%;min-height:150px;font-family:inherit'>{_esc(raw)}</textarea>"
+               "<div class='ctrl' style='margin-top:6px'>"
+               f"<button class='sbtn' onclick=\"saveEdit('{_esc(jid)}','{_esc(email)}',{i})\">💾 Save edit</button>"
+               f"<button class='cbtn' onclick=\"editEmail({i})\">Cancel</button></div>"
+               "<div class='dim' style='margin-top:4px'>Edit the message only — the branded footer (name, address, "
+               "booking button, unsubscribe) is added automatically.</div></div>" if status != "sent" else ""))
         rows += (f"<tr><td>{chk}</td>"
                  f"<td><b>{_esc(L.get('name',''))}</b><div class='dim'>{_esc(L.get('company',''))}</div></td>"
                  f"<td class='mut'>{_esc(q.get('business') or q.get('category') or '—')}</td>"
-                 f"<td class='mut' style='max-width:240px'>{_esc(subj)}</td>"
+                 f"<td class='mut' style='max-width:240px'>{_esc(subj)}{edited_tag}</td>"
                  f"<td class='dim tnum'>{sched}</td>"
                  f"<td><span style='color:{stcol};font-weight:600'>{stlabel}</span></td>"
-                 f"<td>{sendbtn}<details style='margin-top:4px'>"
-                 f"<summary style='cursor:pointer;color:#4C8DFF'>view email</summary>"
-                 f"<div style='white-space:pre-wrap;max-height:300px;overflow:auto;font-size:12.5px;"
-                 f"margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:8px'>{_esc(body)}</div>"
-                 "</details></td></tr>")
+                 f"<td style='min-width:230px'>{actions}</td></tr>")
     return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📬 Email outbox — your agent's emails, per customer</p>"
             f"<p class='cc'>One personalized email per lead, built from their persona (business · pain · offer). "
             f"<b style='color:#F5B14C'>{ready} ready</b> · <b style='color:#3FD98B'>{sentn} sent</b>. "
@@ -2032,6 +2053,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "async function approve(id){await act('/jobs/'+id+'/approve');}"
               "function toggleOutbox(cb){document.querySelectorAll('.obx').forEach(function(x){x.checked=cb.checked;});}"
+              "function previewEmail(i){var d=document.getElementById('pv-'+i);if(d)d.style.display=(d.style.display==='none'?'block':'none');}"
+              "function editEmail(i){var d=document.getElementById('ed-'+i);if(d)d.style.display=(d.style.display==='none'?'block':'none');}"
+              "async function saveEdit(job,email,i){var s=(document.getElementById('eds-'+i)||{}).value||'';var b=(document.getElementById('edb-'+i)||{}).value||'';"
+              "if(b.trim().length<10){alert('The email body looks too short.');return;}"
+              "try{var r=await fetch('/outreach/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email,subject:s,body:b})});var j=await r.json();"
+              "if(j.ok){alert('✓ Saved your edit. It will preview and send exactly as you wrote it.');location.reload();}else{alert('Save failed: '+(j.error||''));}}catch(e){alert('Save failed: '+e);}}"
               "async function sendOne(job,email){if(!confirm('Send this email to '+email+'?'))return;"
               "try{var r=await fetch('/outreach/send_one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email})});var j=await r.json();"
               "alert(j.ok?('✓ Sent to '+email):('Not sent: '+(j.ref||j.error||'unknown')));location.reload();}catch(e){alert('Failed: '+e);}}"
