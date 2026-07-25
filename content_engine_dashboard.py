@@ -816,6 +816,44 @@ def _pipeline_health(st, jobs):
             "<span class='dim' style='align-self:center'>Runs all 18 agents and reports any that fail (~2 min, ~$0.25).</span></div></div>")
 
 
+def _collect_leads(jobs):
+    """Every real lead record saved on outreach jobs (payload['leads']), deduped."""
+    seen, out = set(), []
+    for j in jobs:
+        if j.get("type") != "outreach_campaign":
+            continue
+        for L in ((j.get("payload", {}) or {}).get("leads") or []):
+            e = (L.get("email") or "").strip().lower()
+            k = e or (L.get("company") or "").lower()
+            if not k or k in seen:
+                continue
+            seen.add(k)
+            out.append(L)
+    return out
+
+
+def _leads_table(jobs):
+    leads = _collect_leads(jobs)
+    if not leads:
+        return ("<div class='card full' style='margin-top:12px'><p class='ct'>🧲 Your leads</p>"
+                "<p class='cc'>The real lead records (name, role, company, verified work email) appear here once an "
+                "outreach batch sources them. They ARE saved on your server — this table reads them straight from it.</p></div>")
+    rows = ""
+    for L in leads[:150]:
+        rows += (f"<tr><td>{_esc(L.get('name','') or '—')}</td>"
+                 f"<td class='mut'>{_esc(L.get('title','') or '—')}</td>"
+                 f"<td>{_esc(L.get('company','') or '—')}</td>"
+                 f"<td class='mut'>{_esc(L.get('email','') or '—')}</td>"
+                 f"<td class='mut'>{_esc(L.get('domain','') or L.get('source','') or '—')}</td></tr>")
+    return ("<div class='card full' style='margin-top:12px'>"
+            f"<p class='ct'>🧲 Your leads — {len(leads)} collected &amp; verified</p>"
+            "<p class='cc'>Real records from Prospeo, saved in your database (this table reads them directly). "
+            "Name · role · company · verified work email.</p>"
+            "<div class='tbwrap'><table><thead><tr><th>Name</th><th>Title</th><th>Company</th>"
+            "<th>Verified email</th><th>Domain / source</th></tr></thead><tbody>"
+            + rows + "</tbody></table></div></div>")
+
+
 def _why_piece(job):
     """Plain-English 'on what basis was this made' — the data behind the piece."""
     p = job.get("payload", {}) or {}
@@ -1101,7 +1139,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         [("Found", leads_found, "#EDF1FB"), ("Emailed", emails_sent, "#4C8DFF"),
          ("Replied", lead_rows[4][1], "#8B7CFF"), ("Booked", lead_rows[5][1], "#3FD98B")],
         _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("Fills as leads flow in."))
-    p_leads = m_leads + grid(
+    p_leads = m_leads + _leads_table(jobs) + grid(
         _panel("Lead funnel", "Stranger → verified → qualified → emailed → replied → booked.",
                _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("No leads yet — connect the lead finder.")),
         _panel("Leads by country — your 5 target markets",
@@ -1174,30 +1212,56 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Best time to post", "When your audience engages most.", _empty("Learns from your post performance.")),
         _panel("Top posts", "Your best-performing content.", _empty("Ranks once posts go out.")))
 
-    # ---- 5. SEO / AEO / GEO ----
+    # ---- 5. SEO / AEO / GEO (real Search Console + Analytics data) ----
     gsc_on = st.get("google_gsc_ga4")
-    mfunnel = (_funnel([("Traffic", 0), ("Interest", 0), ("Location match", 0), ("Authority", 0)]) if gsc_on
-               else _funnel_skeleton([("Traffic — visitors", "—", 100), ("Interest — engaged", "—", 70),
-                                      ("Location — your 5 markets", "—", 48), ("Authority — backlinks", "—", 30)],
-                                     "Connect Search Console + Analytics to fill this with real numbers."))
+    _wt = web_tracking or {}
+    _ga4m = (_wt.get("ga4") or {}).get("metrics") or {}
+    _gsc = _wt.get("gsc") or []
+    sessions = _ga4m.get("sessions") or 0
+    top_pages = _ga4m.get("top_pages") or []
+    total_clicks = sum(q.get("clicks", 0) for q in _gsc)
+    total_impr = sum(q.get("impressions", 0) for q in _gsc)
+    avg_rank = round(sum(q.get("position", 0) for q in _gsc) / len(_gsc), 1) if _gsc else 0
+    ctr = round(100 * total_clicks / total_impr, 1) if total_impr else 0
+    r13 = sum(1 for q in _gsc if q.get("position", 99) <= 3)
+    r410 = sum(1 for q in _gsc if 3 < q.get("position", 99) <= 10)
+    r11 = sum(1 for q in _gsc if q.get("position", 99) > 10)
+    kw_rows = "".join(
+        f"<div class='fe'><span class='mut'>{_esc(q.get('query',''))}</span>"
+        f"<span class='dim' style='margin-left:auto'>#{q.get('position',0)} · {q.get('clicks',0)} clicks · {q.get('impressions',0)} impr</span></div>"
+        for q in sorted(_gsc, key=lambda x: -x.get("clicks", 0))[:12]) or _empty("No Search Console query data for the last 28 days yet.")
+    tp_rows = "".join(
+        f"<div class='fe'><span class='mut'>{_esc(p.get('page',''))}</span>"
+        f"<span class='dim' style='margin-left:auto'>{p.get('sessions',0):,} sessions</span></div>"
+        for p in top_pages[:8]) or _empty("No Analytics page data yet.")
+    mfunnel = _funnel([("Impressions", total_impr), ("Clicks", total_clicks),
+                       ("Sessions", sessions), ("Ranking 1-10", r13 + r410)]) if (gsc_on and (_gsc or sessions)) \
+        else _funnel_skeleton([("Traffic — visitors", "—", 100), ("Interest — engaged", "—", 70),
+                               ("Location — your 5 markets", "—", 48), ("Authority — backlinks", "—", 30)],
+                              "Real numbers appear here as Search Console + Analytics accrue data.")
     assist = "".join(f"<div class='fe'><span class='mut'>{x}</span></div>" for x in [
-        "◆ <b>Publish next</b> for your least-covered vertical — rotate dentists → lawyers → tax consultants → Shopify → creators.",
+        "◆ <b>Easy wins:</b> your keywords ranking #4–10 are one push from page-one — strengthen those pages first.",
         "◆ <b>Internal links:</b> point each new blog at its matching service page — that's where deals happen.",
-        "◆ <b>Backlinks to chase:</b> local directories, niche bodies (dental / legal / tax associations), one guest post a month.",
-        "◆ <b>Topic gaps:</b> once Search Console is live this turns data-driven — the keywords you rank #5–15 for are your easy wins.",
+        "◆ <b>Off-page / backlinks:</b> connect a backlink tool (Ahrefs/Moz/SE Ranking → <code>BACKLINKS_JSON</code>) to see referring domains + gaps here.",
+        "◆ <b>AEO:</b> answer real questions from your Search Console queries directly in H2s so AI engines quote you.",
     ])
-    m_seo = _master("🔎", "SEO / AEO / GEO — at a glance", "Visibility across Google & AI answers.",
-        [("Search traffic", "—", "#4C8DFF"), ("Avg rank", "—", "#8B7CFF"),
-         ("AI mentions", "—", "#2FE3D2"), ("Backlinks", "—", "#3FD98B")], mfunnel)
+    m_seo = _master("🔎", "SEO / AEO / GEO — at a glance", "Visibility across Google & AI answers (live from your Search Console + Analytics).",
+        [("Sessions (28d)", f"{sessions:,}", "#4C8DFF"), ("Search clicks", f"{total_clicks:,}", "#2FE3D2"),
+         ("Avg rank", avg_rank or "—", "#8B7CFF"), ("CTR", f"{ctr}%", "#3FD98B")], mfunnel)
     p_seo = m_seo + grid(
-        _panel("Marketing funnel", "Traffic → interest → location → authority.", mfunnel),
-        _panel("Keyword rankings", "Where your pages rank.", _empty("Connect Search Console.")),
-        _panel("AI-answer mentions", "How often ChatGPT / Google AI quote you.", _empty("Shows once tracking is on.")),
-        _panel("Content assistant — your next move", "What to publish and where to build backlinks.", assist),
-        _panel("Traffic over time", "Visitors from Google, day by day.", _empty("Connect Google Analytics.")),
-        _panel("Top pages", "Which pages pull the most visits.", _empty("Connect Google Analytics.")),
-        _panel("Ranking spread", "Keywords ranking 1-3 / 4-10 / 11+.", _empty("Connect Search Console.")),
-        _panel("Click-through rate", "How often a ranking turns into a click.", _empty("Connect Search Console.")))
+        _panel("Marketing funnel", "Impressions → clicks → sessions → rankings.", mfunnel),
+        _panel("Keyword rankings (Search Console)", "The exact queries you show up for, your position + clicks.", kw_rows),
+        _panel("Ranking spread", "How many queries rank 1-3 / 4-10 / 11+.",
+               _bars([("1-3 (page-one top)", r13), ("4-10 (page one)", r410), ("11+ (page 2+)", r11)], "#8B7CFF")
+               if _gsc else _empty("Fills from Search Console.")),
+        _panel("Top pages (Analytics)", "Which pages pull the most visits.", tp_rows),
+        _panel("Click-through rate", "How often a ranking turns into a click.",
+               f"<div class='big tnum'>{ctr}%</div><div class='dim'>{total_clicks:,} clicks on {total_impr:,} impressions</div>"
+               if total_impr else _empty("Fills from Search Console.")),
+        _panel("Off-page / backlinks", "Referring domains + competitor gaps.",
+               _empty("Connect a backlink tool (Ahrefs/Moz) via BACKLINKS_JSON to populate off-page data — it's not part of the Google keys.")),
+        _panel("AI-answer mentions (AEO)", "How often ChatGPT / Google AI quote you.", _empty("Needs an AEO tracker; not wired yet.")),
+        _panel("Content assistant — your next move", "Data-driven, from your real queries.", assist))
 
     # ---- 6. ADS & GROWTH ----
     _ads_on = bool(ads)
@@ -1413,24 +1477,40 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     def _appr_card(j):
         jid = _esc(j.get("job_id"))
         p = j.get("payload", {}) or {}
+        meta = ""
         if j.get("type") == "outreach_campaign":
             oc = p.get("outreach_copy", {}) or {}
-            lead = p.get("lead", {}) or {}
-            who = lead.get("company") or lead.get("name") or ""
-            kind = "✉️ Cold email" + (f" → {_esc(who)}" if who else "")
-            title = (oc.get("subject_variants") or ["Cold email"])[0]
-            snippet = (oc.get("body") or "")[:260]
+            n_leads = len((p.get("leads") or []))
+            kind = "✉️ Cold email"
+            subj = (oc.get("subject_variants") or ["(no subject)"])[0]
+            title = subj
+            body = (oc.get("body") or "")
+            cta = oc.get("cta") or ""
+            meta = (f"<div class='dim' style='margin-top:6px'>📧 Type: <b>Cold email</b> · Subject: "
+                    f"<b>{_esc(subj)}</b> · will send to <b>{n_leads}</b> verified leads (warm-up capped)</div>")
+            snippet = body[:600]
+            if cta:
+                snippet += f"\n\nCTA: {cta}"
         else:
             cp = p.get("content_producer", {}) or {}
             kind = "📝 Article"
             title = cp.get("title") or j.get("job_id")
-            snippet = (cp.get("body") or cp.get("summary") or "")[:260]
+            body = (cp.get("body") or cp.get("content") or cp.get("summary") or "")
+            words = len(body.split())
+            meta = (f"<div class='dim' style='margin-top:6px'>📄 Type: <b>Blog article</b> · "
+                    f"~{words} words · publishes to your website</div>")
+            snippet = body[:600]
+        preview = (f"<div style='margin-top:8px;padding:11px 13px;border-radius:9px;background:var(--s3,rgba(255,255,255,.03));"
+                   f"border:1px solid var(--line);max-height:230px;overflow:auto;white-space:pre-wrap;line-height:1.6;font-size:13px'>"
+                   f"{_esc(snippet)}{'…' if len(snippet) >= 600 else ''}</div>"
+                   if snippet else "<div class='dim' style='margin-top:8px'>(preview appears once it is written)</div>")
         return ("<div style='background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px'>"
                 f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'><span class='dim'>{kind}</span>"
                 f"<b style='font-size:13px'>{_esc(title)}</b>"
                 f"<button class='sbtn' style='margin-left:auto' onclick=\"approve('{jid}')\">✓ Approve</button></div>"
-                f"<div class='dim' style='margin-top:6px'>📎 Basis: {_esc(_why_piece(j))}</div>"
-                f"<div class='dim' style='margin-top:8px;line-height:1.55'>{_esc(snippet)}{'…' if snippet else '(preview appears once it is written)'}</div></div>")
+                + meta
+                + f"<div class='dim' style='margin-top:6px'>📎 Basis: {_esc(_why_piece(j))}</div>"
+                + preview + "</div>")
 
     if waiting_jobs:
         ids = ",".join(str(j.get("job_id")) for j in waiting_jobs)
