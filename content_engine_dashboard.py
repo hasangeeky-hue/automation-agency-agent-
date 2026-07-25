@@ -20,7 +20,7 @@ from __future__ import annotations
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v9 · balanced plan across all 7 website segments"
+BUILD_TAG = "2026-07-26 · v10 · approve/decline notes + content calendar + LinkedIn posts"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -1683,41 +1683,66 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # ---- CONTENT PLAN (agent proposes -> you approve -> pieces get created) ----
     _pending = content_plan.get("status") == "pending" and content_plan.get("items")
     if _pending:
-        rows = ""
-        seg_counts = {}
+        from datetime import date, timedelta
+        _chan_badge = {
+            "linkedin": "<span class='pill' style='background:rgba(10,102,194,.16);color:#4C9AFF;padding:1px 8px'>in LinkedIn</span>",
+            "website": "<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>🌐 Website</span>",
+            "web": "<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>🌐 Website</span>",
+        }
+        seg_counts, chan_counts = {}, {}
+        # group items by their scheduled day for a real calendar
+        by_day = {}
         for i, it in enumerate(content_plan["items"], 1):
-            seg = it.get("segment", "")
-            pil = it.get("pillar", "")
-            if seg:
-                seg_counts[seg] = seg_counts.get(seg, 0) + 1
-            tags = ""
-            if seg or pil:
-                tags = (f"<div style='margin-top:4px;display:flex;gap:6px;flex-wrap:wrap'>"
-                        + (f"<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>👤 {_esc(seg)}</span>" if seg else "")
-                        + (f"<span class='pill' style='background:rgba(139,124,255,.14);color:#8B7CFF;padding:1px 8px'>🎯 {_esc(pil)}</span>" if pil else "")
-                        + "</div>")
-            rows += (
-                "<div style='padding:11px 0;border-top:1px solid rgba(255,255,255,.06)'>"
-                f"<div style='display:flex;gap:10px;align-items:baseline;flex-wrap:wrap'>"
-                f"<span class='tnum dim'>{i:02d}</span><b>{_esc(it.get('title',''))}</b>"
-                f"<span class='pill p-need' style='margin-left:auto'>{_esc(it.get('funnel','') or it.get('type','blog'))}</span></div>"
-                f"<div class='dim' style='margin-top:3px'>🔑 {_esc(it.get('target_keyword','') or '—')} · "
-                f"{_esc(it.get('angle',''))}</div>" + tags
-                + (f"<div class='dim' style='margin-top:2px'>Why: {_esc(it.get('rationale',''))}</div>" if it.get('rationale') else "")
-                + "</div>")
-        # coverage bar: how evenly the plan spans the 7 segments
+            d = int(it.get("day_offset", 0) or 0)
+            by_day.setdefault(d, []).append((i, it))
+            if it.get("segment"):
+                seg_counts[it["segment"]] = seg_counts.get(it["segment"], 0) + 1
+            for c in (it.get("channels") or ["website"]):
+                c = str(c).lower()
+                c = "website" if c in ("web", "blog", "wordpress") else c
+                chan_counts[c] = chan_counts.get(c, 0) + 1
+        rows = ""
+        for d in sorted(by_day):
+            daylabel = (date.today() + timedelta(days=d)).strftime("%a %b %d")
+            rows += (f"<div style='margin-top:12px;margin-bottom:4px'><span class='pill' "
+                     f"style='background:rgba(139,124,255,.16);color:#8B7CFF;padding:2px 10px;font-weight:700'>"
+                     f"📅 {daylabel}</span></div>")
+            for i, it in by_day[d]:
+                seg, pil = it.get("segment", ""), it.get("pillar", "")
+                chans = [str(c).lower() for c in (it.get("channels") or ["website"])]
+                chan_html = " ".join(_chan_badge.get("website" if c in ("web", "blog", "wordpress") else c, "") for c in chans)
+                tags = ""
+                if seg or pil:
+                    tags = ("<div style='margin-top:4px;display:flex;gap:6px;flex-wrap:wrap'>"
+                            + (f"<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>👤 {_esc(seg)}</span>" if seg else "")
+                            + (f"<span class='pill' style='background:rgba(139,124,255,.14);color:#8B7CFF;padding:1px 8px'>🎯 {_esc(pil)}</span>" if pil else "")
+                            + "</div>")
+                rows += (
+                    "<div style='padding:9px 0 9px 14px;border-left:2px solid rgba(255,255,255,.08);margin-left:6px'>"
+                    f"<div style='display:flex;gap:10px;align-items:baseline;flex-wrap:wrap'>"
+                    f"<span class='tnum dim'>{i:02d}</span><b>{_esc(it.get('title',''))}</b>"
+                    f"<span style='margin-left:auto;display:flex;gap:5px'>{chan_html}</span></div>"
+                    f"<div class='dim' style='margin-top:3px'>🔑 {_esc(it.get('target_keyword','') or '—')} · "
+                    f"{_esc(it.get('angle',''))}</div>" + tags
+                    + (f"<div class='dim' style='margin-top:2px'>Why: {_esc(it.get('rationale',''))}</div>" if it.get('rationale') else "")
+                    + "</div>")
+        # coverage bar: how evenly the plan spans the 7 segments + which channels
         cov = ""
         if seg_counts:
             chips = " ".join(f"<span class='pill' style='background:rgba(47,227,210,.12);color:#2FE3D2;padding:1px 8px'>"
                              f"{_esc(s)} ×{n}</span>" for s, n in sorted(seg_counts.items(), key=lambda x: -x[1]))
-            cov = (f"<div style='margin:8px 0 4px'><span class='dim'>Coverage across your website segments:</span> "
-                   f"<div style='margin-top:5px;display:flex;gap:6px;flex-wrap:wrap'>{chips}</div></div>")
+            li_n = chan_counts.get("linkedin", 0)
+            web_n = chan_counts.get("website", 0)
+            cov = (f"<div style='margin:8px 0 4px'><span class='dim'>Segment coverage:</span> "
+                   f"<div style='margin-top:5px;display:flex;gap:6px;flex-wrap:wrap'>{chips}</div>"
+                   f"<div class='dim' style='margin-top:8px'>Channels: <b style='color:#2FE3D2'>{web_n} website</b> · "
+                   f"<b style='color:#4C9AFF'>{li_n} LinkedIn</b></div></div>")
         plan_card = (
             "<div class='card full' style='margin-bottom:12px;border-left:4px solid #4C8DFF'>"
-            f"<p class='ct'>🗒️ Proposed content plan — {len(content_plan['items'])} pieces, awaiting your approval</p>"
-            "<p class='cc'>The planner drafted these to <b>cover your 7 website segments evenly</b> across the service "
-            "pillars. Each is tagged with who it's for + which service. Approve to create them all (written, QA-checked, "
-            "on-brand image, published to the right section); or discard and re-plan.</p>"
+            f"<p class='ct'>🗓️ Content calendar — {len(content_plan['items'])} pieces, awaiting your approval</p>"
+            "<p class='cc'>Planned <b>by day</b> and <b>by channel</b>, covering your 7 website segments evenly. Each "
+            "piece shows when it posts and where (🌐 Website + in LinkedIn). Approve to schedule them all (written, "
+            "QA-checked, on-brand image + LinkedIn post, published to the right section); or discard and re-plan.</p>"
             + cov + rows +
             "<div class='ctrl' style='margin-top:14px'>"
             "<button class='sbtn' onclick='approvePlan()'>✓ Approve — create these pieces</button>"
@@ -2189,15 +2214,42 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 "<div style='margin-top:8px;padding:13px 15px;border-radius:9px;background:var(--panel,rgba(255,255,255,.03));"
                 "border:1px solid var(--line);max-height:460px;overflow:auto;white-space:pre-wrap;line-height:1.65;font-size:13.5px'>"
                 f"{_esc(body)}</div></details>" + webview)
+            li = (p.get("content_producer", {}) or {}).get("linkedin_post")
+            if li:
+                preview += (
+                    "<details style='margin-top:6px'><summary style='cursor:pointer;color:#0A66C2;font-weight:600'>"
+                    "in LinkedIn post (auto-made from this article)</summary>"
+                    "<div style='margin-top:8px;padding:13px 15px;border-radius:9px;background:rgba(10,102,194,.06);"
+                    "border:1px solid rgba(10,102,194,.3);white-space:pre-wrap;line-height:1.6;font-size:13.5px'>"
+                    f"{_esc(li)}</div>"
+                    "<div class='dim' style='margin-top:4px'>Posts to LinkedIn when the piece's channels include "
+                    "LinkedIn (connect LinkedIn on the System Map).</div></details>")
         else:
             preview = "<div class='dim' style='margin-top:8px'>(preview appears once it is written)</div>"
+        # prior correction notes, if this piece was declined before
+        prior = (p.get("revision_notes") or [])
+        prior_html = ""
+        if prior:
+            prior_html = ("<div class='dim' style='margin-top:6px'>📝 Your past notes: "
+                          + " · ".join(_esc(str(n.get('note', ''))[:80]) for n in prior[-3:]) + "</div>")
+        # notes box + approve WITH note + decline WITH note (goes back for a rewrite)
+        cmd = (
+            "<div style='margin-top:10px;padding-top:10px;border-top:1px solid var(--line)'>"
+            f"<textarea id='note-{jid}' placeholder='Notes to the system — e.g. \"make it shorter, "
+            "add a real example, less salesy\". Sent with Approve, or with Decline to rewrite.' "
+            "style='width:100%;min-height:52px;font-family:inherit;font-size:13px'></textarea>"
+            "<div class='ctrl' style='margin-top:6px'>"
+            f"<button class='sbtn' onclick=\"approve('{jid}')\">✓ Approve &amp; publish</button>"
+            f"<button class='cbtn warn' onclick=\"decline('{jid}')\">↩ Decline &amp; rewrite with my notes</button>"
+            "</div>"
+            "<div class='dim' style='margin-top:4px'>Approve = goes live (your note is logged). "
+            "Decline = sent back and re-written to fix exactly what your note says — nothing publishes.</div></div>")
         return ("<div style='background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px'>"
                 f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'><span class='dim'>{kind}</span>"
-                f"<b style='font-size:13px'>{_esc(title)}</b>"
-                f"<button class='sbtn' style='margin-left:auto' onclick=\"approve('{jid}')\">✓ Approve</button></div>"
+                f"<b style='font-size:13px'>{_esc(title)}</b></div>"
                 + meta
                 + f"<div class='dim' style='margin-top:6px'>📎 Basis: {_esc(_why_piece(j))}</div>"
-                + img_html + preview + "</div>")
+                + prior_html + img_html + preview + cmd + "</div>")
 
     if waiting_jobs:
         ids = ",".join(str(j.get("job_id")) for j in waiting_jobs)
@@ -2515,7 +2567,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{await fetch('/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys:keys.split(',')})});"
               "alert('Disconnected — the box is editable again.');location.reload();}"
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
-              "async function approve(id){await act('/jobs/'+id+'/approve');}"
+              "function _noteFor(id){var t=document.getElementById('note-'+id);return t?t.value.trim():'';}"
+              "async function approve(id){var note=_noteFor(id);"
+              "try{var r=await fetch('/jobs/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:note})});await r.json();"
+              "alert('✓ Approved'+(note?' with your note':'')+'. It goes live.');location.reload();}catch(e){alert('Failed: '+e);}}"
+              "async function decline(id){var note=_noteFor(id);"
+              "if(!note){alert('Please add a note first — tell the system what to fix, then Decline.');return;}"
+              "if(!confirm('Send this back to be re-written using your note? Nothing publishes.'))return;"
+              "try{var r=await fetch('/jobs/'+id+'/decline',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:note})});var j=await r.json();"
+              "alert(j.ok?'↩ Sent back — it will be re-written to fix your note.':'Failed: '+(j.error||''));location.reload();}catch(e){alert('Failed: '+e);}}"
               "function toggleOutbox(cb){document.querySelectorAll('.obx').forEach(function(x){x.checked=cb.checked;});}"
               "async function sendAllCommand(){if(!confirm('Send ALL ready emails now? Warm-up cap applies — the rest queue for the next days.'))return;"
               "try{var r=await fetch('/outreach/send_all',{method:'POST'});var j=await r.json();alert('Sent '+j.sent+' of '+j.total+(j.held_by_cap?(' · '+j.held_by_cap+' held by cap (send over coming days)'):''));location.reload();}catch(e){alert('Failed: '+e);}}"

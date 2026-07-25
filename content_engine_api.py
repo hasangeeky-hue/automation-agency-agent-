@@ -211,8 +211,48 @@ def _set_flag(job_id: str, flag: str) -> dict:
     return {"job_id": job_id, flag: True, "status": job["status"]}
 
 
-def api_approve(job_id: str) -> dict:
-    return _set_flag(job_id, "approved")
+def api_approve(job_id: str, note: str = "") -> dict:
+    """Approve a piece for publish/send. An optional note is recorded on the job
+    (and shown in the approval log) so your instruction is on the record."""
+    store = get_store()
+    try:
+        job = store.get(job_id)
+    except KeyError:
+        return {"error": "not found", "job_id": job_id}
+    if note:
+        job.setdefault("payload", {})["approval_note"] = note
+    job["approved"] = True
+    store.save(job)
+    return {"job_id": job_id, "approved": True, "status": job.get("status"), "note": note}
+
+
+def api_decline(job_id: str, note: str = "") -> dict:
+    """Decline a piece WITH a correction note and send it BACK to be re-made using
+    your feedback (not just halted). The note is fed to the writer so the rewrite
+    fixes exactly what you flagged. Nothing publishes/sends."""
+    store = get_store()
+    try:
+        job = store.get(job_id)
+    except KeyError:
+        return {"error": "not found", "job_id": job_id}
+    from datetime import datetime, timezone
+    p = job.setdefault("payload", {})
+    p.setdefault("revision_notes", []).append(
+        {"note": note, "at": datetime.now(timezone.utc).isoformat()})
+    p["revision_note"] = note                      # latest — fed into the rewrite
+    job.pop("approved", None)
+    job.pop("qa_verdict", None)
+    if job.get("type") == "outreach_campaign":
+        for k in ("outreach_copy", "qa_compliance"):
+            p.pop(k, None)
+        job["status"] = "segmented"                # re-run outreach_copy with the note
+    else:
+        for k in ("content_producer", "seo_optimizer", "qa_compliance", "image_url", "taxonomy"):
+            p.pop(k, None)
+        job["status"] = "planned"                  # re-run the writer with the note
+    store.save(job)
+    return {"ok": True, "job_id": job_id, "status": job["status"], "note": note,
+            "message": "sent back for a rewrite using your note"}
 
 
 def api_ready_to_measure(job_id: str) -> dict:
@@ -529,11 +569,21 @@ def api_approve_plan():
         directive = (f"Write this exact piece: '{title}'. Angle: {it.get('angle','')}. "
                      f"Target keyword: {it.get('target_keyword','')}. Type: {it.get('type','blog')}. "
                      f"Audience segment: {it.get('segment','')}. Service pillar: {it.get('pillar','')}.")
+        # channels: where it posts (website + LinkedIn by default); publish date from day_offset
+        channels = [str(c).lower() for c in (it.get("channels") or ["website", "linkedin"])]
+        channels = ["wordpress" if c in ("website", "web", "blog") else c for c in channels] or ["wordpress"]
+        pub_date = ""
+        try:
+            from datetime import date, timedelta
+            pub_date = (date.today() + timedelta(days=int(it.get("day_offset", 0) or 0))).isoformat()
+        except Exception:
+            pub_date = ""
         payload = {"type": it.get("type", "blog"),
                    "config": {"weekly_priorities": directive, "chosen_topic": title,
                               "target_keyword": it.get("target_keyword", ""), "pieces_this_week": 1,
                               # carry the planner's segment+pillar so the piece stays on-target
-                              "segment": it.get("segment", ""), "pillar": it.get("pillar", "")}}
+                              "segment": it.get("segment", ""), "pillar": it.get("pillar", ""),
+                              "deploy_channels": channels, "publish_date": pub_date}}
         jid = f"plan_{abs(hash(title)) % 10_000_000}"
         api_create_job("content_piece", brand, payload, job_id=jid)
         created.append(jid)
@@ -1199,8 +1249,20 @@ def build_app():
         return api_get_job(job_id)
 
     @app.post("/jobs/{job_id}/approve")
-    def approve(job_id: str):
-        return api_approve(job_id)
+    async def approve(job_id: str, request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_approve(job_id, (data or {}).get("note", ""))
+
+    @app.post("/jobs/{job_id}/decline")
+    async def decline(job_id: str, request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_decline(job_id, (data or {}).get("note", ""))
 
     @app.post("/jobs/{job_id}/ready_to_measure")
     def ready(job_id: str):

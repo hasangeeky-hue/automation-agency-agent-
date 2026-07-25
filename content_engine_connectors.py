@@ -1390,6 +1390,48 @@ def _piece_to_social_text(piece: dict, limit: int = 1000) -> str:
     return text
 
 
+def repurpose_linkedin(piece: dict, website_url: str = "", booking_url: str = "") -> str:
+    """Turn a produced blog into a NATIVE LinkedIn post — a hook line, 3-4 concrete
+    takeaways pulled from the article's own headings/points, and a soft CTA. Not a
+    truncated blog dump. Deterministic (no API cost), reliable, on-brand."""
+    import re
+    title = (piece.get("title") or "").strip()
+    body = (piece.get("body") or "").strip()
+    # pull the article's H2/H3 headings + bullet points as the takeaways
+    points = []
+    for ln in body.split("\n"):
+        s = ln.strip()
+        m = re.match(r"^#{2,3}\s+(.*)", s)
+        if m:
+            points.append(m.group(1).strip())
+        elif re.match(r"^[-*]\s+\S", s):
+            points.append(re.sub(r"^[-*]\s+", "", s).strip())
+        if len(points) >= 6:
+            break
+    points = [p for p in points if 6 < len(p) < 120][:4]
+    hook = title or (points[0] if points else "A quick note on automating your business")
+    lines = [f"{hook}", ""]
+    if points:
+        lines.append("Here's what most owners miss:")
+        lines += [f"→ {p}" for p in points]
+        lines.append("")
+    else:
+        # fall back to the lead paragraph
+        para = next((p.strip() for p in body.split("\n\n") if len(p.strip()) > 40), "")
+        if para:
+            lines += [para[:400].rstrip() + ("…" if len(para) > 400 else ""), ""]
+    cta = "We map your biggest leak in a free 30-minute call."
+    if booking_url:
+        cta += f" → {booking_url}"
+    elif website_url:
+        cta += f" → {website_url}"
+    lines.append(cta)
+    tags = piece.get("hashtags") or ["automation", "AIagents", "smallbusiness", "leadgen"]
+    lines.append("\n" + " ".join((t if str(t).startswith("#") else "#" + str(t)) for t in tags[:5]))
+    text = "\n".join(lines).strip()
+    return text[:2900]   # LinkedIn hard limit ~3000 chars
+
+
 def post_social(job: dict, piece: dict, channel: str) -> str:
     """SOCIAL_FN — post a produced piece to one social channel. Each platform
     self-degrades to a clear '<channel>_not_configured' marker (visible to the
@@ -1398,8 +1440,10 @@ def post_social(job: dict, piece: dict, channel: str) -> str:
     jid = job.get("job_id")
     if ch == "linkedin":
         p = LinkedInPoster()
-        return p.post(_piece_to_social_text(piece, 2900)) if p.available() \
-            else f"linkedin_not_configured:{jid}"
+        # use the founder-approved LinkedIn post if present, else repurpose the blog
+        text = (piece.get("linkedin_post")
+                or repurpose_linkedin(piece, _env("EMAIL_WEBSITE", ""), _env("EMAIL_BOOKING_URL", "")))
+        return p.post(text) if p.available() else f"linkedin_not_configured:{jid}"
     if ch in ("twitter", "x"):
         p = TwitterPoster()
         return p.post(_piece_to_social_text(piece, 280)) if p.available() \

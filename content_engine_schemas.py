@@ -629,6 +629,8 @@ CONTENT_PLANNER = {
                     "segment": {"type": "string"},
                     "pillar": {"type": "string"},
                     "funnel": {"type": "string"},
+                    "day_offset": {"type": "integer"},
+                    "channels": {"type": "array", "items": {"type": "string"}},
                     "rationale": {"type": "string"},
                 },
                 "additionalProperties": False,

@@ -216,6 +216,10 @@ def _in_content_producer(job: dict) -> dict:
         "service_pillar": tax.get("pillar", ""),
         "service_promise": tax.get("service", ""),
     }
+    # If the founder declined a prior draft, feed their correction into the rewrite.
+    rnote = (job.get("payload", {}) or {}).get("revision_note")
+    if rnote:
+        out["revision_note"] = rnote
     pb = _learnings(job)
     if pb:
         out["prior_learnings"] = {"winning_topics": pb.get("winning_topics", []),
@@ -259,8 +263,30 @@ def _ensure_hero_image(job: dict) -> None:
         p["image_url"] = url                    # dashboard web-view reads this too
 
 
+def _ensure_linkedin_post(job: dict) -> None:
+    """Repurpose the blog into a native LinkedIn post so there's real LinkedIn
+    content to review/approve/schedule — not just a truncated article."""
+    p = job.setdefault("payload", {})
+    piece = p.get("content_producer") or {}
+    if not piece or piece.get("linkedin_post"):
+        return
+    if _chosen_row(job).get("type", "blog") not in ("blog", "guide"):
+        return
+    try:
+        import content_engine_connectors as C
+        site = C._env("EMAIL_WEBSITE", "") if hasattr(C, "_env") else ""
+        book = C._env("EMAIL_BOOKING_URL", "") if hasattr(C, "_env") else ""
+        post = C.repurpose_linkedin(piece, site, book)
+        if post:
+            piece["linkedin_post"] = post
+            p["content_producer"] = piece
+    except Exception:
+        pass
+
+
 def _in_seo_optimizer(job: dict) -> dict:
     _ensure_hero_image(job)                     # add the hero image before SEO/approval
+    _ensure_linkedin_post(job)                  # + a native LinkedIn post to approve
     row = _chosen_row(job)
     cfg = _cfg(job)
     intent = cfg.get("intent") or _INTENT_BY_GOAL.get(
