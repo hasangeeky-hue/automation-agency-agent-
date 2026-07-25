@@ -903,6 +903,58 @@ def _leads_table(jobs):
             + rows + "</tbody></table></div></div>")
 
 
+def _md_inline(s):
+    import re, html as _h
+    s = _h.escape(s)
+    s = re.sub(r"!\[(.*?)\]\((.*?)\)", r'<img src="\2" alt="\1" style="max-width:100%;border-radius:10px;margin:10px 0">', s)
+    s = re.sub(r"\[(.*?)\]\((.*?)\)", r'<a href="\2">\1</a>', s)
+    s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+    s = re.sub(r"\*(.+?)\*", r"<em>\1</em>", s)
+    return s
+
+
+def _md_to_html(text):
+    """Lightweight markdown -> HTML for the blog 'web view' (headings, lists,
+    bold/italic, links, images) — how the piece reads on the site."""
+    import re
+    out, inlist = [], False
+    for ln in (text or "").split("\n"):
+        s = ln.rstrip()
+        if not s.strip():
+            if inlist:
+                out.append("</ul>"); inlist = False
+            continue
+        m = re.match(r"^(#{1,3})\s+(.*)", s)
+        if m:
+            if inlist:
+                out.append("</ul>"); inlist = False
+            out.append(f"<h{len(m.group(1))}>{_md_inline(m.group(2))}</h{len(m.group(1))}>")
+            continue
+        if re.match(r"^[-*]\s+", s):
+            if not inlist:
+                out.append("<ul>"); inlist = True
+            out.append(f"<li>{_md_inline(s[2:])}</li>")
+            continue
+        if inlist:
+            out.append("</ul>"); inlist = False
+        out.append(f"<p>{_md_inline(s)}</p>")
+    if inlist:
+        out.append("</ul>")
+    return "\n".join(out)
+
+
+def _blog_webview_srcdoc(title, body):
+    inner = _md_to_html(body)
+    doc = ("<html><head><meta charset='utf-8'><style>"
+           "body{font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;max-width:720px;margin:0 auto;"
+           "padding:26px;color:#1a1a2e;line-height:1.75;background:#fff}"
+           "h1{font-size:30px;line-height:1.2;margin:0 0 16px}h2{font-size:22px;margin:26px 0 10px}"
+           "h3{font-size:18px;margin:20px 0 8px}p{margin:0 0 14px}img{max-width:100%;border-radius:10px}"
+           "a{color:#2F6BF0}ul{margin:0 0 14px 20px}li{margin:4px 0}</style></head><body>"
+           f"<h1>{_esc(title)}</h1>{inner}</body></html>")
+    return doc.replace("&", "&amp;").replace('"', "&quot;")
+
+
 def _outbox(jobs):
     """The mailbox: one personalized email per lead (built from their persona),
     each ready to send individually, in bulk, or all at once."""
@@ -911,7 +963,7 @@ def _outbox(jobs):
         _mailer = _C.Emailer()
     except Exception:
         _C, _mailer = None, None
-    items, sample_html = [], None
+    items, sample_html, trashed_items = [], None, []
     for j in jobs:
         if j.get("type") != "outreach_campaign":
             continue
@@ -923,9 +975,13 @@ def _outbox(jobs):
         qmap = {str(r.get("id", "")).lower(): r for r in ((p.get("lead_qualifier") or {}).get("results") or [])}
         sent = p.get("sent_to", {}) or {}
         edits = p.get("email_edits", {}) or {}
+        trashed = set(str(x).lower() for x in (p.get("email_trashed") or []))
         for L in leads:
             e = (L.get("email") or "").strip().lower()
             if not e:
+                continue
+            if e in trashed:                       # soft-deleted -> junk box, never lost
+                trashed_items.append((j.get("job_id"), L))
                 continue
             q = qmap.get(e) or {}
             ed = edits.get(e)
@@ -994,6 +1050,8 @@ def _outbox(jobs):
             f"<button class='cbtn' style='padding:3px 10px' onclick=\"previewEmail({i})\">👁 Preview</button>"
             + (f"<button class='cbtn' style='padding:3px 10px' onclick=\"editEmail({i})\">✏️ Edit</button>"
                if status != "sent" else "")
+            + (f"<button class='cbtn warn' style='padding:3px 10px' onclick=\"trashEmail('{_esc(jid)}','{_esc(email)}')\">🗑 Delete</button>"
+               if status != "sent" else "")
             # hidden preview iframe (rendered on click)
             + f"<div id='pv-{i}' style='display:none;margin-top:8px'>"
               f"<iframe srcdoc=\"{html_attr}\" style='width:100%;max-width:600px;height:520px;border:1px solid var(--line);"
@@ -1026,8 +1084,26 @@ def _outbox(jobs):
             "<button class='sbtn' onclick='sendSelected()'>📨 Send selected</button>"
             "<button class='cbtn' onclick='sendAllOutbox()'>📤 Send all ready</button></div>"
             "<div class='tbwrap'><table><thead><tr><th></th><th>Customer</th><th>Persona</th><th>Subject</th>"
-            "<th>Scheduled</th><th>Status</th><th>Send / preview</th></tr></thead><tbody>"
-            + rows + "</tbody></table></div></div>")
+            "<th>Scheduled</th><th>Status</th><th>Actions</th></tr></thead><tbody>"
+            + rows + "</tbody></table></div>" + _junk_box(trashed_items) + "</div>")
+
+
+def _junk_box(trashed_items):
+    """The recoverable junk box — deleted emails are kept here, never lost."""
+    if not trashed_items:
+        return ""
+    rows = ""
+    for jid, L in trashed_items[:100]:
+        email = L.get("email") or ""
+        rows += (f"<div class='fe'><span class='mut'>{_esc(L.get('name',''))} · {_esc(L.get('company',''))} "
+                 f"<span class='dim'>({_esc(email)})</span></span>"
+                 f"<button class='cbtn' style='margin-left:auto;padding:2px 10px' "
+                 f"onclick=\"restoreEmail('{_esc(jid)}','{_esc(email)}')\">↩ Restore</button></div>")
+    return ("<details style='margin-top:12px'><summary style='cursor:pointer;color:#8E9BBE;font-weight:600'>"
+            f"🗑 Junk box ({len(trashed_items)}) — deleted emails, kept safe &amp; restorable</summary>"
+            "<div style='margin-top:8px'>" + rows + "</div>"
+            "<div class='dim' style='margin-top:6px'>Deleting an email moves it here (it's never permanently lost). "
+            "Restore any time.</div></details>")
 
 
 def _outbox_ready_count(jobs):
@@ -1052,9 +1128,11 @@ def _outbox_pointer(jobs):
         return ""
     return ("<div class='card full' style='margin-bottom:12px;border-left:4px solid #F5B14C'>"
             f"<p class='ct'>📬 {n} personalized email{'s' if n != 1 else ''} ready to send</p>"
-            "<p class='cc'>Your agent has written one on-brand email per customer (from their persona). Review + send "
-            "them from the outbox — individually, selected, or all at once.</p>"
-            "<div class='ctrl'><button class='cbtn' onclick=\"nav('email')\">📬 Open the email outbox →</button></div></div>")
+            "<p class='cc'>Your agent has written one on-brand email per customer (from their persona). Send them all "
+            "from here in one click, or open the outbox to review, edit, preview or send individually.</p>"
+            f"<div class='ctrl'><button class='sbtn' onclick='sendAllCommand()'>📤 Send all {n} emails now</button>"
+            "<button class='cbtn' onclick=\"nav('email')\">📬 Open the email outbox →</button></div>"
+            "<div class='dim' style='margin-top:6px'>Warm-up capped — day-one stays safe, the rest queue for the next days.</div></div>")
 
 
 def _why_piece(job):
@@ -1716,15 +1794,24 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
             img_html = (f"<div style='margin-top:8px'><img src='{_esc(img)}' alt='preview' "
                         "style='max-width:220px;max-height:150px;border-radius:9px;border:1px solid var(--line)'></div>")
         whatis = "email" if j.get("type") == "outreach_campaign" else "article"
+        is_article = j.get("type") != "outreach_campaign"
         teaser = body[:220]
         if body:
+            webview = ""
+            if is_article:
+                sd = _blog_webview_srcdoc(title, body)
+                webview = (
+                    "<details style='margin-top:6px'><summary style='cursor:pointer;color:#3FD98B;font-weight:600'>"
+                    "🌐 See the web view (how it looks on your site — headings, images, layout)</summary>"
+                    f"<iframe srcdoc=\"{sd}\" style='width:100%;max-width:720px;height:560px;border:1px solid var(--line);"
+                    "border-radius:9px;background:#fff;margin-top:8px'></iframe></details>")
             preview = (
                 f"<div class='dim' style='margin-top:8px;line-height:1.55'>{_esc(teaser)}…</div>"
                 f"<details style='margin-top:6px'><summary style='cursor:pointer;color:#4C8DFF;font-weight:600'>"
-                f"📖 Read the full {whatis} here</summary>"
+                f"📖 Read the full {whatis} (raw text)</summary>"
                 "<div style='margin-top:8px;padding:13px 15px;border-radius:9px;background:var(--panel,rgba(255,255,255,.03));"
                 "border:1px solid var(--line);max-height:460px;overflow:auto;white-space:pre-wrap;line-height:1.65;font-size:13.5px'>"
-                f"{_esc(body)}</div></details>")
+                f"{_esc(body)}</div></details>" + webview)
         else:
             preview = "<div class='dim' style='margin-top:8px'>(preview appears once it is written)</div>"
         return ("<div style='background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px'>"
@@ -2053,6 +2140,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "async function approve(id){await act('/jobs/'+id+'/approve');}"
               "function toggleOutbox(cb){document.querySelectorAll('.obx').forEach(function(x){x.checked=cb.checked;});}"
+              "async function sendAllCommand(){if(!confirm('Send ALL ready emails now? Warm-up cap applies — the rest queue for the next days.'))return;"
+              "try{var r=await fetch('/outreach/send_all',{method:'POST'});var j=await r.json();alert('Sent '+j.sent+' of '+j.total+(j.held_by_cap?(' · '+j.held_by_cap+' held by cap (send over coming days)'):''));location.reload();}catch(e){alert('Failed: '+e);}}"
+              "async function trashEmail(job,email){if(!confirm('Delete this email? It moves to the junk box (recoverable, never lost).'))return;"
+              "try{await fetch('/outreach/trash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email})});location.reload();}catch(e){alert('Failed: '+e);}}"
+              "async function restoreEmail(job,email){try{await fetch('/outreach/trash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email,restore:true})});location.reload();}catch(e){alert('Failed: '+e);}}"
               "function previewEmail(i){var d=document.getElementById('pv-'+i);if(d)d.style.display=(d.style.display==='none'?'block':'none');}"
               "function editEmail(i){var d=document.getElementById('ed-'+i);if(d)d.style.display=(d.style.display==='none'?'block':'none');}"
               "async function saveEdit(job,email,i){var s=(document.getElementById('eds-'+i)||{}).value||'';var b=(document.getElementById('edb-'+i)||{}).value||'';"

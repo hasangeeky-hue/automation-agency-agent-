@@ -540,6 +540,42 @@ def api_outreach_send_batch(job_id, emails=None):
     return {"ok": True, "sent": sent, "held_by_cap": held, "failed": failed, "total": len(targets)}
 
 
+def api_outreach_send_all():
+    """Send EVERY ready email across all outreach campaigns (the command-center
+    'send all' button). Honors the warm-up cap — the rest queue for coming days."""
+    store = get_store()
+    sent = held = total = 0
+    for j in (store.list_jobs() if hasattr(store, "list_jobs") else []):
+        if j.get("type") != "outreach_campaign":
+            continue
+        res = api_outreach_send_batch(j.get("job_id"))
+        sent += res.get("sent", 0)
+        held += res.get("held_by_cap", 0)
+        total += res.get("total", 0)
+    return {"ok": True, "sent": sent, "held_by_cap": held, "total": total}
+
+
+def api_outreach_trash(job_id, email, restore=False):
+    """Soft-delete an email to the junk box (recoverable — never lost), or restore it."""
+    store = get_store()
+    try:
+        job = store.get(job_id)
+    except Exception:
+        return {"ok": False, "error": "campaign not found"}
+    email = (email or "").strip().lower()
+    p = job.setdefault("payload", {})
+    trash = p.setdefault("email_trashed", [])
+    if restore:
+        p["email_trashed"] = [e for e in trash if e != email]
+    elif email not in trash:
+        trash.append(email)
+    try:
+        store.save(job)
+    except Exception:
+        pass
+    return {"ok": True, "email": email, "trashed": not restore}
+
+
 def api_save_ci(text, drive_folder=None, inspiration=None):
     """Save the brand/CI the content agents write on-brand from (dashboard)."""
     store = get_store()
@@ -1104,6 +1140,18 @@ def build_app():
     @app.post("/autopilot/stop")
     def autopilot_stop():
         return api_autopilot(False)
+
+    @app.post("/outreach/send_all")
+    def outreach_send_all():
+        return api_outreach_send_all()
+
+    @app.post("/outreach/trash")
+    async def outreach_trash(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_outreach_trash(data.get("job_id"), data.get("email", ""), bool(data.get("restore")))
 
     @app.post("/outreach/edit")
     async def outreach_edit(request: Request):
