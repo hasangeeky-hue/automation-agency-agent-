@@ -439,6 +439,58 @@ def bump(series):
     return _svg(W, H, inner)
 
 
+# --- n8n-style agent flow: node cards + ports + bezier wires + moving dots --
+def n8n_flow(lanes):
+    """n8n-style workflow diagram. lanes=[(lane_label, [(icon, name, badge, kind), ...])]
+    kind: 'agent' (teal) | 'gate' (amber, e.g. QA) | 'human' (violet, your approval)
+    | 'code' (blue, deterministic step). badge: live count string or ''. Nodes are
+    rounded cards with in/out ports, connected by bezier wires that carry an
+    animated signal dot — read left to right like an n8n canvas."""
+    if not lanes:
+        return ""
+    NW, NH, GAP, LH, PAD = 158, 58, 46, 128, 16
+    maxn = max(len(nodes) for _, nodes in lanes)
+    W = PAD * 2 + maxn * NW + (maxn - 1) * GAP
+    H = len(lanes) * LH + 8
+    kindcol = {"agent": "#2FE3D2", "gate": "#F5B14C", "human": "#8B7CFF", "code": "#4C8DFF"}
+    inner = ""
+    for li, (label, nodes) in enumerate(lanes):
+        y0 = li * LH + 26
+        inner += (f"<text x='{PAD}' y='{y0 - 8}' fill='{_MUT}' font-size='9.5' font-weight='800' "
+                  f"letter-spacing='2'>{_e(label).upper()}</text>")
+        for ni, (icon, name, badge, kind) in enumerate(nodes):
+            x = PAD + ni * (NW + GAP)
+            col = kindcol.get(kind, "#2FE3D2")
+            # wire to the next node (bezier with a travelling signal dot)
+            if ni < len(nodes) - 1:
+                x1, x2 = x + NW, x + NW + GAP
+                ym = y0 + NH / 2
+                path = f"M{x1} {ym} C{x1 + GAP * 0.5} {ym} {x2 - GAP * 0.5} {ym} {x2} {ym}"
+                inner += (f"<path d='{path}' fill='none' stroke='#2A3A5F' stroke-width='2'/>"
+                          f"<circle r='3' fill='{col}' filter='url(#cg)'>"
+                          f"<animateMotion dur='{1.6 + (ni % 3) * 0.4:.1f}s' repeatCount='indefinite' path='{path}'/>"
+                          f"</circle>")
+            # node card
+            inner += (f"<rect x='{x}' y='{y0}' width='{NW}' height='{NH}' rx='11' "
+                      f"fill='#121B2F' stroke='{col}' stroke-opacity='.55' stroke-width='1.6'/>"
+                      # in/out ports (n8n look)
+                      + (f"<circle cx='{x}' cy='{y0 + NH/2}' r='4' fill='#0B1220' stroke='{col}' stroke-width='1.6'/>" if ni > 0 else "")
+                      + (f"<circle cx='{x + NW}' cy='{y0 + NH/2}' r='4' fill='#0B1220' stroke='{col}' stroke-width='1.6'/>" if ni < len(nodes) - 1 else "")
+                      # icon chip
+                      + f"<rect x='{x + 9}' y='{y0 + 15}' width='28' height='28' rx='8' fill='{col}' fill-opacity='.14'/>"
+                      f"<text x='{x + 23}' y='{y0 + 34}' text-anchor='middle' font-size='14'>{icon}</text>"
+                      # name
+                      f"<text x='{x + 44}' y='{y0 + 27}' fill='{_INK}' font-size='10.5' font-weight='700'>{_e(name)[:15]}</text>"
+                      f"<text x='{x + 44}' y='{y0 + 41}' fill='{_MUT}' font-size='8.5'>{_e({'agent':'AI agent','gate':'quality gate','human':'you decide','code':'automation'}.get(kind,'agent'))}</text>")
+            # live badge
+            if badge:
+                inner += (f"<rect x='{x + NW - 30}' y='{y0 - 9}' width='30' height='17' rx='8' fill='{col}'/>"
+                          f"<text x='{x + NW - 15}' y='{y0 + 3}' text-anchor='middle' fill='#04121a' "
+                          f"font-size='9.5' font-weight='800'>{_e(badge)[:4]}</text>")
+    return (f"<svg viewBox='0 0 {W} {H}' width='{W}' style='max-width:none;height:auto' "
+            f"xmlns='http://www.w3.org/2000/svg'>{_GLOW}{inner}</svg>")
+
+
 # --- Sales region: geographic distribution ---------------------------------
 _FLAG = {"United States": "🇺🇸", "USA": "🇺🇸", "United Kingdom": "🇬🇧", "UK": "🇬🇧",
          "Germany": "🇩🇪", "Switzerland": "🇨🇭", "Canada": "🇨🇦", "Other": "🌍"}

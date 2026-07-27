@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-27 · v16-restored · 10 centres + classic machine pages"
+BUILD_TAG = "2026-07-27 · v16-r2 · + n8n-style agent flow on the System Map"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -3236,6 +3236,38 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
              "<div class='card full' style='margin-top:12px'><p class='ct'>Wiring diagram</p>"
              "<p class='cc'>The physical connections between components (secondary view).</p>"
              + _system_map(st) + "</div>"
+             # n8n-style agent flow: who hands off to whom, with live job counts
+             + "<div class='card full' style='margin-top:12px'><p class='ct'>🔗 Agent flow — how one agent connects to the next (n8n view)</p>"
+             "<p class='cc'>Every node is one agent; the wire shows the hand-off and the moving dot is work flowing. "
+             "Badges = how many jobs sit at that step right now. Amber = quality gate, violet = <b>you</b> decide, "
+             "blue = deterministic automation. Scroll sideways →</p>"
+             "<div style='overflow-x:auto;padding:6px 2px'>"
+             + CH.n8n_flow([
+                 ("Content pipeline", [
+                     ("🔍", "Site Analyst", (str(pl[0]) if pl[0] else ""), "agent"),
+                     ("🕵️", "Competitor", "", "agent"),
+                     ("🗺️", "Strategist", "", "agent"),
+                     ("✍️", "Writer", (str(pl[1]) if pl[1] else ""), "agent"),
+                     ("🔎", "SEO Optimizer", (str(pl[2]) if pl[2] else ""), "agent"),
+                     ("🛡️", "Quality & Legal", "", "gate"),
+                     ("👤", "Your approval", (str(waiting) if waiting else ""), "human"),
+                     ("🚀", "Publisher", (str(pl[4]) if pl[4] else ""), "code"),
+                     ("📊", "Analytics", (str(pl[5]) if pl[5] else ""), "agent"),
+                     ("🧠", "Learning", "", "agent"),
+                 ]),
+                 ("Lead & outreach pipeline", [
+                     ("🧲", "Lead Sourcer", (str(lead_rows[0][1]) if lead_rows[0][1] else ""), "code"),
+                     ("⚖️", "Qualifier", (str(lead_rows[2][1]) if lead_rows[2][1] else ""), "agent"),
+                     ("🧩", "Segmenter", "", "agent"),
+                     ("💬", "Outreach Writer", "", "agent"),
+                     ("🛡️", "Quality & Legal", "", "gate"),
+                     ("👤", "Your approval", "", "human"),
+                     ("📤", "Email Sender", (str(lead_rows[3][1]) if lead_rows[3][1] else ""), "code"),
+                     ("📥", "Reply Agent", (str(lead_rows[4][1]) if lead_rows[4][1] else ""), "agent"),
+                     ("📅", "Bookings", (str(lead_rows[5][1]) if lead_rows[5][1] else ""), "code"),
+                     ("🧠", "Learning", "", "agent"),
+                 ]),
+             ]) + "</div></div>"
              + diag + connect_card)
 
     # ---- MEDIA BUYING (drafted Google Ads campaigns) ----
