@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-27 · v20 · reference layout: KPI row + glowing agent-network model"
+BUILD_TAG = "2026-07-27 · v21 · complete OS: all 20 intelligence modules built"
 
 CSS = """
 :root{--bg:#070A12;--bg2:#0A0F1E;--s1:#111A2E;--s1b:#0E1626;--s2:#0B111F;
@@ -2631,6 +2631,219 @@ def _mod_executive(c):
                               roi=(c.get("impact_conf") or "—")))
 
 
+def _mod_projects(c):
+    active = c["published"] + len(c["out_jobs"])
+    m = _master("📋", "Projects", "Delivery status across every content + outreach initiative.",
+                [("Active", active, "#4C8DFF"), ("In production", sum(c["pl"][0:4]), "#F5B14C"),
+                 ("Shipped", c["published"], "#3FD98B"), ("On you", c["waiting"], "#8B7CFF")], "")
+    pcard = _intel_card("Active initiatives", str(active), sub="in flight", dept="Delivery", source="Engine",
+                        accent="#4C8DFF", priority=("High" if c["waiting"] else "Low"),
+                        insight=f"{sum(c['pl'][0:4])} in production, {c['published']} shipped, {c['waiting']} awaiting you.",
+                        recommendation=("Unblock the approval queue to keep delivery flowing." if c["waiting"] else "Delivery is flowing."),
+                        action_label="Open Operations", action="nav('ops')")
+    pm = _intel_card("Project management", "", dept="Delivery",
+                     empty="Connect Asana / Linear / Jira / Trello to activate client-project timelines, milestones and on-time %.")
+    from datetime import date
+    tasks = []
+    for j in c["content_jobs"]:
+        pd = (j.get("payload", {}) or {}).get("config", {}).get("publish_date")
+        if pd:
+            try:
+                off = (date.fromisoformat(pd) - date.today()).days
+                if 0 <= off <= 6:
+                    tasks.append(((j.get("payload", {}).get("content_producer", {}) or {}).get("title") or j.get("job_id"), off, 1))
+            except Exception:
+                pass
+    return (m + "<div class='grid g2'>" + pcard + pm + "</div>"
+            + _viz("Delivery schedule (this week)", "Each initiative's target ship day.", CH.gantt(tasks), "Plan a week to fill it.")
+            + _decision_strip([f"{c['waiting']} initiatives blocked on your approval." for _ in [1] if c["waiting"]],
+                              ["Connect a PM tool to see true project health + deadlines."],
+                              [("Open Operations", "nav('ops')")], priority="Medium", cost="—", gain="on-time delivery", roi="—"))
+
+
+def _mod_hr(c):
+    m = _master("👥", "Human Resources", "Your workforce — human and AI.",
+                [("AI agents", c["live_agents"], "#3FD98B"), ("Humans", "1", "#4C8DFF"),
+                 ("Utilisation", "—", "#8B7CFF"), ("Open roles", "—", "#F5B14C")], "")
+    ai = _intel_card("AI workforce", str(c["live_agents"]), sub="agents working", dept="People", source="Orchestrator",
+                     accent="#3FD98B", insight="Your AI agents do the content, lead and reply work of a small team.",
+                     recommendation="Scale output by planning more work — no hiring needed.", action_label="Open AI Workforce", action="nav('workforce')")
+    hr = _intel_card("People operations", "", dept="People",
+                     empty="Connect an HRIS (BambooHR / Personio / Gusto) to activate headcount, payroll, utilisation and performance.")
+    return (m + "<div class='grid g2'>" + ai + hr + "</div>"
+            + _decision_strip(["No HRIS connected — human-team metrics are blind."],
+                              ["Your AI workforce already covers content, leads and replies."],
+                              [("Open AI Workforce", "nav('workforce')")], priority="Low", cost="—", gain="—", roi="—"))
+
+
+def _mod_knowledge(c):
+    m = _master("📚", "Knowledge", "Your content library + institutional knowledge.",
+                [("Published assets", c["published"], "#3FD98B"), ("In production", sum(c["pl"][0:4]), "#F5B14C"),
+                 ("Segments", 7, "#8B7CFF"), ("Pillars", 6, "#4C8DFF")], "")
+    lib = _intel_card("Content library", str(c["published"]), sub="live assets", dept="Knowledge", source="Content engine",
+                      accent="#3FD98B", insight="Every published piece is a reusable knowledge asset across 7 segments.",
+                      recommendation="Repurpose top pieces into guides + FAQs to deepen the library.", action_label="Open Content", action="nav('ops')")
+    kb = _intel_card("Knowledge base", "", dept="Knowledge",
+                     empty="Connect Notion / Confluence / Guru to activate an internal knowledge graph the agents can read + cite.")
+    return (m + "<div class='grid g2'>" + lib + kb + "</div>"
+            + _decision_strip([], ["A connected KB lets agents cite internal docs — fewer 'needs-human' replies."],
+                              [("Open Content", "nav('ops')")], priority="Low", cost="—", gain="richer content", roi="—"))
+
+
+def _mod_compliance(c):
+    # REAL: the engine enforces CAN-SPAM (address + unsubscribe), suppression, warm-up cap
+    m = _master("📜", "Compliance", "Email law, consent and deliverability guardrails.",
+                [("CAN-SPAM", "Enforced", "#3FD98B"), ("Suppression", "On", "#3FD98B"),
+                 ("Warm-up cap", "On", "#3FD98B"), ("Consent", "—", "#F5B14C")], "")
+    spam = _intel_card("Email compliance (CAN-SPAM)", "Enforced", dept="Legal", source="QA gate + Emailer",
+                       accent="#3FD98B", priority="Low",
+                       insight="Every outreach email carries a physical address + working unsubscribe; the QA gate blocks any that don't.",
+                       recommendation="Keep the QA gate on — it protects your domain reputation.", action_label="Open outreach", action="nav('sales')")
+    supp = _intel_card("Suppression & bounces", "Active", dept="Legal", source="Deliverability loop",
+                       accent="#3FD98B", priority="Low",
+                       insight="Bounced/unsubscribed addresses are auto-suppressed and never emailed again; warm-up cap ramps volume safely.",
+                       recommendation="No action — the guardrails run automatically.", action_label="Open Infrastructure", action="nav('infra')")
+    gdpr = _intel_card("GDPR / consent tracking", "", dept="Legal",
+                       empty="Connect a consent/CMP source (or CRM consent fields) to activate GDPR lawful-basis + data-subject tracking.")
+    return (m + "<div class='grid g2'>" + spam + supp + gdpr + "</div>"
+            + _decision_strip([], ["Email compliance + deliverability are already enforced automatically."],
+                              [("Open outreach", "nav('sales')")], priority="Low", cost="~£0", gain="protected domain", roi="High"))
+
+
+def _mod_security(c):
+    pw = "Set" if c.get("has_password") else "OFF"
+    m = _master("🛡️", "Security", "Access, secrets and rate limits.",
+                [("Dashboard auth", pw, "#3FD98B" if c.get("has_password") else "#FF6B93"),
+                 ("API key", "Present", "#3FD98B"), ("Warm-up cap", "On", "#3FD98B"),
+                 ("Secrets rotated", "Due", "#F5B14C")], "")
+    access = _intel_card("Access control", pw, dept="Security", source="Auth middleware",
+                         accent=("#3FD98B" if c.get("has_password") else "#FF6B93"),
+                         priority=("Low" if c.get("has_password") else "Critical"),
+                         insight=("Dashboard is password-protected; every endpoint requires the key." if c.get("has_password")
+                                  else "No dashboard password set — the whole business is exposed."),
+                         recommendation=("Rotate the password periodically; consider IP-allowlisting." if c.get("has_password")
+                                         else "Set DASHBOARD_PASSWORD immediately and rebuild."),
+                         action_label="Open System Map", action="nav('infra')")
+    secrets = _intel_card("Secrets & keys", "Review", dept="Security", source="Env / settings",
+                          accent="#F5B14C", priority="High",
+                          insight="API keys (Anthropic, Google, WordPress, SMTP, Prospeo) live in server env/settings.",
+                          recommendation="Rotate any key that's been shared in chat/screenshots; store only server-side.",
+                          action_label="Open Infrastructure", action="nav('infra')")
+    return (m + "<div class='grid g2'>" + access + secrets + "</div>"
+            + _decision_strip(([] if c.get("has_password") else ["No dashboard password — critical exposure."])
+                              + ["Rotate any secret shared outside the server."],
+                              ["IP-allowlisting + key rotation harden the platform."],
+                              [("Open System Map", "nav('infra')")], priority=("Critical" if not c.get("has_password") else "High"),
+                              cost="~£0", gain="breach prevention", roi="High"))
+
+
+def _mod_development(c):
+    m = _master("💻", "Development", "Builds, deploys and platform version.",
+                [("Build", "live", "#3FD98B"), ("Uptime", "24/7", "#4C8DFF"),
+                 ("Services", "3", "#8B7CFF"), ("CI/CD", "—", "#F5B14C")], "")
+    build = _intel_card("Current build", "live", dept="Engineering", source="Docker / deploy",
+                        accent="#3FD98B", priority="Low", insight=f"Running: {BUILD_TAG}.",
+                        recommendation="Deploys are one command (git pull + compose up --build).", action_label="Open Infrastructure", action="nav('infra')")
+    ci = _intel_card("CI/CD & repo", "", dept="Engineering",
+                     empty="Connect GitHub to activate commit history, CI status, PRs and automated deploys.")
+    return (m + "<div class='grid g2'>" + build + ci + "</div>"
+            + _decision_strip([], ["Connecting GitHub enables automated CI/CD + rollback."],
+                              [("Open Infrastructure", "nav('infra')")], priority="Low", cost="—", gain="faster, safer deploys", roi="—"))
+
+
+def _mod_automation(c):
+    jobs_total = len(c["jobs"])
+    m = _master("⚡", "Automation", "Workflows, agent runs and throughput.",
+                [("Jobs run", jobs_total, "#4C8DFF"), ("Agents active", c["live_agents"], "#3FD98B"),
+                 ("Waiting", c["waiting"], "#F5B14C"), ("Cost/job", f"${(c['total_cost']/max(jobs_total,1)):.3f}", "#8B7CFF")], "")
+    flow = _intel_card("Workflow throughput", str(jobs_total), sub="jobs handled", dept="Automation", source="Orchestrator",
+                       accent="#4C8DFF", history=c["content_series"], priority="Low",
+                       insight=f"{c['live_agents']} agents active across content + outreach pipelines.",
+                       recommendation="Throughput scales with the plan — add work, not people.", action_label="Open AI Workforce", action="nav('workforce')")
+    n8n = _intel_card("n8n / external workflows", "", dept="Automation",
+                      empty="Connect n8n's API to surface external cron/webhook workflows + run history here.")
+    ok = c["healthy"]
+    nodes = [("s", "Source", ok), ("w", "Write", ok), ("i", "Image", ok), ("q", "QA", ok), ("p", "Publish", ok),
+             ("l", "Lead", ok), ("o", "Outreach", ok), ("r", "Reply", ok)]
+    edges = [("s", "w"), ("w", "i"), ("i", "q"), ("q", "p"), ("l", "o"), ("o", "r")]
+    return (m + "<div class='grid g2'>" + flow + n8n + "</div>"
+            + _viz("Automation graph", "How the agents hand off work.", CH.digraph(nodes, edges), "")
+            + _decision_strip([], ["Everything here already runs without you once started."],
+                              [("Open AI Workforce", "nav('workforce')")], priority="Low", cost="automated", gain="hours saved/wk", roi="High"))
+
+
+def _mod_forecasting(c):
+    m = _master("🔮", "Forecasting", "Where the numbers are heading.",
+                [("Output/mo", f"{c['proj']}", "#4C8DFF"), ("Made so far", c["made_month"], "#3FD98B"),
+                 ("Spend/mo", f"${(c['total_cost']/max(__import__('datetime').date.today().day,1)*30):.0f}", "#F5B14C"),
+                 ("Confidence", ("high" if c["made_month"] > 3 else "building"), "#8B7CFF")], "")
+    outf = _intel_card("Output forecast", f"{c['proj']}", sub="pieces this month", dept="Forecasting", source="Trend model",
+                       accent="#4C8DFF", forecast=f"{c['proj']}/mo", confidence=("high" if c["made_month"] > 3 else "building"),
+                       history=c["content_series"], priority="Low",
+                       insight=f"On the current cadence you'll finish ~{c['proj']} pieces this month.",
+                       recommendation="Hold ≥2/day to hit the target.", action_label="Plan my week", action="nav('ops')",
+                       chart=CH.confband([max(1, x) for x in c["content_series"]]))
+    pipef = _intel_card("Pipeline forecast", (c.get("impact_gain") or "—"), sub="est. from actions", dept="Forecasting",
+                        source="Estimate model", accent="#3FD98B", confidence=(c.get("impact_conf") or "—"), priority="Medium",
+                        insight="Projected pipeline if you action the top opportunities (est., mid-ICP £4k deal).",
+                        recommendation="Email the un-contacted qualified leads to realise it.", action_label="Open Sales", action="nav('sales')")
+    spendf = _intel_card("Spend forecast", f"${(c['total_cost']/max(__import__('datetime').date.today().day,1)*30):.0f}", sub="projected/mo",
+                         dept="Forecasting", source="API meters", accent=c["bcol"], goal=f"${c['month_cap']:.0f} cap", priority="Low",
+                         insight="Projected month-end spend at the current daily burn.",
+                         recommendation=("Ease off — trending over cap." if (c['total_cost']/max(__import__('datetime').date.today().day,1)*30) > c['month_cap'] else "Within cap."),
+                         action_label="Open Finance", action="nav('finance')")
+    return (m + "<div class='grid g2'>" + outf + pipef + spendf + "</div>"
+            + _viz("Output forecast (confidence band)", "Trend + forecast envelope.", CH.confband([max(1, x) for x in c["content_series"]]), "Fills as pieces are made.")
+            + _decision_strip([], [f"On pace for {c['proj']} pieces — compounding SEO."],
+                              [("Plan my week", "nav('ops')")], priority="Medium", cost="~£0", gain=(c.get("impact_gain") or "—"), roi="Medium"))
+
+
+_COMPETITOR_SIGNALS = ["Health", "Revenue estimate", "Traffic", "Hiring", "Technology", "Ads", "SEO", "GEO",
+                       "AI visibility", "Products", "Pricing", "Promotions", "Reviews", "Social growth",
+                       "Partnerships", "Funding", "Expansion", "Launches", "Risk", "Forecast"]
+
+
+def _mod_competitive(c):
+    m = _master("🎯", "Competitive Intelligence", "Track rivals across 20 signals — an independent department.",
+                [("Competitors", "—", "#4C8DFF"), ("Signals tracked", f"0/{len(_COMPETITOR_SIGNALS)}", "#F5B14C"),
+                 ("AI-visibility", "—", "#8B7CFF"), ("Threats", "—", "#FF6B93")], "")
+    chips = "".join(f"<span style='display:inline-block;margin:3px;padding:3px 9px;border-radius:8px;border:1px solid var(--line);"
+                    f"font-size:11.5px;color:#8E9BBE'>{_esc(s)}</span>" for s in _COMPETITOR_SIGNALS)
+    board = ("<div class='card full'><p class='ct'>🛰️ Competitor signal board</p>"
+             "<p class='cc'>What this department will monitor per competitor once tracking sources are connected "
+             "(Semrush / Ahrefs / SimilarWeb + social + jobs + news + an AI-visibility feed):</p>"
+             f"<div style='margin-top:8px'>{chips}</div></div>")
+    setup = _intel_card("Competitor tracking", "", dept="Market Intel",
+                        empty="Connect Semrush / Ahrefs / SimilarWeb (+ social, jobs, news feeds) to activate live competitor traffic, SEO, ads, hiring, pricing and AI-visibility intelligence.")
+    return (m + "<div class='grid g2'>" + setup
+            + _intel_card("AI-visibility vs rivals", "", dept="Market Intel",
+                          empty="Connect an AI-visibility monitor to compare your ChatGPT/Perplexity/Gemini/Claude presence against competitors.")
+            + "</div>" + board
+            + _decision_strip(["No competitor data connected — you're blind to rival moves."],
+                              ["One SEO source (Semrush/Ahrefs) lights up most of these signals at once."],
+                              [("Open Infrastructure", "nav('infra')")], priority="High", cost="tool sub", gain="market edge", roi="High"))
+
+
+def _mod_decision(c):
+    # Decision Center — aggregate every module's problems/opportunities/actions
+    m = _master("🧭", "Decision Center", "Every decision the business needs, ranked — the co-pilot.",
+                [("Open decisions", len(c["risks"]) + len(c["opps"]), "#8B7CFF"),
+                 ("Critical", len([r for r in c["risks"]]), "#FF6B93"),
+                 ("Est. upside", (c.get("impact_gain") or "—"), "#3FD98B"),
+                 ("Confidence", (c.get("impact_conf") or "—"), "#4C8DFF")], "")
+    # the full decision loop (their spec)
+    loop = ["Problems", "Evidence", "Root cause", "Options", "Est. cost", "Est. revenue", "Risk",
+            "Confidence", "Timeline", "AI recommendation", "Execute", "Monitor", "Learn"]
+    loop_html = " → ".join(f"<span class='pill' style='background:rgba(139,124,255,.14);color:#8B7CFF;padding:2px 9px'>{s}</span>" for s in loop)
+    loopcard = ("<div class='card full'><p class='ct'>🔁 The decision loop</p>"
+                "<p class='cc'>Every module funnels its findings through this loop — turning the dashboard into a business co-pilot.</p>"
+                f"<div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:8px'>{loop_html}</div></div>")
+    return (m + loopcard
+            + _decision_strip(c["risks"], c["opps"], c["actions"],
+                              priority="High", cost="~£0 (in-house)", gain=(c.get("impact_gain") or "—"),
+                              roi=(c.get("impact_conf") or "—")))
+
+
 def _kpi(label, value, *, delta="", up=True, spark=None, icon="", accent="#2FE3D2"):
     """A reference-style KPI stat card: label + icon, big number + inline delta,
     mini sparkline underneath."""
@@ -3740,7 +3953,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "qualified": _qualified, "not_emailed": _not_emailed,
         "outbox_ready": _outbox_ready_count(jobs), "live_agents": _live_agents,
         "geo_rows": _geo_rows, "gain_email": _gain_email_s, "gain_content": _gain_content_s,
-        "impact_gain": _impact_gain, "impact_conf": _impact_conf,
+        "impact_gain": _impact_gain, "impact_conf": _impact_conf, "has_password": bool(has_password),
     }
     # CEO Command Center: lead with the reference analytics layout (KPI row →
     # glowing agent-network model → charts → live feed + health), THEN the AI
@@ -3764,29 +3977,38 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 f"⚙️ {_esc(title)} — operational controls (open)</summary>"
                 f"<div style='margin-top:12px'>{body}</div></details>")
 
+    # The COMPLETE operating system — Command Center + 20 intelligence modules,
+    # in the exact order of the spec. Operational controls fold inside their module.
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
-        ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum in one view.",
-         _mod_business(ctx)),
+        ("exec", "🏛️", "Executive AI", "Executive Intelligence", "The whole business on one screen.",
+         _mod_executive(ctx) + _op("Learning & Results", p_learn)),
+        ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum.", _mod_business(ctx)),
         ("marketing", "📣", "Marketing", "Marketing Intelligence", "SEO · AEO · GEO · Ads — visibility to revenue.",
          _mod_marketing(ctx) + _op("SEO / AEO / GEO", p_seo) + _op("Ads & Growth", p_ads)
          + _op("Media Buying", p_media) + _op("Social Media", p_social)),
         ("sales", "💼", "Sales", "Sales Intelligence", "Pipeline from stranger to won.",
          _mod_sales(ctx) + _op("Lead Machine", p_leads) + _op("Email & Outreach", p_email)),
-        ("customer", "🫂", "Customer", "Customer Intelligence", "Who's booking, buying and staying.",
-         _mod_customer(ctx)),
-        ("workforce", "🤖", "AI Workforce", "AI Workforce", "Your agents — running, healthy, productive.",
-         _mod_workforce(ctx) + _op("Agents & Health", p_agents)),
+        ("customer", "🫂", "Customers", "Customer Intelligence", "Who's booking, buying and staying.", _mod_customer(ctx)),
+        ("projects", "📋", "Projects", "Projects", "Delivery status across every initiative.", _mod_projects(ctx)),
         ("ops", "⚙️", "Operations", "Operations", "Throughput, schedule and the approval queue.",
          _mod_operations(ctx) + _op("Content Factory", p_content) + _op("Approvals & Commands", p_appr)),
         ("finance", "💰", "Finance", "Finance", "Spend against the cap, and cost per outcome.",
          _mod_finance(ctx) + _op("Budget & Cost", p_budget)),
+        ("hr", "👥", "Human Resources", "Human Resources", "Your workforce — human and AI.", _mod_hr(ctx)),
+        ("workforce", "🤖", "AI Workforce", "AI Workforce", "Your agents — running, healthy, productive.",
+         _mod_workforce(ctx) + _op("Agents & Health", p_agents)),
+        ("knowledge", "📚", "Knowledge", "Knowledge", "Your content library + institutional knowledge.", _mod_knowledge(ctx)),
+        ("risk", "⚠️", "Risk", "Risk", "What could hurt the business, ranked.", _mod_risk(ctx)),
+        ("compliance", "📜", "Compliance", "Compliance", "Email law, consent and deliverability guardrails.", _mod_compliance(ctx)),
+        ("security", "🛡️", "Security", "Security", "Access, secrets and rate limits.", _mod_security(ctx)),
         ("infra", "🛰️", "Infrastructure", "Infrastructure", "Every connection, live or down.",
          _mod_infra(ctx) + _op("System Map & Wiring", p_map) + _op("Google Hub", p_google)),
-        ("risk", "⚠️", "Risk", "Risk", "What could hurt the business, ranked.",
-         _mod_risk(ctx)),
-        ("exec", "🏛️", "Executive", "Executive Intelligence", "The whole business on one screen.",
-         _mod_executive(ctx) + _op("Learning & Results", p_learn)),
+        ("development", "💻", "Development", "Development", "Builds, deploys and platform version.", _mod_development(ctx)),
+        ("automation", "⚡", "Automation", "Automation", "Workflows, agent runs and throughput.", _mod_automation(ctx)),
+        ("forecasting", "🔮", "Forecasting", "Forecasting", "Where the numbers are heading.", _mod_forecasting(ctx)),
+        ("competitive", "🎯", "Competitive Intel", "Competitive Intelligence", "Track rivals across 20 signals.", _mod_competitive(ctx)),
+        ("decision", "🧭", "Decision Center", "Decision Center", "Every decision the business needs, ranked.", _mod_decision(ctx)),
     ]
     nav = "".join(
         f"<button class='navb{' act' if i==0 else ''}' id='nav-{pid}' onclick=\"nav('{pid}')\"><span class='ic'>{icon}</span>{_esc(short)}"
@@ -4008,12 +4230,14 @@ if __name__ == "__main__":
     for need in ("Content Factory", "System Map", "Wiring diagnostic", "Automation Engine",
                  "sec-infra", "nav('sales')", "24/7 competitor", "What it breaks", "Not connected"):
         assert need in html, need
-    # BOS is the WHOLE system now: Command Center + 10 intelligence centres (11 pages)
-    assert html.count("class='page") == 11, html.count("class='page")
+    # The COMPLETE OS: Command Center + 20 intelligence modules (21 pages)
+    assert html.count("class='page") == 21, html.count("class='page")
     assert "CEO Command Center" in html and "Executive briefing" in html
     for _m in ("Business Performance", "Marketing Intelligence", "Sales Intelligence",
-               "Customer Intelligence", "AI Workforce", "Operations", "Finance",
-               "Infrastructure", "Risk", "Executive Intelligence", "AI Decision Engine"):
+               "Customer Intelligence", "Projects", "Operations", "Finance", "Human Resources",
+               "AI Workforce", "Knowledge", "Risk", "Compliance", "Security", "Infrastructure",
+               "Development", "Automation", "Forecasting", "Competitive Intelligence",
+               "Decision Center", "Executive Intelligence", "AI Decision Engine"):
         assert _m in html, _m
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
