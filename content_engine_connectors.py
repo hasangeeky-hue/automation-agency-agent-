@@ -569,7 +569,8 @@ def sequence_schedule(sent_at, gap_days: int = SEQUENCE_GAP_DAYS):
 
     def _parse(t):
         try:
-            return datetime.fromisoformat(str(t).replace("Z", "+00:00"))
+            d = datetime.fromisoformat(str(t).replace("Z", "+00:00"))
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)  # naive -> UTC
         except Exception:
             return None
     times = [d for d in (_parse(t) for t in (sent_at or [])) if d]

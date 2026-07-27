@@ -20,7 +20,7 @@ from __future__ import annotations
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v14 · calendar is now a control panel (CTAs + honest state)"
+BUILD_TAG = "2026-07-26 · v15 · BOS phase 1: CEO Command Center + intelligence cards"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -1970,6 +1970,99 @@ def login_html(error=""):
 
 
 # ---------------------------------------------------------------------------
+# Business Operating System — the Intelligence Card (evidence -> diagnosis ->
+# recommendation -> action) and the Executive AI Briefing (the "AI brain").
+# Every card answers one business question and offers one decision. Real data
+# only; unconnected sources show an honest "connect to activate" state.
+# ---------------------------------------------------------------------------
+def _intel_card(title, current, *, sub="", trend="", trend_up=None, goal="", forecast="",
+                confidence="", insight="", recommendation="", action_label="", action="",
+                source="", dept="", chart="", accent="#2FE3D2", empty=""):
+    if empty:
+        return ("<div class='card' style='display:flex;flex-direction:column'>"
+                f"<div style='display:flex;align-items:center;gap:8px'><span class='ct' style='margin:0'>{_esc(title)}</span>"
+                + (f"<span class='pill' style='margin-left:auto;background:rgba(255,255,255,.05);color:#8E9BBE;padding:1px 8px'>{_esc(dept)}</span>" if dept else "")
+                + "</div>"
+                f"<div class='dim' style='margin-top:10px;line-height:1.5'>⚪ {_esc(empty)}</div></div>")
+    tr = ""
+    if trend:
+        tcol = "#3FD98B" if trend_up else ("#FF6B93" if trend_up is False else "#8E9BBE")
+        arr = "▲" if trend_up else ("▼" if trend_up is False else "•")
+        tr = f"<span style='color:{tcol};font-weight:700;font-size:13px;margin-left:8px'>{arr} {_esc(trend)}</span>"
+    stats = []
+    if goal:
+        stats.append(("Goal", goal))
+    if forecast:
+        stats.append(("Forecast", forecast))
+    if confidence:
+        stats.append(("Confidence", confidence))
+    statrow = ""
+    if stats:
+        statrow = "<div style='display:flex;gap:16px;margin-top:10px;flex-wrap:wrap'>" + "".join(
+            f"<div><div class='dim' style='font-size:10px'>{_esc(l)}</div>"
+            f"<div style='font-weight:700;font-size:14px'>{_esc(v)}</div></div>" for l, v in stats) + "</div>"
+    insight_html = (f"<div style='margin-top:12px;padding:9px 11px;border-radius:8px;background:rgba(139,124,255,.08);"
+                    f"border-left:3px solid #8B7CFF'><div class='dim' style='font-size:10px;letter-spacing:1px'>🧠 AI INSIGHT</div>"
+                    f"<div style='font-size:12.5px;margin-top:2px'>{_esc(insight)}</div></div>") if insight else ""
+    rec_html = (f"<div style='margin-top:8px;padding:9px 11px;border-radius:8px;background:rgba(47,227,210,.07);"
+                f"border-left:3px solid {accent}'><div class='dim' style='font-size:10px;letter-spacing:1px'>✅ RECOMMENDATION</div>"
+                f"<div style='font-size:12.5px;margin-top:2px'>{_esc(recommendation)}</div></div>") if recommendation else ""
+    act_html = ""
+    if action_label:
+        act_html = (f"<div class='ctrl' style='margin-top:10px'><button class='sbtn' "
+                    f"style='padding:5px 14px'{(' onclick=' + chr(34) + action + chr(34)) if action else ''}>{_esc(action_label)}</button></div>")
+    foot = ""
+    if source or dept:
+        foot = ("<div class='dim' style='font-size:10px;margin-top:10px;display:flex;gap:10px;flex-wrap:wrap'>"
+                + (f"<span>Source: {_esc(source)}</span>" if source else "")
+                + (f"<span>Dept: {_esc(dept)}</span>" if dept else "") + "</div>")
+    return ("<div class='card' style='display:flex;flex-direction:column'>"
+            f"<div style='display:flex;align-items:baseline;gap:8px'><span class='ct' style='margin:0'>{_esc(title)}</span></div>"
+            f"<div style='display:flex;align-items:baseline;margin-top:8px'>"
+            f"<span style='font-size:30px;font-weight:800;line-height:1;color:{accent}'>{_esc(current)}</span>"
+            f"<span class='dim' style='margin-left:6px;font-size:12px'>{_esc(sub)}</span>{tr}</div>"
+            + statrow + (f"<div style='margin-top:10px'>{chart}</div>" if chart else "")
+            + insight_html + rec_html + act_html + foot + "</div>")
+
+
+def _exec_briefing(name, health, sub_kpis, risks, opportunities, actions):
+    """The AI brain: one glance instead of dozens of cards. health=0-100 int;
+    sub_kpis=[(label,value,trend,up)]; risks/opportunities=[str]; actions=[(label,js)]."""
+    from datetime import datetime
+    hcol = "#3FD98B" if health >= 80 else ("#F5B14C" if health >= 60 else "#FF6B93")
+    kpis = "".join(
+        f"<div class='mstat'><div class='msv' style='color:{('#3FD98B' if up else ('#FF6B93' if up is False else '#EDF1FB'))}'>{_esc(v)}</div>"
+        f"<div class='msl'>{_esc(l)}{(' ' + ('▲' if up else '▼') + ' ' + _esc(t)) if t else ''}</div></div>"
+        for l, v, t, up in sub_kpis)
+    def _lst(items, icon, col):
+        if not items:
+            return f"<div class='dim'>None flagged.</div>"
+        return "".join(f"<div style='display:flex;gap:8px;margin:5px 0'><span>{icon}</span>"
+                       f"<span style='font-size:13px'>{_esc(x)}</span></div>" for x in items[:5])
+    act_btns = "".join(
+        f"<button class='cbtn' style='margin:3px 4px 0 0' onclick=\"{js}\">{_esc(l)}</button>" for l, js in actions)
+    ring = (f"<div style='position:relative;width:96px;height:96px;flex:0 0 auto'>"
+            f"<svg width='96' height='96' viewBox='0 0 96 96'><circle cx='48' cy='48' r='40' fill='none' stroke='#16223c' stroke-width='9'/>"
+            f"<circle cx='48' cy='48' r='40' fill='none' stroke='{hcol}' stroke-width='9' stroke-linecap='round' "
+            f"stroke-dasharray='{2*3.14159*40:.0f}' stroke-dashoffset='{2*3.14159*40*(1-health/100):.0f}' transform='rotate(-90 48 48)'/>"
+            f"<text x='48' y='45' text-anchor='middle' fill='#EDF1FB' font-size='24' font-weight='800'>{health}</text>"
+            f"<text x='48' y='63' text-anchor='middle' fill='#8E9BBE' font-size='9'>/ 100</text></svg></div>")
+    return (
+        "<div class='card full' style='margin-bottom:14px;background:linear-gradient(135deg,rgba(139,124,255,.07),rgba(47,227,210,.05));border:1px solid var(--line)'>"
+        "<div style='display:flex;gap:18px;align-items:center;flex-wrap:wrap'>" + ring
+        + f"<div style='flex:1;min-width:220px'><div class='dim' style='font-size:12px'>Executive briefing</div>"
+        f"<h2 style='margin:2px 0 4px;font-size:20px'>Good day, {_esc(name)}</h2>"
+        f"<div class='dim'>Business health <b style='color:{hcol}'>{health}/100</b> — the AI brain read your whole engine and picked what matters.</div></div>"
+        "<div class='mstats' style='flex:2 1 300px'>" + kpis + "</div></div>"
+        "<div class='grid g3' style='margin-top:14px'>"
+        "<div><div class='ct' style='font-size:13px'>⚠️ Risks</div>" + _lst(risks, "🔻", "#FF6B93") + "</div>"
+        "<div><div class='ct' style='font-size:13px'>🚀 Opportunities</div>" + _lst(opportunities, "▹", "#3FD98B") + "</div>"
+        "<div><div class='ct' style='font-size:13px'>⚡ Immediate actions</div>"
+        + ("<div class='dim'>Nothing needs you right now.</div>" if not actions else act_btns) + "</div>"
+        "</div></div>")
+
+
+# ---------------------------------------------------------------------------
 # dashboard
 # ---------------------------------------------------------------------------
 def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_cap,
@@ -2853,8 +2946,105 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 + tile("map", "🗺️", "System map", f"{total_conn-live_conn}", "wires to fix", amber if live_conn < total_conn else green)
                 + "</div>" + _pipeline_health(st, jobs))
 
+    # ---- CEO COMMAND CENTER (Business Operating System landing) ----
+    # Business-health score computed from REAL engine signals (not fabricated).
+    _sig = [live_conn / max(total_conn, 1),
+            1.0 if healthy else 0.5,
+            1.0 - min(pct, 100) / 100 * 0.5,
+            min(1.0, (published + made_month) / 10.0),
+            0.6 if waiting > 5 else 1.0,
+            1.0 if leads_found else 0.7]
+    _health = round(sum(_sig) / len(_sig) * 100)
+    _qualified = lead_rows[2][1] if len(lead_rows) > 2 else 0
+    _not_emailed = max(0, _qualified - leads_emailed)
+    _sess = _ga4m.get("sessions")
+    _topq = (_gsc[0].get("query") if _gsc and isinstance(_gsc[0], dict) else "")
+    briefing_kpis = [
+        ("Content live", str(published), f"{made_month}/mo", None),
+        ("Leads", str(leads_found), (f"{leads_emailed} emailed" if leads_emailed else ""), leads_found > 0 or None),
+        ("Reply rate", f"{reply_rate}%", f"{replied} replied", (reply_rate > 0) or None),
+        ("Spend", f"${month_spent:.0f}", f"of ${month_cap:.0f}", (pct < 90) if month_cap else None),
+    ]
+    _risks, _opps, _actions = [], [], []
+    if total_conn - live_conn > 0:
+        _risks.append(f"{total_conn - live_conn} connection(s) down — some intelligence is blind until fixed (System Map).")
+    if waiting > 0:
+        _risks.append(f"{waiting} piece(s) waiting for your approval — the pipeline is paused on you.")
+    if month_cap and pct >= 85:
+        _risks.append(f"Spend at {pct}% of the ${month_cap:.0f} cap — approaching the limit.")
+    if not leads_found:
+        _risks.append("No leads sourced yet — the sales pipeline is empty.")
+    if _not_emailed > 0:
+        _opps.append(f"{_not_emailed} qualified lead(s) sourced but not emailed — start their sequence to open pipeline.")
+    if _topq:
+        _opps.append(f"Search Console shows demand for “{_topq}” — commission content on it to capture it.")
+    if made_month and proj > made_month:
+        _opps.append(f"On pace for {proj} pieces this month — hold the cadence to compound SEO.")
+    if _sess:
+        _opps.append(f"{_sess} website sessions tracked — a measured base to optimise against.")
+    if not _opps:
+        _opps.append("Plan a content week to start generating pipeline (Content Factory → Plan my week).")
+    if waiting > 0:
+        _actions.append((f"Review {waiting} approval(s)", "nav('appr')"))
+    if _outbox_ready_count(jobs) > 0:
+        _actions.append((f"Send {_outbox_ready_count(jobs)} ready email(s)", "nav('email')"))
+    _actions.append(("Plan my week", "nav('content')"))
+    if total_conn - live_conn > 0:
+        _actions.append(("Fix wiring", "nav('map')"))
+
+    # Intelligence cards — one business question + one decision each, real data only.
+    _mkt = (_intel_card("Marketing / SEO Intelligence", str(_sess), sub="sessions", dept="Marketing",
+                        source="GA4 + Search Console", accent="#4C8DFF",
+                        insight=(f"Top search demand: “{_topq}”." if _topq else "Ranking data is flowing in."),
+                        recommendation=(f"Commission a piece targeting “{_topq}”." if _topq else "Keep publishing to build ranking signals."),
+                        action_label="Open SEO", action="nav('seo')")
+            if _sess else _intel_card("Marketing / SEO Intelligence", "", dept="Marketing",
+                        empty="Connect Google Analytics 4 + Search Console (System Map) to activate real SEO intelligence — sessions, rankings, top queries."))
+    _content_card = _intel_card("Content Production", str(published), sub="live",
+                        goal="60/mo", forecast=f"{proj}/mo", dept="Content", source="Content engine", accent="#2FE3D2",
+                        insight=(f"{sum(pl[0:4])} in production, {waiting} awaiting your approval." if content_jobs else "No pieces in the line yet."),
+                        recommendation=("Clear the approval queue to keep the line moving." if waiting else "Plan next week to keep the cadence."),
+                        action_label=("Review approvals" if waiting else "Plan my week"), action=("nav('appr')" if waiting else "nav('content')"),
+                        chart=(_sparkline(content_series, "#2FE3D2") if content_jobs else ""))
+    _lead_card = _intel_card("Lead Generation", str(leads_found), sub="sourced", dept="Sales",
+                        source="Prospeo + web", accent="#8B7CFF",
+                        insight=(f"{_qualified} qualified · {leads_emailed} emailed · {replied} replied." if leads_found else "No leads sourced yet."),
+                        recommendation=(f"Email the {_not_emailed} qualified lead(s) not yet contacted." if _not_emailed else "Source a fresh batch to refill the pipeline."),
+                        action_label="Open Lead Machine", action="nav('leads')")
+    _out_card = _intel_card("Outreach", str(emails_sent), sub="emails sent", dept="Sales",
+                        source="Workspace mail", accent="#4C9AFF",
+                        insight=(f"Reply rate {reply_rate}% from {leads_emailed} people emailed." if emails_sent else "No emails sent yet."),
+                        recommendation=("Send today's ready follow-ups." if _outbox_ready_count(jobs) else "Warm up more leads to lift volume."),
+                        action_label="Open outbox", action="nav('email')")
+    _fin_card = _intel_card("Finance / Spend", f"${month_spent:.0f}", sub=f"of ${month_cap:.0f}", dept="Finance",
+                        goal=f"${month_cap:.0f} cap", forecast=f"${(total_cost/max(date.today().day,1)*30):.0f}/mo",
+                        confidence=("high" if made_month > 3 else "building"), source="API meters", accent=bcol,
+                        insight=f"{pct}% of the monthly cap used; ${content_cost:.2f} on content.",
+                        recommendation=("Ease off — you're near the cap." if pct >= 85 else "Headroom is healthy; invest in more content."),
+                        action_label="Open budget", action="nav('budget')")
+    _live_agents = sum(1 for j in jobs if j.get("status") not in ("optimized", "failed", "halted_budget", "revision_needed"))
+    _wf_card = _intel_card("AI Workforce", str(_live_agents), sub="jobs active", dept="Operations",
+                        source="Orchestrator", accent="#3FD98B",
+                        insight=(f"System health: {'nominal' if healthy else 'check needed'} · {live_conn}/{total_conn} wires live."),
+                        recommendation=("Investigate the health warning on Agents & Health." if not healthy else "Workforce is running normally."),
+                        action_label="Open Agents", action="nav('agents')")
+    _infra_card = _intel_card("Infrastructure", f"{live_conn}/{total_conn}", sub="wires live", dept="Infrastructure",
+                        source="System map", accent=("#3FD98B" if live_conn == total_conn else "#F5B14C"),
+                        insight=(f"{total_conn - live_conn} connection(s) need attention." if live_conn < total_conn else "All connections healthy."),
+                        recommendation=("Fix the down wires to unblock those intelligence centres." if live_conn < total_conn else "Nothing to fix."),
+                        action_label="Open System Map", action="nav('map')")
+    _owner = (st.get("owner_name") if isinstance(st, dict) else "") or "Murtuja"
+    p_mission = (_exec_briefing(_owner, _health, briefing_kpis, _risks, _opps, _actions)
+                 + "<div class='dim' style='margin:-4px 0 12px;font-size:11.5px'>ℹ️ Business-health is computed from your live "
+                   "signals (connections · system health · budget · output · approval backlog · pipeline). Cards show only "
+                   "REAL data; greyed cards need their source connected. This is Phase 1 of the operating-system migration — "
+                   "more intelligence centres + an LLM narrative briefing come next.</div>"
+                 + "<div class='grid g2'>" + _mkt + _content_card + _lead_card + _out_card
+                 + _fin_card + _wf_card + _infra_card + "</div>")
+
     # ---- nav + assembly ----
     PAGES = [
+        ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
         ("overview", "📊", "Overview", "Overview", "A summary of all 12 machines — click any tile to dive in.", overview),
         ("content", "📝", "Content Factory", "Content Factory", "Everything about creating & publishing content.", p_content),
         ("leads", "🧲", "Lead Machine", "Lead Machine", "Finding, scoring and grouping your leads.", p_leads),
@@ -3072,7 +3262,8 @@ if __name__ == "__main__":
     for need in ("Overview", "Content Factory", "System Map", "Wiring diagnostic", "Automation Engine",
                  "sec-map", "nav('leads')", "24/7 competitor", "What it breaks", "Not connected"):
         assert need in html, need
-    assert html.count("class='page") == 14, html.count("class='page")
+    assert html.count("class='page") == 15, html.count("class='page")
+    assert "CEO Command Center" in html and "Executive briefing" in html
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
