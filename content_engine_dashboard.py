@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-27 · v19 · new enterprise design system (reskin, wiring untouched)"
+BUILD_TAG = "2026-07-27 · v19 · new enterprise design (login + dashboard reskinned)"
 
 CSS = """
 :root{--bg:#070A12;--bg2:#0A0F1E;--s1:#111A2E;--s1b:#0E1626;--s2:#0B111F;
@@ -2003,12 +2003,24 @@ def _system_map(st):
 def login_html(error=""):
     err = f'<p style="color:#FF6B93;font-size:13px;margin:0 0 10px">{_esc(error)}</p>' if error else ""
     return ("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<title>Sign in</title><style>" + CSS +
-            "body{display:flex;align-items:center;justify-content:center;min-height:100vh}.box{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:26px;width:330px;max-width:90vw}"
-            "input{width:100%;margin-bottom:12px;background:var(--s2);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:11px}button{width:100%;background:var(--teal);color:#04121a;font-weight:700;border:none;border-radius:9px;padding:11px;cursor:pointer}</style></head><body>"
-            "<form class='box' method='post' action='/login'><h1 style='font-size:17px;margin:0 0 2px'>Business Control Center</h1>"
-            "<p style='color:#8E9BBE;font-size:12px;margin:0 0 16px'>Sign in to continue</p>" + err +
-            "<input type='password' name='password' placeholder='Password' autofocus><button type='submit'>Sign in</button></form></body></html>")
+            "<title>Anthropos · Business OS — Sign in</title>"
+            "<link rel='preconnect' href='https://fonts.googleapis.com'>"
+            "<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap' rel='stylesheet'>"
+            "<style>" + CSS +
+            "body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}"
+            ".box{background:linear-gradient(180deg,var(--s1),var(--s1b));border:1px solid var(--line);border-radius:20px;"
+            "padding:34px 30px;width:370px;max-width:92vw;box-shadow:var(--shadow),0 0 60px -20px var(--glow);text-align:center}"
+            ".box .lg{width:52px;height:52px;border-radius:15px;background:var(--grad);margin:0 auto 16px;display:grid;"
+            "place-items:center;color:#04121a;font-weight:900;font-size:24px;box-shadow:0 0 30px -4px var(--glow)}"
+            ".box input{width:100%;margin-bottom:13px;background:var(--s2);border:1px solid var(--line);color:var(--ink);"
+            "border-radius:11px;padding:13px;font:inherit}.box input:focus{outline:none;border-color:var(--teal)}"
+            ".box button{width:100%;background:var(--grad);color:#04121a;font-weight:800;border:none;border-radius:11px;"
+            "padding:13px;cursor:pointer;box-shadow:0 8px 24px -10px var(--glow);font-size:14px}</style></head><body>"
+            "<form class='box' method='post' action='/login'><div class='lg'>A</div>"
+            "<h1 style='font-size:20px;margin:0 0 2px;letter-spacing:.02em'>ANTHROPOS <span style='color:var(--teal)'>·</span> BUSINESS OS</h1>"
+            "<p style='color:var(--mut);font-size:12.5px;margin:0 0 20px'>Enterprise intelligence &amp; decision engine</p>" + err +
+            "<input type='password' name='password' placeholder='Password' autofocus><button type='submit'>Sign in →</button>"
+            "<div style='margin-top:16px;font-size:10.5px;color:var(--dim)'>build " + _esc(BUILD_TAG) + "</div></form></body></html>")
 
 
 # ---------------------------------------------------------------------------
