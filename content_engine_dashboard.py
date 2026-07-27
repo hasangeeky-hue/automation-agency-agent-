@@ -2669,8 +2669,8 @@ _CARD_SPECS = {
     "finance": [("Revenue", "Stripe"), ("Profit", "QuickBooks"), ("Gross margin", "QuickBooks"),
                 ("Net margin", "QuickBooks"), ("Cash flow", "QuickBooks"), ("Forecast", "engine"),
                 ("Runway", "QuickBooks"), ("MRR", "Stripe"), ("ARR", "Stripe"), ("Expenses", "meters"),
-                ("Payroll", "Gusto"), ("ROI", "engine"), ("CAC", "engine"), ("LTV", "CRM"),
-                ("Outstanding invoice", "QuickBooks"), ("Tax liability", "QuickBooks"),
+                ("Payroll", "Gusto"), ("ROI", "engine"), ("Customer Acquisition Cost", "engine"),
+                ("Lifetime Value", "CRM"), ("Outstanding invoice", "QuickBooks"), ("Tax liability", "QuickBooks"),
                 ("Currency exposure", "bank"), ("Financial risk", "engine")],
     "workforce": [("Agent health", "orchestrator"), ("Agent memory", "Postgres"), ("Agent cost", "meters"),
                   ("Agent speed", "orchestrator"), ("Agent queue", "engine"), ("Agent success", "judge"),
@@ -2681,13 +2681,17 @@ _CARD_SPECS = {
               ("Redis", "host metrics"), ("Queue", "orchestrator"), ("Docker", "host"), ("Network", "host metrics"),
               ("Database", "Postgres"), ("API", "health"), ("Latency", "health"), ("Cloud cost", "host"),
               ("Availability", "health"), ("Security", "auth")],
-    "competitive": [("Competitor health", "tracker"), ("Revenue estimate", "SimilarWeb"), ("Traffic", "SimilarWeb"),
-                    ("Hiring", "jobs feed"), ("Technology", "BuiltWith"), ("Ads", "ad library"), ("SEO", "Semrush"),
-                    ("GEO", "AI-visibility"), ("AI visibility", "AI-visibility"), ("Products", "web crawl"),
-                    ("Pricing", "web crawl"), ("Promotions", "web crawl"), ("Reviews", "reviews feed"),
-                    ("Social growth", "social API"), ("Partnerships", "news feed"), ("Funding", "news feed"),
-                    ("Expansion", "news feed"), ("Launches", "news feed"), ("Risk", "engine"),
-                    ("Forecast", "engine"), ("Recommendations", "AI brain"), ("Threat level", "engine")],
+    "competitive": [("Competitor Health", "tracker"), ("Competitor Revenue Estimate", "SimilarWeb"),
+                    ("Competitor Traffic", "SimilarWeb"), ("Competitor Hiring", "jobs feed"),
+                    ("Competitor Technology", "BuiltWith"), ("Competitor Ads", "ad library"),
+                    ("Competitor SEO", "Semrush"), ("Competitor GEO", "AI-visibility"),
+                    ("Competitor AI Visibility", "AI-visibility"), ("Competitor Products", "web crawl"),
+                    ("Competitor Pricing", "web crawl"), ("Competitor Promotions", "web crawl"),
+                    ("Competitor Inventory", "web crawl"), ("Competitor Reviews", "reviews feed"),
+                    ("Competitor Social Growth", "social API"), ("Competitor Partnerships", "news feed"),
+                    ("Competitor Funding", "news feed"), ("Competitor Expansion", "news feed"),
+                    ("Competitor Launches", "news feed"), ("Competitor Risk", "engine"),
+                    ("Competitor Forecast", "engine"), ("Competitor Recommendations", "AI brain")],
     "forecasting": [("Output forecast", "engine"), ("Pipeline forecast", "engine"), ("Revenue forecast", "Stripe"),
                     ("Spend forecast", "meters"), ("Lead forecast", "engine"), ("Booking forecast", "Cal.com"),
                     ("Growth projection", "engine"), ("Seasonality", "GA4"), ("Demand signal", "GSC"),
@@ -2750,7 +2754,7 @@ def _card_reals(c):
     a("Cloud cost", f"${c['month_spent']:.0f}", "of $200", c["bcol"])
     a("Efficiency", perpiece, "per piece", "#4C8DFF")
     a("Cost per piece", perpiece, "avg", "#4C8DFF")
-    a("CAC", cac, "per customer", "#8B7CFF")
+    a("Customer Acquisition Cost", cac, "per customer", "#8B7CFF")
     a("SEO", (str(c["_sess"]) if c["_sess"] else None) or "—", "sessions", "#4C8DFF", (f"Top query: {c['_topq']}." if c["_topq"] else ""))
     a("Demand signal", (c["_topq"] or None) or "—", "top query", "#2FE3D2")
     a("Approval queue", str(c["waiting"]), "waiting", "#F5B14C")
