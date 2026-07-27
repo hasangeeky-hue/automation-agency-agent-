@@ -1293,7 +1293,7 @@ class Google:
         }
         url = (f"https://analyticsdata.googleapis.com/v1beta/"
                f"properties/{self.ga4_property}:runReport")
-        j = _post_json(url, body, headers=self._auth())
+        j = _post_json(url, body, headers=self._auth(self.GA4_SCOPE))
         if not j:
             return {}
         rows = j.get("rows", [])
