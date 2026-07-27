@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-27 · v16-r2 · + n8n-style agent flow on the System Map"
+BUILD_TAG = "2026-07-27 · v16-r3 · agent-flow wires visible (arrows + bright links)"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;

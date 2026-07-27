@@ -461,13 +461,17 @@ def n8n_flow(lanes):
         for ni, (icon, name, badge, kind) in enumerate(nodes):
             x = PAD + ni * (NW + GAP)
             col = kindcol.get(kind, "#2FE3D2")
-            # wire to the next node (bezier with a travelling signal dot)
+            # wire to the next node — BRIGHT, with an n8n-style arrowhead + glow dot
+            # (was a near-invisible dark stroke that made nodes look disconnected)
             if ni < len(nodes) - 1:
+                ncol = kindcol.get(nodes[ni + 1][3], "#2FE3D2")
                 x1, x2 = x + NW, x + NW + GAP
                 ym = y0 + NH / 2
                 path = f"M{x1} {ym} C{x1 + GAP * 0.5} {ym} {x2 - GAP * 0.5} {ym} {x2} {ym}"
-                inner += (f"<path d='{path}' fill='none' stroke='#2A3A5F' stroke-width='2'/>"
-                          f"<circle r='3' fill='{col}' filter='url(#cg)'>"
+                inner += (f"<path d='{path}' fill='none' stroke='{col}' stroke-opacity='.75' stroke-width='2.5'/>"
+                          # arrowhead pointing into the next node's input port
+                          f"<polygon points='{x2-11},{ym-5} {x2-3},{ym} {x2-11},{ym+5}' fill='{ncol}'/>"
+                          f"<circle r='3.6' fill='{col}' filter='url(#cg)'>"
                           f"<animateMotion dur='{1.6 + (ni % 3) * 0.4:.1f}s' repeatCount='indefinite' path='{path}'/>"
                           f"</circle>")
             # node card
