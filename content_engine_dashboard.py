@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-27 · v24 · UX repair: deep-links, no dead buttons, board tabs, grouped nav"
+BUILD_TAG = "2026-07-27 · v25 · normal view: 204-card boards removed, UX repairs kept"
 
 CSS = """
 :root{--bg:#070A12;--bg2:#0A0F1E;--s1:#111A2E;--s1b:#0E1626;--s2:#0B111F;
@@ -4297,42 +4297,41 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
         ("exec", "🏛️", "Executive AI", "Executive Intelligence", "The whole business on one screen.",
-         _mod_executive(ctx) + _module_boards("executive", "Executive", ctx) + _op("Learning & Results", p_learn)),
+         _mod_executive(ctx) + _op("Learning & Results", p_learn)),
         ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum.",
-         _mod_business(ctx) + _module_boards("business", "Business", ctx)),
+         _mod_business(ctx)),
         ("marketing", "📣", "Marketing", "Marketing Intelligence", "SEO · AEO · GEO · Ads — visibility to revenue.",
-         _mod_marketing(ctx) + _module_boards("marketing", "Marketing", ctx) + _op("SEO / AEO / GEO", p_seo, "seo")
+         _mod_marketing(ctx) + _op("SEO / AEO / GEO", p_seo, "seo")
          + _op("Ads & Growth", p_ads, "ads") + _op("Media Buying", p_media, "media") + _op("Social Media", p_social, "social")),
         ("sales", "💼", "Sales", "Sales Intelligence", "Pipeline from stranger to won.",
-         _mod_sales(ctx) + p_outbox_promoted + _module_boards("sales", "Sales", ctx)
+         _mod_sales(ctx) + p_outbox_promoted
          + _op("Lead Machine", p_leads, "leads") + _op("Email & Outreach", p_email, "email")),
         ("customer", "🫂", "Customers", "Customer Intelligence", "Who's booking, buying and staying.",
-         _mod_customer(ctx) + _module_boards("customer", "Customer", ctx)),
+         _mod_customer(ctx)),
         ("projects", "📋", "Projects", "Projects", "Delivery status across every initiative.", _mod_projects(ctx)),
         ("ops", "⚙️", "Operations", "Operations", "Throughput, schedule and the approval queue.",
          _mod_operations(ctx) + "<div data-anchor='approvals'>" + p_appr + "</div>"
-         + _module_boards("operations", "Operations", ctx)
          + _op("Content Factory", p_content, "factory")),
         ("finance", "💰", "Finance", "Finance", "Spend against the cap, and cost per outcome.",
-         _mod_finance(ctx) + _module_boards("finance", "Finance", ctx) + _op("Budget & Cost", p_budget, "budget")),
+         _mod_finance(ctx) + _op("Budget & Cost", p_budget, "budget")),
         ("hr", "👥", "Human Resources", "Human Resources", "Your workforce — human and AI.", _mod_hr(ctx)),
         ("workforce", "🤖", "AI Workforce", "AI Workforce", "Your agents — running, healthy, productive.",
-         _mod_workforce(ctx) + _module_boards("workforce", "AI Workforce", ctx) + _op("Agents & Health", p_agents, "agents")),
+         _mod_workforce(ctx) + _op("Agents & Health", p_agents, "agents")),
         ("knowledge", "📚", "Knowledge", "Knowledge", "Your content library + institutional knowledge.", _mod_knowledge(ctx)),
         ("risk", "⚠️", "Risk", "Risk", "What could hurt the business, ranked.", _mod_risk(ctx)),
         ("compliance", "📜", "Compliance", "Compliance", "Email law, consent and deliverability guardrails.", _mod_compliance(ctx)),
         ("security", "🛡️", "Security", "Security", "Access, secrets and rate limits.", _mod_security(ctx)),
         ("infra", "🛰️", "Infrastructure", "Infrastructure", "Every connection, live or down.",
-         _mod_infra(ctx) + _module_boards("infra", "Infrastructure", ctx)
+         _mod_infra(ctx)
          + _op("System Map & Wiring", p_map, "wiring") + _op("Google Hub", p_google, "google")),
         ("development", "💻", "Development", "Development", "Builds, deploys and platform version.", _mod_development(ctx)),
         ("automation", "⚡", "Automation", "Automation", "Workflows, agent runs and throughput.", _mod_automation(ctx)),
         ("forecasting", "🔮", "Forecasting", "Forecasting", "Where the numbers are heading.",
-         _mod_forecasting(ctx) + _module_boards("forecasting", "Forecasting", ctx)),
+         _mod_forecasting(ctx)),
         ("competitive", "🎯", "Competitive Intel", "Competitive Intelligence", "Track rivals across 20 signals.",
-         _mod_competitive(ctx) + _module_boards("competitive", "Competitive", ctx)),
+         _mod_competitive(ctx)),
         ("decision", "🧭", "Decision Center", "Decision Center", "Every decision the business needs, ranked.",
-         _mod_decision(ctx) + _module_boards("decision", "Decision", ctx)),
+         _mod_decision(ctx)),
     ]
     # grouped sidebar: 3 labeled sections instead of 21 flat items, + search on top
     _pmap = {pid: (icon, short) for pid, icon, short, *_ in PAGES}
@@ -4578,13 +4577,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         + ("var(--good)" if healthy else "var(--warn)") + "'></span>" + ("All systems nominal" if healthy else "Check health") + "</span>"
         "<a class='iconb' href='#' onclick=\"nav('mission');return false\" title='Command Center'>🎯</a>"
         + logout + "</div></div>"
-        # REAL toolbar: a working card filter that applies to every module's board
-        "<div class='toolbar'><span class='tbtitle'>AI Analytics Platform</span>"
-        "<span class='tbspacer'></span>"
-        "<span class='dim' style='font-size:11.5px'>Show cards:</span>"
-        "<button class='cbtn gfilt on' id='gf-live' onclick=\"boardAll('live')\">⚡ Live</button>"
-        "<button class='cbtn gfilt' id='gf-wait' onclick=\"boardAll('wait')\">🔌 Needs source</button>"
-        "<button class='cbtn gfilt' id='gf-all' onclick=\"boardAll('all')\">All 204</button></div>"
+        "<div class='toolbar'><span class='tbtitle'>AI Analytics Platform</span></div>"
         "<div class='shell'><div class='side'>" + nav + "</div><div class='main'>"
         + ctrl_html + attn_html + onboarding + pages + "</div></div>"
         + script + "</body></html>")
