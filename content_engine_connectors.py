@@ -371,6 +371,47 @@ def _post_json(url: str, payload: dict, headers: Optional[dict] = None):
 # ---------------------------------------------------------------------------
 # Q2 / Q5 / Q8 — WordPress publisher  (PUBLISH_FN)
 # ---------------------------------------------------------------------------
+def md_to_html(text: str) -> str:
+    """Markdown -> HTML for publishing (headings, lists, bold/italic, links,
+    images, paragraphs). The writer outputs markdown; WordPress needs HTML."""
+    def _inline(s: str) -> str:
+        s = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", r'<img src="\2" alt="\1" style="max-width:100%;height:auto"/>', s)
+        s = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', s)
+        s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
+        s = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<em>\1</em>", s)
+        return s
+    out, inlist = [], False
+    for ln in (text or "").split("\n"):
+        s = ln.rstrip()
+        if not s.strip():
+            if inlist:
+                out.append("</ul>")
+                inlist = False
+            continue
+        m = re.match(r"^(#{1,4})\s+(.*)", s)
+        if m:
+            if inlist:
+                out.append("</ul>")
+                inlist = False
+            lvl = min(len(m.group(1)) + 1, 4)      # '#' -> h2 (h1 = the post title)
+            out.append(f"<h{lvl}>{_inline(m.group(2))}</h{lvl}>")
+            continue
+        if re.match(r"^[-*]\s+", s):
+            if not inlist:
+                out.append("<ul>")
+                inlist = True
+            item = re.sub(r"^[-*]\s+", "", s)
+            out.append(f"<li>{_inline(item)}</li>")
+            continue
+        if inlist:
+            out.append("</ul>")
+            inlist = False
+        out.append(f"<p>{_inline(s)}</p>")
+    if inlist:
+        out.append("</ul>")
+    return "\n".join(out)
+
+
 class WordPress:
     """Publish a produced piece to WordPress via the REST API + an Application
     Password (Users -> Profile -> Application Passwords in wp-admin).
@@ -417,6 +458,26 @@ class WordPress:
                 log.warning("wp category '%s' failed: %s", name, e)
         return [i for i in ids if i]
 
+    def upload_media(self, content: bytes, filename: str = "image.png",
+                     mime: str = "image/png"):
+        """Upload raw image bytes to the WP media library -> (id, source_url).
+        This is how AI-generated images get a PERMANENT home."""
+        rq = _requests()
+        try:
+            r = rq.post(
+                f"{self.base}/wp-json/wp/v2/media",
+                data=content, auth=self._auth(),
+                headers={"User-Agent": _UA, "Content-Type": mime,
+                         "Content-Disposition": f'attachment; filename="{filename}"'},
+                timeout=_HTTP_TIMEOUT)
+            if not r.ok:
+                return 0, ""
+            j = r.json()
+            return j.get("id", 0), (j.get("source_url") or "")
+        except Exception as e:
+            log.warning("wp upload_media failed: %s", e)
+            return 0, ""
+
     def _featured_media(self, image_url: str, title: str) -> int:
         """Sideload the hero image into the WP media library and return its id
         (so it becomes the post's featured image). 0 on any failure."""
@@ -442,7 +503,10 @@ class WordPress:
     def publish(self, job: dict, piece: dict) -> str:
         rq = _requests()
         title = piece.get("title") or piece.get("meta_title") or "Untitled"
-        body = piece.get("body") or ""
+        # The writer produces markdown (## headings, - lists, **bold**, images).
+        # WordPress expects HTML — publishing raw markdown was the 'no proper
+        # headings' bug. Convert here.
+        body = md_to_html(piece.get("body") or "")
         excerpt = piece.get("meta_description", "")
         data = {"title": title, "content": body, "status": self.status,
                 "excerpt": excerpt}
@@ -474,6 +538,14 @@ class WordPress:
             ref = j.get("link") or f"wp:{j.get('id')}"
             log.info("published to WordPress (%s, cats=%s, media=%s): %s",
                      self.status, data.get("categories"), media_id, ref)
+            # Topic memory: remember this title so the strategist NEVER plans a
+            # duplicate (the 'same generic topics every day' bug).
+            try:
+                recent = list(_setting("recent_titles", []) or [])
+                recent.append(title)
+                _set_setting("recent_titles", recent[-40:])
+            except Exception:
+                pass
             return ref
         except Exception as e:
             log.error("WordPress publish failed: %s", e)
@@ -1339,6 +1411,62 @@ class LinkedInPoster:
             return "linkedin_error"
         return "linkedin:" + str(j.get("id", "posted"))
 
+    def post_image(self, text: str, image_url: str) -> str:
+        """Post text + IMAGE CARD (LinkedIn's 3-step asset flow: register the
+        upload -> PUT the bytes -> share with the asset attached). Falls back to
+        a text-only post if any step fails, so a post always goes out."""
+        if not (self.available() and image_url):
+            return self.post(text)
+        rq = _requests()
+        H = {"Authorization": f"Bearer {self.token}",
+             "X-Restli-Protocol-Version": "2.0.0"}
+        try:
+            # 1. register the upload slot
+            reg = _post_json(
+                "https://api.linkedin.com/v2/assets?action=registerUpload",
+                {"registerUploadRequest": {
+                    "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                    "owner": self.author,
+                    "serviceRelationships": [{"relationshipType": "OWNER",
+                                              "identifier": "urn:li:userGeneratedContent"}]}},
+                headers=H)
+            val = (reg or {}).get("value") or {}
+            asset = val.get("asset") or ""
+            up = ((val.get("uploadMechanism") or {})
+                  .get("com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest") or {})
+            upload_url = up.get("uploadUrl") or ""
+            if not (asset and upload_url):
+                return self.post(text)
+            # 2. fetch the image bytes and PUT them into the slot
+            img = rq.get(image_url, timeout=_HTTP_TIMEOUT)
+            if not img.ok:
+                return self.post(text)
+            put = rq.put(upload_url, data=img.content,
+                         headers={"Authorization": f"Bearer {self.token}"},
+                         timeout=_HTTP_TIMEOUT)
+            if put.status_code not in (200, 201):
+                return self.post(text)
+            # 3. share with the image attached
+            body = {
+                "author": self.author,
+                "lifecycleState": "PUBLISHED",
+                "specificContent": {
+                    "com.linkedin.ugc.ShareContent": {
+                        "shareCommentary": {"text": text},
+                        "shareMediaCategory": "IMAGE",
+                        "media": [{"status": "READY", "media": asset}],
+                    }
+                },
+                "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+            }
+            j = _post_json("https://api.linkedin.com/v2/ugcPosts", body, headers=H)
+            if j is None:
+                return self.post(text)
+            return "linkedin_img:" + str(j.get("id", "posted"))
+        except Exception as e:
+            log.warning("linkedin image post failed, falling back to text: %s", e)
+            return self.post(text)
+
 
 class TwitterPoster:
     """Post a tweet via X API v2. Needs an OAuth2 user access token with
@@ -1440,28 +1568,56 @@ def video_available() -> bool:
 
 
 def generate_image(prompt: str, size: str = "1024x1024") -> str:
-    """Generate one image from a prompt; returns a URL (or '' if unconfigured)."""
+    """Generate one image and return a PERMANENT URL (hosted in the WordPress
+    media library). Handles both OpenAI response shapes: gpt-image-1 returns
+    base64 only (the old code read `url` and silently got '' every time — the
+    'no images in blogs' bug), dall-e-3 returns a short-lived URL. Either way
+    the bytes are uploaded to WordPress so the URL never expires. Returns ''
+    only when generation fails or nothing can host the image."""
     key = _env("IMAGE_API_KEY")
-    if not key or not _requests():
+    rq = _requests()
+    if not key or not rq:
         return ""
     provider = _env("IMAGE_PROVIDER", "openai").lower()
-    out = ""
+    img_bytes, transient_url = b"", ""
     if provider == "openai":
         j = _post_json("https://api.openai.com/v1/images/generations",
                        {"model": _env("IMAGE_MODEL", "gpt-image-1"), "prompt": prompt,
                         "size": size, "n": 1},
                        headers={"Authorization": f"Bearer {key}"})
-        if j:
-            out = (j.get("data") or [{}])[0].get("url") or ""
+        d = (j.get("data") or [{}])[0] if j else {}
+        transient_url = d.get("url") or ""
+        b64 = d.get("b64_json") or ""
+        if b64:
+            import base64
+            try:
+                img_bytes = base64.b64decode(b64)
+            except Exception:
+                img_bytes = b""
     else:
         url = _env("IMAGE_API_URL")
         if url:
             j = _post_json(url, {"prompt": prompt, "size": size},
                            headers={"Authorization": f"Bearer {key}"})
-            out = (j or {}).get("url", "") if j else ""
-    if out:   # budget loop: count image spend against the cap
-        _record_cost(float(_env("IMAGE_COST_PER", "0.04") or 0.04), "image")
-    return out
+            transient_url = (j or {}).get("url", "") if j else ""
+    if transient_url and not img_bytes:      # download so we can host it durably
+        try:
+            r = rq.get(transient_url, timeout=_HTTP_TIMEOUT)
+            if r.ok:
+                img_bytes = r.content
+        except Exception:
+            pass
+    if not img_bytes and not transient_url:
+        return ""
+    _record_cost(float(_env("IMAGE_COST_PER", "0.04") or 0.04), "image")
+    # host permanently in the WordPress media library
+    if img_bytes:
+        wp = WordPress()
+        if wp.available():
+            _mid, hosted = wp.upload_media(img_bytes, "ai-hero.png", "image/png")
+            if hosted:
+                return hosted
+    return transient_url   # last resort: short-lived URL beats nothing
 
 
 def generate_video(prompt: str) -> str:
@@ -1545,7 +1701,10 @@ def post_social(job: dict, piece: dict, channel: str) -> str:
         # use the founder-approved LinkedIn post if present, else repurpose the blog
         text = (piece.get("linkedin_post")
                 or repurpose_linkedin(piece, _env("EMAIL_WEBSITE", ""), _env("EMAIL_BOOKING_URL", "")))
-        return p.post(text) if p.available() else f"linkedin_not_configured:{jid}"
+        if not p.available():
+            return f"linkedin_not_configured:{jid}"
+        img = piece.get("image_url", "")
+        return p.post_image(text, img) if img else p.post(text)
     if ch in ("twitter", "x"):
         p = TwitterPoster()
         return p.post(_piece_to_social_text(piece, 280)) if p.available() \

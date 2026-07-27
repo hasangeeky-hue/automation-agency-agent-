@@ -114,6 +114,28 @@ def _in_content_strategist(job: dict) -> dict:
     seo_opps += [q.get("query", "") for q in audit.get("top_gsc_queries", []) if q.get("query")]
     cfg = _cfg(job)
     weekly = cfg.get("weekly_priorities", "")
+    # REAL signals (scheduled jobs used to arrive with an EMPTY brief -> generic
+    # duplicate topics). 1) live Search Console demand -> keyword pool;
+    # 2) the website's segments+pillars -> topic structure; 3) recent titles ->
+    # a hard do-not-repeat list.
+    try:
+        import content_engine_connectors as _C
+        if not audit.get("top_gsc_queries"):
+            _gq = _C.Google().gsc_top_queries(limit=10)
+            seo_opps += [q.get("query", "") for q in _gq if q.get("query")]
+        _recent = list(_C._setting("recent_titles", []) or [])
+        if _recent:
+            weekly = (weekly + " | DO NOT repeat or resemble these recent pieces: "
+                      + "; ".join(str(t)[:60] for t in _recent[-15:])).strip(" |")
+    except Exception:
+        pass
+    try:
+        import content_engine_site_taxonomy as _TAX
+        weekly = (weekly + " | Vary topics across these audience segments: "
+                  + ", ".join(_TAX.SEGMENT_NAMES[:7]) + " and service pillars: "
+                  + ", ".join(_TAX.PILLAR_NAMES)).strip(" |")
+    except Exception:
+        pass
     pb = _learnings(job)
     if pb:
         # Fold learnings into weekly_priorities (a lever the prompt already
