@@ -259,60 +259,6 @@ def api_ready_to_measure(job_id: str) -> dict:
     return _set_flag(job_id, "ready_to_measure")
 
 
-def api_approve_all() -> dict:
-    """Approve EVERY piece waiting for the human gate (the briefing's 'Approve all')."""
-    store = get_store()
-    n = 0
-    for j in (store.list_jobs() if hasattr(store, "list_jobs") else []):
-        if j.get("status") == "AWAITING_APPROVAL" and j.get("type") in ("content_piece", "outreach_campaign"):
-            j["approved"] = True
-            try:
-                store.save(j)
-                n += 1
-            except Exception:
-                pass
-    return {"ok": True, "approved": n}
-
-
-def api_generate_briefing() -> dict:
-    """The AI brain: read the whole engine's real metrics and write the executive
-    'Good morning' narrative. Stored in the 'exec_briefing' setting for the dashboard."""
-    store = get_store()
-    jobs = store.list_jobs() if hasattr(store, "list_jobs") else []
-    content = [j for j in jobs if j.get("type") != "outreach_campaign"]
-    out = [j for j in jobs if j.get("type") == "outreach_campaign"]
-    import content_engine_connectors as C
-    sent = leads = replied = 0
-    for j in out:
-        p = j.get("payload", {}) or {}
-        leads += len(p.get("leads") or [])
-        for v in (p.get("sent_to", {}) or {}).values():
-            sent += C.touch_stats(v)[0]
-    try:
-        replied = len(store.get_setting("reply_drafts", []) or [])
-    except Exception:
-        replied = 0
-    published = sum(1 for j in content if j.get("status") in ("published", "measuring", "measured", "optimized"))
-    waiting = sum(1 for j in jobs if j.get("status") == "AWAITING_APPROVAL")
-    try:
-        spent = float(store.get_setting("month_spend", 0) or 0)
-    except Exception:
-        spent = 0.0
-    metrics = (f"- Content published: {published}\n- In pipeline waiting for approval: {waiting}\n"
-               f"- Leads sourced: {leads}\n- Emails sent: {sent}\n- Replies received: {replied}\n"
-               f"- Content jobs total: {len(content)}\n- Outreach campaigns: {len(out)}\n"
-               f"- Spend this month: ~${spent:.0f} of $200 cap\n")
-    from content_engine_providers import generate_briefing_text
-    text = generate_briefing_text(metrics)
-    if not text:
-        return {"ok": False, "error": "AI briefing unavailable (needs the Anthropic API key on the server)"}
-    from datetime import datetime, timezone
-    rec = {"text": text, "at": datetime.now(timezone.utc).isoformat()}
-    if hasattr(store, "set_setting"):
-        store.set_setting("exec_briefing", rec)
-    return {"ok": True, "briefing": text}
-
-
 def api_tick() -> dict:
     status = orch.tick(get_store())
     return {"advanced": status is not None, "status": status}
@@ -1201,10 +1147,6 @@ def api_dashboard_html() -> str:
         reply_drafts = list(st.get_setting("reply_drafts", []) or []) if hasattr(st, "get_setting") else []
     except Exception:
         reply_drafts = []
-    try:
-        exec_briefing = (st.get_setting("exec_briefing", None) if hasattr(st, "get_setting") else None) or {}
-    except Exception:
-        exec_briefing = {}
     import content_engine_dashboard as D
     return D.dashboard_html(
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
@@ -1214,7 +1156,7 @@ def api_dashboard_html() -> str:
         needles=needles, last_eval=last_eval, meters=meters, api_limits=api_limits,
         ci_text=ci_text if isinstance(ci_text, str) else "", ci_drive=ci_drive or "",
         autopilot_on=autopilot_on, content_plan=content_plan, web_tracking=web_tracking,
-        reply_drafts=reply_drafts, exec_briefing=exec_briefing)
+        reply_drafts=reply_drafts)
 
 
 # ---------------------------------------------------------------------------
@@ -1321,14 +1263,6 @@ def build_app():
         except Exception:
             data = {}
         return api_decline(job_id, (data or {}).get("note", ""))
-
-    @app.post("/jobs/approve_all")
-    def approve_all():
-        return api_approve_all()
-
-    @app.post("/briefing/generate")
-    def briefing_generate():
-        return api_generate_briefing()
 
     @app.post("/jobs/{job_id}/ready_to_measure")
     def ready(job_id: str):
