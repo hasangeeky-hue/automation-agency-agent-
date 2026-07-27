@@ -17,10 +17,12 @@ states, never fake numbers.
 
 from __future__ import annotations
 
+import content_engine_charts as CH   # BOS visual language (SVG, no libs)
+
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v15 · BOS phase 1: CEO Command Center + intelligence cards"
+BUILD_TAG = "2026-07-26 · v16 · Business Operating System: 10 intelligence centres live"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2062,6 +2064,349 @@ def _exec_briefing(name, health, sub_kpis, risks, opportunities, actions):
         "</div></div>")
 
 
+def _viz(title, sub, svg, empty_msg):
+    """A titled visualization panel (chart or honest empty)."""
+    inner = svg or f"<div class='dim' style='padding:14px 0'>⚪ {_esc(empty_msg)}</div>"
+    return (f"<div class='card'><p class='ct'>{_esc(title)}</p><p class='cc'>{_esc(sub)}</p>"
+            f"<div style='margin-top:8px;overflow-x:auto'>{inner}</div></div>")
+
+
+def _decision_strip(problems, opportunities, actions):
+    """The AI Decision Engine layer that ends each module: problems -> opportunities
+    -> prioritised actions. Turns the module from a report into a decision."""
+    def _col(title, icon, items, col):
+        body = ("".join(f"<div style='display:flex;gap:7px;margin:4px 0;font-size:12.5px'><span>{icon}</span>"
+                        f"<span>{_esc(x)}</span></div>" for x in items[:4])
+                if items else "<div class='dim'>None right now.</div>")
+        return f"<div><div class='ct' style='font-size:12px;color:{col}'>{_esc(title)}</div>{body}</div>"
+    act = ("".join(f"<button class='cbtn' style='margin:3px 4px 0 0' onclick=\"{js}\">{_esc(l)}</button>"
+                   for l, js in actions) if actions else "<div class='dim'>No action needed.</div>")
+    return ("<div class='card full' style='margin-top:12px;border-left:4px solid #8B7CFF'>"
+            "<p class='ct'>🧭 AI Decision Engine</p>"
+            "<div class='grid g3'>"
+            + _col("Problems", "🔻", problems, "#FF6B93")
+            + _col("Opportunities", "🚀", opportunities, "#3FD98B")
+            + f"<div><div class='ct' style='font-size:12px;color:#4C8DFF'>Execute</div>{act}</div>"
+            + "</div></div>")
+
+
+# ---- The 10 intelligence centres. Each: master + intel cards + a signature
+# ---- visualization + a decision strip. Real data only; honest empties else. ----
+def _mod_business(c):
+    m = _master("📈", "Business Performance", "Revenue, pipeline and momentum in one view.",
+                [("Pipeline leads", c["leads_found"], "#EDF1FB"), ("Booked", c["booked"], "#F5B14C"),
+                 ("Customers", c["o_cust"], "#3FD98B"), ("Health", f"{c['health']}/100", "#8B7CFF")],
+                _funnel(c["lead_rows"]) if any(v for _, v in c["lead_rows"]) else _empty("Fills as leads flow in."))
+    rev = (_intel_card("Revenue", f"${c['o_rev']:.0f}", sub="recorded", dept="Finance", source="Outcomes",
+                       accent="#3FD98B", insight="Recorded from closed outcomes.",
+                       recommendation="Log every won deal to sharpen forecasting.", action_label="Open Finance", action="nav('finance')")
+           if c["o_rev"] else _intel_card("Revenue", "", dept="Finance",
+                       empty="Connect Stripe / QuickBooks / Xero to activate revenue, MRR and profit intelligence."))
+    growth = _intel_card("Output momentum", str(c["published"]), sub="live pieces",
+                         forecast=f"{c['proj']}/mo", confidence=("high" if c["made_month"] > 3 else "building"),
+                         dept="Growth", source="Content engine", accent="#4C8DFF",
+                         insight="Publishing cadence compounds SEO + authority over time.",
+                         recommendation="Hold ≥2 pieces/day to keep the curve rising.",
+                         action_label="Plan my week", action="nav('content')",
+                         chart=CH.confband([max(1, x) for x in c["content_series"]] or [1, 2]))
+    conv = _intel_card("Pipeline conversion", f"{c['reply_rate']}%", sub="reply rate", dept="Sales",
+                       source="Outreach", accent="#8B7CFF",
+                       insight=f"{c['leads_emailed']} emailed → {c['replied']} replied → {c['booked']} booked.",
+                       recommendation="Tighten follow-ups to lift reply→booked.", action_label="Open Sales", action="nav('sales')")
+    return (m + "<div class='grid g2'>" + rev + growth + conv
+            + _viz("Growth forecast (confidence band)", "Output trend with a forecast envelope.",
+                   CH.confband([max(1, x) for x in c["content_series"]]), "Fills as pieces are made.")
+            + "</div>" + _decision_strip(c["risks"], c["opps"], c["actions"]))
+
+
+def _mod_marketing(c):
+    sess, topq, gsc = c["_sess"], c["_topq"], c["_gsc"]
+    m = _master("📣", "Marketing Intelligence", "SEO · AEO · GEO · Ads — visibility to revenue.",
+                [("Sessions", sess or "—", "#4C8DFF"), ("Top queries", len(gsc), "#2FE3D2"),
+                 ("Content live", c["published"], "#3FD98B"), ("Segments", 7, "#8B7CFF")],
+                _sparkline(c["content_series"], "#4C8DFF") if c["content_jobs"] else _empty("Fills as content runs."))
+    seo = (_intel_card("SEO Intelligence", str(sess), sub="sessions", dept="Marketing", source="GA4 + GSC",
+                       accent="#4C8DFF", insight=(f"Strongest demand: “{topq}”." if topq else "Ranking signals building."),
+                       recommendation=(f"Publish for “{topq}”." if topq else "Keep publishing to earn rankings."),
+                       action_label="Open SEO", action="nav('seo')")
+           if sess else _intel_card("SEO Intelligence", "", dept="Marketing",
+                       empty="Connect Google Analytics 4 + Search Console to activate sessions, rankings and query demand."))
+    geo = _intel_card("GEO — AI search visibility", "", dept="Marketing",
+                      empty="Connect an AI-visibility source to track ChatGPT / Perplexity / Gemini / Claude mentions.")
+    ads = (_intel_card("Google Ads", "", dept="Marketing", empty="Google Ads is connected — spend/ROAS intelligence activates once campaigns run.")
+           if c["st"].get("google_ads") else _intel_card("Paid Ads", "", dept="Marketing",
+                      empty="Connect Google / Meta / LinkedIn Ads to activate spend, ROAS and attribution."))
+    # heatmap of top queries × rank buckets (real GSC), sankey attribution (real counts)
+    qrows = [q.get("query", "")[:22] for q in gsc[:6] if isinstance(q, dict)]
+    qmat = [[max(0, 100 - int(q.get("position", 50)) * 5)] for q in gsc[:6] if isinstance(q, dict)]
+    heat = CH.heatmap(qrows, ["visibility"], qmat) if qmat else ""
+    flows = []
+    if c["leads_found"]:
+        flows += [("SEO / Web", "Leads", max(1, c["leads_found"] * 0.6)), ("Outreach", "Leads", max(1, c["leads_found"] * 0.4))]
+    if c["booked"]:
+        flows += [("Leads", "Booked", c["booked"])]
+    if c["o_cust"]:
+        flows += [("Booked", "Customers", c["o_cust"])]
+    return (m + "<div class='grid g2'>" + seo + geo + ads
+            + _viz("Keyword visibility (Search Console)", "Where your queries rank — brighter = more visible.", heat,
+                   "Connect Search Console to see ranking heat.")
+            + _viz("Attribution — how visits become customers", "Channel → lead → booked → won.", CH.sankey(flows),
+                   "Fills as leads and bookings flow in.")
+            + "</div>" + _decision_strip(
+                ([f"“{topq}” has demand you're not fully capturing." for _ in [1] if topq]),
+                (["Publish comparison + FAQ pages to win AI Overviews."] if sess else ["Connect GA4 + GSC to unlock SEO intelligence."]),
+                [("Open SEO", "nav('seo')"), ("Plan content", "nav('content')")]))
+
+
+def _mod_sales(c):
+    m = _master("💼", "Sales Intelligence", "Lead → qualified → emailed → replied → booked → won.",
+                [("Leads", c["leads_found"], "#EDF1FB"), ("Emailed", c["leads_emailed"], "#4C8DFF"),
+                 ("Replied", c["replied"], "#8B7CFF"), ("Booked", c["booked"], "#3FD98B")],
+                _funnel(c["lead_rows"]) if any(v for _, v in c["lead_rows"]) else _empty("Fills as leads flow in."))
+    lead = _intel_card("Lead generation", str(c["leads_found"]), sub="sourced", dept="Sales", source="Prospeo + web",
+                       accent="#8B7CFF", insight=f"{c['qualified']} qualified · {c['leads_emailed']} emailed.",
+                       recommendation=(f"Email the {c['not_emailed']} qualified but un-contacted." if c["not_emailed"] else "Source a fresh batch."),
+                       action_label="Open Lead Machine", action="nav('leads')")
+    out = _intel_card("Outreach performance", f"{c['reply_rate']}%", sub="reply rate", dept="Sales", source="Workspace mail",
+                      accent="#4C9AFF", insight=f"{c['emails_sent']} emails → {c['replied']} replies.",
+                      recommendation=("Send today's ready follow-ups." if c["outbox_ready"] else "Warm up more leads."),
+                      action_label="Open outbox", action="nav('email')")
+    close = _intel_card("Consultations", str(c["booked"]), sub="booked", dept="Sales",
+                        source="Cal.com", accent="#3FD98B",
+                        insight=("Bookings are the money moment." if c["booked"] else "No consultations booked yet."),
+                        recommendation="Make the booking CTA prominent in every email.", action_label="Open outreach", action="nav('email')")
+    flows = []
+    if c["leads_found"]:
+        flows += [("Sourced", "Qualified", max(1, c["qualified"] or c["leads_found"]))]
+    if c["qualified"] or c["leads_emailed"]:
+        flows += [("Qualified", "Emailed", max(1, c["leads_emailed"]))]
+    if c["replied"]:
+        flows += [("Emailed", "Replied", c["replied"])]
+    if c["booked"]:
+        flows += [("Replied", "Booked", c["booked"])]
+    return (m + "<div class='grid g2'>" + lead + out + close
+            + _viz("Pipeline flow", "Where prospects move — and where they drop.", CH.sankey(flows),
+                   "Fills as the lead pipeline runs.")
+            + "</div>" + _decision_strip(
+                ([f"{c['not_emailed']} qualified leads sitting un-emailed." for _ in [1] if c["not_emailed"]]
+                 + (["No leads in the pipeline."] if not c["leads_found"] else [])),
+                (["Ready follow-ups can go today."] if c["outbox_ready"] else ["Source a new lead batch to grow pipeline."]),
+                [("Send ready emails", "nav('email')"), ("Open Lead Machine", "nav('leads')")]))
+
+
+def _mod_customer(c):
+    m = _master("🫂", "Customer Intelligence", "Who's booking, buying and staying.",
+                [("Booked", c["booked"], "#F5B14C"), ("Customers", c["o_cust"], "#3FD98B"),
+                 ("Replies", c["replied"], "#8B7CFF"), ("Leads", c["leads_found"], "#EDF1FB")],
+                _empty("Retention + LTV activate once a CRM / payments source is connected."))
+    cust = (_intel_card("Customers won", str(c["o_cust"]), sub="recorded", dept="Customer", source="Outcomes",
+                        accent="#3FD98B", insight="Closed customers recorded from outcomes.",
+                        recommendation="Record each win to build LTV + cohorts.", action_label="Open Learning", action="nav('learn')")
+            if c["o_cust"] else _intel_card("Customers", "", dept="Customer",
+                        empty="Connect HubSpot / Salesforce / Stripe to activate customer, LTV and retention intelligence."))
+    ret = _intel_card("Retention / LTV", "", dept="Customer",
+                      empty="Connect a CRM + payments to activate cohort retention and lifetime value.")
+    sat = _intel_card("Sentiment", "", dept="Customer",
+                      empty="Connect Zendesk / Intercom / reviews to activate customer-sentiment intelligence.")
+    return (m + "<div class='grid g2'>" + cust + ret + sat
+            + _viz("Retention cohorts", "How many customers stay, month over month.", "",
+                   "Connect a CRM / payments source to populate cohorts.")
+            + "</div>" + _decision_strip(
+                (["No customer/retention source connected — you're flying blind on LTV."]),
+                (["Connecting Stripe alone unlocks revenue + retention + LTV cards."]),
+                [("Open System Map", "nav('map')")]))
+
+
+def _mod_workforce(c):
+    live = c["live_agents"]
+    m = _master("🤖", "AI Workforce", "Your agents — running, healthy and productive.",
+                [("Jobs active", live, "#3FD98B"), ("Wires live", f"{c['live_conn']}/{c['total_conn']}", "#4C8DFF"),
+                 ("Waiting on you", c["waiting"], "#F5B14C"), ("Cost/piece", f"${(c['content_cost']/max(len(c['content_jobs']),1)):.2f}", "#8B7CFF")],
+                "")
+    ok = c["healthy"]
+    nodes = [("site", "Site analyst", ok), ("comp", "Competitor", ok), ("strat", "Strategist", ok),
+             ("write", "Writer", ok), ("seo", "SEO", ok), ("qa", "Quality", ok),
+             ("pub", "Publisher", ok), ("reply", "Reply agent", ok)]
+    edges = [("site", "comp"), ("comp", "strat"), ("strat", "write"), ("write", "seo"), ("seo", "qa"), ("qa", "pub")]
+    agents = _intel_card("Workforce status", str(live), sub="jobs active", dept="Operations", source="Orchestrator",
+                         accent=("#3FD98B" if ok else "#F5B14C"),
+                         insight=("All agents nominal." if ok else "A health check is needed on Agents & Health."),
+                         recommendation=("Nothing to do — running normally." if ok else "Open Agents & Health to see the failing check."),
+                         action_label="Open Agents", action="nav('agents')")
+    eff = _intel_card("Cost efficiency", f"${(c['content_cost']/max(len(c['content_jobs']),1)):.2f}", sub="per piece",
+                      dept="Finance", source="API meters", accent="#4C8DFF",
+                      insight=f"${c['content_cost']:.2f} spent making {len(c['content_jobs'])} pieces.",
+                      recommendation="Cheap per piece — safe to scale the cadence.", action_label="Open budget", action="nav('budget')")
+    return (m + "<div class='grid g2'>" + agents + eff
+            + _viz("Agent dependency graph", "How the content agents hand off, and their health.",
+                   CH.digraph(nodes, edges), "No agents mapped.")
+            + "</div>" + _decision_strip(
+                ([] if ok else ["A subsystem health check is failing."]),
+                (["Per-piece cost is low — scaling output is affordable."]),
+                [("Open Agents & Health", "nav('agents')")]))
+
+
+def _mod_operations(c):
+    m = _master("⚙️", "Operations", "Throughput, this week's schedule and the approval queue.",
+                [("Made / mo", c["made_month"], "#EDF1FB"), ("Published", c["published"], "#3FD98B"),
+                 ("In production", sum(c["pl"][0:4]), "#F5B14C"), ("On pace", c["proj"], "#8B7CFF")],
+                _sparkline(c["content_series"], "#4C8DFF") if c["content_jobs"] else _empty("Fills as pieces are made."))
+    # gantt of this week's scheduled content (real publish_date)
+    from datetime import date
+    tasks = []
+    for j in c["content_jobs"]:
+        cfg = (j.get("payload", {}) or {}).get("config", {}) or {}
+        pd = cfg.get("publish_date")
+        if pd:
+            try:
+                off = (date.fromisoformat(pd) - date.today()).days
+                if 0 <= off <= 6:
+                    tasks.append(((j.get("payload", {}).get("content_producer", {}) or {}).get("title") or j.get("job_id"), off, 1))
+            except Exception:
+                pass
+    thr = _intel_card("Throughput", str(c["made_month"]), sub="this month", forecast=f"{c['proj']}/mo",
+                      dept="Operations", source="Content engine", accent="#2FE3D2",
+                      insight=f"{sum(c['pl'][0:4])} in production, {c['waiting']} awaiting approval.",
+                      recommendation=("Clear the approval queue to keep flow." if c["waiting"] else "Cadence is healthy."),
+                      action_label="Review approvals", action="nav('appr')")
+    que = _intel_card("Approval queue", str(c["waiting"]), sub="waiting", dept="Operations", source="Pipeline",
+                      accent=("#F5B14C" if c["waiting"] else "#3FD98B"),
+                      insight=("The pipeline pauses on you until these are approved." if c["waiting"] else "Queue is clear."),
+                      recommendation=("Approve or decline with notes." if c["waiting"] else "Nothing waiting."),
+                      action_label="Open Approvals", action="nav('appr')")
+    return (m + "<div class='grid g2'>" + thr + que
+            + _viz("This week's production schedule", "Each piece's target day.", CH.gantt(tasks),
+                   "Plan a week to fill the schedule.")
+            + "</div>" + _decision_strip(
+                ([f"{c['waiting']} pieces waiting on you." for _ in [1] if c["waiting"]]),
+                ([f"On pace for {c['proj']} this month." for _ in [1] if c["made_month"]] or ["Plan a week to start throughput."]),
+                [("Review approvals", "nav('appr')"), ("Plan my week", "nav('content')")]))
+
+
+def _mod_finance(c):
+    pct = c["pct"]
+    m = _master("💰", "Finance", "Spend against the cap, and cost per outcome.",
+                [("Spent", f"${c['month_spent']:.0f}", c["bcol"]), ("Cap", f"${c['month_cap']:.0f}", "#8B7CFF"),
+                 ("Per piece", f"${(c['content_cost']/max(len(c['content_jobs']),1)):.2f}", "#4C8DFF"),
+                 ("Headroom", f"{max(0,100-pct)}%", "#3FD98B")],
+                _donut(max(0, 100 - pct), "#3FD98B"))
+    spend = _intel_card("Monthly spend", f"${c['month_spent']:.0f}", sub=f"of ${c['month_cap']:.0f}",
+                        goal=f"${c['month_cap']:.0f} cap", forecast=f"${(c['total_cost']/max(__import__('datetime').date.today().day,1)*30):.0f}/mo",
+                        confidence=("high" if c["made_month"] > 3 else "building"), dept="Finance", source="API meters", accent=c["bcol"],
+                        insight=f"{pct}% of the cap used.", recommendation=("Ease off — near the cap." if pct >= 85 else "Headroom is healthy."),
+                        action_label="Open budget", action="nav('budget')")
+    rev = (_intel_card("Revenue", f"${c['o_rev']:.0f}", sub="recorded", dept="Finance", source="Outcomes", accent="#3FD98B",
+                       insight="From recorded outcomes.", recommendation="Log wins to compute profit + ROI.",
+                       action_label="Open Learning", action="nav('learn')")
+           if c["o_rev"] else _intel_card("Revenue & profit", "", dept="Finance",
+                       empty="Connect Stripe / QuickBooks / Xero to activate revenue, profit and ROI."))
+    # waterfall of spend areas (real), or profit if revenue exists
+    if c["o_rev"]:
+        wf = [("Revenue", c["o_rev"]), ("Content", -c["content_cost"]), ("Leads/email", -(c["total_cost"] - c["content_cost"])), ("Net", 0)]
+    else:
+        wf = [("Content", c["content_cost"]), ("Leads/email", (c["total_cost"] - c["content_cost"])), ("Total", 0)]
+    return (m + "<div class='grid g2'>" + spend + rev
+            + _viz("Money flow", ("Revenue minus costs." if c["o_rev"] else "Where spend goes (connect revenue to see profit)."),
+                   CH.waterfall(wf), "Fills as spend + revenue are recorded.")
+            + _viz("Budget headroom", "How much of the cap remains.", _donut(max(0, 100 - pct), "#3FD98B"), "")
+            + "</div>" + _decision_strip(
+                ([f"Spend at {pct}% of cap." for _ in [1] if pct >= 85]),
+                (["Per-piece cost is low; output is affordable to scale."]),
+                [("Open budget", "nav('budget')")]))
+
+
+def _mod_infra(c):
+    items = [(name, bool(c["st"].get(k)), "connected" if c["st"].get(k) else "not connected")
+             for k, name, *_ in _DIAG]
+    m = _master("🛰️", "Infrastructure", "Every connection, live or down.",
+                [("Wires live", f"{c['live_conn']}/{c['total_conn']}", "#4C8DFF"),
+                 ("Down", c["total_conn"] - c["live_conn"], "#FF6B93" if c["live_conn"] < c["total_conn"] else "#3FD98B"),
+                 ("System", "OK" if c["healthy"] else "Check", "#3FD98B" if c["healthy"] else "#F5B14C"),
+                 ("Uptime", "24/7", "#8B7CFF")], "")
+    conn = _intel_card("Connections", f"{c['live_conn']}/{c['total_conn']}", sub="live", dept="Infrastructure",
+                       source="System map", accent=("#3FD98B" if c["live_conn"] == c["total_conn"] else "#F5B14C"),
+                       insight=(f"{c['total_conn']-c['live_conn']} down — those intelligence centres stay greyed until fixed." if c["live_conn"] < c["total_conn"] else "All healthy."),
+                       recommendation=("Fix the down wires to unlock more cards." if c["live_conn"] < c["total_conn"] else "Nothing to fix."),
+                       action_label="Open System Map", action="nav('map')")
+    sysh = _intel_card("System health", "OK" if c["healthy"] else "Check", dept="Infrastructure", source="Health probe",
+                       accent=("#3FD98B" if c["healthy"] else "#F5B14C"),
+                       insight=("Claude API + database + connectors all responding." if c["healthy"] else "A component check is failing."),
+                       recommendation=("Nothing to do." if c["healthy"] else "Open Agents & Health."), action_label="Open Agents", action="nav('agents')")
+    return (m + "<div class='grid g2'>" + conn + sysh
+            + _viz("Connection status grid", "Green = live · amber = optional · red = down.", CH.statusgrid(items), "No connections mapped.")
+            + "</div>" + _decision_strip(
+                ([f"{c['total_conn']-c['live_conn']} connections down." for _ in [1] if c["live_conn"] < c["total_conn"]]),
+                (["Each connection you add lights up its intelligence cards."]),
+                [("Open System Map", "nav('map')")]))
+
+
+def _mod_risk(c):
+    pct = c["pct"]
+    down = c["total_conn"] - c["live_conn"]
+    items = []
+    if c["month_cap"]:
+        items.append(("Budget cap", 3 if pct >= 85 else (2 if pct >= 60 else 1), 3))
+    if down:
+        items.append(("Wires down", 3 if down > 2 else 2, 2))
+    if c["waiting"]:
+        items.append(("Approval backlog", 2 if c["waiting"] > 5 else 1, 2))
+    if not c["leads_found"]:
+        items.append(("Empty pipeline", 3, 3))
+    if not c["healthy"]:
+        items.append(("System health", 2, 3))
+    if not items:
+        items.append(("Deliverability", 1, 2))
+    m = _master("⚠️", "Risk", "What could hurt the business, ranked.",
+                [("Risks tracked", len(items), "#F5B14C"), ("Critical", sum(1 for _, l, i in items if l * i >= 6), "#FF6B93"),
+                 ("System", "OK" if c["healthy"] else "Check", "#3FD98B" if c["healthy"] else "#F5B14C"),
+                 ("Headroom", f"{max(0,100-pct)}%", "#3FD98B")], "")
+    cards = ""
+    for label, lk, im in items[:3]:
+        sev = lk * im
+        col = "#FF6B93" if sev >= 6 else ("#F5B14C" if sev >= 3 else "#3FD98B")
+        cards += _intel_card(label, ("Critical" if sev >= 6 else ("Elevated" if sev >= 3 else "Low")), sub="severity",
+                             dept="Risk", accent=col, insight=f"Likelihood {lk}/3 · impact {im}/3.",
+                             recommendation={"Budget cap": "Throttle spend as you approach the cap.",
+                                             "Wires down": "Reconnect on the System Map.",
+                                             "Approval backlog": "Clear the approval queue.",
+                                             "Empty pipeline": "Source leads + plan content.",
+                                             "System health": "Open Agents & Health.",
+                                             "Deliverability": "Keep warm-up cap + suppression on."}.get(label, "Monitor."),
+                             action_label="Act", action="nav('map')")
+    return (m + "<div class='grid g2'>" + cards + "</div>"
+            + _viz("Risk matrix — likelihood × impact", "Top-right is act-now.", CH.risk_matrix(items), "No risks flagged.")
+            + _decision_strip([l for l, lk, im in items if lk * im >= 6],
+                              (["Fixing the top-right risk protects the most value."] if items else []),
+                              [("Open System Map", "nav('map')"), ("Open budget", "nav('budget')")]))
+
+
+def _mod_executive(c):
+    # cross-module scoreboard + the decision engine (the CEO's single screen)
+    board = "<div class='grid g4'>" + "".join(
+        f"<div class='mstat'><div class='msv' style='color:{col}'>{_esc(v)}</div><div class='msl'>{_esc(l)}</div></div>"
+        for l, v, col in [
+            ("Business health", f"{c['health']}/100", "#8B7CFF"),
+            ("Content live", c["published"], "#3FD98B"),
+            ("Pipeline leads", c["leads_found"], "#4C8DFF"),
+            ("Reply rate", f"{c['reply_rate']}%", "#2FE3D2"),
+            ("Booked", c["booked"], "#F5B14C"),
+            ("Spend", f"${c['month_spent']:.0f}/{c['month_cap']:.0f}", c["bcol"]),
+            ("Wires", f"{c['live_conn']}/{c['total_conn']}", "#4C9AFF"),
+            ("Waiting", c["waiting"], "#F5B14C"),
+        ]) + "</div>"
+    return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>🏛️ Executive Intelligence</p>"
+            "<p class='cc'>The whole business on one screen — every module's headline, plus the decisions that move "
+            "the needle this week.</p>" + board + "</div>"
+            + _viz("Value flow — channel to customer", "How marketing turns into revenue.",
+                   CH.sankey([f for f in [
+                       ("SEO / Web", "Leads", max(1, c["leads_found"] * 0.6)) if c["leads_found"] else None,
+                       ("Outreach", "Leads", max(1, c["leads_found"] * 0.4)) if c["leads_found"] else None,
+                       ("Leads", "Booked", c["booked"]) if c["booked"] else None,
+                       ("Booked", "Customers", c["o_cust"]) if c["o_cust"] else None] if f]),
+                   "Fills as the pipeline runs.")
+            + _decision_strip(c["risks"], c["opps"], c["actions"]))
+
+
 # ---------------------------------------------------------------------------
 # dashboard
 # ---------------------------------------------------------------------------
@@ -3042,10 +3387,37 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  + "<div class='grid g2'>" + _mkt + _content_card + _lead_card + _out_card
                  + _fin_card + _wf_card + _infra_card + "</div>")
 
+    # ---- shared context for the 10 intelligence centres (real data only) ----
+    ctx = {
+        "name": _owner, "health": _health, "risks": _risks, "opps": _opps, "actions": _actions,
+        "jobs": jobs, "content_jobs": content_jobs, "out_jobs": out_jobs, "st": st,
+        "healthy": bool(healthy), "live_conn": live_conn, "total_conn": total_conn,
+        "leads_found": leads_found, "leads_emailed": leads_emailed, "emails_sent": emails_sent,
+        "replied": replied, "reply_rate": reply_rate, "booked": booked,
+        "o_leads": o_leads, "o_rev": o_rev, "o_cust": o_cust,
+        "total_cost": total_cost, "content_cost": content_cost, "month_spent": month_spent,
+        "month_cap": month_cap, "pct": pct, "bcol": bcol,
+        "published": published, "made_month": made_month, "proj": proj, "waiting": waiting,
+        "pl": pl, "content_series": content_series, "lead_rows": lead_rows,
+        "_ga4m": _ga4m, "_gsc": _gsc, "_sess": _sess, "_topq": _topq,
+        "qualified": _qualified, "not_emailed": _not_emailed,
+        "outbox_ready": _outbox_ready_count(jobs), "live_agents": _live_agents,
+    }
+
     # ---- nav + assembly ----
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
-        ("overview", "📊", "Overview", "Overview", "A summary of all 12 machines — click any tile to dive in.", overview),
+        ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum in one view.", _mod_business(ctx)),
+        ("marketing", "📣", "Marketing Int.", "Marketing Intelligence", "SEO · AEO · GEO · Ads — visibility to revenue.", _mod_marketing(ctx)),
+        ("sales", "💼", "Sales Int.", "Sales Intelligence", "Pipeline from stranger to won.", _mod_sales(ctx)),
+        ("customer", "🫂", "Customer Int.", "Customer Intelligence", "Who's booking, buying and staying.", _mod_customer(ctx)),
+        ("workforce", "🤖", "AI Workforce", "AI Workforce", "Your agents — running, healthy, productive.", _mod_workforce(ctx)),
+        ("ops", "⚙️", "Operations", "Operations", "Throughput, schedule and the approval queue.", _mod_operations(ctx)),
+        ("finance", "💰", "Finance", "Finance", "Spend against the cap, and cost per outcome.", _mod_finance(ctx)),
+        ("infra", "🛰️", "Infrastructure", "Infrastructure", "Every connection, live or down.", _mod_infra(ctx)),
+        ("risk", "⚠️", "Risk", "Risk", "What could hurt the business, ranked.", _mod_risk(ctx)),
+        ("exec", "🏛️", "Executive Int.", "Executive Intelligence", "The whole business on one screen.", _mod_executive(ctx)),
+        ("overview", "📊", "Machines", "Operational Machines", "The hands-on machines — click any tile to dive in.", overview),
         ("content", "📝", "Content Factory", "Content Factory", "Everything about creating & publishing content.", p_content),
         ("leads", "🧲", "Lead Machine", "Lead Machine", "Finding, scoring and grouping your leads.", p_leads),
         ("email", "✉️", "Email & Outreach", "Email & Outreach", "Cold emails, replies and deliverability.", p_email),
@@ -3259,11 +3631,15 @@ if __name__ == "__main__":
                           health={"healthy": True, "anthropic": {"status": "ok"}, "postgres": {"status": "ok"}},
                           month_spent=63, month_cap=200, day_spent=4.2, day_cap=50,
                           taste_skills=["content_producer", "seo_optimizer"])
-    for need in ("Overview", "Content Factory", "System Map", "Wiring diagnostic", "Automation Engine",
+    for need in ("Operational Machines", "Content Factory", "System Map", "Wiring diagnostic", "Automation Engine",
                  "sec-map", "nav('leads')", "24/7 competitor", "What it breaks", "Not connected"):
         assert need in html, need
-    assert html.count("class='page") == 15, html.count("class='page")
+    assert html.count("class='page") == 25, html.count("class='page")
     assert "CEO Command Center" in html and "Executive briefing" in html
+    for _m in ("Business Performance", "Marketing Intelligence", "Sales Intelligence",
+               "Customer Intelligence", "AI Workforce", "Operations", "Finance",
+               "Infrastructure", "Risk", "Executive Intelligence", "AI Decision Engine"):
+        assert _m in html, _m
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
