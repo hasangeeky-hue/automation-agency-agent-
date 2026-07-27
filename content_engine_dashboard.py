@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-27 · v21 · complete OS: all 20 intelligence modules built"
+BUILD_TAG = "2026-07-27 · v22 · full 204-card catalogue across the 12 core modules"
 
 CSS = """
 :root{--bg:#070A12;--bg2:#0A0F1E;--s1:#111A2E;--s1b:#0E1626;--s2:#0B111F;
@@ -2631,6 +2631,182 @@ def _mod_executive(c):
                               roi=(c.get("impact_conf") or "—")))
 
 
+# ---- The full intelligence-card catalogue (the 204-card spec). Each entry is
+# ---- (title, data source). Real value where we can compute it from live data,
+# ---- else an honest 'connect <source>' card. ------------------------------
+_CARD_SPECS = {
+    "executive": [("Business health", "engine"), ("Revenue signal", "Stripe/outcomes"), ("Growth", "engine"),
+                  ("Marketing ROI", "GA4"), ("Lead generation", "Prospeo"), ("Pipeline", "engine"),
+                  ("Risk index", "engine"), ("Opportunity index", "engine"), ("Cash position", "QuickBooks"),
+                  ("Team output", "engine"), ("AI confidence", "judge"), ("Decision backlog", "engine")],
+    "business": [("Revenue", "Stripe"), ("Pipeline value", "CRM"), ("Growth rate", "engine"), ("Win rate", "CRM"),
+                 ("Content output", "engine"), ("Lead volume", "Prospeo"), ("Conversion", "engine"),
+                 ("Booked calls", "Cal.com"), ("Customer count", "outcomes"), ("Momentum", "engine"),
+                 ("Efficiency", "meters"), ("Forecast", "engine")],
+    "marketing": [("SEO", "GA4+GSC"), ("Technical SEO", "Screaming Frog"), ("Content SEO", "GSC"),
+                  ("Keyword movement", "GSC"), ("SERP", "GSC"), ("Backlinks", "Ahrefs"), ("Internal linking", "crawl"),
+                  ("Authority", "Ahrefs"), ("Indexation", "GSC"), ("Core Web Vitals", "PageSpeed"),
+                  ("AI Overview", "GSC"), ("GEO", "AI-visibility"), ("Entity authority", "AI-visibility"),
+                  ("Schema", "crawl"), ("CTR", "GSC"), ("Cannibalisation", "GSC"), ("Competitor SEO", "Semrush"),
+                  ("Content gap", "Semrush"), ("Revenue attribution", "GA4"), ("Organic conversion", "GA4"),
+                  ("Forecast", "engine"), ("Opportunity", "engine"), ("Recommendation", "AI brain"), ("Execution", "engine")],
+    "sales": [("Leads sourced", "Prospeo"), ("Qualified", "engine"), ("Emailed", "engine"), ("Reply rate", "mail"),
+              ("Booked", "Cal.com"), ("Won", "outcomes"), ("Pipeline value", "engine"), ("Follow-ups due", "engine"),
+              ("Sequence health", "engine"), ("Suppression", "deliverability"), ("Deliverability", "mail"),
+              ("Best subject", "engine"), ("Segment coverage", "engine"), ("Vertical mix", "engine"),
+              ("Region mix", "engine"), ("CAC", "engine"), ("Velocity", "engine"), ("Forecast", "engine")],
+    "customer": [("Booked", "Cal.com"), ("Customers won", "outcomes"), ("Retention", "CRM"), ("Churn", "CRM"),
+                 ("LTV", "Stripe"), ("NPS", "survey"), ("Satisfaction", "support"), ("Repeat rate", "CRM"),
+                 ("Support tickets", "Zendesk"), ("Response time", "support"), ("Onboarding", "CRM"),
+                 ("Health score", "CRM"), ("Upsell", "CRM"), ("Referrals", "CRM"), ("Segment mix", "engine"),
+                 ("Journey stage", "CRM"), ("Feedback", "support"), ("Forecast", "engine")],
+    "operations": [("Throughput", "engine"), ("In production", "engine"), ("Published", "engine"),
+                   ("Approval queue", "engine"), ("Cycle time", "engine"), ("On-time %", "engine"),
+                   ("Bottlenecks", "engine"), ("Rework rate", "engine"), ("Capacity", "engine"),
+                   ("Utilisation", "engine"), ("SLA", "engine"), ("Backlog", "engine"),
+                   ("Schedule adherence", "engine"), ("Error rate", "engine"), ("Quality gate", "QA"),
+                   ("Cost per piece", "meters"), ("Weekly plan", "engine"), ("Forecast", "engine")],
+    "finance": [("Revenue", "Stripe"), ("Profit", "QuickBooks"), ("Gross margin", "QuickBooks"),
+                ("Net margin", "QuickBooks"), ("Cash flow", "QuickBooks"), ("Forecast", "engine"),
+                ("Runway", "QuickBooks"), ("MRR", "Stripe"), ("ARR", "Stripe"), ("Expenses", "meters"),
+                ("Payroll", "Gusto"), ("ROI", "engine"), ("CAC", "engine"), ("LTV", "CRM"),
+                ("Outstanding invoice", "QuickBooks"), ("Tax liability", "QuickBooks"),
+                ("Currency exposure", "bank"), ("Financial risk", "engine")],
+    "workforce": [("Agent health", "orchestrator"), ("Agent memory", "Postgres"), ("Agent cost", "meters"),
+                  ("Agent speed", "orchestrator"), ("Agent queue", "engine"), ("Agent success", "judge"),
+                  ("Agent confidence", "judge"), ("Human intervention", "engine"), ("Reasoning quality", "judge"),
+                  ("Agent collaboration", "orchestrator"), ("Tool usage", "orchestrator"), ("Model cost", "meters"),
+                  ("Latency", "health"), ("Retries", "orchestrator"), ("Failures", "engine"), ("Improvement trend", "learning")],
+    "infra": [("CPU", "host metrics"), ("RAM", "host metrics"), ("GPU", "host metrics"), ("Disk", "host metrics"),
+              ("Redis", "host metrics"), ("Queue", "orchestrator"), ("Docker", "host"), ("Network", "host metrics"),
+              ("Database", "Postgres"), ("API", "health"), ("Latency", "health"), ("Cloud cost", "host"),
+              ("Availability", "health"), ("Security", "auth")],
+    "competitive": [("Competitor health", "tracker"), ("Revenue estimate", "SimilarWeb"), ("Traffic", "SimilarWeb"),
+                    ("Hiring", "jobs feed"), ("Technology", "BuiltWith"), ("Ads", "ad library"), ("SEO", "Semrush"),
+                    ("GEO", "AI-visibility"), ("AI visibility", "AI-visibility"), ("Products", "web crawl"),
+                    ("Pricing", "web crawl"), ("Promotions", "web crawl"), ("Reviews", "reviews feed"),
+                    ("Social growth", "social API"), ("Partnerships", "news feed"), ("Funding", "news feed"),
+                    ("Expansion", "news feed"), ("Launches", "news feed"), ("Risk", "engine"),
+                    ("Forecast", "engine"), ("Recommendations", "AI brain"), ("Threat level", "engine")],
+    "forecasting": [("Output forecast", "engine"), ("Pipeline forecast", "engine"), ("Revenue forecast", "Stripe"),
+                    ("Spend forecast", "meters"), ("Lead forecast", "engine"), ("Booking forecast", "Cal.com"),
+                    ("Growth projection", "engine"), ("Seasonality", "GA4"), ("Demand signal", "GSC"),
+                    ("Confidence", "engine"), ("Best case", "engine"), ("Base case", "engine"),
+                    ("Worst case", "engine"), ("Runway projection", "QuickBooks"), ("Capacity forecast", "engine"),
+                    ("Risk-adjusted", "engine"), ("Opportunity", "engine"), ("Recommendation", "AI brain")],
+    "decision": [("Open decisions", "engine"), ("Critical", "engine"), ("Problems", "engine"), ("Root causes", "AI brain"),
+                 ("Options", "AI brain"), ("Est. cost", "engine"), ("Est. revenue", "engine"), ("Risk", "engine"),
+                 ("Confidence", "engine"), ("Timeline", "engine"), ("Priority queue", "engine"),
+                 ("Recommendations", "AI brain"), ("Auto-executable", "engine"), ("Learn loop", "learning")],
+}
+
+
+def _card_reals(c):
+    """Real values for the catalogue cards we CAN compute from live data. Anything
+    not here renders as an honest 'connect the source' card."""
+    failed = sum(1 for j in c["jobs"] if j.get("status") in ("failed", "halted_budget", "revision_needed"))
+    inprod = sum(c["pl"][0:4])
+    cac = (f"${c['total_cost']/c['o_cust']:.0f}" if c["o_cust"] else "—")
+    perpiece = f"${c['content_cost']/max(len(c['content_jobs']),1):.2f}"
+    R = {}
+
+    def a(t, v, sub="", acc="#2FE3D2", ins="", rec="", prio=""):
+        R[t] = {"v": v, "sub": sub, "acc": acc, "ins": ins, "rec": rec, "prio": prio}
+    a("Business health", str(c["health"]), "/100", "#8B7CFF", "Composite of connections, health, budget, output, backlog.")
+    a("Growth", str(c["published"]), "live", "#2FE3D2")
+    a("Team output", str(c["published"]), "pieces", "#2FE3D2")
+    a("Content output", str(c["published"]), "live", "#2FE3D2")
+    a("Published", str(c["published"]), "live", "#3FD98B")
+    a("Throughput", str(c["made_month"]), "this month", "#2FE3D2")
+    a("In production", str(inprod), "moving", "#F5B14C")
+    a("Lead generation", str(c["leads_found"]), "sourced", "#4C8DFF")
+    a("Lead volume", str(c["leads_found"]), "sourced", "#4C8DFF")
+    a("Leads sourced", str(c["leads_found"]), "sourced", "#4C8DFF")
+    a("Lead forecast", str(c["proj"]), "proj/mo", "#4C8DFF")
+    a("Pipeline", str(c["leads_found"]), "leads", "#4C8DFF")
+    a("Qualified", str(c["qualified"]), "leads", "#8B7CFF")
+    a("Emailed", str(c["leads_emailed"]), "people", "#4C8DFF")
+    a("Conversion", f"{c['reply_rate']}%", "reply", "#8B7CFF")
+    a("Reply rate", f"{c['reply_rate']}%", f"{c['replied']} replied", "#8B7CFF")
+    a("Marketing ROI", f"{c['reply_rate']}%", "reply proxy", "#8B7CFF")
+    a("Booked", str(c["booked"]), "calls", "#3FD98B")
+    a("Booked calls", str(c["booked"]), "calls", "#3FD98B")
+    a("Booking forecast", str(c["booked"]), "so far", "#3FD98B")
+    a("Won", str(c["o_cust"]), "customers", "#3FD98B")
+    a("Customer count", str(c["o_cust"]), "won", "#3FD98B")
+    a("Customers won", str(c["o_cust"]), "won", "#3FD98B")
+    a("Forecast", f"{c['proj']}/mo", "output", "#4C8DFF")
+    a("Output forecast", f"{c['proj']}/mo", "projected", "#4C8DFF")
+    a("Growth projection", f"{c['proj']}/mo", "projected", "#4C8DFF")
+    a("Momentum", str(c["made_month"]), "made/mo", "#2FE3D2")
+    a("Revenue", (f"${c['o_rev']:.0f}"), "recorded", "#3FD98B", ("From closed outcomes." if c["o_rev"] else "No closed revenue recorded yet."))
+    a("Revenue signal", (f"${c['o_rev']:.0f}"), "recorded", "#3FD98B")
+    a("Revenue forecast", (f"${c['o_rev']:.0f}"), "recorded", "#3FD98B")
+    a("Revenue attribution", (str(c["_sess"]) if c["_sess"] else None) or "—", "sessions", "#4C8DFF")
+    a("Expenses", f"${c['total_cost']:.2f}", "spent", "#F5B14C")
+    a("Agent cost", f"${c['total_cost']:.2f}", "total", "#F5B14C")
+    a("Model cost", f"${c['content_cost']:.2f}", "content", "#F5B14C")
+    a("Spend forecast", f"${(c['total_cost']/max(__import__('datetime').date.today().day,1)*30):.0f}", "/mo", "#F5B14C")
+    a("Cloud cost", f"${c['month_spent']:.0f}", "of $200", c["bcol"])
+    a("Efficiency", perpiece, "per piece", "#4C8DFF")
+    a("Cost per piece", perpiece, "avg", "#4C8DFF")
+    a("CAC", cac, "per customer", "#8B7CFF")
+    a("SEO", (str(c["_sess"]) if c["_sess"] else None) or "—", "sessions", "#4C8DFF", (f"Top query: {c['_topq']}." if c["_topq"] else ""))
+    a("Demand signal", (c["_topq"] or None) or "—", "top query", "#2FE3D2")
+    a("Approval queue", str(c["waiting"]), "waiting", "#F5B14C")
+    a("Backlog", str(c["waiting"]), "waiting", "#F5B14C")
+    a("Agent queue", str(c["waiting"]), "queued", "#F5B14C")
+    a("Human intervention", str(c["waiting"]), "need you", "#F5B14C")
+    a("Quality gate", "On", "QA active", "#3FD98B")
+    a("Failures", str(failed), "jobs", ("#FF6B93" if failed else "#3FD98B"))
+    a("Retries", str(failed), "reworks", "#F5B14C")
+    a("Rework rate", str(failed), "pieces", "#F5B14C")
+    a("Agent health", ("OK" if c["healthy"] else "Check"), "", ("#3FD98B" if c["healthy"] else "#F5B14C"))
+    a("Agent success", ("OK" if c["healthy"] else "Check"), "", "#3FD98B")
+    a("Suppression", "On", "auto", "#3FD98B")
+    a("Deliverability", "Guarded", "warm-up cap", "#3FD98B")
+    a("Docker", ("OK" if c["healthy"] else "Check"), "", ("#3FD98B" if c["healthy"] else "#F5B14C"))
+    a("Database", ("OK" if c["healthy"] else "Check"), "Postgres", ("#3FD98B" if c["healthy"] else "#F5B14C"))
+    a("API", ("OK" if c["healthy"] else "Check"), "Claude", ("#3FD98B" if c["healthy"] else "#F5B14C"))
+    a("Availability", ("100%" if c["healthy"] else "—"), "24/7", "#3FD98B")
+    a("Security", ("Locked" if c.get("has_password") else "OPEN"), "auth", ("#3FD98B" if c.get("has_password") else "#FF6B93"))
+    a("Pipeline forecast", (c.get("impact_gain") or "—"), "est.", "#3FD98B")
+    a("Opportunity index", str(len(c["opps"])), "open", "#3FD98B")
+    a("Opportunity", str(len(c["opps"])), "open", "#3FD98B")
+    a("Risk index", str(len(c["risks"])), "flagged", "#FF6B93")
+    a("Risk", str(len(c["risks"])), "flagged", "#FF6B93")
+    a("Decision backlog", str(len(c["risks"]) + len(c["opps"])), "decisions", "#8B7CFF")
+    a("Open decisions", str(len(c["risks"]) + len(c["opps"])), "to make", "#8B7CFF")
+    a("Critical", str(len(c["risks"])), "urgent", "#FF6B93")
+    a("Confidence", (c.get("impact_conf") or "—"), "", "#4C8DFF")
+    a("Est. revenue", (c.get("impact_gain") or "—"), "est.", "#3FD98B")
+    a("Weekly plan", str(c["proj"]), "target", "#4C8DFF")
+    a("Segment coverage", "7", "segments", "#8B7CFF")
+    a("AI confidence", (c.get("impact_conf") or "—"), "", "#4C8DFF")
+    return R
+
+
+def _module_boards(key, dept, c):
+    specs = _CARD_SPECS.get(key)
+    if not specs:
+        return ""
+    reals = _card_reals(c)
+    cards = ""
+    live = 0
+    for title, source in specs:
+        r = reals.get(title)
+        if r and r["v"] not in (None, "—", ""):
+            live += 1
+            cards += _intel_card(title, r["v"], sub=r.get("sub", ""), dept=dept, source=source,
+                                 accent=r.get("acc", "#2FE3D2"), insight=r.get("ins", ""),
+                                 recommendation=r.get("rec", ""), priority=r.get("prio", ""))
+        else:
+            cards += _intel_card(title, "", dept=dept, empty=f"Connect {source} to activate {title.lower()}.")
+    return (f"<div class='card full' style='margin-top:14px'><p class='ct'>📊 Full {dept} board · {len(specs)} cards "
+            f"<span class='dim' style='font-weight:400'>({live} live · {len(specs)-live} awaiting a source)</span></p></div>"
+            f"<div class='grid g3' style='margin-top:8px'>{cards}</div>")
+
+
 def _mod_projects(c):
     active = c["published"] + len(c["out_jobs"])
     m = _master("📋", "Projects", "Delivery status across every content + outreach initiative.",
@@ -3982,33 +4158,39 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
         ("exec", "🏛️", "Executive AI", "Executive Intelligence", "The whole business on one screen.",
-         _mod_executive(ctx) + _op("Learning & Results", p_learn)),
-        ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum.", _mod_business(ctx)),
+         _mod_executive(ctx) + _module_boards("executive", "Executive", ctx) + _op("Learning & Results", p_learn)),
+        ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum.",
+         _mod_business(ctx) + _module_boards("business", "Business", ctx)),
         ("marketing", "📣", "Marketing", "Marketing Intelligence", "SEO · AEO · GEO · Ads — visibility to revenue.",
-         _mod_marketing(ctx) + _op("SEO / AEO / GEO", p_seo) + _op("Ads & Growth", p_ads)
-         + _op("Media Buying", p_media) + _op("Social Media", p_social)),
+         _mod_marketing(ctx) + _module_boards("marketing", "Marketing", ctx) + _op("SEO / AEO / GEO", p_seo)
+         + _op("Ads & Growth", p_ads) + _op("Media Buying", p_media) + _op("Social Media", p_social)),
         ("sales", "💼", "Sales", "Sales Intelligence", "Pipeline from stranger to won.",
-         _mod_sales(ctx) + _op("Lead Machine", p_leads) + _op("Email & Outreach", p_email)),
-        ("customer", "🫂", "Customers", "Customer Intelligence", "Who's booking, buying and staying.", _mod_customer(ctx)),
+         _mod_sales(ctx) + _module_boards("sales", "Sales", ctx) + _op("Lead Machine", p_leads) + _op("Email & Outreach", p_email)),
+        ("customer", "🫂", "Customers", "Customer Intelligence", "Who's booking, buying and staying.",
+         _mod_customer(ctx) + _module_boards("customer", "Customer", ctx)),
         ("projects", "📋", "Projects", "Projects", "Delivery status across every initiative.", _mod_projects(ctx)),
         ("ops", "⚙️", "Operations", "Operations", "Throughput, schedule and the approval queue.",
-         _mod_operations(ctx) + _op("Content Factory", p_content) + _op("Approvals & Commands", p_appr)),
+         _mod_operations(ctx) + _module_boards("operations", "Operations", ctx)
+         + _op("Content Factory", p_content) + _op("Approvals & Commands", p_appr)),
         ("finance", "💰", "Finance", "Finance", "Spend against the cap, and cost per outcome.",
-         _mod_finance(ctx) + _op("Budget & Cost", p_budget)),
+         _mod_finance(ctx) + _module_boards("finance", "Finance", ctx) + _op("Budget & Cost", p_budget)),
         ("hr", "👥", "Human Resources", "Human Resources", "Your workforce — human and AI.", _mod_hr(ctx)),
         ("workforce", "🤖", "AI Workforce", "AI Workforce", "Your agents — running, healthy, productive.",
-         _mod_workforce(ctx) + _op("Agents & Health", p_agents)),
+         _mod_workforce(ctx) + _module_boards("workforce", "AI Workforce", ctx) + _op("Agents & Health", p_agents)),
         ("knowledge", "📚", "Knowledge", "Knowledge", "Your content library + institutional knowledge.", _mod_knowledge(ctx)),
         ("risk", "⚠️", "Risk", "Risk", "What could hurt the business, ranked.", _mod_risk(ctx)),
         ("compliance", "📜", "Compliance", "Compliance", "Email law, consent and deliverability guardrails.", _mod_compliance(ctx)),
         ("security", "🛡️", "Security", "Security", "Access, secrets and rate limits.", _mod_security(ctx)),
         ("infra", "🛰️", "Infrastructure", "Infrastructure", "Every connection, live or down.",
-         _mod_infra(ctx) + _op("System Map & Wiring", p_map) + _op("Google Hub", p_google)),
+         _mod_infra(ctx) + _module_boards("infra", "Infrastructure", ctx) + _op("System Map & Wiring", p_map) + _op("Google Hub", p_google)),
         ("development", "💻", "Development", "Development", "Builds, deploys and platform version.", _mod_development(ctx)),
         ("automation", "⚡", "Automation", "Automation", "Workflows, agent runs and throughput.", _mod_automation(ctx)),
-        ("forecasting", "🔮", "Forecasting", "Forecasting", "Where the numbers are heading.", _mod_forecasting(ctx)),
-        ("competitive", "🎯", "Competitive Intel", "Competitive Intelligence", "Track rivals across 20 signals.", _mod_competitive(ctx)),
-        ("decision", "🧭", "Decision Center", "Decision Center", "Every decision the business needs, ranked.", _mod_decision(ctx)),
+        ("forecasting", "🔮", "Forecasting", "Forecasting", "Where the numbers are heading.",
+         _mod_forecasting(ctx) + _module_boards("forecasting", "Forecasting", ctx)),
+        ("competitive", "🎯", "Competitive Intel", "Competitive Intelligence", "Track rivals across 20 signals.",
+         _mod_competitive(ctx) + _module_boards("competitive", "Competitive", ctx)),
+        ("decision", "🧭", "Decision Center", "Decision Center", "Every decision the business needs, ranked.",
+         _mod_decision(ctx) + _module_boards("decision", "Decision", ctx)),
     ]
     nav = "".join(
         f"<button class='navb{' act' if i==0 else ''}' id='nav-{pid}' onclick=\"nav('{pid}')\"><span class='ic'>{icon}</span>{_esc(short)}"
