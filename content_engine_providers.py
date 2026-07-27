@@ -301,6 +301,7 @@ def web_research(topic: str, context: str = "", max_uses: int = 5) -> str:
         "- 2-3 concrete real-world examples, named tools, or approaches\n"
         "- 2 credible sources as 'Name — URL'\n"
         "Be concrete and specific. No filler, no generic advice.")
+    # Primary: Anthropic's server-side web_search tool. Fallback below: Serper.
     for tool_type in ("web_search_20260209", "web_search_20250305"):
         try:
             client = _get_anthropic()
@@ -324,7 +325,20 @@ def web_research(topic: str, context: str = "", max_uses: int = 5) -> str:
             if brief:
                 return brief
         except Exception:
-            continue   # try the older tool type, then give up gracefully
+            continue   # try the older tool type, then fall back to Serper
+    # Fallback: Serper (Google search API) — deterministic brief from real results,
+    # zero LLM cost. Activates when SERPER_API_KEY is connected.
+    try:
+        from content_engine_connectors import Serper
+        rows = Serper().search(topic, num=8)
+        if rows:
+            lines = [f"- {r['title']}: {r['snippet']} (source: {r['link']})"
+                     for r in rows if r.get("snippet")]
+            if lines:
+                return ("Live Google results for '" + topic + "' (via Serper):\n"
+                        + "\n".join(lines[:8]))
+    except Exception:
+        pass
     return ""
 
 

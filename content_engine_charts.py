@@ -495,6 +495,66 @@ def n8n_flow(lanes):
             f"xmlns='http://www.w3.org/2000/svg'>{_GLOW}{inner}</svg>")
 
 
+# --- API / tools / database tri-map (n8n-style, 3 columns) ------------------
+def tri_map(apis, tools, stores, links_at, links_ts):
+    """3-column wiring map: API keys -> agents/tools -> databases.
+    apis/tools/stores: [(id, icon, label, on)]  (on: True live / False off / None n-a)
+    links_at: [(api_id, tool_id)]   links_ts: [(tool_id, store_id)]
+    Same visual language as n8n_flow: node chips, ports, bright bezier wires."""
+    if not (apis and tools and stores):
+        return ""
+    NW, NH, VGAP, PAD = 172, 44, 14, 12
+    COLX = [PAD, PAD + NW + 150, PAD + 2 * (NW + 150)]
+    H = PAD + max(len(apis), len(tools), len(stores)) * (NH + VGAP) + 26
+    W = COLX[2] + NW + PAD
+
+    def col_positions(items, cx):
+        pos = {}
+        for i, (nid, icon, label, on) in enumerate(items):
+            pos[nid] = (cx, PAD + 22 + i * (NH + VGAP))
+        return pos
+    pa, pt, ps = col_positions(apis, COLX[0]), col_positions(tools, COLX[1]), col_positions(stores, COLX[2])
+    heads = "".join(f"<text x='{COLX[k] + NW/2}' y='{PAD + 8}' text-anchor='middle' fill='{_MUT}' "
+                    f"font-size='9.5' font-weight='800' letter-spacing='2'>{t}</text>"
+                    for k, t in enumerate(["API / KEY", "AGENTS &amp; TOOLS", "DATABASES"]))
+    inner = heads
+    onmap = {nid: on for nid, _i, _l, on in list(apis) + list(tools) + list(stores)}
+
+    def wire(x1, y1, x2, y2, on):
+        col = "#2FE3D2" if on else "#3A4160"
+        op = ".65" if on else ".35"
+        path = f"M{x1} {y1} C{x1+70} {y1} {x2-70} {y2} {x2} {y2}"
+        w = f"<path d='{path}' fill='none' stroke='{col}' stroke-opacity='{op}' stroke-width='1.8'/>"
+        if on:
+            w += (f"<circle r='2.6' fill='#2FE3D2' filter='url(#cg)'>"
+                  f"<animateMotion dur='2.4s' repeatCount='indefinite' path='{path}'/></circle>")
+        return w
+    for a, t in links_at:
+        if a in pa and t in pt:
+            (x1, y1), (x2, y2) = pa[a], pt[t]
+            inner += wire(x1 + NW, y1 + NH / 2, x2, y2 + NH / 2, bool(onmap.get(a)))
+    for t, s in links_ts:
+        if t in pt and s in ps:
+            (x1, y1), (x2, y2) = pt[t], ps[s]
+            inner += wire(x1 + NW, y1 + NH / 2, x2, y2 + NH / 2, bool(onmap.get(t)))
+
+    def draw(items, pos):
+        out = ""
+        for nid, icon, label, on in items:
+            x, y = pos[nid]
+            col = "#3FD98B" if on else ("#8E9BBE" if on is None else "#FF6B93")
+            out += (f"<rect x='{x}' y='{y}' width='{NW}' height='{NH}' rx='10' "
+                    f"fill='#121B2F' stroke='{col}' stroke-opacity='.5' stroke-width='1.4'/>"
+                    f"<text x='{x + 12}' y='{y + 27}' font-size='13'>{icon}</text>"
+                    f"<text x='{x + 32}' y='{y + 22}' fill='{_INK}' font-size='10' font-weight='700'>{_e(label)[:20]}</text>"
+                    f"<text x='{x + 32}' y='{y + 35}' fill='{col}' font-size='8.5' font-weight='700'>"
+                    + ("● LIVE" if on else ("○ n/a" if on is None else "○ not connected")) + "</text>")
+        return out
+    inner += draw(apis, pa) + draw(tools, pt) + draw(stores, ps)
+    return (f"<svg viewBox='0 0 {W} {H}' width='{W}' style='max-width:none;height:auto' "
+            f"xmlns='http://www.w3.org/2000/svg'>{_GLOW}{inner}</svg>")
+
+
 # --- Sales region: geographic distribution ---------------------------------
 _FLAG = {"United States": "🇺🇸", "USA": "🇺🇸", "United Kingdom": "🇬🇧", "UK": "🇬🇧",
          "Germany": "🇩🇪", "Switzerland": "🇨🇭", "Canada": "🇨🇦", "Other": "🌍"}

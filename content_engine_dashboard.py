@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-27 · v16-r3 · agent-flow wires visible (arrows + bright links)"
+BUILD_TAG = "2026-07-27 · v16-r4 · Serper connected + API & data map"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -3268,6 +3268,43 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                      ("🧠", "Learning", "", "agent"),
                  ]),
              ]) + "</div></div>"
+             # API-key map: which key powers which agent, and where the data lives
+             + "<div class='card full' style='margin-top:12px'><p class='ct'>🔌 API &amp; data map — which key powers which tool, and where data lives</p>"
+             "<p class='cc'>Left = your API keys (green dot = live on this server). Middle = the agents/tools each key "
+             "powers. Right = the databases the results land in. Grey wires = that key isn't connected yet. Scroll sideways →</p>"
+             "<div style='overflow-x:auto;padding:6px 2px'>"
+             + CH.tri_map(
+                 [("claude", "🧠", "Claude API", bool(st.get("claude_api"))),
+                  ("serper", "🔎", "Serper (search+maps)", bool(st.get("serper_search"))),
+                  ("google", "🌐", "Google GSC + GA4", bool(st.get("google_gsc_ga4"))),
+                  ("gmail", "✉️", "Gmail SMTP/IMAP", bool(st.get("email_send"))),
+                  ("prospeo", "🧲", "Prospeo leads", bool(st.get("linkedin_leads"))),
+                  ("wp", "📰", "WordPress", bool(st.get("wordpress_publish"))),
+                  ("calcom", "📅", "Cal.com", bool(st.get("calcom_bookings"))),
+                  ("gads", "🎯", "Google Ads", bool(st.get("google_ads"))),
+                  ("sheets", "📊", "Sheets + Drive key", bool(st.get("google_sheets") or st.get("google_drive")))],
+                 [("research", "📚", "Research + Writer", True),
+                  ("seo", "🔎", "SEO Intelligence", True),
+                  ("sourcer", "🧲", "Lead Sourcer", True),
+                  ("outreach", "📤", "Email Sender", True),
+                  ("reply", "📥", "Reply Agent", True),
+                  ("media", "🛒", "Media Buyer", True),
+                  ("publisher", "🚀", "Publisher", True),
+                  ("booking", "📅", "Bookings", True)],
+                 [("pg", "🐘", "Postgres (jobs+memory)", True),
+                  ("drive", "📁", "Google Drive (content)", bool(st.get("google_drive"))),
+                  ("gsheets", "📊", "Google Sheets (mirror)", bool(st.get("google_sheets"))),
+                  ("wpdb", "📰", "WordPress DB (posts)", bool(st.get("wordpress_publish")))],
+                 [("claude", "research"), ("claude", "seo"), ("claude", "reply"), ("claude", "media"),
+                  ("serper", "research"), ("serper", "sourcer"),
+                  ("google", "seo"), ("google", "media"),
+                  ("gmail", "outreach"), ("gmail", "reply"),
+                  ("prospeo", "sourcer"), ("wp", "publisher"),
+                  ("calcom", "booking"), ("gads", "media")],
+                 [("research", "pg"), ("research", "drive"), ("seo", "pg"), ("sourcer", "pg"),
+                  ("outreach", "pg"), ("reply", "pg"), ("media", "pg"),
+                  ("publisher", "wpdb"), ("booking", "pg"), ("publisher", "gsheets")])
+             + "</div></div>"
              + diag + connect_card)
 
     # ---- MEDIA BUYING (drafted Google Ads campaigns) ----

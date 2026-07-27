@@ -305,7 +305,7 @@ CONNECTOR_ENV_KEYS = [
     "WORDPRESS_URL", "WORDPRESS_USER", "WORDPRESS_APP_PASSWORD", "WP_STATUS",
     "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_STARTTLS",
     "IMAP_HOST", "IMAP_PORT", "IMAP_USER", "IMAP_PASSWORD", "IMAP_FOLDER",
-    "SEARCH_PROVIDER", "SEARCH_API_KEY",
+    "SEARCH_PROVIDER", "SEARCH_API_KEY", "SERPER_API_KEY",
     "LINKEDIN_PROVIDER_URL", "LINKEDIN_API_KEY",
     "PROSPEO_API_KEY", "LEAD_COUNTRIES", "LEAD_TITLES",
     "GOOGLE_ACCESS_TOKEN", "GSC_SITE_URL", "GA4_PROPERTY_ID",
@@ -1137,6 +1137,45 @@ def source_leads(job: dict) -> list:
 # ---------------------------------------------------------------------------
 # Q7 — Google Search Console (on-page SEO data)  +  Q11 — GA4 (tracking)
 # ---------------------------------------------------------------------------
+class Serper:
+    """Google search + Google Maps via serper.dev (one key powers BOTH web
+    research and location/maps lead scraping). Credits-based, ~$1/1k queries.
+    Set SERPER_API_KEY in the dashboard Connect form (settings-first)."""
+
+    def __init__(self) -> None:
+        self.key = _env("SERPER_API_KEY")
+
+    def available(self) -> bool:
+        return bool(self.key and _requests())
+
+    def _post(self, endpoint: str, body: dict):
+        return _post_json(f"https://google.serper.dev/{endpoint}", body,
+                          headers={"X-API-KEY": self.key, "Content-Type": "application/json"})
+
+    def search(self, q: str, num: int = 8) -> list:
+        """Google web search -> [{title, link, snippet}] for research briefs."""
+        if not self.available():
+            return []
+        j = self._post("search", {"q": q, "num": num}) or {}
+        return [{"title": r.get("title", ""), "link": r.get("link", ""),
+                 "snippet": r.get("snippet", "")} for r in j.get("organic", [])[:num]]
+
+    def maps(self, q: str, num: int = 20) -> list:
+        """Google Maps places -> local businesses [{name, address, phone, website,
+        rating, reviews, category}] — the location half of the ICP (clinics, law
+        firms, salons...) that LinkedIn sourcing misses."""
+        if not self.available():
+            return []
+        j = self._post("maps", {"q": q}) or {}
+        out = []
+        for p in (j.get("places") or [])[:num]:
+            out.append({"name": p.get("title", ""), "address": p.get("address", ""),
+                        "phone": p.get("phoneNumber", ""), "website": p.get("website", ""),
+                        "rating": p.get("rating", 0), "reviews": p.get("ratingCount", 0),
+                        "category": p.get("type", "")})
+        return out
+
+
 class Google:
     """Read-only pulls from Google Search Console + GA4. Uses the SAME service
     account key as Sheets/Drive (GOOGLE_SERVICE_ACCOUNT_JSON) — add that service
@@ -2005,6 +2044,7 @@ def status() -> dict:
         "google_sheets": GoogleSheets().available(),   # mother dashboard / store
         "google_drive": GoogleDrive().available(),     # content JSON storage
         "web_search": bool(_env("SEARCH_PROVIDER") and _env("SEARCH_API_KEY") and _requests()),
+        "serper_search": Serper().available(),   # Google search + Maps (research + local leads)
         "linkedin_leads": LinkedIn().available(),
         "google_gsc_ga4": Google().available(),
         "ads_data": bool(_env("ADS_JSON")),
