@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-27 · v19 · new enterprise design (login + dashboard reskinned)"
+BUILD_TAG = "2026-07-27 · v20 · reference layout: KPI row + glowing agent-network model"
 
 CSS = """
 :root{--bg:#070A12;--bg2:#0A0F1E;--s1:#111A2E;--s1b:#0E1626;--s2:#0B111F;
@@ -2631,6 +2631,105 @@ def _mod_executive(c):
                               roi=(c.get("impact_conf") or "—")))
 
 
+def _kpi(label, value, *, delta="", up=True, spark=None, icon="", accent="#2FE3D2"):
+    """A reference-style KPI stat card: label + icon, big number + inline delta,
+    mini sparkline underneath."""
+    d = (f"<span style='color:{'#3FD98B' if up else '#FF6B93'};font-weight:800;font-size:12px'>"
+         f"{'▲' if up else '▼'} {_esc(delta)}</span>") if delta else ""
+    sp = _sparkline(spark, accent) if (spark and any(spark)) else "<div style='height:34px'></div>"
+    return ("<div class='card' style='padding:15px 16px'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center'>"
+            f"<span class='dim' style='font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700'>{_esc(label)}</span>"
+            f"<span style='font-size:15px;opacity:.8'>{icon}</span></div>"
+            f"<div style='display:flex;align-items:baseline;gap:9px;margin-top:8px'>"
+            f"<span style='font-size:31px;font-weight:850;letter-spacing:-.02em;line-height:1;color:{accent}'>{_esc(value)}</span>{d}</div>"
+            f"<div style='margin-top:9px'>{sp}</div></div>")
+
+
+def _panelbox(title, body, *, sub=""):
+    return (f"<div class='card' style='display:flex;flex-direction:column'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center'>"
+            f"<span class='ct'>{_esc(title)}</span><span class='dim' style='font-size:12px'>{_esc(sub)}⋯</span></div>"
+            f"<div style='margin-top:10px;flex:1'>{body}</div></div>")
+
+
+def _command_reference(c):
+    """The reference-style analytics Command Center: KPI row → glowing AGENT
+    NETWORK model + performance bars → trend line + distribution donuts → live
+    activity feed + system health monitor. Real data only."""
+    published, made_month, proj = c["published"], c["made_month"], c["proj"]
+    cser = c["content_series"] or [0]
+    try:
+        sser = _send_daybuckets(c["out_jobs"], 14)
+    except Exception:
+        sser = [0]
+    # KPI row
+    _d = lambda a, b: (f"{abs(round((a-b)/max(b,1)*100))}%", a >= b)
+    k1 = _kpi("Content published", str(published), delta=f"{made_month}/mo", up=True,
+              spark=cser, icon="📝", accent="#2FE3D2")
+    k2 = _kpi("Leads sourced", str(c["leads_found"]), delta=f"{c['leads_emailed']} emailed", up=c["leads_found"] > 0,
+              spark=_daybuckets(c["out_jobs"], lambda j: True, 14), icon="🧲", accent="#4C8DFF")
+    k3 = _kpi("Emails sent", str(c["emails_sent"]), delta=f"{c['reply_rate']}% reply", up=c["reply_rate"] > 0,
+              spark=sser, icon="✉️", accent="#8B7CFF")
+    k4 = _kpi("Business health", f"{c['health']}", delta="/100", up=c["health"] >= 70,
+              spark=None, icon="❤️", accent=("#3FD98B" if c["health"] >= 70 else "#F5B14C"))
+    kpis = "<div class='grid g4'>" + k1 + k2 + k3 + k4 + "</div>"
+    # hero: glowing agent network + performance bars
+    net = CH.neural([5, 7, 6, 4, 3], ["Sources", "Content AI", "Lead AI", "Publish/Send", "Measure"])
+    stage_counts = [0] * len(_FACTORY)
+    for j in c["content_jobs"]:
+        stage_counts[_factory_stage(j.get("status", ""))] += 1
+    perf = CH.vbars([f[1][:4] for f in _FACTORY],
+                    [("Pieces", stage_counts, "#2FE3D2")]) if c["content_jobs"] else ""
+    hero = ("<div style='display:grid;grid-template-columns:1.55fr 1fr;gap:14px;margin-top:14px'>"
+            + _panelbox("Anthropos Agent Network", net, sub="live ")
+            + _panelbox("Pipeline by stage", perf or "<div class='dim' style='padding:14px 0'>Fills as pieces are produced.</div>") + "</div>")
+    # trend line + two donuts
+    ln = CH.lines([("Content", cser, "#2FE3D2"), ("Emails", sser, "#4C8DFF")])
+    stage_seg = [(f[1][:6], stage_counts[i], _INTEL_COLORS[i % len(_INTEL_COLORS)]) for i, f in enumerate(_FACTORY) if stage_counts[i]]
+    dist = CH.ring(stage_seg, center=str(sum(stage_counts))) if any(stage_counts) else ""
+    try:
+        vert = _verticals(c["out_jobs"])
+    except Exception:
+        vert = []
+    vseg = [(v[0][:8], v[1], _INTEL_COLORS[i % len(_INTEL_COLORS)]) for i, v in enumerate(vert[:5])]
+    lead_ring = CH.ring(vseg, center=str(c["leads_found"])) if vseg else ""
+    row3 = ("<div style='display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:14px;margin-top:14px'>"
+            + _panelbox("Output over time (14 days)", ln or "<div class='dim'>Fills as jobs run.</div>")
+            + _panelbox("Pipeline distribution", dist or "<div class='dim' style='padding:14px 0'>Fills as pieces move.</div>")
+            + _panelbox("Leads by vertical", lead_ring or "<div class='dim' style='padding:14px 0'>Fills as leads arrive.</div>") + "</div>")
+    # live feed + health monitor
+    recent = sorted([j for j in c["jobs"]], key=lambda j: j.get("updated_at", ""), reverse=True)[:6]
+    feed_rows = ""
+    for j in recent:
+        p = j.get("payload", {}) or {}
+        title = ((p.get("content_producer", {}) or {}).get("title")
+                 or (p.get("outreach_copy", {}) or {}).get("subject_variants", [""])[0]
+                 or j.get("job_id"))
+        stt = j.get("status", "")
+        feed_rows += (f"<tr><td class='dim' style='width:88px'>{_esc(str(j.get('updated_at','') or '')[5:16].replace('T',' '))}</td>"
+                      f"<td>{_esc(str(title)[:38])}</td>"
+                      f"<td style='color:#2FE3D2'>{_esc(stt)}</td></tr>")
+    feed = ("<div class='tbwrap'><table><thead><tr><th>Time</th><th>Item</th><th>Status</th></tr></thead><tbody>"
+            + (feed_rows or "<tr><td colspan='3' class='dim'>No activity yet.</td></tr>") + "</tbody></table></div>")
+    def _meter(label, pct, val, col):
+        return (f"<div style='margin-bottom:12px'><div style='display:flex;justify-content:space-between'>"
+                f"<span class='dim' style='font-size:11px'>{_esc(label)}</span>"
+                f"<span style='font-weight:800;font-size:16px'>{_esc(val)}</span></div>"
+                f"<div class='prog' style='margin:5px 0 0'><i style='width:{max(3,min(100,pct))}%;background:{col}'></i></div></div>")
+    hm = (_meter("Budget used", c["pct"], f"${c['month_spent']:.0f}", c["bcol"])
+          + _meter("Connections live", round(c["live_conn"]/max(c["total_conn"],1)*100), f"{c['live_conn']}/{c['total_conn']}", "#4C8DFF")
+          + _meter("Approval load", min(100, c["waiting"]*20), str(c["waiting"]), "#F5B14C")
+          + _meter("System", 100 if c["healthy"] else 50, "OK" if c["healthy"] else "Check", "#3FD98B" if c["healthy"] else "#F5B14C"))
+    row4 = ("<div style='display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-top:14px'>"
+            + _panelbox("Live activity feed", feed)
+            + _panelbox("System health monitor", hm) + "</div>")
+    return kpis + hero + row3 + row4
+
+
+_INTEL_COLORS = ["#4C8DFF", "#2FE3D2", "#8B7CFF", "#3FD98B", "#F5B14C", "#FF6B93", "#5A7BE8"]
+
+
 # ---------------------------------------------------------------------------
 # dashboard
 # ---------------------------------------------------------------------------
@@ -3625,17 +3724,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _geo_rows = _by_country(out_jobs)
     except Exception:
         _geo_rows = []
-    p_mission = (_exec_briefing(_owner, _health, briefing_kpis, _risks, _opps, _actions,
-                                impact_gain=_impact_gain, impact_conf=_impact_conf, narrative=_narr)
-                 + "<div class='dim' style='margin:-4px 0 12px;font-size:11.5px'>ℹ️ Health is computed from your live "
-                   "signals (connections · system health · budget · output · approval backlog · pipeline). £ figures are "
-                   "labelled <b>est.</b> (mid-ICP £4k deal, ~5% win) — estimates, not booked revenue. Greyed cards need "
-                   "their source connected. The 🧠 briefing prose is written by the AI brain from your real metrics "
-                   "(click <b>Regenerate AI briefing</b>).</div>"
-                 + "<div class='grid g2'>" + _mkt + _content_card + _lead_card + _out_card
-                 + _fin_card + _wf_card + _infra_card + "</div>")
-
-    # ---- shared context for the 10 intelligence centres (real data only) ----
+    # ---- shared context for the reference layout + 10 intelligence centres ----
     ctx = {
         "name": _owner, "health": _health, "risks": _risks, "opps": _opps, "actions": _actions,
         "jobs": jobs, "content_jobs": content_jobs, "out_jobs": out_jobs, "st": st,
@@ -3653,6 +3742,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "geo_rows": _geo_rows, "gain_email": _gain_email_s, "gain_content": _gain_content_s,
         "impact_gain": _impact_gain, "impact_conf": _impact_conf,
     }
+    # CEO Command Center: lead with the reference analytics layout (KPI row →
+    # glowing agent-network model → charts → live feed + health), THEN the AI
+    # brain briefing, then the drill-in intelligence cards.
+    p_mission = (
+        _command_reference(ctx)
+        + "<div style='margin-top:18px'></div>"
+        + _exec_briefing(_owner, _health, briefing_kpis, _risks, _opps, _actions,
+                         impact_gain=_impact_gain, impact_conf=_impact_conf, narrative=_narr)
+        + "<div class='dim' style='margin:-4px 0 12px;font-size:11.5px'>ℹ️ Real data only; £ figures are labelled "
+          "<b>est.</b> (mid-ICP £4k deal, ~5% win). Greyed cards need their source connected.</div>"
+        + "<div class='grid g2'>" + _mkt + _content_card + _lead_card + _out_card
+        + _fin_card + _wf_card + _infra_card + "</div>")
 
     # ---- nav + assembly ----
     # Operational controls fold INSIDE their intelligence centre (one system, not

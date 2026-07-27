@@ -24,9 +24,141 @@ def _e(s):
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
-def _svg(w, h, inner):
+def _svg(w, h, inner, defs=""):
     return (f"<svg viewBox='0 0 {w} {h}' width='100%' style='max-width:{w}px;height:auto' "
-            f"xmlns='http://www.w3.org/2000/svg'>{inner}</svg>")
+            f"xmlns='http://www.w3.org/2000/svg'>{defs}{inner}</svg>")
+
+
+_GLOW = ("<defs><filter id='cg' x='-60%' y='-60%' width='220%' height='220%'>"
+         "<feGaussianBlur stdDeviation='3.2' result='b'/><feMerge>"
+         "<feMergeNode in='b'/><feMergeNode in='SourceGraphic'/></feMerge></filter></defs>")
+
+
+# --- Glowing "model" architecture (the rendered neural-net look) -------------
+def neural(layers, labels=None):
+    """A glowing multi-layer node network — the AGENT NETWORK rendered like the
+    reference model diagram. layers=[node counts]; nodes glow, edges are faint,
+    signal pulses travel across. Pure SVG (no libs)."""
+    layers = [max(1, int(n)) for n in layers]
+    if len(layers) < 2:
+        return ""
+    W, H, pad = 640, 400, 46
+    nL = len(layers)
+    colw = (W - 2 * pad) / (nL - 1)
+    pos = []
+    for li, cnt in enumerate(layers):
+        x = pad + li * colw
+        ys = [pad + (H - 2 * pad) * ((i + 0.5) / cnt) for i in range(cnt)]
+        pos.append([(x, y) for y in ys])
+
+    def lcol(li):
+        return "#4C8DFF" if li == 0 else ("#3FD98B" if li == nL - 1 else "#2FE3D2")
+    edges = ""
+    pulses = ""
+    for li in range(nL - 1):
+        for a in pos[li]:
+            for b in pos[li + 1]:
+                edges += (f"<line x1='{a[0]:.0f}' y1='{a[1]:.0f}' x2='{b[0]:.0f}' y2='{b[1]:.0f}' "
+                          f"stroke='{lcol(li)}' stroke-width='0.7' opacity='0.16'/>")
+        # a couple of animated signal pulses per gap
+        import_i = 0
+        for k in range(min(2, len(pos[li]))):
+            a = pos[li][k % len(pos[li])]
+            b = pos[li + 1][k % len(pos[li + 1])]
+            dur = 1.6 + (li + k) * 0.25
+            pulses += (f"<circle r='2.6' fill='{lcol(li+1)}' filter='url(#cg)'>"
+                       f"<animate attributeName='cx' from='{a[0]:.0f}' to='{b[0]:.0f}' dur='{dur:.2f}s' repeatCount='indefinite'/>"
+                       f"<animate attributeName='cy' from='{a[1]:.0f}' to='{b[1]:.0f}' dur='{dur:.2f}s' repeatCount='indefinite'/>"
+                       f"<animate attributeName='opacity' values='0;1;1;0' dur='{dur:.2f}s' repeatCount='indefinite'/></circle>")
+    nodes = ""
+    for li, layer in enumerate(pos):
+        c = lcol(li)
+        for (x, y) in layer:
+            nodes += (f"<circle cx='{x:.0f}' cy='{y:.0f}' r='8' fill='#0B1220' stroke='{c}' stroke-width='2' filter='url(#cg)'/>"
+                      f"<circle cx='{x:.0f}' cy='{y:.0f}' r='3.4' fill='{c}'/>")
+    labs = ""
+    if labels:
+        for li, lab in enumerate(labels[:nL]):
+            labs += (f"<text x='{pad + li*colw:.0f}' y='{H-14}' text-anchor='middle' fill='{_MUT}' "
+                     f"font-size='10' font-weight='600'>{_e(lab)}</text>")
+    return _svg(W, H, edges + nodes + pulses + labs, defs=_GLOW)
+
+
+# --- Grouped vertical bars (Precision/Recall style) ------------------------
+def vbars(groups, series):
+    """groups=['A','B',...]; series=[(name,[values],color)]. Grouped columns."""
+    if not groups or not series:
+        return ""
+    W, H, pad = 560, 300, 34
+    ng, ns = len(groups), len(series)
+    mx = max((max(v for v in s[1]) for s in series), default=1) or 1
+    gw = (W - 2 * pad) / ng
+    bw = gw * 0.7 / ns
+    inner = f"<line x1='{pad}' y1='{H-pad}' x2='{W-pad}' y2='{H-pad}' stroke='{_LINE}'/>"
+    for gi, g in enumerate(groups):
+        gx = pad + gi * gw + gw * 0.15
+        for si, (nm, vals, col) in enumerate(series):
+            v = vals[gi] if gi < len(vals) else 0
+            bh = (v / mx) * (H - 2 * pad)
+            x = gx + si * bw
+            inner += (f"<rect x='{x:.1f}' y='{H-pad-bh:.1f}' width='{bw*0.82:.1f}' height='{bh:.1f}' rx='3' fill='{col}'/>"
+                      f"<text x='{x+bw*0.4:.1f}' y='{H-pad-bh-4:.1f}' text-anchor='middle' fill='{_MUT}' font-size='8'>{int(v)}</text>")
+        inner += f"<text x='{gx+gw*0.35:.1f}' y='{H-pad+14:.0f}' text-anchor='middle' fill='{_MUT}' font-size='9'>{_e(g)[:8]}</text>"
+    leg = " ".join(f"<span style='color:{c}'>● {_e(n)}</span>" for n, _v, c in series)
+    return _svg(W, H, inner) + f"<div class='dim' style='font-size:11px;margin-top:4px'>{leg}</div>"
+
+
+# --- Multi-segment donut ---------------------------------------------------
+def ring(segments, center=""):
+    """segments=[(label,value,color)]. Donut with a centre label."""
+    segments = [(l, float(v), c) for l, v, c in segments if v]
+    if not segments:
+        return ""
+    import math
+    W = H = 220
+    cx = cy = 110
+    r = 78
+    total = sum(v for _, v, _ in segments) or 1
+    inner = f"<circle cx='{cx}' cy='{cy}' r='{r}' fill='none' stroke='#141d31' stroke-width='20'/>"
+    a0 = -90
+    circ = 2 * math.pi * r
+    off = 0
+    for l, v, c in segments:
+        frac = v / total
+        dash = frac * circ
+        inner += (f"<circle cx='{cx}' cy='{cy}' r='{r}' fill='none' stroke='{c}' stroke-width='20' "
+                  f"stroke-dasharray='{dash:.1f} {circ-dash:.1f}' stroke-dashoffset='{-off:.1f}' "
+                  f"transform='rotate(-90 {cx} {cy})'/>")
+        off += dash
+    inner += (f"<text x='{cx}' y='{cy-2}' text-anchor='middle' fill='{_INK}' font-size='22' font-weight='800'>{_e(center)}</text>"
+              f"<text x='{cx}' y='{cy+16}' text-anchor='middle' fill='{_MUT}' font-size='9'>total {int(total)}</text>")
+    leg = " ".join(f"<span style='color:{c}'>● {_e(l)}</span>" for l, _v, c in segments)
+    return _svg(W, H, inner) + f"<div class='dim' style='font-size:11px;margin-top:4px;text-align:center'>{leg}</div>"
+
+
+# --- Multi-series line chart ------------------------------------------------
+def lines(series, ymax=None):
+    """series=[(name,[y...],color)]. Smooth-ish multi-line with legend + glow."""
+    series = [(n, [float(x) for x in ys], c) for n, ys, c in series if ys]
+    if not series:
+        return ""
+    W, H, pad = 560, 240, 26
+    n = max(len(ys) for _, ys, _ in series)
+    mx = ymax or max((max(ys) for _, ys, _ in series), default=1) or 1
+
+    def X(i):
+        return pad + i / max(n - 1, 1) * (W - 2 * pad)
+
+    def Y(v):
+        return pad + (1 - v / mx) * (H - 2 * pad)
+    grid = "".join(f"<line x1='{pad}' y1='{pad + k*(H-2*pad)/4:.0f}' x2='{W-pad}' y2='{pad + k*(H-2*pad)/4:.0f}' stroke='{_LINE}' opacity='.5'/>" for k in range(5))
+    paths = ""
+    for nm, ys, col in series:
+        d = " ".join(f"{'M' if i==0 else 'L'}{X(i):.1f} {Y(v):.1f}" for i, v in enumerate(ys))
+        paths += (f"<path d='{d}' fill='none' stroke='{col}' stroke-width='2.5' filter='url(#cg)'/>"
+                  f"<circle cx='{X(len(ys)-1):.1f}' cy='{Y(ys[-1]):.1f}' r='3.5' fill='{col}'/>")
+    leg = " ".join(f"<span style='color:{c}'>● {_e(n)}</span>" for n, _y, c in series)
+    return _svg(W, H, grid + paths, defs=_GLOW) + f"<div class='dim' style='font-size:11px;margin-top:4px'>{leg}</div>"
 
 
 # --- Infrastructure: status grid ------------------------------------------
