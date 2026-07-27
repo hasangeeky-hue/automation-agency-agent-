@@ -1850,10 +1850,24 @@ class CalCom:
         return bool(self.key and _requests())
 
     def bookings(self) -> list:
-        j = _get_json("https://api.cal.com/v1/bookings", params={"apiKey": self.key})
-        if not j:
+        # Cal.com retired the v1 API (410 Gone) — use v2 with Bearer auth.
+        rq = _requests()
+        if not rq:
             return []
-        return j.get("bookings", []) or []
+        try:
+            r = rq.get("https://api.cal.com/v2/bookings",
+                       headers={"Authorization": f"Bearer {self.key}",
+                                "cal-api-version": "2024-08-13"},
+                       timeout=_HTTP_TIMEOUT)
+            r.raise_for_status()
+            j = r.json() or {}
+        except Exception as e:
+            log.warning("cal.com v2 bookings failed: %s", e)
+            return []
+        data = j.get("data")
+        if isinstance(data, dict):                 # some responses nest {bookings:[...]}
+            data = data.get("bookings", [])
+        return data if isinstance(data, list) else []
 
     def summary(self) -> dict:
         """{'total', 'booked'} — booked = accepted consultations."""

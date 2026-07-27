@@ -1229,11 +1229,15 @@ def build_app():
     except Exception:
         pass
 
+    # Browsers were caching the dashboard and showing days-old pages ("nothing
+    # changed" / "data not showing"). Force revalidation on every load.
+    _NO_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
+
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request):
         if not dash_authed(request.cookies):
-            return HTMLResponse(_login_html())
-        return HTMLResponse(api_dashboard_html())
+            return HTMLResponse(_login_html(), headers=_NO_CACHE)
+        return HTMLResponse(api_dashboard_html(), headers=_NO_CACHE)
 
     @app.post("/login")
     async def login(request: Request):
