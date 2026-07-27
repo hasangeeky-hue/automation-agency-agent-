@@ -328,6 +328,42 @@ def web_research(topic: str, context: str = "", max_uses: int = 5) -> str:
     return ""
 
 
+def generate_briefing_text(metrics: str) -> str:
+    """The AI brain's 'Good morning' narrative — a concise executive briefing written
+    from REAL metrics only. Returns '' on any error (dashboard falls back to the
+    rule-based briefing)."""
+    metrics = (metrics or "").strip()
+    if not metrics:
+        return ""
+    try:
+        client = _get_anthropic()
+        model = os.getenv("FRONTIER_MODEL", "claude-opus-4-8")
+        prompt = (
+            "You are the AI brain of a business operating system for an AI-automation consultancy. "
+            "Write a concise executive 'Good morning' briefing (110-170 words) for the founder, using ONLY "
+            "the real metrics below. Cover, in flowing prose (not bullet spam): overall health; what changed; "
+            "the single biggest RISK; the single biggest OPPORTUNITY; and end with 3 concrete immediate actions. "
+            "Be specific and honest. NEVER invent numbers, revenue, or clients not present in the metrics. "
+            "If a figure is an estimate, say 'est.'.\n\nMETRICS:\n" + metrics)
+        resp = client.messages.create(model=model, max_tokens=520,
+                                      messages=[{"role": "user", "content": prompt}])
+        text = "".join(b.text for b in resp.content
+                       if getattr(b, "type", "") == "text" and getattr(b, "text", "")).strip()
+        try:
+            u = resp.usage
+            usage = {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
+                     "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", 0) or 0,
+                     "cache_read_input_tokens": getattr(u, "cache_read_input_tokens", 0) or 0}
+            cost, _ = _compute_cost(model, usage)
+            if _WEB_RESEARCH_COST_SINK:
+                _WEB_RESEARCH_COST_SINK(cost, usage)
+        except Exception:
+            pass
+        return text
+    except Exception:
+        return ""
+
+
 _WEB_RESEARCH_COST_SINK = None
 
 

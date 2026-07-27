@@ -307,6 +307,32 @@ def bump(series):
     return _svg(W, H, inner)
 
 
+# --- Sales region: geographic distribution ---------------------------------
+_FLAG = {"United States": "🇺🇸", "USA": "🇺🇸", "United Kingdom": "🇬🇧", "UK": "🇬🇧",
+         "Germany": "🇩🇪", "Switzerland": "🇨🇭", "Canada": "🇨🇦", "Other": "🌍"}
+
+
+def geo(items):
+    """Regional distribution — items:[(country,value)]. Flag + proportional bar
+    (a pragmatic geographic view that renders offline)."""
+    items = [(l, float(v)) for l, v in items if l]
+    if not items or not any(v for _, v in items):
+        return ""
+    W = 460
+    rh = 30
+    H = len(items) * rh + 8
+    mx = max(v for _, v in items) or 1
+    inner = ""
+    for i, (l, v) in enumerate(items):
+        y = i * rh + 6
+        bw = (v / mx) * (W - 190)
+        inner += (f"<text x='0' y='{y+15}' font-size='14'>{_FLAG.get(l,'🌍')}</text>"
+                  f"<text x='22' y='{y+15}' fill='{_INK}' font-size='11'>{_e(l)[:18]}</text>"
+                  f"<rect x='150' y='{y+3}' width='{max(3,bw)}' height='16' rx='4' fill='{_PAL[i%len(_PAL)]}'/>"
+                  f"<text x='{150+max(3,bw)+6}' y='{y+15}' fill='{_MUT}' font-size='10'>{int(v)}</text>")
+    return _svg(W, H, inner)
+
+
 # --- Team/agent workload: gantt --------------------------------------------
 def gantt(tasks, span=7):
     """tasks: [(label, start_day, length_days)] over `span` days."""

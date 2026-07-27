@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-26 · v17 · unified BOS: one system, 10 centres, old pages folded in"
+BUILD_TAG = "2026-07-26 · v18 · full BOS spec: complete cards + decision engine + AI brain"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -1977,15 +1977,26 @@ def login_html(error=""):
 # Every card answers one business question and offers one decision. Real data
 # only; unconnected sources show an honest "connect to activate" state.
 # ---------------------------------------------------------------------------
+_PRIO = {"Critical": "#FF6B93", "High": "#F5B14C", "Medium": "#4C8DFF", "Low": "#3FD98B"}
+
+
 def _intel_card(title, current, *, sub="", trend="", trend_up=None, goal="", forecast="",
                 confidence="", insight="", recommendation="", action_label="", action="",
-                source="", dept="", chart="", accent="#2FE3D2", empty=""):
+                action_label2="", action2="", source="", dept="", chart="", history=None,
+                priority="", gain="", updated="live", accent="#2FE3D2", empty=""):
+    """The full BOS intelligence card: KPI · trend · historical pattern · forecast ·
+    confidence · root cause · recommendation · priority · expected gain · actions ·
+    dept · source · last-updated · mini-chart. (Every executive component.)"""
+    prio_badge = (f"<span class='pill' style='margin-left:auto;background:{_PRIO.get(priority,'#8E9BBE')}22;"
+                  f"color:{_PRIO.get(priority,'#8E9BBE')};padding:1px 9px;font-weight:700'>{_esc(priority)}</span>"
+                  if priority else (f"<span class='pill' style='margin-left:auto;background:rgba(255,255,255,.05);"
+                                    f"color:#8E9BBE;padding:1px 8px'>{_esc(dept)}</span>" if dept else ""))
     if empty:
         return ("<div class='card' style='display:flex;flex-direction:column'>"
-                f"<div style='display:flex;align-items:center;gap:8px'><span class='ct' style='margin:0'>{_esc(title)}</span>"
-                + (f"<span class='pill' style='margin-left:auto;background:rgba(255,255,255,.05);color:#8E9BBE;padding:1px 8px'>{_esc(dept)}</span>" if dept else "")
-                + "</div>"
-                f"<div class='dim' style='margin-top:10px;line-height:1.5'>⚪ {_esc(empty)}</div></div>")
+                f"<div style='display:flex;align-items:center;gap:8px'><span class='ct' style='margin:0'>{_esc(title)}</span>{prio_badge}</div>"
+                f"<div class='dim' style='margin-top:10px;line-height:1.5'>⚪ {_esc(empty)}</div>"
+                + (f"<div class='dim' style='font-size:10px;margin-top:10px'>Dept: {_esc(dept)} · not connected</div>" if dept else "")
+                + "</div>")
     tr = ""
     if trend:
         tcol = "#3FD98B" if trend_up else ("#FF6B93" if trend_up is False else "#8E9BBE")
@@ -1998,38 +2009,68 @@ def _intel_card(title, current, *, sub="", trend="", trend_up=None, goal="", for
         stats.append(("Forecast", forecast))
     if confidence:
         stats.append(("Confidence", confidence))
+    if gain:
+        stats.append(("Est. gain", gain))
     statrow = ""
     if stats:
         statrow = "<div style='display:flex;gap:16px;margin-top:10px;flex-wrap:wrap'>" + "".join(
             f"<div><div class='dim' style='font-size:10px'>{_esc(l)}</div>"
             f"<div style='font-weight:700;font-size:14px'>{_esc(v)}</div></div>" for l, v in stats) + "</div>"
+    # historical pattern (sparkline) — distinct from the forecast mini-chart
+    hist_html = ""
+    if history and len(history) >= 2 and any(history):
+        hist_html = (f"<div style='margin-top:10px'><div class='dim' style='font-size:10px'>Historical pattern</div>"
+                     f"{_sparkline(history, accent)}</div>")
     insight_html = (f"<div style='margin-top:12px;padding:9px 11px;border-radius:8px;background:rgba(139,124,255,.08);"
-                    f"border-left:3px solid #8B7CFF'><div class='dim' style='font-size:10px;letter-spacing:1px'>🧠 AI INSIGHT</div>"
+                    f"border-left:3px solid #8B7CFF'><div class='dim' style='font-size:10px;letter-spacing:1px'>🧠 ROOT CAUSE / AI INSIGHT</div>"
                     f"<div style='font-size:12.5px;margin-top:2px'>{_esc(insight)}</div></div>") if insight else ""
     rec_html = (f"<div style='margin-top:8px;padding:9px 11px;border-radius:8px;background:rgba(47,227,210,.07);"
                 f"border-left:3px solid {accent}'><div class='dim' style='font-size:10px;letter-spacing:1px'>✅ RECOMMENDATION</div>"
                 f"<div style='font-size:12.5px;margin-top:2px'>{_esc(recommendation)}</div></div>") if recommendation else ""
-    act_html = ""
+    acts = ""
     if action_label:
-        act_html = (f"<div class='ctrl' style='margin-top:10px'><button class='sbtn' "
-                    f"style='padding:5px 14px'{(' onclick=' + chr(34) + action + chr(34)) if action else ''}>{_esc(action_label)}</button></div>")
-    foot = ""
-    if source or dept:
-        foot = ("<div class='dim' style='font-size:10px;margin-top:10px;display:flex;gap:10px;flex-wrap:wrap'>"
-                + (f"<span>Source: {_esc(source)}</span>" if source else "")
-                + (f"<span>Dept: {_esc(dept)}</span>" if dept else "") + "</div>")
+        acts += (f"<button class='sbtn' style='padding:5px 13px'{(' onclick=' + chr(34) + action + chr(34)) if action else ''}>{_esc(action_label)}</button>")
+    if action_label2:
+        acts += (f"<button class='cbtn' style='padding:5px 13px'{(' onclick=' + chr(34) + action2 + chr(34)) if action2 else ''}>{_esc(action_label2)}</button>")
+    act_html = f"<div class='ctrl' style='margin-top:10px'>{acts}</div>" if acts else ""
+    foot = ("<div class='dim' style='font-size:10px;margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;"
+            "border-top:1px solid var(--line);padding-top:7px'>"
+            + (f"<span>🏷 {_esc(dept)}</span>" if dept else "")
+            + (f"<span>🔌 {_esc(source)}</span>" if source else "")
+            + f"<span style='margin-left:auto'>⏱ {_esc(updated)}</span></div>")
     return ("<div class='card' style='display:flex;flex-direction:column'>"
-            f"<div style='display:flex;align-items:baseline;gap:8px'><span class='ct' style='margin:0'>{_esc(title)}</span></div>"
+            f"<div style='display:flex;align-items:center;gap:8px'><span class='ct' style='margin:0'>{_esc(title)}</span>{prio_badge}</div>"
             f"<div style='display:flex;align-items:baseline;margin-top:8px'>"
             f"<span style='font-size:30px;font-weight:800;line-height:1;color:{accent}'>{_esc(current)}</span>"
             f"<span class='dim' style='margin-left:6px;font-size:12px'>{_esc(sub)}</span>{tr}</div>"
-            + statrow + (f"<div style='margin-top:10px'>{chart}</div>" if chart else "")
+            + statrow + hist_html + (f"<div style='margin-top:10px'>{chart}</div>" if chart else "")
             + insight_html + rec_html + act_html + foot + "</div>")
 
 
-def _exec_briefing(name, health, sub_kpis, risks, opportunities, actions):
+def _stat_board(title, stats, *, recommendation="", priority="", dept="", source="", note="", accent="#4C8DFF"):
+    """One intelligence board instead of many KPI cards — several metrics + a
+    recommendation + priority. stats=[(label,value,color)]."""
+    cells = "".join(f"<div style='flex:1 1 84px;min-width:84px'><div class='dim' style='font-size:10px'>{_esc(l)}</div>"
+                    f"<div style='font-size:19px;font-weight:800;color:{col}'>{_esc(v)}</div></div>" for l, v, col in stats)
+    prio = (f"<span class='pill' style='margin-left:auto;background:{_PRIO.get(priority,'#8E9BBE')}22;"
+            f"color:{_PRIO.get(priority,'#8E9BBE')};padding:1px 9px;font-weight:700'>{_esc(priority)}</span>" if priority else "")
+    rec = (f"<div style='margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(47,227,210,.07);"
+           f"border-left:3px solid {accent}'><div class='dim' style='font-size:10px;letter-spacing:1px'>✅ RECOMMENDATION</div>"
+           f"<div style='font-size:12.5px;margin-top:2px'>{_esc(recommendation)}</div></div>") if recommendation else ""
+    note_h = f"<div class='dim' style='font-size:11px;margin-top:8px'>{_esc(note)}</div>" if note else ""
+    foot = ("<div class='dim' style='font-size:10px;margin-top:9px;border-top:1px solid var(--line);padding-top:6px'>"
+            + (f"🏷 {_esc(dept)} · " if dept else "") + (f"🔌 {_esc(source)}" if source else "") + "</div>")
+    return ("<div class='card'>"
+            f"<div style='display:flex;align-items:center;gap:8px'><span class='ct' style='margin:0'>{_esc(title)}</span>{prio}</div>"
+            f"<div style='display:flex;gap:14px;flex-wrap:wrap;margin-top:10px'>{cells}</div>"
+            + rec + note_h + foot + "</div>")
+
+
+def _exec_briefing(name, health, sub_kpis, risks, opportunities, actions,
+                   impact_gain="", impact_conf="", narrative=""):
     """The AI brain: one glance instead of dozens of cards. health=0-100 int;
-    sub_kpis=[(label,value,trend,up)]; risks/opportunities=[str]; actions=[(label,js)]."""
+    sub_kpis=[(label,value,trend,up)]; risks/opportunities=[str]; actions=[(label,js)];
+    impact_gain/impact_conf = expected £ impact + confidence; narrative = LLM prose."""
     from datetime import datetime
     hcol = "#3FD98B" if health >= 80 else ("#F5B14C" if health >= 60 else "#FF6B93")
     kpis = "".join(
@@ -2049,19 +2090,36 @@ def _exec_briefing(name, health, sub_kpis, risks, opportunities, actions):
             f"stroke-dasharray='{2*3.14159*40:.0f}' stroke-dashoffset='{2*3.14159*40*(1-health/100):.0f}' transform='rotate(-90 48 48)'/>"
             f"<text x='48' y='45' text-anchor='middle' fill='#EDF1FB' font-size='24' font-weight='800'>{health}</text>"
             f"<text x='48' y='63' text-anchor='middle' fill='#8E9BBE' font-size='9'>/ 100</text></svg></div>")
+    narr = (f"<div style='margin-top:12px;padding:11px 13px;border-radius:9px;background:rgba(139,124,255,.08);"
+            f"border-left:3px solid #8B7CFF;font-size:13px;line-height:1.55;white-space:pre-wrap'>{_esc(narrative)}</div>"
+            if narrative else "")
+    impact = ""
+    if impact_gain:
+        impact = (f"<div style='margin-top:12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;"
+                  f"padding:11px 13px;border-radius:9px;background:rgba(63,217,139,.08);border:1px solid rgba(63,217,139,.25)'>"
+                  f"<div><div class='dim' style='font-size:10px'>Expected impact if actioned</div>"
+                  f"<div style='font-size:20px;font-weight:800;color:#3FD98B'>{_esc(impact_gain)}</div></div>"
+                  + (f"<div><div class='dim' style='font-size:10px'>Confidence</div>"
+                     f"<div style='font-size:16px;font-weight:700'>{_esc(impact_conf)}</div></div>" if impact_conf else "")
+                  + "</div>")
+    ai_btns = ("<div class='ctrl' style='margin-top:12px'>"
+               "<button class='sbtn' onclick='approveAllWaiting()'>✓ Approve all</button>"
+               "<button class='cbtn' onclick=\"nav('ops')\">Review individually</button>"
+               "<button class='cbtn' onclick='genBriefing()'>🧠 Regenerate AI briefing</button></div>")
     return (
         "<div class='card full' style='margin-bottom:14px;background:linear-gradient(135deg,rgba(139,124,255,.07),rgba(47,227,210,.05));border:1px solid var(--line)'>"
         "<div style='display:flex;gap:18px;align-items:center;flex-wrap:wrap'>" + ring
-        + f"<div style='flex:1;min-width:220px'><div class='dim' style='font-size:12px'>Executive briefing</div>"
+        + f"<div style='flex:1;min-width:220px'><div class='dim' style='font-size:12px'>Executive briefing · the AI brain</div>"
         f"<h2 style='margin:2px 0 4px;font-size:20px'>Good day, {_esc(name)}</h2>"
-        f"<div class='dim'>Business health <b style='color:{hcol}'>{health}/100</b> — the AI brain read your whole engine and picked what matters.</div></div>"
+        f"<div class='dim'>Business health <b style='color:{hcol}'>{health}/100</b> — read from your whole engine.</div></div>"
         "<div class='mstats' style='flex:2 1 300px'>" + kpis + "</div></div>"
-        "<div class='grid g3' style='margin-top:14px'>"
+        + narr
+        + "<div class='grid g3' style='margin-top:14px'>"
         "<div><div class='ct' style='font-size:13px'>⚠️ Risks</div>" + _lst(risks, "🔻", "#FF6B93") + "</div>"
         "<div><div class='ct' style='font-size:13px'>🚀 Opportunities</div>" + _lst(opportunities, "▹", "#3FD98B") + "</div>"
         "<div><div class='ct' style='font-size:13px'>⚡ Immediate actions</div>"
         + ("<div class='dim'>Nothing needs you right now.</div>" if not actions else act_btns) + "</div>"
-        "</div></div>")
+        "</div>" + impact + ai_btns + "</div>")
 
 
 def _viz(title, sub, svg, empty_msg):
@@ -2071,19 +2129,88 @@ def _viz(title, sub, svg, empty_msg):
             f"<div style='margin-top:8px;overflow-x:auto'>{inner}</div></div>")
 
 
-def _decision_strip(problems, opportunities, actions):
-    """The AI Decision Engine layer that ends each module: problems -> opportunities
-    -> prioritised actions. Turns the module from a report into a decision."""
+_DATA_SOURCES = [
+    ("Google Analytics 4", "google_gsc_ga4"), ("Google Search Console", "google_gsc_ga4"),
+    ("Google Ads", "google_ads"), ("Meta Ads", None), ("LinkedIn Ads", "social_linkedin"),
+    ("Bing Webmaster", None), ("Shopify", None), ("HubSpot", None), ("Salesforce", None),
+    ("Stripe", None), ("QuickBooks", None), ("Xero", None), ("Odoo", None), ("SAP", None),
+    ("Microsoft Dynamics", None), ("Cal.com", "calcom_bookings"), ("Slack", None),
+    ("Microsoft Teams", None), ("Zendesk", None), ("Freshdesk", None), ("Intercom", None),
+    ("OpenAI API", None), ("Claude API", "__on"), ("Gemini API", None), ("n8n", "__on"),
+    ("Docker", "__on"), ("Redis", None), ("PostgreSQL", "__on"), ("AWS", None), ("Azure", None),
+    ("Cloudflare", None), ("GitHub", None), ("Semrush", None), ("Ahrefs", None),
+    ("Screaming Frog", None), ("Sitebulb", None), ("PageSpeed", None), ("Hotjar", None),
+    ("Microsoft Clarity", None), ("Prospeo (leads)", "linkedin_leads"), ("WordPress", "wordpress_publish"),
+    ("Gmail / Workspace", "email_send"), ("Google Sheets", "google_sheets"),
+    ("Google Drive", "google_drive"), ("IMAP inbox", "email_reply_inbound"),
+]
+
+
+def _data_catalog(st):
+    """The full data-source catalog (Observe layer): every system the BOS can read,
+    live or awaiting connection. Real state for the ones we track."""
+    def on(k):
+        return True if k == "__on" else (bool(st.get(k)) if k else False)
+    live = sum(1 for _, k in _DATA_SOURCES if on(k))
+    chips = ""
+    for name, k in _DATA_SOURCES:
+        c = on(k)
+        col = "#3FD98B" if c else "#3A4160"
+        chips += (f"<span style='display:inline-flex;align-items:center;gap:5px;margin:3px;padding:3px 9px;"
+                  f"border-radius:8px;border:1px solid {'rgba(63,217,139,.35)' if c else 'var(--line)'};"
+                  f"background:{'rgba(63,217,139,.07)' if c else 'transparent'};font-size:11.5px'>"
+                  f"<span style='width:7px;height:7px;border-radius:50%;background:{col}'></span>"
+                  f"<span style='color:{'#EDF1FB' if c else '#8E9BBE'}'>{_esc(name)}</span></span>")
+    return ("<div class='card full'><p class='ct'>🔌 Data sources — the Observe layer</p>"
+            f"<p class='cc'><b style='color:#3FD98B'>{live} live</b> of {len(_DATA_SOURCES)} sources the operating "
+            "system can read. Green = connected and feeding intelligence; grey = ready to connect (each one lights up "
+            "its cards). This is the sensory surface of the whole business.</p>"
+            f"<div style='margin-top:8px'>{chips}</div></div>")
+
+
+def _flow_diagram():
+    """The decision tree + 5-layer philosophy — how the brain turns data into action."""
+    tree = " → ".join(f"<span class='pill' style='background:rgba(76,141,255,.14);color:#4C8DFF;padding:2px 9px'>{s}</span>"
+                      for s in ["What happened", "Why", "Can AI prove it", "Can AI fix it", "Execute", "Measure", "Learn"])
+    layers = ["Observe — read every connected system", "Analyse — KPIs, anomalies, cross-department trends",
+              "Reason — explain why, estimate confidence, find risk + opportunity",
+              "Recommend — prioritised actions with cost, gain and ROI",
+              "Execute & Learn — trigger workflows, measure, feed back"]
+    lay = "".join(f"<div style='display:flex;gap:10px;margin:6px 0'><span class='pill' style='background:rgba(139,124,255,.16);"
+                  f"color:#8B7CFF;padding:1px 9px;font-weight:700'>{i+1}</span><span style='font-size:12.5px'>{_esc(l)}</span></div>"
+                  for i, l in enumerate(layers))
+    return ("<div class='card full'><p class='ct'>🧠 How the brain decides</p>"
+            "<p class='cc'>Every centre runs the same decision loop, then the five-layer architecture underneath it.</p>"
+            f"<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0 14px'>{tree}</div>"
+            f"{lay}</div>")
+
+
+def _decision_strip(problems, opportunities, actions, *, priority="", cost="", gain="", roi=""):
+    """The AI Decision Engine that ends each module: problems -> opportunities ->
+    ROI / priority / estimated cost / estimated gain -> execute. The full loop:
+    what happened -> why -> can AI fix it -> prioritised action with £ impact."""
     def _col(title, icon, items, col):
         body = ("".join(f"<div style='display:flex;gap:7px;margin:4px 0;font-size:12.5px'><span>{icon}</span>"
                         f"<span>{_esc(x)}</span></div>" for x in items[:4])
                 if items else "<div class='dim'>None right now.</div>")
         return f"<div><div class='ct' style='font-size:12px;color:{col}'>{_esc(title)}</div>{body}</div>"
-    act = ("".join(f"<button class='cbtn' style='margin:3px 4px 0 0' onclick=\"{js}\">{_esc(l)}</button>"
+    act = ("".join(f"<button class='sbtn' style='margin:3px 4px 0 0;padding:5px 12px' onclick=\"{js}\">{_esc(l)}</button>"
                    for l, js in actions) if actions else "<div class='dim'>No action needed.</div>")
+    # the ROI / priority / cost / gain bar (the part most dashboards skip)
+    def _kv(l, v, c):
+        return (f"<div style='flex:1;min-width:90px'><div class='dim' style='font-size:10px'>{_esc(l)}</div>"
+                f"<div style='font-weight:800;font-size:15px;color:{c}'>{_esc(v or '—')}</div></div>")
+    impact = ("<div style='display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 4px;padding:10px 12px;"
+              "border-radius:9px;background:rgba(255,255,255,.03)'>"
+              + _kv("Priority", priority, _PRIO.get(priority, "#8E9BBE"))
+              + _kv("Est. cost", cost, "#F5B14C")
+              + _kv("Est. gain", gain, "#3FD98B")
+              + _kv("ROI", roi, "#2FE3D2") + "</div>")
     return ("<div class='card full' style='margin-top:12px;border-left:4px solid #8B7CFF'>"
             "<p class='ct'>🧭 AI Decision Engine</p>"
-            "<div class='grid g3'>"
+            "<p class='cc'>Problems → opportunities → ROI &amp; priority → execute. The decision layer, not just a report.</p>"
+            + impact
+            + "<div class='grid g3' style='margin-top:6px'>"
             + _col("Problems", "🔻", problems, "#FF6B93")
             + _col("Opportunities", "🚀", opportunities, "#3FD98B")
             + f"<div><div class='ct' style='font-size:12px;color:#4C8DFF'>Execute</div>{act}</div>"
@@ -2104,10 +2231,11 @@ def _mod_business(c):
                        empty="Connect Stripe / QuickBooks / Xero to activate revenue, MRR and profit intelligence."))
     growth = _intel_card("Output momentum", str(c["published"]), sub="live pieces",
                          forecast=f"{c['proj']}/mo", confidence=("high" if c["made_month"] > 3 else "building"),
-                         dept="Growth", source="Content engine", accent="#4C8DFF",
+                         dept="Growth", source="Content engine", accent="#4C8DFF", priority="Medium",
+                         gain=(c.get("gain_content") or "—"), history=c["content_series"],
                          insight="Publishing cadence compounds SEO + authority over time.",
                          recommendation="Hold ≥2 pieces/day to keep the curve rising.",
-                         action_label="Plan my week", action="nav('ops')",
+                         action_label="Plan my week", action="nav('ops')", action_label2="View analysis", action2="nav('marketing')",
                          chart=CH.confband([max(1, x) for x in c["content_series"]] or [1, 2]))
     conv = _intel_card("Pipeline conversion", f"{c['reply_rate']}%", sub="reply rate", dept="Sales",
                        source="Outreach", accent="#8B7CFF",
@@ -2125,17 +2253,48 @@ def _mod_marketing(c):
                 [("Sessions", sess or "—", "#4C8DFF"), ("Top queries", len(gsc), "#2FE3D2"),
                  ("Content live", c["published"], "#3FD98B"), ("Segments", 7, "#8B7CFF")],
                 _sparkline(c["content_series"], "#4C8DFF") if c["content_jobs"] else _empty("Fills as content runs."))
-    seo = (_intel_card("SEO Intelligence", str(sess), sub="sessions", dept="Marketing", source="GA4 + GSC",
-                       accent="#4C8DFF", insight=(f"Strongest demand: “{topq}”." if topq else "Ranking signals building."),
-                       recommendation=(f"Publish for “{topq}”." if topq else "Keep publishing to earn rankings."),
-                       action_label="Open SEO", action="nav('marketing')")
-           if sess else _intel_card("SEO Intelligence", "", dept="Marketing",
-                       empty="Connect Google Analytics 4 + Search Console to activate sessions, rankings and query demand."))
-    geo = _intel_card("GEO — AI search visibility", "", dept="Marketing",
-                      empty="Connect an AI-visibility source to track ChatGPT / Perplexity / Gemini / Claude mentions.")
-    ads = (_intel_card("Google Ads", "", dept="Marketing", empty="Google Ads is connected — spend/ROAS intelligence activates once campaigns run.")
-           if c["st"].get("google_ads") else _intel_card("Paid Ads", "", dept="Marketing",
-                      empty="Connect Google / Meta / LinkedIn Ads to activate spend, ROAS and attribution."))
+    avg_pos = round(sum(int(q.get("position", 0)) for q in gsc if isinstance(q, dict)) / len(gsc), 1) if gsc else 0
+    vis = f"{max(0, round(100 - avg_pos * 4))}%" if avg_pos else "—"
+    # SEO Intelligence BOARD (one board, many KPIs) — real where available
+    seo = _stat_board("SEO Intelligence", [
+        ("Sessions", str(sess) if sess else "—", "#4C8DFF"),
+        ("Visibility", vis, "#2FE3D2"),
+        ("Top queries", str(len(gsc)) if gsc else "—", "#8B7CFF"),
+        ("Content live", str(c["published"]), "#3FD98B"),
+        ("Technical health", "—", "#8E9BBE"),
+        ("Content gap", "—", "#8E9BBE"),
+    ], recommendation=(f"Demand for “{topq}” — publish a targeted piece." if topq else "Keep publishing to earn rankings; connect an audit tool for technical health + content gap."),
+        priority=("High" if topq else "Medium"), dept="Marketing", source="GA4 + Search Console",
+        note=("Technical health + content-gap activate with Semrush / Ahrefs / Screaming Frog." if not topq else ""))
+    # SEO Audit card (full pattern with priority + estimated gain)
+    audit = _intel_card("Technical SEO Audit", "—", sub="health", dept="Marketing", priority="Medium",
+                        source="Screaming Frog / Sitebulb / PageSpeed", accent="#F5B14C",
+                        insight="Crawl-based technical health (errors, warnings, canonicals) needs an audit crawler.",
+                        recommendation="Connect Screaming Frog / Sitebulb / PageSpeed to score technical health and affected revenue.",
+                        gain="—", action_label="How to connect", action="nav('infra')",
+                        empty="Connect Screaming Frog / Sitebulb / PageSpeed to activate a technical SEO audit — health %, critical errors, affected revenue and fixes.")
+    # GEO — AI search visibility across the 4 engines (board)
+    geo = _stat_board("GEO — AI search visibility", [
+        ("ChatGPT", "—", "#3FD98B"), ("Perplexity", "—", "#3FD98B"), ("Gemini", "—", "#3FD98B"),
+        ("Claude", "—", "#3FD98B"), ("Mentions", "—", "#8B7CFF"), ("Sentiment", "—", "#2FE3D2"),
+    ], recommendation="Publish comparison + entity pages to earn AI-engine citations.",
+        priority="High", dept="Marketing", source="AI-visibility monitor",
+        note="Connect an AI-visibility source (or a monitoring feed) to measure ChatGPT / Perplexity / Gemini / Claude presence.")
+    # AEO — AI Overview / rich results (board)
+    aeo = _stat_board("AEO — AI Overview", [
+        ("Pages eligible", "—", "#4C8DFF"), ("Pages showing", "—", "#3FD98B"),
+        ("Lost opps", "—", "#FF6B93"), ("Featured snippets", "—", "#2FE3D2"), ("FAQ rich results", "—", "#8B7CFF"),
+    ], recommendation="Expand FAQ + HowTo schema on service pages to win AI Overviews.",
+        priority="Medium", dept="Marketing", source="Search Console + schema audit",
+        note="Activates with Search Console AI-Overview data + a schema audit.")
+    # Paid Ads Intelligence (real if Google Ads connected)
+    ads = (_stat_board("Google Ads Intelligence", [
+        ("Spend", "—", "#F5B14C"), ("Revenue", "—", "#3FD98B"), ("Profit", "—", "#2FE3D2"),
+        ("ROAS", "—", "#8B7CFF"),
+    ], recommendation="Launch a branded campaign; the engine will tune it from your SEO signals.",
+        priority="Medium", dept="Marketing", source="Google Ads", note="Spend/ROAS populate once campaigns run.")
+        if c["st"].get("google_ads") else _intel_card("Paid Ads", "", dept="Marketing", priority="Low",
+        empty="Connect Google / Meta / LinkedIn Ads to activate spend, revenue, profit, ROAS and attribution."))
     # heatmap of top queries × rank buckets (real GSC), sankey attribution (real counts)
     qrows = [q.get("query", "")[:22] for q in gsc[:6] if isinstance(q, dict)]
     qmat = [[max(0, 100 - int(q.get("position", 50)) * 5)] for q in gsc[:6] if isinstance(q, dict)]
@@ -2147,15 +2306,19 @@ def _mod_marketing(c):
         flows += [("Leads", "Booked", c["booked"])]
     if c["o_cust"]:
         flows += [("Booked", "Customers", c["o_cust"])]
-    return (m + "<div class='grid g2'>" + seo + geo + ads
+    _gain = c.get("gain_content", "")
+    return (m + "<div class='grid g2'>" + seo + audit + geo + aeo + ads
             + _viz("Keyword visibility (Search Console)", "Where your queries rank — brighter = more visible.", heat,
                    "Connect Search Console to see ranking heat.")
             + _viz("Attribution — how visits become customers", "Channel → lead → booked → won.", CH.sankey(flows),
                    "Fills as leads and bookings flow in.")
             + "</div>" + _decision_strip(
-                ([f"“{topq}” has demand you're not fully capturing." for _ in [1] if topq]),
-                (["Publish comparison + FAQ pages to win AI Overviews."] if sess else ["Connect GA4 + GSC to unlock SEO intelligence."]),
-                [("Open SEO", "nav('marketing')"), ("Plan content", "nav('ops')")]))
+                ([f"“{topq}” has demand you're not fully capturing." for _ in [1] if topq]
+                 + (["No AI-visibility (GEO/AEO) source connected."])),
+                (["Publish comparison + FAQ pages to win AI Overviews + AI-engine citations."] if sess else ["Connect GA4 + GSC to unlock SEO intelligence."]),
+                [("Plan content", "nav('ops')"), ("Open SEO controls", "nav('marketing')")],
+                priority=("High" if topq else "Medium"), cost="~£0 (in-house)", gain=(_gain or "—"),
+                roi=("High" if topq else "—")))
 
 
 def _mod_sales(c):
@@ -2187,11 +2350,15 @@ def _mod_sales(c):
     return (m + "<div class='grid g2'>" + lead + out + close
             + _viz("Pipeline flow", "Where prospects move — and where they drop.", CH.sankey(flows),
                    "Fills as the lead pipeline runs.")
+            + _viz("Leads by region", "Your 5 target markets.", CH.geo(c.get("geo_rows") or []),
+                   "Fills as leads arrive, split by country.")
             + "</div>" + _decision_strip(
                 ([f"{c['not_emailed']} qualified leads sitting un-emailed." for _ in [1] if c["not_emailed"]]
                  + (["No leads in the pipeline."] if not c["leads_found"] else [])),
                 (["Ready follow-ups can go today."] if c["outbox_ready"] else ["Source a new lead batch to grow pipeline."]),
-                [("Send ready emails", "nav('sales')"), ("Open Lead Machine", "nav('sales')")]))
+                [("Send ready emails", "nav('sales')"), ("Open Lead Machine", "nav('sales')")],
+                priority=("High" if c["not_emailed"] else "Medium"), cost="~£0 (automated)",
+                gain=(c.get("gain_email") or "—"), roi=("High" if c["not_emailed"] else "—")))
 
 
 def _mod_customer(c):
@@ -2334,10 +2501,12 @@ def _mod_infra(c):
                        recommendation=("Nothing to do." if c["healthy"] else "Open Agents & Health."), action_label="Open Agents", action="nav('workforce')")
     return (m + "<div class='grid g2'>" + conn + sysh
             + _viz("Connection status grid", "Green = live · amber = optional · red = down.", CH.statusgrid(items), "No connections mapped.")
-            + "</div>" + _decision_strip(
+            + "</div>" + _data_catalog(c["st"])
+            + _decision_strip(
                 ([f"{c['total_conn']-c['live_conn']} connections down." for _ in [1] if c["live_conn"] < c["total_conn"]]),
                 (["Each connection you add lights up its intelligence cards."]),
-                [("Open System Map", "nav('infra')")]))
+                [("Open System Map", "nav('infra')")],
+                priority=("High" if c["live_conn"] < c["total_conn"] else "Low"), cost="—", gain="unlocks cards", roi="—"))
 
 
 def _mod_risk(c):
@@ -2404,7 +2573,10 @@ def _mod_executive(c):
                        ("Leads", "Booked", c["booked"]) if c["booked"] else None,
                        ("Booked", "Customers", c["o_cust"]) if c["o_cust"] else None] if f]),
                    "Fills as the pipeline runs.")
-            + _decision_strip(c["risks"], c["opps"], c["actions"]))
+            + _flow_diagram()
+            + _decision_strip(c["risks"], c["opps"], c["actions"],
+                              priority="High", cost="~£0 (in-house)", gain=(c.get("impact_gain") or "—"),
+                              roi=(c.get("impact_conf") or "—")))
 
 
 # ---------------------------------------------------------------------------
@@ -2414,8 +2586,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    taste_skills, has_password=False, paused=False, autonomy=False,
                    bookings=None, ads=None, needles=None, last_eval=None,
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
-                   content_plan=None, web_tracking=None, reply_drafts=None):
+                   content_plan=None, web_tracking=None, reply_drafts=None, exec_briefing=None):
     reply_drafts = reply_drafts or []
+    exec_briefing = exec_briefing or {}
     from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
     bookings, ads = bookings or {}, ads or {}
@@ -3347,10 +3520,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                         empty="Connect Google Analytics 4 + Search Console (System Map) to activate real SEO intelligence — sessions, rankings, top queries."))
     _content_card = _intel_card("Content Production", str(published), sub="live",
                         goal="60/mo", forecast=f"{proj}/mo", dept="Content", source="Content engine", accent="#2FE3D2",
+                        priority=("High" if waiting else "Low"), history=content_series,
                         insight=(f"{sum(pl[0:4])} in production, {waiting} awaiting your approval." if content_jobs else "No pieces in the line yet."),
                         recommendation=("Clear the approval queue to keep the line moving." if waiting else "Plan next week to keep the cadence."),
-                        action_label=("Review approvals" if waiting else "Plan my week"), action=("nav('ops')" if waiting else "nav('ops')"),
-                        chart=(_sparkline(content_series, "#2FE3D2") if content_jobs else ""))
+                        action_label=("Review approvals" if waiting else "Plan my week"), action="nav('ops')",
+                        action_label2="View analysis", action2="nav('business')")
     _lead_card = _intel_card("Lead Generation", str(leads_found), sub="sourced", dept="Sales",
                         source="Prospeo + web", accent="#8B7CFF",
                         insight=(f"{_qualified} qualified · {leads_emailed} emailed · {replied} replied." if leads_found else "No leads sourced yet."),
@@ -3379,11 +3553,33 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                         recommendation=("Fix the down wires to unblock those intelligence centres." if live_conn < total_conn else "Nothing to fix."),
                         action_label="Open System Map", action="nav('infra')")
     _owner = (st.get("owner_name") if isinstance(st, dict) else "") or "Murtuja"
-    p_mission = (_exec_briefing(_owner, _health, briefing_kpis, _risks, _opps, _actions)
-                 + "<div class='dim' style='margin:-4px 0 12px;font-size:11.5px'>ℹ️ Business-health is computed from your live "
-                   "signals (connections · system health · budget · output · approval backlog · pipeline). Cards show only "
-                   "REAL data; greyed cards need their source connected. This is Phase 1 of the operating-system migration — "
-                   "more intelligence centres + an LLM narrative briefing come next.</div>"
+    # transparent £ estimates (labelled 'est.' — not fabricated facts): mid-ICP
+    # deal £4k, ~5% qualified→win. Used for expected-gain / ROI fields per the brief.
+    _AVG_DEAL = 4000
+    _gain_email = int(_not_emailed * 0.05 * _AVG_DEAL)
+    _gain_content = int(max(0, proj - made_month) * 0.02 * _AVG_DEAL)
+    _impact_total = _gain_email + _gain_content
+    _impact_gain = (f"£{_impact_total:,.0f} est. pipeline" if _impact_total else "")
+    _impact_conf = ("medium" if _sess or leads_found else "low") if _impact_total else ""
+    _gain_email_s = (f"£{_gain_email:,.0f} est." if _gain_email else "")
+    _gain_content_s = (f"£{_gain_content:,.0f} est." if _gain_content else "")
+    # £-quantify the opportunities where we have a basis
+    if _not_emailed and _gain_email:
+        _opps = [(o + f" (~£{_gain_email:,.0f} est.)" if o.startswith(str(_not_emailed)) else o) for o in _opps]
+    # the AI-brain narrative (LLM-written, persisted); '' -> rule-based fallback shown
+    _narr = (exec_briefing.get("text", "") if isinstance(exec_briefing, dict) else "") or ""
+    # geo distribution of leads (real, by country)
+    try:
+        _geo_rows = _by_country(out_jobs)
+    except Exception:
+        _geo_rows = []
+    p_mission = (_exec_briefing(_owner, _health, briefing_kpis, _risks, _opps, _actions,
+                                impact_gain=_impact_gain, impact_conf=_impact_conf, narrative=_narr)
+                 + "<div class='dim' style='margin:-4px 0 12px;font-size:11.5px'>ℹ️ Health is computed from your live "
+                   "signals (connections · system health · budget · output · approval backlog · pipeline). £ figures are "
+                   "labelled <b>est.</b> (mid-ICP £4k deal, ~5% win) — estimates, not booked revenue. Greyed cards need "
+                   "their source connected. The 🧠 briefing prose is written by the AI brain from your real metrics "
+                   "(click <b>Regenerate AI briefing</b>).</div>"
                  + "<div class='grid g2'>" + _mkt + _content_card + _lead_card + _out_card
                  + _fin_card + _wf_card + _infra_card + "</div>")
 
@@ -3402,6 +3598,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "_ga4m": _ga4m, "_gsc": _gsc, "_sess": _sess, "_topq": _topq,
         "qualified": _qualified, "not_emailed": _not_emailed,
         "outbox_ready": _outbox_ready_count(jobs), "live_agents": _live_agents,
+        "geo_rows": _geo_rows, "gain_email": _gain_email_s, "gain_content": _gain_content_s,
+        "impact_gain": _impact_gain, "impact_conf": _impact_conf,
     }
 
     # ---- nav + assembly ----
@@ -3503,6 +3701,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{await fetch('/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys:keys.split(',')})});"
               "alert('Disconnected — the box is editable again.');location.reload();}"
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
+              "async function approveAllWaiting(){if(!confirm('Approve ALL pieces waiting for you? They go live / send.'))return;"
+              "try{var r=await fetch('/jobs/approve_all',{method:'POST'});var j=await r.json();alert('✓ Approved '+(j.approved||0)+' piece(s).');location.reload();}catch(e){alert('Failed: '+e);}}"
+              "async function genBriefing(){var b=event&&event.target;if(b){b.disabled=true;b.textContent='Thinking… ~15s';}"
+              "try{var r=await fetch('/briefing/generate',{method:'POST'});var j=await r.json();"
+              "if(j.ok){location.reload();}else{alert(j.error||'Briefing unavailable.');if(b){b.disabled=false;b.textContent='🧠 Regenerate AI briefing';}}}catch(e){alert('Failed: '+e);if(b){b.disabled=false;}}}"
               "function _noteFor(id){var t=document.getElementById('note-'+id);return t?t.value.trim():'';}"
               "async function approve(id){var note=_noteFor(id);"
               "try{var r=await fetch('/jobs/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:note})});await r.json();"
