@@ -509,6 +509,40 @@ def _brand_dict():
             "offer": g("brand_offer") or "AI & automation systems for small businesses"}
 
 
+def api_source_maps_leads(vertical: str, city: str, count: int = 20) -> dict:
+    """Source LOCAL leads from Google Maps (Serper) + find their emails (Prospeo),
+    synchronously, and create an outreach campaign already at 'sourced' — the
+    normal flow (qualify -> write -> QA -> YOUR approval -> capped send) takes it
+    from there. Nothing is emailed by this call."""
+    vertical = (vertical or "").strip()
+    city = (city or "").strip()
+    if not vertical or not city:
+        return {"ok": False, "error": "need a business type and a city"}
+    count = max(1, min(40, int(count or 20)))
+    import content_engine_connectors as C
+    import content_engine_code_skills as cs
+    if not C.Serper().available():
+        return {"ok": False, "error": "Serper is not connected (SERPER_API_KEY)"}
+    query = f"{vertical} in {city}"
+    raw = C.maps_leads(query, count)
+    if not raw:
+        return {"ok": False, "error": f"Maps returned nothing for '{query}' — try a broader term"}
+    store = get_store()
+    jid = f"maps_{abs(hash((query, count))) % 10_000_000}"
+    job = orch.new_job(jid, "outreach_campaign", _brand_dict(),
+                       {"raw_leads": raw,
+                        "config": {"lead_source": "maps", "maps_query": query,
+                                   "lead_limit": count, "vertical": vertical, "city": city}})
+    srcinfo = cs.lead_sourcing(job)          # dedupe + verify (same step the worker runs)
+    job["status"] = "sourced"                # ready for the qualifier
+    store.save(job)
+    with_email = sum(1 for L in job["payload"].get("leads", []) if L.get("email"))
+    return {"ok": True, "job_id": jid, "query": query,
+            "businesses": len(job["payload"].get("leads", [])),
+            "with_verified_email": with_email, "sourcing": srcinfo,
+            "next": "The qualifier picks it up on the next engine step (▶ Run one step or START)."}
+
+
 def api_plan_content(count=8):
     """Ask the planner to propose a batch of on-brand pieces for you to approve.
     Stores the plan as 'pending' — no jobs are created until you approve it."""
@@ -1361,6 +1395,15 @@ def build_app():
         except Exception:
             data = {}
         return api_plan_content(int(data.get("count", 8) or 8))
+
+    @app.post("/leads/maps")
+    async def leads_maps(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        return api_source_maps_leads(data.get("vertical", ""), data.get("city", ""),
+                                     int(data.get("count", 20) or 20))
 
     @app.post("/plan/approve")
     def plan_approve():

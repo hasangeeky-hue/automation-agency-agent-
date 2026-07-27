@@ -1070,6 +1070,29 @@ class LinkedIn:
             page += 1
         return out
 
+    DOMAIN_URL = "https://api.prospeo.io/domain-search"
+
+    def email_from_domain(self, domain: str) -> str:
+        """Find ONE verified email for a business website domain (Prospeo
+        domain-search). Powers maps-sourced local leads. '' when none found."""
+        domain = (domain or "").replace("https://", "").replace("http://", "").strip("/").replace("www.", "")
+        if not (self.available() and domain):
+            return ""
+        j = _post_json(self.DOMAIN_URL, {"company": domain, "limit": 1},
+                       headers=self._headers())
+        if not j or j.get("error"):
+            return ""
+        resp = j.get("response") or {}
+        rows = resp.get("email_list") or resp.get("emails") or []
+        email = ""
+        if rows and isinstance(rows[0], dict):
+            email = rows[0].get("email") or ""
+        elif rows and isinstance(rows[0], str):
+            email = rows[0]
+        if email:
+            _record_cost(float(_env("PROSPEO_COST_PER_EMAIL", "0.039") or 0.039), "prospeo")
+        return email
+
     def _enrich(self, person_id: str) -> Optional[dict]:
         """Reveal + verify one person's work email. Returns None (no credit spent)
         when there's no verified email."""
@@ -1101,16 +1124,55 @@ class LinkedIn:
 # ---------------------------------------------------------------------------
 # SOURCE_FN — assemble raw leads from every available source
 # ---------------------------------------------------------------------------
+def maps_leads(query: str, limit: int = 20) -> list:
+    """Location-based local leads: Google Maps (Serper) -> business + website ->
+    Prospeo domain-search finds a verified email. Returns engine-shaped leads.
+    Businesses without a website are kept (company data) but can't be emailed."""
+    places = Serper().maps(query, num=limit)
+    if not places:
+        return []
+    li = LinkedIn()
+    out = []
+    for p in places:
+        website = (p.get("website") or "").strip()
+        domain = re.sub(r"^https?://(www\.)?", "", website).strip("/").split("/")[0] if website else ""
+        email = li.email_from_domain(domain) if domain else ""
+        addr = p.get("address") or ""
+        country = addr.split(",")[-1].strip() if "," in addr else ""
+        out.append({
+            "name": "",                        # maps gives the business, not a person
+            "email": email,
+            "company": p.get("name", ""),
+            "title": "",
+            "domain": domain,
+            "phone": p.get("phone", ""),
+            "address": addr,
+            "country": country,
+            "vertical": p.get("category", ""),
+            "signal": f"maps ★{p.get('rating', 0)} ({p.get('reviews', 0)} reviews)",
+            "source": "maps",
+        })
+    return out
+
+
 def source_leads(job: dict) -> list:
     """Feeds lead_sourcing (which then dedupes + verifies). Pulls from:
-      1) LinkedIn provider, using the job's ICP as the query
-      2) web search, turning result domains into company leads
-      3) any raw_leads already on the payload (e.g. posted in by n8n)
+      1) Google Maps (when config.lead_source == 'maps') — local businesses
+      2) LinkedIn provider, using the job's ICP as the query
+      3) web search, turning result domains into company leads
+      4) any raw_leads already on the payload (e.g. posted in by n8n)
     """
     payload = job.get("payload", {})
     cfg = payload.get("config", {}) or {}
     icp = cfg.get("icp", {}) or {}
     leads: list = list(payload.get("raw_leads", []) or [])
+
+    # Maps campaign: use the pre-fetched raw_leads if present (no double credit
+    # spend); otherwise scrape maps now. Maps campaigns do NOT mix in LinkedIn.
+    if (cfg.get("lead_source") or "").lower() == "maps":
+        if leads:
+            return leads
+        return maps_leads(cfg.get("maps_query", ""), int(cfg.get("lead_limit", 20)))
 
     li = LinkedIn()
     if li.available():

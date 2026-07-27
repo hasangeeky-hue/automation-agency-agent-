@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-27 · v16-r4 · Serper connected + API & data map"
+BUILD_TAG = "2026-07-27 · v16-r5 · Maps lead sourcing live (type a city, get leads)"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2615,7 +2615,25 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         [("Found", leads_found, "#EDF1FB"), ("Emailed", leads_emailed, "#4C8DFF"),
          ("Replied", lead_rows[4][1], "#8B7CFF"), ("Booked", lead_rows[5][1], "#3FD98B")],
         _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("Fills as leads flow in."))
-    p_leads = m_leads + _outbox_pointer(jobs) + _leads_table(jobs) + grid(
+    # 🗺️ Maps lead sourcing: type a business type + city -> real local businesses
+    # with verified emails land in the pipeline (qualify -> write -> YOUR approval).
+    _serper_on = bool(st.get("serper_search"))
+    maps_form = (
+        "<div class='card full' style='margin-bottom:12px;border-left:4px solid #2FE3D2'>"
+        "<p class='ct'>🗺️ Source local leads from Google Maps</p>"
+        "<p class='cc'>Type who and where — the engine scrapes real local businesses (name, phone, website, rating), "
+        "finds a <b>verified email</b> for each via Prospeo, and drops them into the normal pipeline: qualify → "
+        "write → QA → <b>your approval</b> → capped send. Nothing is emailed by this button.</p>"
+        + ("" if _serper_on else "<p class='cc' style='color:#F5B14C'>⚠ Serper isn't connected — save SERPER_API_KEY on the System Map first.</p>")
+        + "<div class='cmd'>"
+        "<input id='mv' placeholder='Business type — e.g. tax consultants, dentists, law firms'>"
+        "<input id='mc' placeholder='City — e.g. Zurich, Munich, Manchester'>"
+        "<select id='mn'><option value='10'>10 leads</option><option value='20' selected>20 leads</option>"
+        "<option value='30'>30 leads</option><option value='40'>40 leads</option></select>"
+        f"<button onclick='sourceMapsLeads()' {'disabled' if not _serper_on else ''}>🗺️ Find leads</button></div>"
+        "<div class='dim' style='margin-top:6px'>Cost ≈ 1 Serper credit + 1 Prospeo credit per business with a website. "
+        "Your 5 markets: USA · UK · Germany · Switzerland · Canada.</div></div>")
+    p_leads = m_leads + _outbox_pointer(jobs) + maps_form + _leads_table(jobs) + grid(
         _panel("Lead funnel", "Stranger → verified → qualified → emailed → replied → booked.",
                _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("No leads yet — connect the lead finder.")),
         _panel("Leads by country — your 5 target markets",
@@ -3568,6 +3586,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "alert('Disconnected — the box is editable again.');location.reload();}"
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "function _noteFor(id){var t=document.getElementById('note-'+id);return t?t.value.trim():'';}"
+              "async function sourceMapsLeads(){var v=(document.getElementById('mv')||{}).value||'';var c=(document.getElementById('mc')||{}).value||'';"
+              "var n=parseInt((document.getElementById('mn')||{}).value||'20')||20;"
+              "if(!v.trim()||!c.trim()){alert('Type a business type AND a city first.');return;}"
+              "if(!confirm('Scrape '+n+' \\\"'+v+'\\\" businesses in '+c+' from Google Maps + find their emails? (~'+n+' Serper + Prospeo credits. Nothing gets emailed.)'))return;"
+              "var b=event&&event.target;if(b){b.disabled=true;b.textContent='Scraping… ~30s';}"
+              "try{var r=await fetch('/leads/maps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vertical:v,city:c,count:n})});var j=await r.json();"
+              "if(j.ok){alert('✓ '+j.businesses+' businesses sourced · '+j.with_verified_email+' with a verified email.\\n\\n'+(j.next||''));location.reload();}"
+              "else{alert('Failed: '+(j.error||''));if(b){b.disabled=false;b.textContent='🗺️ Find leads';}}}"
+              "catch(e){alert('Failed: '+e);if(b){b.disabled=false;b.textContent='🗺️ Find leads';}}}"
               "async function approve(id){var note=_noteFor(id);"
               "try{var r=await fetch('/jobs/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:note})});await r.json();"
               "alert('✓ Approved'+(note?' with your note':'')+'. It goes live.');location.reload();}catch(e){alert('Failed: '+e);}}"
