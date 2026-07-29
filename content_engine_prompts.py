@@ -117,6 +117,7 @@ RULES:
 - Respect pieces_this_week exactly. Don't overload.
 - Mix ~40% SEO/awareness, ~30% sales, ~30% engagement, tilted to business_goal.
 - Every keyword must come from seo_opportunities or competitor_gaps. No invented keywords.
+- If competitor_gaps.scanned_rivals is present, include at least ONE comparison/alternative piece attacking a listed rival (e.g. "<rival> alternative", "<rival> vs done-for-you automation") — prefer the rival with the weakest rating/reviews. Use only listed rival facts.
 - If weekly_priorities names an event/launch, it overrides the default mix.
 TOKEN BUDGET: max_tokens 900.""",
 
@@ -130,6 +131,7 @@ OUTPUT (strict JSON): { "title":"","body":"","meta_title":"","meta_description":
 
 RULES:
 - If revision_note is present, this is a REWRITE the founder asked for. Their exact instruction is in revision_note — FIX THAT FIRST, keep what worked, and produce a fresh, corrected piece that addresses it directly.
+- If competitor_context is present, this is a COMPARISON piece against that rival. Use ONLY the verified facts given (their product, Google rating, review count, published prices) — never invent rival claims. Be factual and fair, then show where done-for-you automation wins. Include a short honest comparison section.
 - THIS PIECE SERVES a specific website audience (audience_segment) and a specific service (service_pillar → service_promise). Write squarely for THAT group about THAT service outcome — do not write a generic all-audiences article. Use their industry's real language and examples.
 - WRITE FOR audience_persona and open by naming their specific situation + audience_pain in the first 2 sentences. No generic "In today's fast-paced world" openers.
 - GROUND every section in research_brief: use its concrete facts, numbers (with the year), named examples/tools, and cite the 1-2 sources by name inside the body. If research_brief is empty, still be concrete and specific to the persona — never pad with generic advice.

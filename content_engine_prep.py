@@ -106,6 +106,34 @@ def _in_competitor_intel(job: dict) -> dict:
     }
 
 
+def _scanned_rivals() -> list:
+    """Compact, source-true view of the 🛰️ competitor scan (settings
+    'competitor_intel'): [{domain, threat, health, rating, reviews, products,
+    serp_overlap}] sorted weakest-first (lowest rating = most attackable)."""
+    try:
+        import content_engine_connectors as _C
+        ci = _C._setting("competitor_intel", {}) or {}
+    except Exception:
+        return []
+    ai = (ci.get("ai") or {}).get("per_competitor") or {}
+    out = []
+    for c in (ci.get("competitors") or [])[:5]:
+        d = c.get("domain", "")
+        if not d:
+            continue
+        a = ai.get(d) or {}
+        maps = c.get("maps") or {}
+        out.append({"domain": d,
+                    "threat": a.get("threat", ""), "health": a.get("health", ""),
+                    "rating": maps.get("rating", 0), "reviews": maps.get("reviews", 0),
+                    "products": a.get("products_guess", "") or (c.get("site") or {}).get("title", "")[:60],
+                    "prices_seen": (c.get("site") or {}).get("prices_seen", []),
+                    "serp_overlap": len(c.get("seo_hits") or [])})
+    # weakest first: has a rating and it's low -> most attackable in content
+    out.sort(key=lambda r: (r["rating"] if r["rating"] else 9))
+    return out
+
+
 def _in_content_strategist(job: dict) -> dict:
     site = _result(job, "site_intelligence")
     comp = _result(job, "competitor_intel")
@@ -136,6 +164,19 @@ def _in_content_strategist(job: dict) -> dict:
                   + ", ".join(_TAX.PILLAR_NAMES)).strip(" |")
     except Exception:
         pass
+    # 4) COMPETITOR ATTACK LOOP: feed the scanned rivals (settings
+    # 'competitor_intel', captured by the 🛰️ scan) into planning so the
+    # strategist plans comparison/alternative pieces against real, weak rivals.
+    scanned = _scanned_rivals()
+    if scanned:
+        weakest = scanned[0]
+        weekly = (weekly + " | COMPETITOR ATTACK: our scanned SERP rivals are "
+                  + ", ".join(r["domain"] for r in scanned[:3])
+                  + f". Plan 1-2 comparison/alternative pieces (e.g. keyword '{weakest['domain'].split('.')[0]} alternative') "
+                  + f"targeting {weakest['domain']}"
+                  + (f" (weakness: rated ★{weakest['rating']} with only {weakest['reviews']} reviews)"
+                     if weakest.get("rating") else "")
+                  + ".").strip(" |")
     pb = _learnings(job)
     if pb:
         # Fold learnings into weekly_priorities (a lever the prompt already
@@ -150,6 +191,7 @@ def _in_content_strategist(job: dict) -> dict:
         "competitor_gaps": {
             "market_gap": comp.get("market_gap", {}),
             "differentiation_angles": comp.get("differentiation_angles", []),
+            "scanned_rivals": scanned,                       # real 🛰️ scan data
         },
         "business_goal": cfg.get("business_goal", "awareness"),
         "weekly_priorities": weekly,
@@ -242,6 +284,22 @@ def _in_content_producer(job: dict) -> dict:
     rnote = (job.get("payload", {}) or {}).get("revision_note")
     if rnote:
         out["revision_note"] = rnote
+    # Comparison piece? If the title/keyword names a scanned rival, hand the
+    # writer that rival's VERIFIED captured facts (rating, prices, products) so
+    # the comparison is factual — the prompt forbids inventing anything else.
+    _hay = (out.get("working_title", "") + " " + out.get("primary_keyword", "")).lower()
+    for r in _scanned_rivals():
+        nm = r["domain"].split(".")[0].lower()
+        if nm and (nm in _hay or r["domain"].lower() in _hay):
+            out["competitor_context"] = {
+                "domain": r["domain"],
+                "their_product": r.get("products", ""),
+                "google_rating": r.get("rating", 0),
+                "review_count": r.get("reviews", 0),
+                "prices_published_on_their_site": r.get("prices_seen", []),
+                "note": "verified facts from our scan — use ONLY these; do not invent others",
+            }
+            break
     pb = _learnings(job)
     if pb:
         out["prior_learnings"] = {"winning_topics": pb.get("winning_topics", []),
