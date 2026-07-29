@@ -1294,6 +1294,21 @@ class Serper:
         return [{"title": r.get("title", ""), "link": r.get("link", ""),
                  "snippet": r.get("snippet", "")} for r in j.get("organic", [])[:num]]
 
+    def search_with_ads(self, q: str, num: int = 10):
+        """(organic_results, advertiser_domains) — captures who is PAYING to
+        appear on this query (Google sponsored slots, when present)."""
+        if not self.available():
+            return [], []
+        j = self._post("search", {"q": q, "num": num}) or {}
+        organic = [{"title": r.get("title", ""), "link": r.get("link", ""),
+                    "snippet": r.get("snippet", "")} for r in j.get("organic", [])[:num]]
+        ads = []
+        for a in (j.get("ads") or []) + (j.get("topAds") or []):
+            m = re.search(r"(?:https?://)?(?:www\.)?([^/\s]+)", a.get("link") or a.get("displayedLink") or "")
+            if m:
+                ads.append(m.group(1).lower())
+        return organic, ads
+
     def news(self, q: str, num: int = 8) -> list:
         """Google News results -> [{title, link, date, source}] — competitor
         signals (funding, partnerships, launches, expansion, hiring...)."""
@@ -1385,6 +1400,107 @@ class Google:
         total_sessions = sum(p["sessions"] for p in top_pages)
         return {"period": f"last {days}d", "metrics": {
             "sessions": total_sessions, "top_pages": top_pages}}
+
+
+    # ---- FULL replication (the 'google-grade dashboard' feed) ----
+    def gsc_report(self, dimension: str, days: int = 28, limit: int = 50) -> list:
+        """Search Console by any dimension: query|page|country|device|date."""
+        auth = self._auth(self.GSC_SCOPE)
+        if not (auth and self.site):
+            return []
+        from datetime import date, timedelta
+        from urllib.parse import quote
+        body = {"startDate": (date.today() - timedelta(days=days)).isoformat(),
+                "endDate": date.today().isoformat(),
+                "dimensions": [dimension], "rowLimit": limit}
+        url = (f"https://searchconsole.googleapis.com/webmasters/v3/sites/"
+               f"{quote(self.site, safe='')}/searchAnalytics/query")
+        j = _post_json(url, body, headers=auth)
+        return [{"key": r["keys"][0], "clicks": r.get("clicks", 0),
+                 "impressions": r.get("impressions", 0),
+                 "ctr": round(r.get("ctr", 0) * 100, 2),
+                 "position": round(r.get("position", 0), 1)}
+                for r in (j or {}).get("rows", [])]
+
+    def gsc_full(self, days: int = 28) -> dict:
+        """Everything Search Console gives us: queries, pages, countries,
+        devices, and the daily trend."""
+        if not self.available():
+            return {}
+        return {"queries": self.gsc_report("query", days, 50),
+                "pages": self.gsc_report("page", days, 25),
+                "countries": self.gsc_report("country", days, 15),
+                "devices": self.gsc_report("device", days, 5),
+                "daily": sorted(self.gsc_report("date", days, days + 2), key=lambda r: r["key"])}
+
+    def ga4_report(self, dimensions: list, metrics: list, days: int = 28, limit: int = 30) -> list:
+        auth = self._auth(self.GA4_SCOPE)
+        if not (auth and self.ga4_property):
+            return []
+        body = {"dateRanges": [{"startDate": f"{days}daysAgo", "endDate": "today"}],
+                "dimensions": [{"name": d} for d in dimensions],
+                "metrics": [{"name": m} for m in metrics], "limit": limit}
+        url = (f"https://analyticsdata.googleapis.com/v1beta/"
+               f"properties/{self.ga4_property}:runReport")
+        j = _post_json(url, body, headers=auth)
+        out = []
+        for r in (j or {}).get("rows", []):
+            row = {}
+            for i, d in enumerate(dimensions):
+                row[d] = r["dimensionValues"][i]["value"]
+            for i, m in enumerate(metrics):
+                try:
+                    row[m] = float(r["metricValues"][i]["value"])
+                except Exception:
+                    row[m] = 0
+            out.append(row)
+        return out
+
+    def ga4_full(self, days: int = 28) -> dict:
+        """Everything GA4 gives us: daily sessions/users, channels, top pages,
+        countries, engagement + totals."""
+        if not self.available():
+            return {}
+        daily = sorted(self.ga4_report(["date"], ["sessions", "totalUsers", "newUsers"], days, days + 2),
+                       key=lambda r: r.get("date", ""))
+        channels = self.ga4_report(["sessionDefaultChannelGroup"], ["sessions"], days, 10)
+        pages = self.ga4_report(["pagePath"], ["sessions", "totalUsers"], days, 15)
+        countries = self.ga4_report(["country"], ["sessions"], days, 12)
+        eng = self.ga4_report([], ["sessions", "totalUsers", "newUsers", "engagementRate"], days, 1)
+        totals = eng[0] if eng else {}
+        return {"daily": daily, "channels": channels, "pages": pages,
+                "countries": countries, "totals": totals}
+
+
+def google_insights(force: bool = False) -> dict:
+    """Cached (hourly) full GSC+GA4 pull — the dashboards read THIS, so pages
+    load instantly and one slow Google call can never blank the UI."""
+    from datetime import datetime, timezone
+    try:
+        cached = _setting("google_insights", {}) or {}
+    except Exception:
+        cached = {}
+    if cached and not force:
+        try:
+            at = datetime.fromisoformat(str(cached.get("at", "")).replace("Z", "+00:00"))
+            if at.tzinfo is None:
+                at = at.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - at).total_seconds() < 3600:
+                return cached
+        except Exception:
+            pass
+    g = Google()
+    if not g.available():
+        return cached
+    fresh = {"at": datetime.now(timezone.utc).isoformat(),
+             "gsc": g.gsc_full(), "ga4": g.ga4_full()}
+    if fresh["gsc"] or fresh["ga4"]:
+        try:
+            _set_setting("google_insights", fresh)
+        except Exception:
+            pass
+        return fresh
+    return cached
 
 
 # ---------------------------------------------------------------------------

@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-29 · v16-r7 · scan→strategy loop: content attacks scanned rivals"
+BUILD_TAG = "2026-07-29 · v16-r8 · Google-grade boards: full GSC+GA4 replication + 22 detailed competitor cards"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2410,6 +2410,132 @@ def _mod_executive(c):
 # ---------------------------------------------------------------------------
 # dashboard
 # ---------------------------------------------------------------------------
+def _insight_card(title, big, sub, body="", insight="", src="", accent="#4C8DFF"):
+    """Google-grade metric card: big number + context + chart + a one-line
+    qualitative read of what the number MEANS."""
+    return ("<div class='card'>"
+            f"<p class='ct' style='margin:0'>{_esc(title)}</p>"
+            f"<div style='display:flex;align-items:baseline;gap:8px;margin-top:7px'>"
+            f"<span style='font-size:27px;font-weight:800;color:{accent}' class='tnum'>{_esc(str(big))}</span>"
+            f"<span class='dim'>{_esc(sub)}</span></div>"
+            + (f"<div style='margin-top:8px;overflow-x:auto'>{body}</div>" if body else "")
+            + (f"<div style='margin-top:8px;padding:7px 10px;border-radius:8px;background:rgba(139,124,255,.08);"
+               f"border-left:3px solid #8B7CFF;font-size:12px'>💡 {_esc(insight)}</div>" if insight else "")
+            + (f"<div class='dim' style='font-size:10px;margin-top:7px'>🔌 {_esc(src)}</div>" if src else "")
+            + "</div>")
+
+
+def _gsc_board(gi):
+    """The Search Console replication — every metric as its own card, with real
+    zeros shown IN CONTEXT (position 42 = page 5), quantitative + qualitative."""
+    gsc = (gi or {}).get("gsc") or {}
+    if not gsc:
+        return ("<div class='card full' style='margin-top:12px'><p class='ct'>🔍 Search Console (full)</p>"
+                "<p class='cc'>⚪ No cached pull yet — click ↻ Refresh Google data.</p></div>")
+    q = gsc.get("queries") or []
+    daily = gsc.get("daily") or []
+    imp = sum(r["impressions"] for r in q)
+    clk = sum(r["clicks"] for r in q)
+    ctr = round(clk / imp * 100, 1) if imp else 0
+    avgpos = round(sum(r["position"] for r in q) / len(q), 1) if q else 0
+    best = min(q, key=lambda r: r["position"]) if q else {}
+    # qualitative reads (computed, not invented)
+    pos_read = (f"Average page {int((avgpos - 1) // 10) + 1} of Google — best query “{best.get('key','')[:30]}” at "
+                f"#{best.get('position', 0)} (page {int((best.get('position', 99) - 1) // 10) + 1}). "
+                + ("Zero clicks so far is normal below page 1 — rankings must climb first." if clk == 0 else
+                   f"{clk} clicks earned."))
+    trend = CH.lines([("Impressions", [r["impressions"] for r in daily] or [0], "#4C8DFF"),
+                      ("Clicks", [r["clicks"] for r in daily] or [0], "#3FD98B")]) if daily else ""
+    qrows = "".join(
+        f"<tr><td>{_esc(r['key'][:44])}</td><td class='tnum'>{r['impressions']}</td>"
+        f"<td class='tnum'>{r['clicks']}</td><td class='tnum'>{r['ctr']}%</td>"
+        f"<td class='tnum'>#{r['position']} <span class='dim'>(p{int((r['position']-1)//10)+1})</span></td></tr>"
+        for r in q[:15])
+    prows = "".join(
+        f"<tr><td>{_esc(r['key'][:44])}</td><td class='tnum'>{r['impressions']}</td>"
+        f"<td class='tnum'>{r['clicks']}</td><td class='tnum'>#{r['position']}</td></tr>"
+        for r in (gsc.get("pages") or [])[:10])
+    dev = [(r["key"].title(), r["impressions"], c) for r, c in
+           zip(gsc.get("devices") or [], ["#4C8DFF", "#2FE3D2", "#8B7CFF", "#F5B14C", "#3FD98B"])]
+    geo = [(r["key"].upper(), r["impressions"]) for r in (gsc.get("countries") or [])[:8]]
+    return (
+        "<div class='card full' style='margin-top:12px'><p class='ct'>🔍 Search Console — full replication</p>"
+        "<p class='cc'>Your complete Google Search presence, straight from the GSC API. Real zeros are shown with "
+        "context — they mean 'not ranking high enough yet', not 'broken'.</p></div>"
+        "<div class='grid g3' style='margin-top:8px'>"
+        + _insight_card("Impressions (28d)", imp, "times you appeared in Google", "",
+                        f"Your site appeared {imp} times; impressions come mostly from the "
+                        f"{'e-commerce monitoring' if any('monitor' in r['key'] for r in q) else 'automation'} cluster.",
+                        "Search Console API", "#4C8DFF")
+        + _insight_card("Clicks (28d)", clk, f"CTR {ctr}%", "", pos_read, "Search Console API", "#3FD98B")
+        + _insight_card("Average position", f"#{avgpos}", f"across {len(q)} queries", "",
+                        pos_read, "Search Console API", "#8B7CFF")
+        + "</div><div class='grid g2' style='margin-top:8px'>"
+        + _viz2("Impressions & clicks — 28-day trend", trend, "Fills day by day.")
+        + _viz2("Devices", (CH.ring([(l, v, c) for l, v, c in dev], center=str(imp)) if dev else ""), "Device split appears with impressions.")
+        + "</div>"
+        "<div class='card full' style='margin-top:8px'><p class='ct'>Every ranking query</p>"
+        "<div class='tbwrap'><table><thead><tr><th>Query</th><th>Impr.</th><th>Clicks</th><th>CTR</th><th>Position</th></tr></thead>"
+        f"<tbody>{qrows or '<tr><td colspan=5 class=dim>No queries yet.</td></tr>'}</tbody></table></div></div>"
+        "<div class='grid g2' style='margin-top:8px'>"
+        "<div class='card'><p class='ct'>Pages Google shows</p><div class='tbwrap'><table>"
+        "<thead><tr><th>Page</th><th>Impr.</th><th>Clicks</th><th>Pos.</th></tr></thead>"
+        f"<tbody>{prows or '<tr><td colspan=4 class=dim>No page data yet.</td></tr>'}</tbody></table></div></div>"
+        + _viz2("Countries searching you", (CH.geo(geo) if geo else ""), "Fills as impressions arrive.")
+        + "</div>")
+
+
+def _ga4_board(gi, title="📈 Analytics (GA4) — full replication"):
+    ga4 = (gi or {}).get("ga4") or {}
+    if not ga4:
+        return (f"<div class='card full' style='margin-top:12px'><p class='ct'>{_esc(title)}</p>"
+                "<p class='cc'>⚪ No cached pull yet — click ↻ Refresh Google data.</p></div>")
+    t = ga4.get("totals") or {}
+    daily = ga4.get("daily") or []
+    sess = int(t.get("sessions", 0))
+    users = int(t.get("totalUsers", 0))
+    new = int(t.get("newUsers", 0))
+    eng = round(float(t.get("engagementRate", 0)) * 100)
+    ch = ga4.get("channels") or []
+    topch = max(ch, key=lambda r: r["sessions"])["sessionDefaultChannelGroup"] if ch else "—"
+    trend = CH.lines([("Sessions", [r.get("sessions", 0) for r in daily] or [0], "#2FE3D2"),
+                      ("Users", [r.get("totalUsers", 0) for r in daily] or [0], "#4C8DFF")]) if daily else ""
+    chring = CH.ring([(r["sessionDefaultChannelGroup"][:12], r["sessions"], c) for r, c in
+                      zip(ch, ["#4C8DFF", "#2FE3D2", "#8B7CFF", "#F5B14C", "#3FD98B", "#FF6B93"])],
+                     center=str(sess)) if ch else ""
+    prow = "".join(f"<div class='fe'><span class='mut'>{_esc(r['pagePath'][:40])}</span>"
+                   f"<span class='tnum' style='margin-left:auto'>{int(r['sessions'])}</span></div>"
+                   for r in (ga4.get("pages") or [])[:8])
+    geo = [(r["country"], r["sessions"]) for r in (ga4.get("countries") or [])[:8]]
+    return (
+        f"<div class='card full' style='margin-top:12px'><p class='ct'>{_esc(title)}</p>"
+        "<p class='cc'>Your complete traffic picture from the GA4 API — sessions, people, channels, pages, countries.</p></div>"
+        "<div class='grid g4' style='margin-top:8px'>"
+        + _insight_card("Sessions (28d)", sess, "visits", "",
+                        f"Most visits arrive via {topch} — " +
+                        ("young-site numbers; every published piece compounds this." if sess < 100 else "growing base."),
+                        "GA4 API", "#2FE3D2")
+        + _insight_card("People", users, f"{new} new", "",
+                        f"{round(new / users * 100) if users else 0}% of visitors are first-timers.", "GA4 API", "#4C8DFF")
+        + _insight_card("Engagement", f"{eng}%", "engaged sessions", "",
+                        ("Healthy engagement — visitors read." if eng >= 50 else "Visitors bounce fast — landing content needs a hook."),
+                        "GA4 API", "#8B7CFF")
+        + _insight_card("Top channel", topch, "traffic source", "",
+                        "Organic growing = SEO engine working; Direct-heavy = brand/word-of-mouth.", "GA4 API", "#F5B14C")
+        + "</div><div class='grid g2' style='margin-top:8px'>"
+        + _viz2("Sessions & users — 28-day trend", trend, "Fills day by day.")
+        + _viz2("Traffic channels", chring, "Fills as sessions arrive.")
+        + "</div><div class='grid g2' style='margin-top:8px'>"
+        + f"<div class='card'><p class='ct'>Top pages by visits</p>{prow or '<div class=dim>No page data yet.</div>'}</div>"
+        + _viz2("Visitor countries", (CH.geo(geo) if geo else ""), "Fills as sessions arrive.")
+        + "</div>")
+
+
+def _viz2(title, svg, empty):
+    return (f"<div class='card'><p class='ct'>{_esc(title)}</p>"
+            f"<div style='margin-top:8px;overflow-x:auto'>{svg or ('<div class=dim style=padding:12px>⚪ ' + _esc(empty) + '</div>')}</div></div>")
+
+
 def _competitor_board(ci, serper_on):
     """The 22 Competitor-Intelligence cards in the SEO/AEO/GEO section — filled
     from captured data (source-tagged), honest 'needs tool' for the rest."""
@@ -2445,51 +2571,135 @@ def _competitor_board(ci, serper_on):
                          f"<span class='mut'>{_esc(str(n.get('title',''))[:70])}</span></div>")
         return card(label, rows, src="Google News (Serper)")
 
+    aivis = (ci or {}).get("ai_visibility") or {}
+    serp_ads = (ci or {}).get("serp_ads") or {}
+    own_q = (ci or {}).get("queries_used") or []
+
+    def rival_block(c, inner):
+        a = ai.get(c["domain"]) or {}
+        thr = a.get("threat", "")
+        tcol = {"high": "#FF6B93", "medium": "#F5B14C", "low": "#3FD98B"}.get(thr, "#8E9BBE")
+        return ("<div style='border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-top:7px'>"
+                f"<div style='display:flex;gap:8px;align-items:center'><b>{_esc(c['domain'][:26])}</b>"
+                + (f"<span class='pill' style='background:{tcol}22;color:{tcol};padding:1px 8px'>{_esc(thr)} threat</span>" if thr else "")
+                + f"</div><div style='margin-top:5px;font-size:12px;line-height:1.55'>{inner}</div></div>")
+
+    def detail(fn):
+        out = ""
+        for c in scans:
+            inner = fn(c)
+            if inner:
+                out += rival_block(c, inner)
+        return out
+
     if not scans:
         empty_note = ("Serper is connected — click Scan to capture." if serper_on
                       else "Connect SERPER_API_KEY first (System Map).")
         board_cards = f"<div class='card full'><div class='dim'>⚪ No competitor scan yet. {empty_note}</div></div>"
     else:
-        health_rows = per_comp(lambda c: (
-            f"health <b>{(ai.get(c['domain']) or {}).get('health','—')}</b>/100 · "
-            f"threat <b>{(ai.get(c['domain']) or {}).get('threat','—')}</b>") if ai else "")
-        seo_rows = per_comp(lambda c: (f"ranks in <b>{len(c.get('seo_hits') or [])}</b> of your query SERPs"
-                                       + (f" (best #{min(h['position'] for h in c['seo_hits'])})" if c.get("seo_hits") else "")))
-        geo_rows = per_comp(lambda c: (f"★{c['maps'].get('rating','—')} · {c['maps'].get('reviews',0)} reviews"
-                                       if c.get("maps") else ""))
-        tech_rows = per_comp(lambda c: ", ".join((c.get("site") or {}).get("tech") or []) or "")
-        price_rows = per_comp(lambda c: " · ".join((c.get("site") or {}).get("prices_seen") or []) or "")
-        prod_rows = per_comp(lambda c: _esc((ai.get(c["domain"]) or {}).get("products_guess", "")
-                                            or ((c.get("site") or {}).get("title") or "")[:60]))
-        promo_rows = per_comp(lambda c: ("promo visible on site" if (c.get("site") or {}).get("promo_on_site") else ""))
-        risk_rows = per_comp(lambda c: _esc((ai.get(c["domain"]) or {}).get("risk", "")))
-        fc_rows = per_comp(lambda c: _esc((ai.get(c["domain"]) or {}).get("forecast", "")))
+        # --- individual, detailed signal cards (quant + qualitative mix) ---
+        seo_d = detail(lambda c: "".join(
+            f"<div class='fe'><span class='mut'>{_esc(h['query'][:38])}</span>"
+            f"<span class='tnum' style='margin-left:auto'>them <b>#{h['position']}</b></span></div>"
+            for h in (c.get("seo_hits") or [])[:6]) or "")
+        vis_d = detail(lambda c: (
+            f"<div class='big tnum' style='font-size:24px'>{c.get('visibility_index', 0)}%</div>"
+            f"<div class='dim'>appears in {len(c.get('seo_hits') or [])} of your {max(len(own_q),1)} query SERPs</div>"
+            "<div class='prog' style='margin:6px 0 0'>"
+            f"<i style='width:{max(3, c.get('visibility_index', 0))}%;background:#8B7CFF'></i></div>"))
+        geo_d = detail(lambda c: (
+            f"<div style='font-size:16px'>{'★' * int(round(c['maps'].get('rating', 0)))}"
+            f"<span class='dim'>{'☆' * (5 - int(round(c['maps'].get('rating', 0))))}</span> "
+            f"<b>{c['maps'].get('rating', 0)}</b> · {c['maps'].get('reviews', 0)} reviews</div>"
+            f"<div class='dim'>{_esc((c['maps'].get('address') or '')[:48])}</div>"
+            + ("<div style='color:#3FD98B;font-size:11.5px;margin-top:3px'>💡 weak social proof — attackable with review-rich comparison content</div>"
+               if c['maps'].get('rating', 5) <= 3.5 and c['maps'].get('reviews', 99) < 20 else "")) if c.get("maps") else "")
+        prod_d = detail(lambda c: (
+            f"<div><b>{_esc(((ai.get(c['domain']) or {}).get('products_guess') or (c.get('site') or {}).get('title') or '')[:70])}</b></div>"
+            + (f"<div class='dim' style='margin-top:3px'>{_esc(((c.get('site') or {}).get('description') or '')[:110])}</div>"
+               if (c.get('site') or {}).get('description') else "")))
+        price_d = detail(lambda c: (" ".join(
+            f"<span class='pill' style='background:rgba(245,177,76,.14);color:#F5B14C;padding:2px 9px'>{_esc(p)}</span>"
+            for p in (c.get("site") or {}).get("prices_seen") or []) or ""))
+        promo_d = detail(lambda c: ("🏷️ promo/offer visible on their homepage right now"
+                                    if (c.get("site") or {}).get("promo_on_site") else ""))
+        tech_d = detail(lambda c: (" ".join(
+            f"<span class='pill' style='background:rgba(76,141,255,.14);color:#4C8DFF;padding:2px 9px'>{_esc(t)}</span>"
+            for t in (c.get("site") or {}).get("tech") or []) or ""))
+        soc_d = detail(lambda c: (
+            f"<div class='big tnum' style='font-size:22px'>{c.get('linkedin_followers', 0):,}</div>"
+            "<div class='dim'>LinkedIn followers (from Google snippet)</div>") if c.get("linkedin_followers") else "")
+
+        def bucket_d(key):
+            return detail(lambda c: "".join(
+                f"<div class='fe'><span class='mut'>{_esc(str(n.get('title',''))[:64])}</span>"
+                f"<span class='dim' style='margin-left:auto'>{_esc(str(n.get('date',''))[:12])}</span></div>"
+                for n in ((c.get("news_buckets") or {}).get(key) or [])[:3]) or "")
+        ads_d = ""
+        if serp_ads:
+            for c in scans:
+                qs = [q for q, doms in serp_ads.items() if c["domain"] in doms]
+                if qs:
+                    ads_d += rival_block(c, "advertising on: " + ", ".join(_esc(q[:30]) for q in qs[:3]))
+            if not ads_d:
+                ads_d = ("<div class='dim' style='margin-top:6px'>Observed: <b>no rival is paying for ads</b> on your "
+                         f"{len(own_q)} tracked queries — the SERP is winnable organically.</div>")
+        aivis_d = ""
+        if aivis.get("mentions"):
+            mx = max(aivis["mentions"].values()) or 1
+            for d, n in sorted(aivis["mentions"].items(), key=lambda x: -x[1]):
+                aivis_d += (f"<div class='fe'><span class='mut'>{_esc(d[:26])}</span>"
+                            f"<div class='track' style='margin:0 8px;flex:1'><i style='width:{round(n/mx*100)}%;background:#8B7CFF'></i></div>"
+                            f"<span class='tnum'>{n}/{aivis.get('prompts_run', 0)}</span></div>")
+            aivis_d = (f"<div class='dim' style='margin-bottom:4px'>Asked Claude {aivis.get('prompts_run', 0)} buyer-intent "
+                       "questions with live web search — who got cited:</div>") + aivis_d
+        health_d = detail(lambda c: (
+            f"<div class='big tnum' style='font-size:22px'>{(ai.get(c['domain']) or {}).get('health','—')}<small>/100</small></div>"
+            f"<div class='dim'>threat: {(ai.get(c['domain']) or {}).get('threat','—')}</div>") if ai else "")
+        risk_d = detail(lambda c: _esc((ai.get(c["domain"]) or {}).get("risk", "")))
+        fc_d = detail(lambda c: _esc((ai.get(c["domain"]) or {}).get("forecast", "")))
+        rev_d = detail(lambda c: (
+            f"<b>{_esc((ai.get(c['domain']) or {}).get('revenue_band_est','unknown'))}</b> "
+            f"<span class='dim'>(confidence {_esc((ai.get(c['domain']) or {}).get('revenue_confidence','low'))})</span>")
+            if ai and (ai.get(c["domain"]) or {}).get("revenue_band_est") else "")
         rec_html = "".join(f"<div class='fe'><span>▹ {_esc(r)}</span></div>" for r in recs[:4])
+        # per-competitor full dossier
+        dossiers = ""
+        for c in scans:
+            a = ai.get(c["domain"]) or {}
+            dossiers += ("<div class='card'><p class='ct'>🗂️ " + _esc(c["domain"]) + "</p>"
+                         + rival_block(c,
+                            f"<div class='dim'>{_esc(((c.get('site') or {}).get('title') or '')[:80])}</div>"
+                            f"<div style='margin-top:4px'>Visibility <b>{c.get('visibility_index',0)}%</b>"
+                            + (f" · ★{c['maps'].get('rating')} ({c['maps'].get('reviews')} reviews)" if c.get('maps') else "")
+                            + (f" · {c.get('linkedin_followers',0):,} followers" if c.get('linkedin_followers') else "")
+                            + (f"<br>Risk: {_esc(a.get('risk',''))}" if a.get('risk') else "")
+                            + (f"<br>Forecast: {_esc(a.get('forecast',''))}" if a.get('forecast') else "")) + "</div>")
         board_cards = (
-            card("Competitor Health", health_rows, src="AI analysis of captured signals (est.)")
-            + card("Competitor SEO", seo_rows, src="Your GSC queries × Google SERPs (Serper)")
-            + card("Competitor GEO", geo_rows, src="Google Maps (Serper)")
-            + card("Competitor Reviews", geo_rows, src="Google Maps ratings")
-            + card("Competitor Products", prod_rows, src="Their website + AI extract")
-            + card("Competitor Pricing", price_rows, src="Prices published on their site")
-            + card("Competitor Promotions", promo_rows, src="Homepage scan")
-            + card("Competitor Technology", tech_rows, src="Homepage stack detection")
-            + newsbucket("hiring", "Competitor Hiring")
-            + newsbucket("partnerships", "Competitor Partnerships")
-            + newsbucket("funding", "Competitor Funding")
-            + newsbucket("expansion", "Competitor Expansion")
-            + newsbucket("launches", "Competitor Launches")
-            + card("Competitor Risk", risk_rows, src="AI analysis (est.)")
-            + card("Competitor Forecast", fc_rows, src="AI analysis (est.)")
+            card("Competitor Health", health_d, src="AI analysis of captured signals (est.)")
+            + card("Competitor SEO — query by query", seo_d, src="Your GSC queries × Google SERPs")
+            + card("Competitor Traffic → Visibility Index", vis_d, src="Share of YOUR query SERPs (real index, not visits)")
+            + card("Competitor GEO (local presence)", geo_d, src="Google Maps")
+            + card("Competitor Reviews", geo_d, src="Google Maps ratings")
+            + card("Competitor Products", prod_d, src="Their website + AI extract")
+            + card("Competitor Pricing", price_d, src="Prices published on their own site")
+            + card("Competitor Promotions", promo_d, src="Homepage scan")
+            + card("Competitor Technology", tech_d, src="Homepage stack detection")
+            + card("Competitor Social Growth", soc_d, src="LinkedIn count via Google snippet (free)")
+            + card("Competitor Ads", ads_d, src="Sponsored slots on your query SERPs")
+            + card("Competitor AI Visibility", aivis_d, src="Measured via your Claude key (Claude engine; est. for others)")
+            + card("Competitor Hiring", bucket_d("hiring"), src="Google News")
+            + card("Competitor Partnerships", bucket_d("partnerships"), src="Google News")
+            + card("Competitor Funding", bucket_d("funding"), src="Google News")
+            + card("Competitor Expansion", bucket_d("expansion"), src="Google News")
+            + card("Competitor Launches", bucket_d("launches"), src="Google News")
+            + card("Competitor Risk", risk_d, src="AI analysis (est.)")
+            + card("Competitor Forecast", fc_d, src="AI analysis (est.)")
+            + card("Competitor Revenue Estimate", rev_d, src="AI estimate from signals — labelled, low confidence")
             + card("Competitor Recommendations", rec_html, src="AI counter-moves for Anthropos")
-            # honest needs-a-tool cards
-            + card("Competitor Traffic", "", live=False, src="needs SimilarWeb / Semrush")
-            + card("Competitor Revenue Estimate", "", live=False, src="needs a data provider")
-            + card("Competitor Ads", "", live=False, src="needs ad-library access")
-            + card("Competitor AI Visibility", "", live=False, src="needs an AI-visibility monitor")
-            + card("Competitor Social Growth", "", live=False, src="needs social APIs")
-            + card("Competitor Inventory", "", live=False, src="e-commerce rivals only")
-        )
+            + card("Competitor Inventory", "<div class='dim'>N/A — your rivals are service/SaaS businesses, not stores.</div>",
+                   live=True, src="not applicable to this market")
+            + dossiers)
     return (
         "<div class='card full' style='margin-top:12px;border-left:4px solid #8B7CFF'>"
         "<p class='ct'>🛰️ Competitive Intelligence — 22 signals</p>"
@@ -2510,9 +2720,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    bookings=None, ads=None, needles=None, last_eval=None,
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
                    content_plan=None, web_tracking=None, reply_drafts=None,
-                   competitor_intel=None):
+                   competitor_intel=None, google_insights=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
+    google_insights = google_insights or {}
     from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
     bookings, ads = bookings or {}, ads or {}
@@ -2842,7 +3053,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     m_seo = _master("🔎", "SEO / AEO / GEO — at a glance", "Visibility across Google & AI answers (live from your Search Console + Analytics).",
         [("Sessions (28d)", f"{sessions:,}", "#4C8DFF"), ("Search clicks", f"{total_clicks:,}", "#2FE3D2"),
          ("Avg rank", avg_rank or "—", "#8B7CFF"), ("CTR", f"{ctr}%", "#3FD98B")], mfunnel)
-    p_seo = m_seo + _competitor_board(competitor_intel, bool(st.get("serper_search"))) + grid(
+    _grefresh = ("<div class='ctrl' style='margin-top:10px'><button class='cbtn' onclick='refreshInsights()'>"
+                 "↻ Refresh Google data</button>"
+                 + (f"<span class='dim' style='align-self:center'>cached {_esc(str(google_insights.get('at',''))[:16].replace('T',' '))} UTC · auto-refreshes hourly</span>"
+                    if google_insights.get("at") else
+                    "<span class='dim' style='align-self:center'>no pull yet — click to fetch your full GSC + GA4 data</span>")
+                 + "</div>")
+    p_seo = (m_seo + _grefresh
+             + _gsc_board(google_insights)
+             + _ga4_board(google_insights)
+             + _competitor_board(competitor_intel, bool(st.get("serper_search"))) + grid(
         _panel("Marketing funnel", "Impressions → clicks → sessions → rankings.", mfunnel),
         _panel("Keyword rankings (Search Console)", "The exact queries you show up for, your position + clicks.", kw_rows),
         _panel("Ranking spread", "How many queries rank 1-3 / 4-10 / 11+.",
@@ -2854,8 +3074,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                if total_impr else _empty("Fills from Search Console.")),
         _panel("Off-page / backlinks", "Referring domains + competitor gaps.",
                _empty("Connect a backlink tool (Ahrefs/Moz) via BACKLINKS_JSON to populate off-page data — it's not part of the Google keys.")),
-        _panel("AI-answer mentions (AEO)", "How often ChatGPT / Google AI quote you.", _empty("Needs an AEO tracker; not wired yet.")),
-        _panel("Content assistant — your next move", "Data-driven, from your real queries.", assist))
+        _panel("AI-answer mentions (AEO)", "How often ChatGPT / Google AI quote you.",
+               _empty("Run a 🛰️ competitor scan — it now measures AI-visibility via your Claude key.")),
+        _panel("Content assistant — your next move", "Data-driven, from your real queries.", assist)))
 
     # ---- 6. ADS & GROWTH ----
     _ads_on = bool(ads)
@@ -3423,7 +3644,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
              + diag + connect_card)
 
     # ---- MEDIA BUYING (drafted Google Ads campaigns) ----
-    p_media = _media_page(jobs, st, web_tracking)
+    p_media = (_media_page(jobs, st, web_tracking)
+               + _ga4_board(google_insights, "📈 Website tracking (GA4) — the numbers behind your funnel")
+               + _gsc_board(google_insights))
 
     # ---- OVERVIEW (mother) ----
     def tile(nav, icon, label, val, sub, dot):
@@ -3683,6 +3906,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "alert('Disconnected — the box is editable again.');location.reload();}"
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "function _noteFor(id){var t=document.getElementById('note-'+id);return t?t.value.trim():'';}"
+              "async function refreshInsights(){var b=event&&event.target;if(b){b.disabled=true;b.textContent='Fetching from Google… ~10s';}"
+              "try{var r=await fetch('/insights/refresh',{method:'POST'});var j=await r.json();"
+              "if(j.ok){location.reload();}else{alert(j.error||'refresh failed');if(b){b.disabled=false;b.textContent='↻ Refresh Google data';}}}"
+              "catch(e){alert('Failed: '+e);if(b){b.disabled=false;b.textContent='↻ Refresh Google data';}}}"
               "async function scanCompetitors(){var d=(document.getElementById('compdoms')||{}).value||'';"
               "if(!confirm('Scan competitors now? '+(d?('Using: '+d):'The machine will auto-discover who ranks for your queries.')+' (~40 Serper credits + 1 small Claude call, ~60s)'))return;"
               "var b=event&&event.target;if(b){b.disabled=true;b.textContent='Scanning… ~60s';}"

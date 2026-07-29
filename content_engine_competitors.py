@@ -90,16 +90,22 @@ def discover_competitors(limit: int = 5) -> dict:
     queries = queries[:8]
     counts: dict = {}
     serp: dict = {}
+    serp_ads: dict = {}
     for q in queries:
-        rows = s.search(q, num=10)
+        try:
+            rows, ads = s.search_with_ads(q, num=10)
+        except Exception:
+            rows, ads = s.search(q, num=10), []
         serp[q] = rows
+        serp_ads[q] = [_root(a) for a in ads if _root(a)]
         for r in rows:
             d = _root(r.get("link", ""))
             if not d or d == own or d in _PLATFORMS:
                 continue
             counts[d] = counts.get(d, 0) + 1
     ranked = sorted(counts.items(), key=lambda x: -x[1])[:limit]
-    return {"competitors": [d for d, _n in ranked], "queries_used": queries, "serp": serp}
+    return {"competitors": [d for d, _n in ranked], "queries_used": queries,
+            "serp": serp, "serp_ads": serp_ads}
 
 
 def _fetch_site(domain: str) -> dict:
@@ -132,6 +138,59 @@ def _fetch_site(domain: str) -> dict:
             "prices_seen": prices, "promo_on_site": promo}
 
 
+def _linkedin_followers(name: str, domain: str) -> int:
+    """Free social signal: LinkedIn company-page follower count as shown in
+    Google result snippets. 0 when not found."""
+    s = C.Serper()
+    for q in (f"site:linkedin.com/company {name}", f"site:linkedin.com/company {domain}"):
+        for r in s.search(q, num=3):
+            m = re.search(r"([\d.,]+)\s*(?:followers|Follower)", (r.get("snippet") or "") + " " + (r.get("title") or ""))
+            if m:
+                try:
+                    return int(re.sub(r"[.,]", "", m.group(1)))
+                except Exception:
+                    pass
+    return 0
+
+
+def ai_visibility(own_domain: str, rival_domains: list, queries: list) -> dict:
+    """MEASURED AI-search visibility using our own Claude key: ask buyer-intent
+    questions with live web search and count who actually gets cited/mentioned.
+    Real for the Claude engine (labelled est. for others). {} on any failure."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+    except Exception:
+        return {}
+    prompts = [f"What are the best providers for: {q}? Name specific companies/sites."
+               for q in (queries or [])[:4]]
+    counts = {d: 0 for d in [own_domain] + list(rival_domains)}
+    ran = 0
+    for ptxt in prompts:
+        done = False
+        for tool in ("web_search_20260209", "web_search_20250305"):
+            try:
+                r = client.messages.create(
+                    model=os.getenv("CHEAP_MODEL", "claude-haiku-4-5"), max_tokens=400,
+                    tools=[{"type": tool, "name": "web_search", "max_uses": 3}],
+                    messages=[{"role": "user", "content": ptxt}])
+                text = "".join(b.text for b in r.content
+                               if getattr(b, "type", "") == "text" and getattr(b, "text", "")).lower()
+                for d in counts:
+                    if d and (d.lower() in text or d.split(".")[0].lower() in text):
+                        counts[d] += 1
+                ran += 1
+                done = True
+                break
+            except Exception:
+                continue
+        if not done:
+            break
+    if not ran:
+        return {}
+    return {"prompts_run": ran, "mentions": counts, "engine": "claude"}
+
+
 def scan_competitor(domain: str, serp: dict, own_queries: list) -> dict:
     """Collect every signal we can for one competitor, all source-tagged."""
     s = C.Serper()
@@ -154,14 +213,17 @@ def scan_competitor(domain: str, serp: dict, own_queries: list) -> dict:
     places = s.maps(name, num=3)
     place = places[0] if places else {}
     site = _fetch_site(domain)
+    nq = max(len(serp or {}), 1)
     return {
         "domain": domain,
         "seo_hits": hits,                       # source: serper serp of OUR queries
+        "visibility_index": round(100 * len(hits) / nq),   # share of OUR SERPs (real index)
         "news": news[:5],                       # source: google news via serper
         "news_buckets": {k: v[:3] for k, v in buckets.items()},
         "maps": ({"rating": place.get("rating", 0), "reviews": place.get("reviews", 0),
                   "address": place.get("address", "")} if place else {}),
         "site": site,                           # source: their homepage
+        "linkedin_followers": _linkedin_followers(name, domain),   # SERP snippet (free, real)
     }
 
 
@@ -190,7 +252,9 @@ def synthesize(competitors: list) -> dict:
         "agency for small businesses; markets US/UK/DE/CH/CA). Using ONLY the signals below, "
         "return STRICT JSON: {\"per_competitor\": {\"<domain>\": {\"health\": 0-100, "
         "\"threat\": \"low|medium|high\", \"risk\": \"one sentence\", \"forecast\": \"one sentence\", "
-        "\"products_guess\": \"<=12 words from their site title/desc\"}}, "
+        "\"products_guess\": \"<=12 words from their site title/desc\", "
+        "\"revenue_band_est\": \"pre-revenue|<$1M|$1-10M|$10M+|unknown\", "
+        "\"revenue_confidence\": \"low|medium\"}}, "
         "\"recommendations\": [\"3 concrete counter-moves for Anthropos\"]}. "
         "Never invent numbers not present in the signals.\n\nSIGNALS:\n" + json.dumps(slim))
     try:
@@ -233,9 +297,12 @@ def run_scan(domains: list | None = None, limit: int = 5) -> dict:
         disc = {"serp": {q: s.search(q, num=10) for q in queries}, "queries_used": queries}
     scans = [scan_competitor(d, disc["serp"], disc.get("queries_used", [])) for d in domains[:limit]]
     ai = synthesize(scans)
+    aivis = ai_visibility(_own_domain(), [c["domain"] for c in scans],
+                          disc.get("queries_used", []))
     rec = {"ok": True, "scanned_at": datetime.now(timezone.utc).isoformat(),
            "queries_used": disc.get("queries_used", []),
-           "competitors": scans, "ai": ai}
+           "competitors": scans, "ai": ai, "ai_visibility": aivis,
+           "serp_ads": disc.get("serp_ads", {})}
     try:
         C._set_setting("competitor_intel", rec)
     except Exception:

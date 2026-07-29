@@ -509,6 +509,26 @@ def _brand_dict():
             "offer": g("brand_offer") or "AI & automation systems for small businesses"}
 
 
+def _safe_google_insights(force: bool = False) -> dict:
+    """Cached GSC+GA4 replication for the dashboards; {} on any failure."""
+    try:
+        import content_engine_connectors as C
+        return C.google_insights(force=force) or {}
+    except Exception:
+        return {}
+
+
+def api_refresh_insights() -> dict:
+    """Force-refresh the cached full GSC+GA4 pull (↻ button)."""
+    get_store()
+    gi = _safe_google_insights(force=True)
+    if not gi:
+        return {"ok": False, "error": "Google pull failed — GSC/GA4 connected?"}
+    return {"ok": True, "at": gi.get("at", ""),
+            "gsc_queries": len((gi.get("gsc") or {}).get("queries", [])),
+            "ga4_days": len((gi.get("ga4") or {}).get("daily", []))}
+
+
 def api_competitor_scan(domains=None, limit: int = 5) -> dict:
     """Run the competitive-intelligence capture (discover -> scan -> synthesize).
     Costs ~6-9 Serper credits per competitor + one cheap Claude call."""
@@ -1199,7 +1219,8 @@ def api_dashboard_html() -> str:
         ci_text=ci_text if isinstance(ci_text, str) else "", ci_drive=ci_drive or "",
         autopilot_on=autopilot_on, content_plan=content_plan, web_tracking=web_tracking,
         reply_drafts=reply_drafts,
-        competitor_intel=(st.get_setting("competitor_intel", None) if hasattr(st, "get_setting") else None))
+        competitor_intel=(st.get_setting("competitor_intel", None) if hasattr(st, "get_setting") else None),
+        google_insights=_safe_google_insights())
 
 
 # ---------------------------------------------------------------------------
@@ -1417,6 +1438,10 @@ def build_app():
             data = {}
         return api_source_maps_leads(data.get("vertical", ""), data.get("city", ""),
                                      int(data.get("count", 20) or 20))
+
+    @app.post("/insights/refresh")
+    def insights_refresh():
+        return api_refresh_insights()
 
     @app.post("/competitors/scan")
     async def competitors_scan(request: Request):
