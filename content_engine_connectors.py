@@ -1294,6 +1294,16 @@ class Serper:
         return [{"title": r.get("title", ""), "link": r.get("link", ""),
                  "snippet": r.get("snippet", "")} for r in j.get("organic", [])[:num]]
 
+    def news(self, q: str, num: int = 8) -> list:
+        """Google News results -> [{title, link, date, source}] — competitor
+        signals (funding, partnerships, launches, expansion, hiring...)."""
+        if not self.available():
+            return []
+        j = self._post("news", {"q": q}) or {}
+        return [{"title": r.get("title", ""), "link": r.get("link", ""),
+                 "date": r.get("date", ""), "source": r.get("source", "")}
+                for r in (j.get("news") or [])[:num]]
+
     def maps(self, q: str, num: int = 20) -> list:
         """Google Maps places -> local businesses [{name, address, phone, website,
         rating, reviews, category}] — the location half of the ICP (clinics, law

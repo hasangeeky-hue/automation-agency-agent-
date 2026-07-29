@@ -509,6 +509,14 @@ def _brand_dict():
             "offer": g("brand_offer") or "AI & automation systems for small businesses"}
 
 
+def api_competitor_scan(domains=None, limit: int = 5) -> dict:
+    """Run the competitive-intelligence capture (discover -> scan -> synthesize).
+    Costs ~6-9 Serper credits per competitor + one cheap Claude call."""
+    get_store()   # wire settings so Serper/Google/Claude keys resolve
+    import content_engine_competitors as CI
+    return CI.run_scan(domains=domains, limit=max(1, min(6, int(limit or 5))))
+
+
 def api_source_maps_leads(vertical: str, city: str, count: int = 20) -> dict:
     """Source LOCAL leads from Google Maps (Serper) + find their emails (Prospeo),
     synchronously, and create an outreach campaign already at 'sourced' — the
@@ -1190,7 +1198,8 @@ def api_dashboard_html() -> str:
         needles=needles, last_eval=last_eval, meters=meters, api_limits=api_limits,
         ci_text=ci_text if isinstance(ci_text, str) else "", ci_drive=ci_drive or "",
         autopilot_on=autopilot_on, content_plan=content_plan, web_tracking=web_tracking,
-        reply_drafts=reply_drafts)
+        reply_drafts=reply_drafts,
+        competitor_intel=(st.get_setting("competitor_intel", None) if hasattr(st, "get_setting") else None))
 
 
 # ---------------------------------------------------------------------------
@@ -1408,6 +1417,17 @@ def build_app():
             data = {}
         return api_source_maps_leads(data.get("vertical", ""), data.get("city", ""),
                                      int(data.get("count", 20) or 20))
+
+    @app.post("/competitors/scan")
+    async def competitors_scan(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        doms = data.get("domains") or []
+        if isinstance(doms, str):
+            doms = [d.strip() for d in doms.split(",") if d.strip()]
+        return api_competitor_scan(domains=doms, limit=int(data.get("limit", 5) or 5))
 
     @app.post("/plan/approve")
     def plan_approve():

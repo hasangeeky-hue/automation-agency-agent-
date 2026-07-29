@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-27 · v16-r5 · Maps lead sourcing live (type a city, get leads)"
+BUILD_TAG = "2026-07-28 · v16-r6 · Competitive Intelligence: 22-signal board in SEO section"
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2410,12 +2410,109 @@ def _mod_executive(c):
 # ---------------------------------------------------------------------------
 # dashboard
 # ---------------------------------------------------------------------------
+def _competitor_board(ci, serper_on):
+    """The 22 Competitor-Intelligence cards in the SEO/AEO/GEO section — filled
+    from captured data (source-tagged), honest 'needs tool' for the rest."""
+    scans = (ci or {}).get("competitors") or []
+    ai = ((ci or {}).get("ai") or {}).get("per_competitor") or {}
+    recs = ((ci or {}).get("ai") or {}).get("recommendations") or []
+    scanned = (ci or {}).get("scanned_at", "")[:16].replace("T", " ")
+
+    def card(title, body, live=True, src=""):
+        col = "#3FD98B" if (live and body) else "#8E9BBE"
+        return ("<div class='card'><div style='display:flex;align-items:center;gap:7px'>"
+                f"<span class='ct' style='margin:0'>{_esc(title)}</span>"
+                f"<span style='margin-left:auto;width:8px;height:8px;border-radius:50%;background:{col}'></span></div>"
+                + (f"<div style='margin-top:8px;font-size:12.5px;line-height:1.55'>{body}</div>"
+                   if body else "<div class='dim' style='margin-top:8px'>No signal captured yet.</div>")
+                + (f"<div class='dim' style='font-size:10px;margin-top:8px'>🔌 {_esc(src)}</div>" if src else "")
+                + "</div>")
+
+    def per_comp(fn):
+        rows = ""
+        for c in scans:
+            v = fn(c)
+            if v:
+                rows += f"<div class='fe'><b style='min-width:130px'>{_esc(c['domain'][:22])}</b><span class='mut'>{v}</span></div>"
+        return rows
+
+    def newsbucket(key, label):
+        rows = ""
+        for c in scans:
+            items = (c.get("news_buckets") or {}).get(key) or []
+            for n in items[:2]:
+                rows += (f"<div class='fe'><b style='min-width:130px'>{_esc(c['domain'][:22])}</b>"
+                         f"<span class='mut'>{_esc(str(n.get('title',''))[:70])}</span></div>")
+        return card(label, rows, src="Google News (Serper)")
+
+    if not scans:
+        empty_note = ("Serper is connected — click Scan to capture." if serper_on
+                      else "Connect SERPER_API_KEY first (System Map).")
+        board_cards = f"<div class='card full'><div class='dim'>⚪ No competitor scan yet. {empty_note}</div></div>"
+    else:
+        health_rows = per_comp(lambda c: (
+            f"health <b>{(ai.get(c['domain']) or {}).get('health','—')}</b>/100 · "
+            f"threat <b>{(ai.get(c['domain']) or {}).get('threat','—')}</b>") if ai else "")
+        seo_rows = per_comp(lambda c: (f"ranks in <b>{len(c.get('seo_hits') or [])}</b> of your query SERPs"
+                                       + (f" (best #{min(h['position'] for h in c['seo_hits'])})" if c.get("seo_hits") else "")))
+        geo_rows = per_comp(lambda c: (f"★{c['maps'].get('rating','—')} · {c['maps'].get('reviews',0)} reviews"
+                                       if c.get("maps") else ""))
+        tech_rows = per_comp(lambda c: ", ".join((c.get("site") or {}).get("tech") or []) or "")
+        price_rows = per_comp(lambda c: " · ".join((c.get("site") or {}).get("prices_seen") or []) or "")
+        prod_rows = per_comp(lambda c: _esc((ai.get(c["domain"]) or {}).get("products_guess", "")
+                                            or ((c.get("site") or {}).get("title") or "")[:60]))
+        promo_rows = per_comp(lambda c: ("promo visible on site" if (c.get("site") or {}).get("promo_on_site") else ""))
+        risk_rows = per_comp(lambda c: _esc((ai.get(c["domain"]) or {}).get("risk", "")))
+        fc_rows = per_comp(lambda c: _esc((ai.get(c["domain"]) or {}).get("forecast", "")))
+        rec_html = "".join(f"<div class='fe'><span>▹ {_esc(r)}</span></div>" for r in recs[:4])
+        board_cards = (
+            card("Competitor Health", health_rows, src="AI analysis of captured signals (est.)")
+            + card("Competitor SEO", seo_rows, src="Your GSC queries × Google SERPs (Serper)")
+            + card("Competitor GEO", geo_rows, src="Google Maps (Serper)")
+            + card("Competitor Reviews", geo_rows, src="Google Maps ratings")
+            + card("Competitor Products", prod_rows, src="Their website + AI extract")
+            + card("Competitor Pricing", price_rows, src="Prices published on their site")
+            + card("Competitor Promotions", promo_rows, src="Homepage scan")
+            + card("Competitor Technology", tech_rows, src="Homepage stack detection")
+            + newsbucket("hiring", "Competitor Hiring")
+            + newsbucket("partnerships", "Competitor Partnerships")
+            + newsbucket("funding", "Competitor Funding")
+            + newsbucket("expansion", "Competitor Expansion")
+            + newsbucket("launches", "Competitor Launches")
+            + card("Competitor Risk", risk_rows, src="AI analysis (est.)")
+            + card("Competitor Forecast", fc_rows, src="AI analysis (est.)")
+            + card("Competitor Recommendations", rec_html, src="AI counter-moves for Anthropos")
+            # honest needs-a-tool cards
+            + card("Competitor Traffic", "", live=False, src="needs SimilarWeb / Semrush")
+            + card("Competitor Revenue Estimate", "", live=False, src="needs a data provider")
+            + card("Competitor Ads", "", live=False, src="needs ad-library access")
+            + card("Competitor AI Visibility", "", live=False, src="needs an AI-visibility monitor")
+            + card("Competitor Social Growth", "", live=False, src="needs social APIs")
+            + card("Competitor Inventory", "", live=False, src="e-commerce rivals only")
+        )
+    return (
+        "<div class='card full' style='margin-top:12px;border-left:4px solid #8B7CFF'>"
+        "<p class='ct'>🛰️ Competitive Intelligence — 22 signals</p>"
+        "<p class='cc'>The machine discovers who ranks for <b>your</b> queries, then captures their SEO share, local "
+        "reviews, tech stack, pricing, news (funding/partners/launches) and synthesizes health · risk · forecast · "
+        "counter-moves. Every card shows its source; grey cards need a tool we haven't bought.</p>"
+        "<div class='cmd'>"
+        "<input id='compdoms' placeholder='Optional: competitor domains, comma-separated (else auto-discover)'>"
+        f"<button onclick='scanCompetitors()' {'disabled' if not serper_on else ''}>🛰️ Scan competitors (~40 credits)</button></div>"
+        + (f"<div class='dim' style='margin-top:5px'>Last scan: {scanned} UTC · "
+           f"{len(scans)} competitors · queries: {_esc(', '.join((ci or {}).get('queries_used', [])[:4]))}…</div>"
+           if scans else "")
+        + "</div><div class='grid g3' style='margin-top:10px'>" + board_cards + "</div>")
+
+
 def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_cap,
                    taste_skills, has_password=False, paused=False, autonomy=False,
                    bookings=None, ads=None, needles=None, last_eval=None,
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
-                   content_plan=None, web_tracking=None, reply_drafts=None):
+                   content_plan=None, web_tracking=None, reply_drafts=None,
+                   competitor_intel=None):
     reply_drafts = reply_drafts or []
+    competitor_intel = competitor_intel or {}
     from datetime import date
     jobs, st, health = jobs or [], st or {}, health or {}
     bookings, ads = bookings or {}, ads or {}
@@ -2745,7 +2842,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     m_seo = _master("🔎", "SEO / AEO / GEO — at a glance", "Visibility across Google & AI answers (live from your Search Console + Analytics).",
         [("Sessions (28d)", f"{sessions:,}", "#4C8DFF"), ("Search clicks", f"{total_clicks:,}", "#2FE3D2"),
          ("Avg rank", avg_rank or "—", "#8B7CFF"), ("CTR", f"{ctr}%", "#3FD98B")], mfunnel)
-    p_seo = m_seo + grid(
+    p_seo = m_seo + _competitor_board(competitor_intel, bool(st.get("serper_search"))) + grid(
         _panel("Marketing funnel", "Impressions → clicks → sessions → rankings.", mfunnel),
         _panel("Keyword rankings (Search Console)", "The exact queries you show up for, your position + clicks.", kw_rows),
         _panel("Ranking spread", "How many queries rank 1-3 / 4-10 / 11+.",
@@ -3586,6 +3683,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "alert('Disconnected — the box is editable again.');location.reload();}"
               "catch(e){alert('Disconnect failed: '+e);}return false;}"
               "function _noteFor(id){var t=document.getElementById('note-'+id);return t?t.value.trim():'';}"
+              "async function scanCompetitors(){var d=(document.getElementById('compdoms')||{}).value||'';"
+              "if(!confirm('Scan competitors now? '+(d?('Using: '+d):'The machine will auto-discover who ranks for your queries.')+' (~40 Serper credits + 1 small Claude call, ~60s)'))return;"
+              "var b=event&&event.target;if(b){b.disabled=true;b.textContent='Scanning… ~60s';}"
+              "try{var r=await fetch('/competitors/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domains:d,limit:5})});var j=await r.json();"
+              "if(j.ok){alert('✓ Scanned '+(j.competitors||[]).length+' competitors. The board is filled.');location.reload();}"
+              "else{alert('Scan failed: '+(j.error||''));if(b){b.disabled=false;b.textContent='🛰️ Scan competitors (~40 credits)';}}}"
+              "catch(e){alert('Scan failed: '+e);if(b){b.disabled=false;b.textContent='🛰️ Scan competitors (~40 credits)';}}}"
               "async function sourceMapsLeads(){var v=(document.getElementById('mv')||{}).value||'';var c=(document.getElementById('mc')||{}).value||'';"
               "var n=parseInt((document.getElementById('mn')||{}).value||'20')||20;"
               "if(!v.trim()||!c.trim()){alert('Type a business type AND a city first.');return;}"
