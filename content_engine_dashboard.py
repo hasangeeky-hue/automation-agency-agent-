@@ -17,7 +17,11 @@ states, never fake numbers.
 
 from __future__ import annotations
 
+import logging
+
 import content_engine_charts as CH   # BOS visual language (SVG, no libs)
+
+log = logging.getLogger("content_engine.dashboard")
 
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
@@ -3918,9 +3922,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _sysctx.setdefault("build_tag", BUILD_TAG)
         _system_all = _SYSB.system_section(_sysctx)
     except Exception as _e3:
-        _system_all = (p_agents + p_map + overview
-                       + "<div class='card full'><p class='ct'>System boards unavailable</p>"
-                       f"<p class='cc'>{_esc(str(_e3))}</p></div>")
+        # Loud, not silent: this used to leave no trace anywhere, so a broken
+        # merge looked identical to a merge that was never deployed.
+        log.exception("System & Wiring boards failed to render - showing the "
+                      "old three modules instead")
+        _system_all = ("<div class='card full' style='border-color:#F5788A'>"
+                       "<p class='ct'>System &amp; Wiring boards failed to render</p>"
+                       f"<p class='cc'>Showing the older modules below. Reason: "
+                       f"{_esc(type(_e3).__name__)}: {_esc(str(_e3))[:300]}</p></div>"
+                       + p_agents + p_map + overview)
 
     # ---- Risk & Infrastructure: ONE section replacing Risk, AI Workforce and
     # Infrastructure, which held 13 cards between them and read the same three
@@ -3929,9 +3939,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         import content_engine_risk_boards as _RKB
         _risk_all = _RKB.risk_section(risk_ctx or {})
     except Exception as _e4:
-        _risk_all = (_mod_risk(ctx) + _mod_workforce(ctx) + _mod_infra(ctx)
-                     + "<div class='card full'><p class='ct'>Risk boards unavailable</p>"
-                     f"<p class='cc'>{_esc(str(_e4))}</p></div>")
+        # Same fix. If this fires you see the three old blocks and it looks like
+        # nothing was merged - so say WHY, at the top, and log the traceback.
+        log.exception("Risk & Infrastructure boards failed to render - showing "
+                      "the old three modules instead")
+        _risk_all = ("<div class='card full' style='border-color:#F5788A'>"
+                     "<p class='ct'>Risk &amp; Infrastructure boards failed to render</p>"
+                     f"<p class='cc'>Showing the older modules below. Reason: "
+                     f"{_esc(type(_e4).__name__)}: {_esc(str(_e4))[:300]}</p></div>"
+                     + _mod_risk(ctx) + _mod_workforce(ctx) + _mod_infra(ctx))
 
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
