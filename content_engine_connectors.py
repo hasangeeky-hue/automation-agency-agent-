@@ -301,6 +301,17 @@ def detect_bounce(m: dict) -> str:
 # Every credential the dashboard's Connect form is allowed to set (the allow-list
 # the /connect endpoint checks, and the fields the form renders).
 CONNECTOR_ENV_KEYS = [
+    # --- APPENDED 2026-07-30: the engines shipped today could not be connected
+    # from the browser at all, because /connect rejects anything not on this
+    # allow-list. Append-only: nothing above was removed or renamed.
+    "DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD",
+    "PAGESPEED_API_KEY", "INDEXNOW_KEY",
+    "GBP_ACCESS_TOKEN", "GBP_ACCOUNT_ID", "GBP_LOCATION_ID",
+    "GOOGLE_ADS_OFFLINE_ACTION",
+    "OPENAI_API_KEY", "OPENAI_AEO_MODEL",
+    "PERPLEXITY_API_KEY", "PERPLEXITY_MODEL",
+    "GEMINI_API_KEY", "GEMINI_MODEL",
+
     "ANTHROPIC_API_KEY",   # the Claude brain — front-end settable, bridged to env in wire_all()
     "WORDPRESS_URL", "WORDPRESS_USER", "WORDPRESS_APP_PASSWORD", "WP_STATUS",
     "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_STARTTLS",

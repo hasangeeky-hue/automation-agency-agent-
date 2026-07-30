@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v20-r2 · Media Buying: 22 loops, 16 boards, 296 cards + the cross-channel interlock. 531 engine cards total. "
+BUILD_TAG = ("2026-07-30 · v21 · System & Wiring: 3 sections merged into 1, 214 cards, 12 wires that had no diagnostic now connectable from the browser. 745 engine cards. "
              "all inside the ONE SEO/AEO/GEO section as in-page tabs (no extra "
              "sidebar items, no scroll wall)")
 
@@ -240,6 +240,57 @@ _DIAG = [
      "no video provider key",
      "No AI video is produced (the pricey one — use selectively).",
      "VIDEO_PROVIDER + VIDEO_API_KEY + VIDEO_API_URL"),
+    # ---- APPENDED 2026-07-30. The 18 entries above are untouched. These 12
+    # wires existed in connectors.status() with NO diagnostic and NO connect
+    # form, so they could not be wired from the browser at all.
+    ("serper_search", "Google search + Maps (Serper)",
+     "no Serper key",
+     "Rank tracking, competitor scans, AI-answer checks, link prospecting and Maps lead sourcing all stop. One key powers five engines.",
+     "SERPER_API_KEY"),
+    ("seo_backlinks", "Backlink profile (DataForSEO)",
+     "no DataForSEO login",
+     "Your own backlink profile stays invisible. Google publishes no links API, so this is the only source — link PROSPECTING still works without it.",
+     "DATAFORSEO_LOGIN + DATAFORSEO_PASSWORD"),
+    ("seo_pagespeed", "Page speed + Core Web Vitals",
+     "no PageSpeed key (works without one, but heavily rate-limited)",
+     "Speed scores come back empty. The API is free either way — a key just raises the quota.",
+     "PAGESPEED_API_KEY"),
+    ("seo_indexnow", "Instant indexing (Bing/Yandex)",
+     "no IndexNow key",
+     "New posts are not pushed to Bing or Yandex. Invent any 32-character hex string and upload <key>.txt to your site root.",
+     "INDEXNOW_KEY"),
+    ("seo_index_inspect", "Ask Google what is indexed",
+     "Google service account not connected",
+     "You cannot see which pages Google has actually indexed. Free, 2,000 checks a day — it uses the same service account as Search Console.",
+     "GOOGLE_SERVICE_ACCOUNT_JSON"),
+    ("seo_rank_tracker", "Daily rank tracking",
+     "no Serper key",
+     "Search Console averages 28 days and lags 2-3 days. Without this you cannot tell whether yesterday's fix worked.",
+     "SERPER_API_KEY"),
+    ("seo_gbp", "Google Business Profile",
+     "no Business Profile OAuth",
+     "Reviews, posts and local insights stay empty. Needs its own OAuth - a service account cannot act on a business profile.",
+     "GBP_ACCESS_TOKEN + GBP_ACCOUNT_ID + GBP_LOCATION_ID"),
+    ("ads_data", "Ads data paste-in (fallback)",
+     "no ADS_JSON pasted",
+     "A manual fallback for ad metrics when the Google Ads API is not connected.",
+     "ADS_JSON"),
+    ("backlinks_data", "Backlinks paste-in (fallback)",
+     "no BACKLINKS_JSON pasted",
+     "A manual fallback for backlink data if you export it from another tool.",
+     "BACKLINKS_JSON"),
+    ("seo_crawler", "Your own site crawler",
+     "",
+     "ALWAYS ON. Pure code, no credential, no cost - it reads your own site and feeds every on-page, technical and landing-page card.",
+     ""),
+    ("email_verify", "Email address verification",
+     "",
+     "ALWAYS ON. Falls back from MX lookup to syntax checking, so it never blocks outreach.",
+     ""),
+    ("requests_installed", "HTTP library",
+     "",
+     "ALWAYS ON. Ships in the image; every outbound call depends on it.",
+     ""),
 ]
 
 
@@ -2722,7 +2773,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    bookings=None, ads=None, needles=None, last_eval=None,
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
                    content_plan=None, web_tracking=None, reply_drafts=None,
-                   competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None):
+                   competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None,
+                   system_ctx=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -3565,7 +3617,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          ("To connect", total_conn - live_conn, "#F5B14C"), ("Wired", f"{_wired}%", "#4C8DFF")],
         f"<div class='prog' style='height:12px'><i style='width:{_wired}%'></i></div>"
         f"<div class='dim' style='margin-top:6px'>{_wired}% of your machine is connected</div>")
-    p_map = m_map + ("<div class='card full'><p class='ct'>🗺️ System blueprint — every connection in your machine</p>"
+    _map_svgs = m_map + ("<div class='card full'><p class='ct'>🗺️ System blueprint — every connection in your machine</p>"
              "<p class='cc'>Each card is one API, account or plugin — its icon, what kind of connection it is, one line of what it does, and whether it's live. Read left → right: inputs → brain → Google hub → outputs.</p>"
              + _blueprint(st) + "</div>"
              "<div class='card full' style='margin-top:12px'><p class='ct'>⚡ Live data flow — your two pipelines, stage by stage</p>"
@@ -3642,8 +3694,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  [("research", "pg"), ("research", "drive"), ("seo", "pg"), ("sourcer", "pg"),
                   ("outreach", "pg"), ("reply", "pg"), ("media", "pg"),
                   ("publisher", "wpdb"), ("booking", "pg"), ("publisher", "gsheets")])
-             + "</div></div>"
-             + diag + connect_card)
+             + "</div></div>")
+    p_map = _map_svgs + diag + connect_card
 
     # ---- MEDIA BUYING (drafted Google Ads campaigns) ----
     p_media = (_media_page(jobs, st, web_tracking)
@@ -3833,6 +3885,21 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _media_all = (p_media + "<div class='card full'><p class='ct'>Media boards unavailable</p>"
                       f"<p class='cc'>{_esc(str(_e2))}</p></div>")
 
+    # ---- System & Wiring: ONE section replacing Agents & Health, System Map
+    # & Wiring and Machines. The connect forms and the four wiring diagrams are
+    # passed in, not re-implemented, so no credential path changes.
+    try:
+        import content_engine_system_boards as _SYSB
+        _sysctx = dict(system_ctx or {})
+        _sysctx.setdefault("connect_html", diag + connect_card)
+        _sysctx.setdefault("legacy_svgs", _map_svgs)
+        _sysctx.setdefault("build_tag", BUILD_TAG)
+        _system_all = _SYSB.system_section(_sysctx)
+    except Exception as _e3:
+        _system_all = (p_agents + p_map + overview
+                       + "<div class='card full'><p class='ct'>System boards unavailable</p>"
+                       f"<p class='cc'>{_esc(str(_e3))}</p></div>")
+
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
         ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum in one view.", _mod_business(ctx)),
@@ -3845,7 +3912,6 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("infra", "🛰️", "Infrastructure", "Infrastructure", "Every connection, live or down.", _mod_infra(ctx)),
         ("risk", "⚠️", "Risk", "Risk", "What could hurt the business, ranked.", _mod_risk(ctx)),
         ("exec", "🏛️", "Executive Int.", "Executive Intelligence", "The whole business on one screen.", _mod_executive(ctx)),
-        ("overview", "📊", "Machines", "Operational Machines", "The hands-on machines — click any tile to dive in.", overview),
         ("content", "📝", "Content Factory", "Content Factory", "Everything about creating & publishing content.", p_content),
         ("leads", "🧲", "Lead Machine", "Lead Machine", "Finding, scoring and grouping your leads.", p_leads),
         ("email", "✉️", "Email & Outreach", "Email & Outreach", "Cold emails, replies and deliverability.", p_email),
@@ -3857,11 +3923,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          "296 cards across 16 boards — what a senior media buyer reads before deciding.",
          _media_all + p_media),
         ("budget", "💰", "Budget & Cost", "Budget & Cost", "Where the money goes, against your $200 cap.", p_budget),
-        ("agents", "❤️", "Agents & Health", "Agents & Health", "Are the agents running, and is anything broken?", p_agents),
         ("google", "☁️", "Google Hub", "Google Hub", "Your Sheets, Drive and Gmail data hub.", p_google),
         ("appr", "✅", "Approvals & Commands", "Approvals & Commands", "Approve work and command any agent.", p_appr),
         ("learn", "🧠", "Learning & Results", "Learning & Results", "What's working and how the engine improves.", p_learn),
-        ("map", "🗺️", "System Map & Wiring", "System Map & Wiring", "Every wire, and a plain-English list of what to fix.", p_map),
+        ("system", "🩺", "System & Wiring", "System & Wiring",
+         "Agents, health, wiring and machines — merged. 214 cards across 12 boards.",
+         _system_all),
     ]
     nav = "".join(
         f"<button class='navb{' act' if i==0 else ''}' id='nav-{pid}' onclick=\"nav('{pid}')\"><span class='ic'>{icon}</span>{_esc(short)}"
@@ -3915,7 +3982,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  + pause_btn + auto_btn + "</div></details>")
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
-    script = ("<script>function nav(id){document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
+    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system'};"
+              "function nav(id){id=NAVALIAS[id]||id;"
+              "document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
               "var s=document.getElementById('sec-'+id);if(s)s.classList.add('on');"
               "document.querySelectorAll('.navb').forEach(b=>b.classList.remove('act'));"
               "var n=document.getElementById('nav-'+id);if(n)n.classList.add('act');window.scrollTo(0,0);}"

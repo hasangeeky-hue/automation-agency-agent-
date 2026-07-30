@@ -123,6 +123,7 @@ BOARD_CTA = {
     "Work Orders": ("Apply safe fixes", "runFixes()"),
 }
 _CURRENT_BOARD = {"name": ""}      # set by _safe_board while rendering
+_SEEN = {"board": None, "ids": {}}   # per-board id de-duplication
 VISIBLE_CARDS = 8                    # progressive disclosure: the rest is one click
 
 
@@ -353,7 +354,16 @@ def _viz(title, big, sub, chart, insight, src, accent=BLUE, links=""):
     H = _H()
     sev, badge, weight = _severity(accent)
     plain, jargon = _plain(title)
-    cid = f"card-{_slug(_CURRENT_BOARD['name'])}-{_slug(plain)}"
+    # A card id is a deep link, so it has to be unique. Two cards with the same
+    # title on one board (reserved slots, repeated labels) used to produce the
+    # same id and silently break linking — 214 cards, 175 ids.
+    board = _CURRENT_BOARD["name"]
+    if _SEEN["board"] != board:
+        _SEEN["board"], _SEEN["ids"] = board, {}
+    base = f"card-{_slug(board)}-{_slug(plain)}"
+    n = _SEEN["ids"].get(base, 0) + 1
+    _SEEN["ids"][base] = n
+    cid = base if n == 1 else f"{base}-{n}"
     search_blob = H._esc(f"{plain} {jargon} {sub} {insight}".lower())[:400]
     tip = f" title='{H._esc(jargon)}'" if jargon else ""
     return (f"<div class='card sev-{sev}' id='{cid}' data-sev='{sev}' "
@@ -2551,7 +2561,7 @@ if __name__ == "__main__":
     # ---- the design upgrade: identity, severity, action on EVERY card ----
     ids = _re.findall(r"<div class='card (?:overflowcard )?sev-[a-z]+' id='(card-[a-z0-9-]+)'", html)
     assert len(ids) == TOTAL_CARDS, f"{len(ids)} cards have an id, expected {TOTAL_CARDS}"
-    assert len(set(ids)) == len(ids), "card ids must be unique (they are deep links)"
+    assert len(set(ids)) == len(ids),         f"card ids must be unique (they are deep links): {len(ids)} ids, {len(set(ids))} unique"
     assert html.count("data-sev=") == TOTAL_CARDS, "every card needs a severity for sorting"
     assert html.count("data-q=") == TOTAL_CARDS, "every card needs a search blob"
     assert html.count("class='cta'") >= TOTAL_CARDS, "every card must end in a verb"

@@ -1318,8 +1318,18 @@ def api_dashboard_html() -> str:
         log.warning("media context unavailable: %s", e)
         media_ctx = None
     import content_engine_dashboard as D
+    try:
+        import content_engine_seo_ops as _SEO3
+        system_ctx = _SEO3.build_system_ctx(
+            store, status=st, health=health, meters=meters,
+            month_spent=month_spent, month_cap=month_cap, jobs=jobs,
+            needles=needles, last_eval=last_eval, diag=D._DIAG,
+            build_tag=D.BUILD_TAG)
+    except Exception as e:
+        log.warning("system context unavailable: %s", e)
+        system_ctx = None
     return D.dashboard_html(
-        seo_ctx=seo_ctx, media_ctx=media_ctx,
+        seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],

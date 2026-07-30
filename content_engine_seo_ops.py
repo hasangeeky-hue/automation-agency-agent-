@@ -542,6 +542,49 @@ def build_media_ctx(store, *, competitor_intel=None) -> dict:
     return ctx
 
 
+
+def build_system_ctx(store, *, status=None, health=None, meters=None,
+                     month_spent=0.0, month_cap=200.0, jobs=None,
+                     needles=None, last_eval=None, diag=None,
+                     connect_html="", legacy_svgs="", build_tag="") -> dict:
+    """Everything the 12 System & Wiring boards read. Pure reads — this never
+    writes a setting and never touches a credential."""
+    import content_engine_system as SYS
+    try:
+        import content_engine_scheduler as SCH
+        cadence = SCH.SEO_CADENCE
+    except Exception:
+        cadence = {}
+    try:
+        import content_engine_schemas as SC
+        skills = sorted(SC.SCHEMAS)
+    except Exception:
+        skills = []
+    jobs = jobs if isinstance(jobs, list) else []
+    status = status if isinstance(status, dict) else {}
+    diag = diag if isinstance(diag, list) else []
+    wires = SYS.wire_rows(status, diag)
+    return {
+        "status": status, "diag": diag, "wires": wires,
+        "summary": SYS.wire_summary(wires),
+        "agents": SYS.agent_stats(jobs, skills),
+        "models": SYS.model_usage(jobs),
+        "versions": SYS.prompt_versions(jobs),
+        "throughput": SYS.throughput(jobs),
+        "failures": SYS.failure_patterns(jobs),
+        "degraded": SYS.degraded(jobs),
+        "freshness": SYS.freshness(_get(store, K_RUNS, {}) or {}, cadence),
+        "quotas": SYS.quotas(meters or {}, status),
+        "cost": SYS.cost_split(meters or {}, month_spent, month_cap),
+        "dep_graph": SYS.dependency_graph(wires),
+        "storage": SYS.storage_health(store),
+        "needles": needles or {}, "last_eval": last_eval or {},
+        "health": health or {}, "jobs": jobs,
+        "connect_html": connect_html or "", "legacy_svgs": legacy_svgs or "",
+        "build_tag": build_tag or "",
+    }
+
+
 # ======================================================================
 #  CONTEXT FOR THE BOARDS
 # ======================================================================
