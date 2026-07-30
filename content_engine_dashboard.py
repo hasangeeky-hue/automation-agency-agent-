@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v20 · Media Buying: 22 loops, 16 boards, 296 cards + the cross-channel interlock. 531 engine cards total. "
+BUILD_TAG = ("2026-07-30 · v20-r2 · Media Buying: 22 loops, 16 boards, 296 cards + the cross-channel interlock. 531 engine cards total. "
              "all inside the ONE SEO/AEO/GEO section as in-page tabs (no extra "
              "sidebar items, no scroll wall)")
 

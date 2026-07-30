@@ -55,6 +55,31 @@ _CONNECT = ("Connect Google Ads on the System Map. The API itself is free — "
             "approval of the developer token.")
 
 
+_DICT_KEYS = ("ads", "terms", "kw", "assets", "conv_actions", "targeting",
+              "audiences", "ad_status", "changes", "recs", "kw_ideas", "econ",
+              "targets", "interlock", "crawl", "geo", "competitor_intel",
+              "pacing", "is_summary")
+_LIST_KEYS = ("markets", "is_rows", "bid_advice", "funnel", "orders")
+
+
+def _ctx(ctx):
+    """Coerce the board context to the types the boards expect.
+
+    Three production outages this session came from a value being a different
+    SHAPE than the fixture assumed — api_meters dicts, GA4 floats, serp_ads
+    lists. Normalising once at the boundary makes a wrong shape impossible to
+    crash a board, whatever the store hands us."""
+    ctx = ctx if isinstance(ctx, dict) else {}
+    out = dict(ctx)
+    for k in _DICT_KEYS:
+        v = out.get(k)
+        out[k] = v if isinstance(v, dict) else {}
+    for k in _LIST_KEYS:
+        v = out.get(k)
+        out[k] = list(v) if isinstance(v, (list, tuple)) else []
+    return out
+
+
 def _off(reason=""):
     return reason or _CONNECT
 
@@ -68,6 +93,7 @@ def _na(title, sub, insight, src="Google Ads API", links=""):
 #  ① MEDIA COMMAND  (14)
 # ======================================================================
 def board_command(ctx) -> str:
+    ctx = _ctx(ctx)
     ads = ctx.get("ads") or {}
     econ = ctx.get("econ") or {}
     tgt = ctx.get("targets") or {}
@@ -103,13 +129,17 @@ def board_command(ctx) -> str:
          ("Needs unit economics before this number can be judged." if not ready else
           _off() if not on else "Measured against the CPA your margins actually allow."),
          "computed", VIOLET, ""),
-        ("Target CPA", f"€{tgt.get('target_cpa_lead') or tgt.get('target_cpa_consult'):,.0f}"
-         if ready else "—", "what a lead may cost",
+        ("Target CPA",
+         (f"€{(tgt.get('target_cpa_lead') or tgt.get('target_cpa_consult')):,.0f}"
+          if (ready and (tgt.get('target_cpa_lead') or tgt.get('target_cpa_consult')))
+          else "—"), "what a lead may cost",
          _score_gauge(70, 70) if ready else "",
-         (tgt.get("reason") if not ready else
-          f"Average deal €{econ.get('avg_deal_value'):,.0f} × {econ.get('gross_margin_pct')}% margin "
-          f"× {econ.get('consult_to_client_pct')}% close = €{tgt.get('gross_per_client'):,.0f} "
-          f"gross per client. Keeping 70% of it caps a lead at this."),
+         (tgt.get("reason") or "Enter your unit economics." if not ready else
+          f"Average deal €{float(econ.get('avg_deal_value') or 0):,.0f} × "
+          f"{econ.get('gross_margin_pct') or 0}% margin × "
+          f"{econ.get('consult_to_client_pct') or 0}% close = "
+          f"€{float(tgt.get('gross_per_client') or 0):,.0f} gross per client. "
+          "Keeping 70% of it caps a lead at this."),
          "unit economics", GREEN if ready else AMBER,
          "" if ready else "<div class='cta'><button class='cbtn sm' onclick='openEcon()'>"
                           "Enter the 3 numbers</button></div>"),
@@ -118,7 +148,9 @@ def board_command(ctx) -> str:
          ("Derived from your gross margin — not a number picked out of the air."
           if ready else "Needs unit economics."),
          "unit economics", GREEN if ready else AMBER, ""),
-        ("Break-even CPA", f"€{tgt.get('break_even_cpa_consult'):,.0f}" if ready else "—",
+        ("Break-even CPA",
+         (f"€{float(tgt.get('break_even_cpa_consult') or 0):,.0f}"
+          if (ready and tgt.get('break_even_cpa_consult')) else "—"),
          "per booked consultation", "",
          ("Above this you are paying to lose money." if ready else "Needs unit economics."),
          "unit economics", PINK if ready else AMBER, ""),
@@ -168,6 +200,7 @@ def board_command(ctx) -> str:
 #  ② ACCOUNT HEALTH & POLICY  (20)
 # ======================================================================
 def board_health(ctx) -> str:
+    ctx = _ctx(ctx)
     ads = ctx.get("ads") or {}
     st = ctx.get("ad_status") or {}
     conv = ctx.get("conv_actions") or {}
@@ -253,6 +286,7 @@ _TYPES = [("SEARCH", "Search", "intent that already exists"),
 
 
 def board_types(ctx) -> str:
+    ctx = _ctx(ctx)
     ads = ctx.get("ads") or {}
     on = bool(ads.get("connected"))
     by_type = ads.get("by_type") or {}
@@ -313,6 +347,7 @@ def board_types(ctx) -> str:
 #  ④ SEARCH TERMS & WASTE  (18)
 # ======================================================================
 def board_terms(ctx) -> str:
+    ctx = _ctx(ctx)
     t = ctx.get("terms") or {}
     on = bool(t.get("connected"))
     r = _off(t.get("reason"))
@@ -381,6 +416,7 @@ def board_terms(ctx) -> str:
 #  ⑤ KEYWORDS & QUALITY SCORE  (20)
 # ======================================================================
 def board_keywords(ctx) -> str:
+    ctx = _ctx(ctx)
     k = ctx.get("kw") or {}
     on = bool(k.get("connected"))
     r = _off(k.get("reason"))
@@ -459,6 +495,7 @@ _STRATS = [("MANUAL_CPC", "Manual CPC", "full control, no per-auction signals"),
 
 
 def board_bidding(ctx) -> str:
+    ctx = _ctx(ctx)
     ads = ctx.get("ads") or {}
     tgt = ctx.get("targets") or {}
     on = bool(ads.get("connected"))
@@ -484,9 +521,11 @@ def board_bidding(ctx) -> str:
          _rows(advice, left_fmt=lambda a: a.get("campaign", "")[:28],
                right_fmt=lambda a: a.get("advice", "")[:52],
                empty="Every campaign suits its data volume." if on else "Connect Google Ads.")),
-        ("Target CPA in use", f"€{tgt.get('target_cpa_lead') or '—'}" if tgt.get("ready") else "—",
+        ("Target CPA in use",
+         (f"€{tgt.get('target_cpa_lead')}" if tgt.get("ready") and tgt.get("target_cpa_lead")
+          else "—"),
          "your economics say this", _score_gauge(70, 70) if tgt.get("ready") else "",
-         (tgt.get("reason") if not tgt.get("ready") else
+         ((tgt.get("reason") or "Enter your unit economics.") if not tgt.get("ready") else
           "Set campaign targets to this, and never move a target more than 20% "
           "at once — larger jumps restart the learning phase."),
          "unit economics", GREEN if tgt.get("ready") else AMBER, ""),
@@ -535,6 +574,7 @@ def board_bidding(ctx) -> str:
 #  ⑦ BUDGET & PACING  (18)
 # ======================================================================
 def board_budget(ctx) -> str:
+    ctx = _ctx(ctx)
     ads = ctx.get("ads") or {}
     p = ctx.get("pacing") or {}
     on = bool(ads.get("connected"))
@@ -614,6 +654,7 @@ def board_budget(ctx) -> str:
 #  ⑧ LOCATION & LANGUAGE TARGETING  (20)
 # ======================================================================
 def board_targeting(ctx) -> str:
+    ctx = _ctx(ctx)
     tg = ctx.get("targeting") or {}
     geo = ctx.get("geo") or {}
     on = bool(tg.get("connected"))
@@ -694,6 +735,7 @@ def board_targeting(ctx) -> str:
 #  ⑨ AUDIENCES  (18)
 # ======================================================================
 def board_audiences(ctx) -> str:
+    ctx = _ctx(ctx)
     a = ctx.get("audiences") or {}
     on = bool(a.get("connected"))
     r = _off(a.get("reason"))
@@ -749,6 +791,7 @@ def board_audiences(ctx) -> str:
 #  ⑩ ADS, ASSETS & EXTENSIONS  (20)
 # ======================================================================
 def board_ads(ctx) -> str:
+    ctx = _ctx(ctx)
     a = ctx.get("assets") or {}
     st = ctx.get("ad_status") or {}
     on = bool(a.get("connected"))
@@ -818,6 +861,7 @@ def board_ads(ctx) -> str:
 #  ⑪ CONVERSION & FUNNEL  (20)
 # ======================================================================
 def board_conversion(ctx) -> str:
+    ctx = _ctx(ctx)
     c = ctx.get("conv_actions") or {}
     ads = ctx.get("ads") or {}
     inter = ctx.get("interlock") or {}
@@ -888,6 +932,7 @@ def board_conversion(ctx) -> str:
 #  ⑫ LANDING PAGE MATCH  (16)  — works TODAY
 # ======================================================================
 def board_landing(ctx) -> str:
+    ctx = _ctx(ctx)
     q = (ctx.get("interlock") or {}).get("quality") or {}
     crawl = ctx.get("crawl") or {}
     pages = [r for r in crawl.get("urls", []) if r.get("status") == 200]
@@ -958,17 +1003,24 @@ def board_landing(ctx) -> str:
 #  ⑬ COMPETITION  (14)  — works TODAY via Serper
 # ======================================================================
 def board_competition(ctx) -> str:
+    ctx = _ctx(ctx)
     ci = ctx.get("competitor_intel") or {}
+    # serp_ads is {query: [advertiser_domain, ...]} — a dict of LISTS. Counting
+    # the raw values raised TypeError and blanked this board in production.
     serp_ads = ci.get("serp_ads") or {}
+    advertisers = {}
+    for _q, _doms in (serp_ads.items() if hasattr(serp_ads, "items") else []):
+        for _d in (_doms if isinstance(_doms, (list, tuple)) else []):
+            advertisers[_d] = advertisers.get(_d, 0) + 1
     rivals = ci.get("competitors") or []
     return _head("⚔️", "Competition",
                  "Google does not expose Auction Insights through the API. This is "
                  "the honest proxy: who actually buys ads on your queries.") + _vizcards([
-        ("Advertisers on your queries", len(serp_ads) or "—", "seen in sponsored slots",
-         _hbars(sorted(serp_ads.items(), key=lambda kv: -kv[1])[:8], PINK) if serp_ads else "",
+        ("Advertisers on your queries", len(advertisers) or "—", "seen in sponsored slots",
+         _hbars(sorted(advertisers.items(), key=lambda kv: -kv[1])[:8], PINK) if advertisers else "",
          ("Measured by scanning your real SERPs — not Auction Insights, which "
           "Google keeps out of the API."),
-         "Serper", PINK if serp_ads else AMBER, ""),
+         "Serper", PINK if advertisers else AMBER, ""),
         ("Rivals scanned", len(rivals) or "—", "competitors profiled", "",
          ("From the SEO competitor scan — the same rivals, seen from the paid side."
           if rivals else "Run a competitor scan to fill this."),
@@ -1008,6 +1060,7 @@ def board_competition(ctx) -> str:
 #  ⑭ KEYWORD RESEARCH  (16)
 # ======================================================================
 def board_research(ctx) -> str:
+    ctx = _ctx(ctx)
     ideas = ctx.get("kw_ideas") or {}
     on = bool(ideas.get("connected"))
     r = _off(ideas.get("reason"))
@@ -1065,6 +1118,7 @@ def board_research(ctx) -> str:
 #  ⑮ CROSS-CHANNEL INTERLOCK  (22)  — the gap, and it works TODAY
 # ======================================================================
 def board_interlock(ctx) -> str:
+    ctx = _ctx(ctx)
     it = ctx.get("interlock") or {}
     ov = it.get("overlap") or {}
     gap = it.get("gap_cover") or []
@@ -1187,6 +1241,7 @@ def board_interlock(ctx) -> str:
 #  ⑯ WORK ORDERS & CHANGE HISTORY  (16)
 # ======================================================================
 def board_work(ctx) -> str:
+    ctx = _ctx(ctx)
     orders = ctx.get("orders") or []
     chg = ctx.get("changes") or {}
     ads = ctx.get("ads") or {}
@@ -1398,7 +1453,12 @@ if __name__ == "__main__":
            "recs": ADS.recommendations(), "kw_ideas": ADS.keyword_ideas([]),
            "econ": econ, "targets": ADS.targets(econ), "interlock": inter,
            "crawl": crawl, "geo": geo, "markets": inter["markets"],
-           "competitor_intel": {"serp_ads": {"pricefy.io": 4}, "competitors": [{"domain": "pricefy.io"}]},
+           # REAL shape from content_engine_competitors: {query: [domain, ...]}.
+           # The flat {domain: count} fixture I first wrote is exactly what let a
+           # TypeError reach the live dashboard and blank this board.
+           "competitor_intel": {"serp_ads": {"automation agency": ["pricefy.io", "zapier.com"],
+                                             "n8n consultant": ["pricefy.io"]},
+                                "competitors": [{"domain": "pricefy.io"}]},
            "pacing": {"ready": False}, "is_summary": {}, "is_rows": [], "bid_advice": [],
            "funnel": [], "orders": []}
 
@@ -1441,6 +1501,26 @@ if __name__ == "__main__":
     assert "€90" in cmd or "90" in cmd, "target CPA from unit economics must show"
     # the honest limitation is stated, not hidden
     assert "NOT available in the Google Ads API" in pages["mbcomp"], "Auction Insights caveat"
+    comp = pages["mbcomp"]
+    assert "pricefy.io" in comp and "zapier.com" in comp, "advertisers not aggregated"
+
+    # ---- SHAPE ROBUSTNESS ----
+    # Every board must survive whatever the store actually hands it. Three
+    # outages this session were a fixture shape that did not match reality.
+    _hostile = [{}, None, "not a dict", 42,
+                {k: None for k in ctx}, {k: [] for k in ctx}, {k: {} for k in ctx},
+                {k: "str" for k in ctx}, {k: 0 for k in ctx},
+                dict(ctx, competitor_intel={"serp_ads": ["not", "a", "dict"]}),
+                dict(ctx, competitor_intel={"serp_ads": {"q": 4}}),
+                dict(ctx, ads={"connected": True, "campaigns": None}),
+                dict(ctx, targets={"ready": True})]
+    for i, bad in enumerate(_hostile):
+        for name, fn in [b for bs in _TAB_BOARDS.values() for b in bs]:
+            try:
+                fn(bad)
+            except Exception as e:
+                raise AssertionError(f"board {name} raised on hostile context #{i}: "
+                                     f"{type(e).__name__}: {e}") from e
 
     sec = media_section(ctx)
     for tid, _, _ in TABS:
