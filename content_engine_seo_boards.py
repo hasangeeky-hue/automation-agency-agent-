@@ -38,6 +38,20 @@ def _pct_color(v, good=80, ok=50):
     return GREEN if v >= good else (AMBER if v >= ok else PINK)
 
 
+def _spend(v):
+    """One API meter -> dollars.
+
+    connectors.api_meters() stores {api: {"month":..,"spent":..,"calls":..}},
+    NOT a bare float. Summing the raw values raised TypeError and blanked the
+    whole SEO section in production. Accept both shapes, never raise."""
+    if isinstance(v, dict):
+        v = v.get("spent", 0)
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _cards(rows, cols=3):
     """rows = [(title, big, sub, body, insight, src, accent)] -> a card grid."""
     H = _H()
@@ -93,7 +107,8 @@ def board_command(ctx) -> str:
     q = gsc.get("queries") or []
     clicks = sum(r.get("clicks", 0) for r in q)
     impr = sum(r.get("impressions", 0) for r in q)
-    sessions = ((ga4.get("totals") or {}).get("sessions")) or 0
+    # GA4 metrics come back as floats ("8.0") — show whole visits.
+    sessions = int(float(((ga4.get("totals") or {}).get("sessions")) or 0))
     open_orders = [o for o in orders if o.get("status") == "open"]
     done = [o for o in orders if o.get("status") == "done"]
     crit = [o for o in open_orders if o.get("severity") == "critical"]
@@ -670,7 +685,7 @@ def board_content(ctx) -> str:
                       empty="Every page has been shown in search at least once.")
     ga4_body = _rows(ga4.get("pages") or [],
                      left_fmt=lambda p: str(p.get("pagePath", p.get("key", "")))[:38],
-                     right_fmt=lambda p: f"{p.get('sessions',0)} sessions",
+                     right_fmt=lambda p: f"{int(float(p.get('sessions', 0) or 0))} sessions",
                      empty="No Analytics page data yet.")
     return _head("📚", "Content performance & decay",
                  f"All {len(live)} live pages measured against what search actually did with them.") + _cards([
@@ -1139,7 +1154,7 @@ def board_work(ctx) -> str:
     run_body = _rows(sorted(runs.items()), left_fmt=lambda kv: kv[0],
                      right_fmt=lambda kv: str(kv[1])[:19].replace("T", " "),
                      empty="No engine has run yet.")
-    seo_spend = sum(v for k, v in (meters or {}).items()
+    seo_spend = sum(_spend(v) for k, v in (meters or {}).items()
                     if any(s in str(k) for s in ("serper", "dataforseo", "seo")))
 
     return _head("🛠", "SEO automation & work orders",
@@ -1201,18 +1216,40 @@ def board_work(ctx) -> str:
 # ======================================================================
 #  ASSEMBLY
 # ======================================================================
+_TAB_BOARDS = {
+    "seocmd":    [("SEO Command", board_command)],
+    "seotech":   [("Technical", board_technical), ("Indexing", board_indexing)],
+    "seoonpage": [("On-Page", board_onpage), ("Internal Links", board_links)],
+    "seokw":     [("Keywords", board_keywords), ("Content", board_content),
+                  ("AEO", board_aeo)],
+    "seooff":    [("Off-Page", board_offpage), ("Local", board_local)],
+    "seowork":   [("Work Orders", board_work)],
+}
+
+
+def _safe_board(name, fn, ctx) -> str:
+    """Render ONE board in isolation.
+
+    Previously a single board raising took the entire SEO section down to a
+    fallback (a TypeError in the spend meter blanked all 158 cards). Now the
+    broken board shows what broke and the other ten still render."""
+    try:
+        return fn(ctx)
+    except Exception as e:
+        H = _H()
+        return ("<div class='card full' style='margin-top:12px;border-color:#FF6B93'>"
+                f"<p class='ct'>⚠ {H._esc(name)} board failed to render</p>"
+                f"<p class='cc'>{H._esc(type(e).__name__)}: {H._esc(str(e)[:300])}</p>"
+                "<p class='cc'>Every other board on this page is unaffected. "
+                "This is a bug — send this message and it gets fixed.</p></div>")
+
+
 def seo_pages(ctx) -> dict:
     """-> {tab_id: html}. Kept as a dict so each board group can be rendered
     independently (and unit-tested), but they all live inside ONE dashboard
     section — see seo_section()."""
-    return {
-        "seocmd": board_command(ctx),
-        "seotech": board_technical(ctx) + board_indexing(ctx),
-        "seoonpage": board_onpage(ctx) + board_links(ctx),
-        "seokw": board_keywords(ctx) + board_content(ctx) + board_aeo(ctx),
-        "seooff": board_offpage(ctx) + board_local(ctx),
-        "seowork": board_work(ctx),
-    }
+    return {tab: "".join(_safe_board(name, fn, ctx) for name, fn in boards)
+            for tab, boards in _TAB_BOARDS.items()}
 
 
 # Tab order + labels for the single SEO section.
@@ -1325,8 +1362,10 @@ if __name__ == "__main__":
 
     ctx = {"crawl": crawl, "graph": graph, "money": money, "audit": audit,
            "scores": audit["scores"], "orders": orders, "order_stats": WO.stats(orders),
-           "insights": {"gsc": gsc, "ga4": {"totals": {"sessions": 8},
-                                            "pages": [{"pagePath": "/guide-a", "sessions": 5}]}},
+           # GA4 returns metrics as FLOATS — fixture must match production.
+           "insights": {"gsc": gsc, "ga4": {"totals": {"sessions": 8.0, "engagementRate": 0.42},
+                                            "pages": [{"pagePath": "/guide-a", "sessions": 5.0,
+                                                       "totalUsers": 3.0}]}},
            "inspect": {"https://x.com": {"verdict": "PASS", "coverageState": "Submitted and indexed",
                                          "mobileUsability": "PASS", "richResults": "PASS",
                                          "lastCrawlTime": "2026-07-28T00:00:00Z",
@@ -1356,12 +1395,45 @@ if __name__ == "__main__":
                       "claude_api": True, "wordpress_publish": True, "seo_pagespeed": True,
                       "seo_backlinks": False, "seo_gbp": False, "seo_indexnow": False,
                       "seo_index_inspect": True, "seo_rank_tracker": True},
-           "engine_runs": {"crawl": "2026-07-30T09:00:00"}, "meters": {"serper": 1.25},
+           "engine_runs": {"crawl": "2026-07-30T09:00:00"},
+           # REAL shape from connectors.api_meters() — {api: {month,spent,calls}}.
+           # A float fixture here is what let the production TypeError through.
+           "meters": {"serper": {"month": "2026-07", "spent": 1.25, "calls": 40},
+                      "dataforseo": {"month": "2026-07", "spent": 0.0, "calls": 0},
+                      "anthropic": {"month": "2026-07", "spent": 3.10, "calls": 91}},
            "ranks": [{"query": "ai automation law firm", "delta": 2, "features": ["paa"]}]}
+
+    # ---- REGRESSION: no board may raise on production-shaped data ----
+    # Each board is called directly (not through _safe_board) so a bug surfaces
+    # here instead of being swallowed into an error card on the live dashboard.
+    for _name, _fn in [b for bs in _TAB_BOARDS.values() for b in bs]:
+        try:
+            _fn(ctx)
+        except Exception as _e:
+            raise AssertionError(f"board {_name} raised on real data: "
+                                 f"{type(_e).__name__}: {_e}") from _e
+
+    # the api_meters dict shape that broke production
+    assert _spend({"month": "2026-07", "spent": 1.25, "calls": 40}) == 1.25
+    assert _spend(2.5) == 2.5 and _spend(None) == 0.0 and _spend("x") == 0.0
+    assert _spend({}) == 0.0
+    _work = board_work(ctx)
+    assert "$1.25" in _work, "SEO spend must sum serper+dataforseo from meter dicts"
+    # GA4 floats must render as whole visits, not "8.0"
+    _cmd = board_command(ctx)
+    assert ">8<" in _cmd or "8 " in _cmd, "sessions must show as an integer"
+    assert "8.0" not in _cmd, "GA4 float leaked into the UI"
+    assert "5.0 sessions" not in board_content(ctx), "GA4 float leaked into the UI"
+
+    # a failing board must NOT take the others down
+    _boom = dict(_TAB_BOARDS)
+    assert "⚠" in _safe_board("Boom", lambda c: 1 / 0, ctx), "must degrade, not raise"
+    assert "ZeroDivisionError" in _safe_board("Boom", lambda c: 1 / 0, ctx)
 
     pages = seo_pages(ctx)
     assert set(pages) == {"seocmd", "seotech", "seoonpage", "seokw", "seooff", "seowork"}, list(pages)
     html = "".join(pages.values())
+    assert "failed to render" not in html, "no board may fail on real data"
 
     # ---- ONE section, in-page tabs (no extra sidebar items) ----
     legacy = "<div class='card'>existing GSC/GA4/competitor boards</div>"
