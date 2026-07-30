@@ -85,7 +85,7 @@ def _ctx(ctx):
     out = dict(ctx)
     for k in ("sourcing", "quality", "icp", "territories", "sends", "sequence",
               "routing", "deliverability", "replies", "bookings", "attribution",
-              "costs", "tracking", "live"):
+              "costs", "tracking", "sourcing_mom", "campaign_costs", "live"):
         out[k] = _D(out.get(k))
     return out
 
@@ -95,6 +95,27 @@ def _live(ctx, key):
     unchanged. Never rebuilt here — the send buttons must keep working."""
     v = _D(ctx.get("live")).get(key)
     return v if isinstance(v, str) else ""
+
+
+def _vbars(m, a=VIOLET, b=TEAL):
+    """Grouped columns for month-over-month. Draws only what was measured."""
+    m = _D(m)
+    groups = _L(m.get("groups"))
+    if not groups:
+        return ""
+    series = [("this month", _L(m.get("this_month")), b)]
+    if m.get("ready") and _L(m.get("last_month")):
+        series.insert(0, ("last month", _L(m.get("last_month")), a))
+    return _CH().vbars([str(g)[:8] for g in groups], series)
+
+
+def _triple(ctx, key):
+    """(rows, cols, grid) for a heatmap/cohort, always a usable triple."""
+    v = _D(ctx).get(key)
+    if (isinstance(v, (list, tuple)) and len(v) == 3
+            and all(isinstance(x, (list, tuple)) for x in v)):
+        return list(v[0]), list(v[1]), [list(r) for r in v[2]]
+    return [], [], []
 
 
 def _slots(rows, n, filled, empty_title, empty_sub, empty_why, src, accent=BLUE):
@@ -232,12 +253,15 @@ def board_sourcing(ctx) -> str:
          _hbars([(s[:20], v) for s, v in by_src[:8]]),
          "Ranked by volume. One source is a single point of failure.",
          "lead source stamp", BLUE, ""),
+        ("Leads month over month",
+         len(_L(_D(ctx.get("sourcing_mom")).get("groups"))), "sources compared",
+         _vbars(ctx.get("sourcing_mom")),
+         _D(ctx.get("sourcing_mom")).get("note", ""),
+         "campaign dates",
+         GREEN if _D(ctx.get("sourcing_mom")).get("ready") else AMBER, ""),
         ("Busiest day", max([v for _d, v in per_day], default=0), "leads in one day",
          _histogram([_i(v) for _d, v in per_day]),
          "The distribution matters more than the total — spiky means one scrape.",
-         "computed", BLUE, ""),
-        ("Days sourcing", len(per_day), "with any activity", "",
-         "Steady sourcing beats one big burst followed by nothing.",
          "computed", BLUE, ""),
         ("Leads per campaign",
          (round(_i(sc.get("found")) / _i(sc.get("campaigns")), 1)
@@ -385,6 +409,10 @@ def board_icp(ctx) -> str:
          _treemap([(v[:18], n) for v, n in verts[:8]]),
          "Size is lead count. A single dominant block is a narrow pipeline.",
          "lead records", BLUE if verts else AMBER, ""),
+        ("Verticals ranked", len(verts), "by lead count",
+         _hbars([(str(v)[:20], n) for v, n in verts[:8]]),
+         "The same data as the treemap, ranked — easier to read exact numbers.",
+         "lead records", BLUE, ""),
         ("Unclassified", _i(ic.get("unclassified")), "no vertical recorded", "",
          ("These cannot be scored against the ICP, so they dilute the match "
           "rate above."),
@@ -420,11 +448,6 @@ def board_icp(ctx) -> str:
          "This board shows who you are targeting. BI shows who paid.",
          "navigation", VIOLET,
          "<button class='cta' onclick=\"nav('bi')\">Open BI</button>"),
-        ("Scoring coverage",
-         (f"{round(100 * _i(ic.get('scored')) / max(_i(ic.get('scored')) + _i(ic.get('unclassified')), 1))}%"
-          if ic.get("scored") else "—"), "of leads carry a score", "",
-         "An unscored lead is sent to in the same order as a perfect one.",
-         "computed", BLUE, ""),
     ]
     return _head("🎯", "ICP & scoring",
                  "Are you writing to the right people?") + _vizcards(cards[:18])
@@ -470,6 +493,10 @@ def board_territories(ctx) -> str:
                           if m in ("Germany", "Switzerland") else "")),
                       "lead records", GREEN if v else PINK, ""))
     cards += [
+        ("Market composition", len(rows), "markets by share",
+         _treemap([(k[:18], v) for k, v in rows[:8]]),
+         "Size is lead count. One dominant tile is a single-market pipeline.",
+         "lead records", BLUE if rows else AMBER, ""),
         ("Leads by market", len(rows), "ranked",
          _hbars([(k[:20], v) for k, v in rows[:8]]),
          "Ranked by lead count.", "lead records", BLUE, ""),
@@ -492,10 +519,6 @@ def board_territories(ctx) -> str:
           "worse than the same email in German."),
          "site audit", PINK,
          "<button class='cta' onclick=\"nav('seo')\">Open GEO</button>"),
-        ("Second market", (rows[1][0] if len(rows) > 1 else "—"),
-         f"{rows[1][1]} leads" if len(rows) > 1 else "no data", "",
-         "Depth past the top market is what removes single-market risk.",
-         "lead records", BLUE, ""),
         ("Where to act", "GEO board", "language and market coverage", "",
          "This board shows where the leads are. GEO shows how to reach the "
          "markets that produce none.",
@@ -770,6 +793,15 @@ def board_deliverability(ctx) -> str:
               "count as neither bounce nor unsubscribe rather than being "
               "guessed into one."),
          "suppression list", AMBER if dv.get("unrecorded") else GREEN, ""),
+        ("Suppressions by day", sum(sum(r) for r in _triple(ctx, "suppression_heat")[2]),
+         "in the last 7 days",
+         _heatmap(*_triple(ctx, "suppression_heat")),
+         ("Rows are reasons, columns are days. A hot bounce row means the list "
+          "quality dropped, not that sending broke."
+          if _triple(ctx, "suppression_heat")[0] else
+          "Nothing has been suppressed in the last seven days."),
+         "suppression list",
+         PINK if sum(sum(r) for r in _triple(ctx, "suppression_heat")[2]) else GREEN, ""),
         ("Suppression rate", f"{dv.get('suppression_rate', 0)}%", "of sends",
          _score_gauge(min(100, _f(dv.get("suppression_rate")) * 10), 30),
          "Above 3% is a list-quality problem, not a sending problem.",
@@ -809,9 +841,6 @@ def board_deliverability(ctx) -> str:
         ("Opens by touch", len(_L(tk.get("opens_by_step"))), "steps",
          _hbars([(s, v) for s, v in _L(tk.get("opens_by_step"))]),
          "Which touch actually gets looked at.",
-         "tracking", BLUE, ""),
-        ("Tracked sends", _i(tk.get("tracked_sends")), "carry a token", "",
-         "Only sends made while tracking was on can ever report an open.",
          "tracking", BLUE, ""),
     ]
     cards += [
@@ -871,6 +900,15 @@ def board_replies(ctx) -> str:
          ("Only one intent is classified automatically today. These are read "
           "and answered by you rather than being guessed at."),
          "reply agent", AMBER if rp.get("unclassified") else GREEN, ""),
+        ("Sends by touch and day",
+         sum(sum(r) for r in _triple(ctx, "sends_cohort")[2]), "in the last 7 days",
+         _CH().cohort(_triple(ctx, "sends_cohort")[1],
+                      _triple(ctx, "sends_cohort")[2]),
+         ("Rows are touches, columns are days. This is SENDS, not replies — a "
+          "reply is not yet linked back to the send that earned it. The step "
+          "stamp now exists, so that linkage becomes possible for replies "
+          "received from here on."),
+         "sent stamps", BLUE, ""),
         ("Replies per day", len(_L(rp.get("per_day"))), "days with a reply",
          _trend([("replies", [v for _d, v in _L(rp.get("per_day"))], VIOLET)]),
          "Clusters usually follow a send burst two or three days earlier.",
@@ -898,9 +936,6 @@ def board_replies(ctx) -> str:
         ("Where to act", "below", "the live replies inbox", "",
          "Every drafted answer is under this board.",
          "navigation", VIOLET, ""),
-        ("Dismiss", "per reply", "clears without sending", "",
-         "A reply that needs nothing can be cleared from the queue.",
-         "reply agent", BLUE, ""),
         ("Unsubscribe replies", "auto-suppressed", "honoured immediately", "",
          "A reply asking to stop suppresses the address without you acting.",
          "connectors", GREEN, ""),
@@ -1100,6 +1135,13 @@ def board_costs(ctx) -> str:
          ("Revenue minus cost, over cost." if c.get("roi") is not None
           else "Needs a recorded deal."),
          "computed", GREEN if _f(c.get("roi")) > 0 else AMBER, ""),
+        ("Cost per lead by campaign",
+         _n(_D(ctx.get("campaign_costs")).get("avg")), "average across campaigns",
+         _CH().confband(_L(_D(ctx.get("campaign_costs")).get("values")), band=0.25)
+         if _D(ctx.get("campaign_costs")).get("ready") else "",
+         _D(ctx.get("campaign_costs")).get("note", ""),
+         "per-campaign costs",
+         GREEN if _D(ctx.get("campaign_costs")).get("ready") else AMBER, ""),
         ("Every unit cost", len(rows), "measured",
          _hbars([(n, _f(v)) for n, v in rows]),
          "Per lead, per send, per reply, per booking, per deal — one chart.",
@@ -1108,10 +1150,6 @@ def board_costs(ctx) -> str:
          ("Doubling the reply rate halves the cost per reply, per booking and "
           "per deal at once. Doubling volume only doubles the spend."),
          "computed", VIOLET, ""),
-        ("Compare with paid", "Media Buying", "296 cards", "",
-         "Cold email against paid acquisition, on the same unit-cost basis.",
-         "navigation", VIOLET,
-         "<button class='cta' onclick=\"nav('media')\">Open Media Buying</button>"),
         ("Where to act", "BI", "business-wide economics", "",
          "This board is the outreach channel. BI is the whole business.",
          "navigation", VIOLET,
@@ -1290,6 +1328,12 @@ if __name__ == "__main__":
         "attribution": O.attribution(deals, sc, sd),
         "costs": O.unit_costs(sc, sd, rp, bk, deals, outreach_cost=1.2),
         "tracking": O.tracking_stats(st, sends=sd["total"]),
+        "sourcing_mom": O.sourcing_mom(jobs),
+        "suppression_heat": O.suppression_heat(
+            {"a@x.com": {"reason": "bounce", "at": "2026-07-30"},
+             "b@x.com": {"reason": "unsubscribe", "at": "2026-07-29"}}),
+        "campaign_costs": O.campaign_costs(jobs),
+        "sends_cohort": O.sends_cohort(jobs),
         "live": {"outbox": "<div id='LIVE-OUTBOX'>outbox</div>",
                  "replies": "<div id='LIVE-REPLIES'>replies</div>",
                  "leads_table": "<div id='LIVE-LEADS'>leads</div>",

@@ -614,6 +614,126 @@ def unit_costs(sourcing_=None, sends_=None, replies_=None, bookings_=None,
             "has_data": bool(c)}
 
 
+def _month_add(ym, n):
+    try:
+        y, m = int(str(ym)[:4]), int(str(ym)[5:7])
+    except Exception:
+        return str(ym)
+    m += n
+    y += (m - 1) // 12
+    return f"{y + 0:04d}-{(m - 1) % 12 + 1:02d}"
+
+
+def sourcing_mom(jobs=None, top=5) -> dict:
+    """L6 — leads by source, this month against last. Computable now because
+    campaigns carry a real created_at and leads carry a real source."""
+    cur_m = date.today().isoformat()[:7]
+    prev_m = _month_add(cur_m, -1)
+    cur, prev = {}, {}
+    for j in _out_jobs(jobs):
+        d = _D(j)
+        m = _day(d.get("created_at"))[:7]
+        if m not in (cur_m, prev_m):
+            continue
+        bucket = cur if m == cur_m else prev
+        p = _D(d.get("payload"))
+        for L in (_L(p.get("raw_leads")) or _L(p.get("leads"))):
+            src = _s(_D(L).get("source")).lower() or "unattributed"
+            bucket[src] = bucket.get(src, 0) + 1
+    groups = [k for k, _v in sorted(cur.items(), key=lambda kv: -kv[1])[:top]] or \
+             [k for k, _v in sorted(prev.items(), key=lambda kv: -kv[1])[:top]]
+    return {"groups": groups,
+            "this_month": [cur.get(g, 0) for g in groups],
+            "last_month": [prev.get(g, 0) for g in groups],
+            "ready": bool(groups and prev),
+            "note": (f"{prev_m} against {cur_m}, by source." if (groups and prev)
+                     else "Month-over-month needs campaigns in two different "
+                          "months. This shows the current month until then, "
+                          "rather than drawing a comparison against nothing.")}
+
+
+def suppression_heat(suppression_meta=None, days=7) -> tuple:
+    """E7/E11 — suppressions by reason and day. Rows are reasons, columns are
+    the last seven days, so a bad list shows up as a hot row."""
+    meta = _D(suppression_meta)
+    cols, idx = [], {}
+    today = date.today()
+    for i in range(days - 1, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        idx[d] = len(cols)
+        cols.append(d[5:])
+    reasons = []
+    for _a, m in meta.items():
+        r = _s(_D(m).get("reason")) or "unrecorded"
+        if r not in reasons:
+            reasons.append(r)
+    if not reasons:
+        return [], cols, []
+    grid = [[0] * len(cols) for _ in reasons]
+    for _a, m in meta.items():
+        r = _s(_D(m).get("reason")) or "unrecorded"
+        d = _day(_D(m).get("at"))
+        if d in idx:
+            grid[reasons.index(r)][idx[d]] += 1
+    return reasons, cols, grid
+
+
+def campaign_costs(jobs=None) -> dict:
+    """E14 — cost per lead for EACH campaign, so the spread is visible. One
+    average hides a campaign that cost five times the rest."""
+    rows = []
+    for j in _out_jobs(jobs):
+        d = _D(j)
+        p = _D(d.get("payload"))
+        n = len(_L(p.get("raw_leads"))) or len(_L(p.get("leads")))
+        c = _f(d.get("cost_so_far_usd"))
+        if n and c:
+            rows.append((_s(d.get("job_id"))[:12], round(c / n, 4)))
+    vals = [v for _k, v in rows]
+    avg = round(sum(vals) / len(vals), 4) if vals else None
+    spread = (round(max(vals) - min(vals), 4) if len(vals) > 1 else None)
+    return {"rows": rows, "values": vals, "avg": avg, "spread": spread,
+            "worst": max(rows, key=lambda kv: kv[1]) if rows else None,
+            "best": min(rows, key=lambda kv: kv[1]) if rows else None,
+            "ready": len(vals) > 1,
+            "note": ("Each point is one campaign's cost per lead. The band is "
+                     "the tolerance around the average — a point outside it is "
+                     "a campaign worth looking at."
+                     if len(vals) > 1 else
+                     "Needs at least two campaigns with both a cost and leads "
+                     "before a spread means anything.")}
+
+
+def sends_cohort(jobs=None, days=7) -> tuple:
+    """E3 — sends by touch and day. Rows are touches, columns are days.
+
+    NOT reply-by-touch: a reply is not yet linked back to the send that earned
+    it. The step stamp now exists, so that linkage becomes possible for replies
+    received from here on, and the card says so rather than implying it."""
+    cols, idx = [], {}
+    today = date.today()
+    for i in range(days - 1, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        idx[d] = len(cols)
+        cols.append(d[5:])
+    rows = [f"touch {s}" for s in range(1, SEQUENCE_TOUCHES + 1)]
+    grid = [[0] * len(cols) for _ in rows]
+    for j in _out_jobs(jobs):
+        p = _D(_D(j).get("payload"))
+        meta = _D(p.get("sent_meta"))
+        for email, times in _D(p.get("sent_at")).items():
+            mrows = _L(meta.get(email))
+            for i, t in enumerate(_L(times)):
+                d = _day(t)
+                if d not in idx:
+                    continue
+                m = _D(mrows[i]) if i < len(mrows) else {}
+                step = _i(m.get("step")) or (i + 1)
+                if 1 <= step <= SEQUENCE_TOUCHES:
+                    grid[step - 1][idx[d]] += 1
+    return rows, cols, grid
+
+
 # ---------------------------------------------------------------- self-check
 if __name__ == "__main__":
     class S:
@@ -760,6 +880,23 @@ if __name__ == "__main__":
         attribution(bad if isinstance(bad, list) else None, bad, bad)
         unit_costs(bad, bad, bad, bad, None)
         tracking_stats(st)
+
+    mm = sourcing_mom(jobs)
+    assert mm["groups"] and not mm["ready"], "one month of campaigns is not a comparison"
+    assert "rather than drawing a comparison against nothing" in mm["note"]
+
+    hr, hc, hg = suppression_heat({"a@x.com": {"reason": "bounce",
+                                               "at": date.today().isoformat()}})
+    assert hr == ["bounce"] and len(hc) == 7 and hg[0][-1] == 1, (hr, hg)
+    assert suppression_heat({}) == ([], [c for c in hc], []), "no data -> no grid"
+
+    cc = campaign_costs(jobs)
+    assert cc["avg"] is not None and cc["ready"] is False, cc
+    assert "at least two campaigns" in cc["note"]
+
+    sr, scol, sg = sends_cohort(jobs)
+    assert sr == ["touch 1", "touch 2", "touch 3"] and len(scol) == 7
+    assert sum(sum(r) for r in sg) >= 0
 
     print("outreach self-check OK — leads carry a real source (unattributed "
           "stays unattributed), verification counted rather than a literal 100, "

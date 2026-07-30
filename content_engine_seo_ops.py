@@ -619,6 +619,10 @@ def build_outreach_ctx(store, *, jobs=None, reply_drafts=None, bookings=None,
         "attribution": O.attribution(deals, sc, sd),
         "costs": O.unit_costs(sc, sd, rp, bk, deals, outreach_cost=outreach_cost),
         "tracking": O.tracking_stats(store, sends=sd.get("total", 0)),
+        "sourcing_mom": O.sourcing_mom(jobs),
+        "suppression_heat": O.suppression_heat(meta),
+        "campaign_costs": O.campaign_costs(jobs),
+        "sends_cohort": O.sends_cohort(jobs),
         "live": live if isinstance(live, dict) else {},
     }
 
