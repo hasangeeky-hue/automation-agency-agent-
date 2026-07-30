@@ -123,6 +123,7 @@ BOARD_CTA = {
     "Work Orders": ("Apply safe fixes", "runFixes()"),
 }
 _CURRENT_BOARD = {"name": ""}      # set by _safe_board while rendering
+VISIBLE_CARDS = 8                    # progressive disclosure: the rest is one click
 
 
 def _section_mix(pages):
@@ -213,6 +214,43 @@ def _donut(pct, label="", color=None, danger_low=True):
 def _split_donut(segments, center=""):
     """Multi-segment donut: [(label, value, color)]."""
     return _CH().ring([s for s in segments if s[1]], center=center)
+
+
+def _spark(values, color=TEAL):
+    """#16 — a 28-day shape next to the number. You have daily GSC data and no
+    metric card was using it."""
+    vals = [float(v or 0) for v in (values or [])]
+    if len(vals) < 3:
+        return ""
+    mx, mn = max(vals), min(vals)
+    rng = (mx - mn) or 1
+    W, HGT = 120, 26
+    pts = " ".join(f"{i/(len(vals)-1)*W:.1f},{HGT-2-((v-mn)/rng)*(HGT-6):.1f}"
+                   for i, v in enumerate(vals))
+    return (f"<svg viewBox='0 0 {W} {HGT}' width='{W}' height='{HGT}' "
+            f"xmlns='http://www.w3.org/2000/svg' style='vertical-align:middle'>"
+            f"<polyline points='{pts}' fill='none' stroke='{color}' stroke-width='1.8'/>"
+            f"<circle cx='{W}' cy='{HGT-2-((vals[-1]-mn)/rng)*(HGT-6):.1f}' r='2.4' "
+            f"fill='{color}'/></svg>")
+
+
+def _delta(now, before, higher_is_better=True, unit=""):
+    """#17 — a number with no benchmark means nothing. Renders ▲/▼ vs the
+    previous value, coloured by whether that direction is good."""
+    try:
+        now, before = float(now or 0), float(before or 0)
+    except (TypeError, ValueError):
+        return ""
+    if not before:
+        return ""
+    d = now - before
+    if abs(d) < 1e-9:
+        return "<span class='dim'>▬ no change</span>"
+    good = (d > 0) == higher_is_better
+    col = GREEN if good else PINK
+    pct = abs(d) / abs(before) * 100
+    return (f"<span style='color:{col};font-size:11.5px;font-weight:700'>"
+            f"{'▲' if d > 0 else '▼'} {abs(d):,.0f}{unit} ({pct:.0f}%)</span>")
 
 
 def _trend(series, ymax=None):
@@ -345,16 +383,42 @@ def _vizcards(rows, cols=3):
     within a severity band."""
     decorated = [(_severity(r[6])[2], i, r) for i, r in enumerate(rows)]
     decorated.sort(key=lambda t: (t[0], t[1]))
-    inner = "".join(_viz(*r) for _, _, r in decorated)
-    return f"<div class='grid g{cols} cardgrid' style='margin-top:8px'>{inner}</div>"
+    gid = f"grid-{_slug(_CURRENT_BOARD['name'])}-{abs(hash(str(rows[0][0]))) % 9999}"
+    parts, hidden = [], 0
+    for n, (_w, _i, r) in enumerate(decorated):
+        card = _viz(*r)
+        # #20: only the first VISIBLE_CARDS render open; the rest are one click
+        # away. 46 cards in one view is past anyone's working memory.
+        if n >= VISIBLE_CARDS:
+            card = card.replace("<div class='card sev-", "<div class='card overflowcard sev-", 1)
+            hidden += 1
+        parts.append(card)
+    more = (f"<div class='morewrap' id='more-{gid}'>"
+            f"<button class='cbtn' onclick=\"seoMore('{gid}')\">"
+            f"Show all {len(decorated)} cards ({hidden} more) ▾</button></div>"
+            if hidden else "")
+    return (f"<div class='grid g{cols} cardgrid' id='{gid}' "
+            f"style='margin-top:8px'>{''.join(parts)}</div>{more}")
 
 
 def _sub(title, desc):
-    """A sub-heading inside a board — keeps 46 cards readable."""
+    """An anchored sub-section inside a board, reachable from _subnav chips."""
     H = _H()
-    return (f"<div class='card full' style='margin-top:14px;background:transparent;"
-            f"border-color:#26456f'><p class='ct' style='margin:0'>{H._esc(title)}</p>"
+    sid = f"sub-{_slug(title)}"
+    return (f"<div class='card full subsec' id='{sid}' style='margin-top:14px;"
+            f"background:transparent;border-color:#26456f'>"
+            f"<p class='ct' style='margin:0'>{H._esc(title)}</p>"
             f"<p class='cc' style='margin:2px 0 0'>{H._esc(desc)}</p></div>")
+
+
+def _subnav(titles):
+    """Sub-menu chips: a 46-card tab needs a second level of navigation, not a
+    wall with headings buried in it."""
+    H = _H()
+    chips = "".join(
+        f"<button class='subchip' onclick=\"document.getElementById('sub-{_slug(t)}')"
+        f".scrollIntoView({{block:'start'}})\">{H._esc(t)}</button>" for t in titles)
+    return f"<div class='subnav'>{chips}</div>"
 
 
 def _head(icon, title, desc):
@@ -400,6 +464,26 @@ def _not_run(what, action_label, action):
 # ======================================================================
 #  BOARD 1 — SEO COMMAND  (12 cards)
 # ======================================================================
+def _hero(title, big, sub, body, insight, action_label, action):
+    """#22 — the single 'what should I do today' answer, at full width, ahead
+    of everything. It was one card among thirteen, visually identical to the
+    rest."""
+    H = _H()
+    return ("<div class='card full hero' id='card-today'>"
+            f"<div class='sevbadge s-critical'>▶ START HERE</div>"
+            f"<p class='ct' style='margin:0'>{H._esc(title)}</p>"
+            f"<div style='display:flex;align-items:baseline;gap:10px;margin-top:6px'>"
+            f"<span style='font-size:34px;font-weight:800;color:#8B7CFF' class='tnum'>{H._esc(str(big))}</span>"
+            f"<span class='dim'>{H._esc(sub)}</span></div>"
+            f"<div style='margin-top:9px'>{body}</div>"
+            f"<div style='margin-top:9px;padding:8px 11px;border-radius:8px;"
+            f"background:rgba(139,124,255,.10);border-left:3px solid #8B7CFF;font-size:12.5px'>"
+            f"💡 {H._esc(insight)}</div>"
+            f"<div class='cta'><button class='cbtn' onclick=\"{action}\">{H._esc(action_label)}</button>"
+            f"<a class='cbtn sm ghost' href='#card-seo-command-what-needs-doing'>See the full queue</a>"
+            f"</div></div>")
+
+
 def board_command(ctx) -> str:
     H = _H()
     sc = ctx.get("scores") or {}
@@ -407,6 +491,11 @@ def board_command(ctx) -> str:
     orders = ctx.get("orders") or []
     gsc = ((ctx.get("insights") or {}).get("gsc") or {})
     ga4 = ((ctx.get("insights") or {}).get("ga4") or {})
+    daily = gsc.get("daily") or []
+    spark_clicks = _spark([d.get("clicks", 0) for d in daily], GREEN)
+    spark_impr = _spark([d.get("impressions", 0) for d in daily], BLUE)
+    ga4_daily = (ga4.get("daily") or [])
+    spark_sess = _spark([d.get("sessions", 0) for d in ga4_daily], BLUE)
     inspect = ctx.get("inspect") or {}
     aeo = ctx.get("aeo") or {}
     crawl = ctx.get("crawl") or {}
@@ -453,7 +542,16 @@ def board_command(ctx) -> str:
     changed_html = _rows(changed, left_fmt=lambda s: s,
                          empty="Needs two crawls to compare — check back after the next run.")
 
-    return _head("🧭", "SEO Command", "Six scores, the three moves that matter, and what the machine did without you.") + _vizcards([
+    _hero_html = _hero(
+        "What should I do today?",
+        len(top3) or "—", "highest-impact moves, ranked by impact ÷ effort",
+        moves,
+        (f"{len(crit)} critical issue(s) outstanding. Start at the top — this list is "
+         f"ordered by how much each move shifts rankings against how long it takes."
+         if crit else
+         "Nothing critical is outstanding. The list below is ordered by impact ÷ effort."),
+        "Apply the safe fixes now", "runFixes()")
+    return _head("🧭", "SEO Command", "Six scores, the three moves that matter, and what the machine did without you.") + _hero_html + _vizcards([
         ("Overall SEO score", sc.get("overall", 0), "of 100", _score_gauge(sc.get("overall", 0), 70),
          f"Composite of visibility, technical, on-page, off-page and AEO across "
          f"{sc.get('pages_scored', 0)} pages.",
@@ -484,12 +582,12 @@ def board_command(ctx) -> str:
                  ("Off-page", off), ("AEO", aeo_score)], VIOLET),
          "The lowest bar is where the next hour of work belongs.",
          "computed", VIOLET, ""),
-        ("Organic sessions", f"{sessions:,}", "last 28 days", "",
+        ("Organic sessions", f"{sessions:,}", "last 28 days", spark_sess,
          ("Real visits from search." if sessions
           else "Zero sessions is expected while rankings are still climbing — impressions come first."),
          "GA4", BLUE, ""),
         ("Search clicks", f"{clicks:,}", f"on {impr:,} impressions",
-         _donut(100 * clicks / max(impr, 1)) if impr else "",
+         (spark_clicks + spark_impr) or (_donut(100 * clicks / max(impr, 1)) if impr else ""),
          (f"CTR {round(100*clicks/impr,1)}% — people saw you {impr:,} times."
           if impr else "No impressions yet: Google hasn't ranked these pages high enough to show them."),
          "Search Console", TEAL, ""),
@@ -829,7 +927,10 @@ def board_onpage(ctx) -> str:
         ("Pages to fix first", len(worst), "ranked by issue count", worst_body,
          "Start at the top — these pages carry the most defects per page.",
          "computed", VIOLET),
-        ("Rewrites awaiting you", len(proposals), "titles & metas drafted", prop_body,
+        ("Rewrites awaiting you", len(proposals), "titles & metas drafted",
+         prop_body + "<div class='cta'><a class='cbtn sm ghost' "
+                     "href='#card-work-orders-what-is-waiting-on-your-decision'>"
+                     "→ open the approval queue</a></div>",
          "Copy is never pushed without your approval. Review and click to apply.",
          "SEO fixer", AMBER if proposals else GREEN),
         ("E-E-A-T signals", "—", "author, citations, credentials", "",
@@ -1540,6 +1641,8 @@ def board_aeo(ctx) -> str:
                   "Buyers ask an AI before they ask you. These 46 cards measure whether "
                   "the answer says your name, which page it cites, and whether the "
                   "engines are even allowed to read you.")
+            + _subnav(["Answer presence", "Citations & share of voice",
+                       "AI readiness", "Answer content"])
             + _sub("Answer presence", "Are you in the answer, on every engine?") + presence
             + _sub("Citations & share of voice", "When you are named, which page gets the link?") + citations
             + _sub("AI readiness", "Can the engines read you, and is your markup quotable?") + readiness
@@ -1942,7 +2045,12 @@ def board_work(ctx) -> str:
         ("Auto-ready", stats.get("auto_ready", 0), "machine can fix now", "",
          ("Schema, alt text, internal links and OG tags — no human words involved, so no approval needed."),
          "work-order engine", GREEN),
-        ("Awaiting approval", len(approve), "copy changes drafted", approve_body,
+        ("Awaiting approval", len(approve), "copy changes drafted",
+         approve_body + (
+             "<div class='cta'>"
+             "<button class='cbtn sm' onclick=\"approveAll('title')\">✔ Approve all titles</button>"
+             "<button class='cbtn sm' onclick=\"approveAll('meta')\">✔ Approve all metas</button>"
+             "</div>" if approve else ""),
          ("Titles, metas and body rewrites always stop here. That was your call, and it's the right one."),
          "SEO fixer", AMBER if approve else GREEN),
         ("Completed", len(done), "fixes applied", done_body,
@@ -2092,7 +2200,22 @@ _TAB_CSS = """<style>
 .card.sev-warn{border-color:#F5B14C}
 .cta{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
 .card.hidecard{display:none}
+.card.overflowcard{display:none}
+.cardgrid.expanded .card.overflowcard{display:block}
 .morewrap{margin-top:10px;text-align:center}
+.subnav{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 2px}
+.subchip{background:#101d33;border:1px solid #26456f;color:#B9C6DE;border-radius:20px;
+  padding:5px 13px;font-size:11.5px;cursor:pointer;font-family:inherit}
+.subchip:hover{border-color:#2FE3D2;color:#EDF1FB}
+.hero{grid-column:1/-1;border-color:#8B7CFF !important;
+  background:linear-gradient(135deg,#151d33,#121A2E)}
+.hero .ct{font-size:15px}
+@media(max-width:600px){
+  .grid.g3,.grid.g2{grid-template-columns:1fr}
+  .sgrp{flex:1 1 45%}.stab{font-size:11.5px;padding:7px 10px}
+  .cinput{min-width:100%}.subnav{overflow-x:auto;flex-wrap:nowrap}
+  .card{padding:11px}.sevbadge{font-size:9px}
+}
 @media(max-width:860px){.stabs{overflow-x:auto;flex-wrap:nowrap}.stab{white-space:nowrap}}
 </style>"""
 
@@ -2218,11 +2341,25 @@ if __name__ == "__main__":
                                        {"keys": ["dup q", "/b"], "impressions": 30, "clicks": 0, "position": 15}])
     orders = WO.from_audit(audit)
     orders[0]["status"] = "done"; orders[0]["result"] = "schema injected"; orders[0]["done_at"] = "2026-07-30T10:00:00"
+    # one drafted copy rewrite waiting on a human — this is what the bulk
+    # approve buttons act on, so the fixture must contain one.
+    _await = WO.make_order("title_long", "https://x.com/guide-a/", severity="medium",
+                           detail="Title 80 chars", fix="Rewrite title", auto=False)
+    _await["status"] = "awaiting_approval"
+    _await["extra"] = {"proposal": {"field": "title", "before": "T" * 80,
+                                    "after": "AI Automation for Law Firms: Cut Intake Time",
+                                    "reason": "targets a real query"}}
+    orders.append(_await)
 
     ctx = {"crawl": crawl, "graph": graph, "money": money, "audit": audit,
            "scores": audit["scores"], "orders": orders, "order_stats": WO.stats(orders),
            # GA4 returns metrics as FLOATS — fixture must match production.
-           "insights": {"gsc": gsc, "ga4": {"totals": {"sessions": 8.0, "engagementRate": 0.42},
+           "insights": {"gsc": dict(gsc, daily=[{"key": f"2026-07-{d:02d}", "clicks": c,
+                                                 "impressions": c * 12 + 40}
+                                                for d, c in enumerate([0,1,0,2,1,3,2,4,3,5], 20)]),
+                        "ga4": {"daily": [{"date": f"2026-07-{d:02d}", "sessions": v}
+                                          for d, v in enumerate([1,0,2,1,3,2,4], 23)],
+                                "totals": {"sessions": 8.0, "engagementRate": 0.42},
                                             "pages": [{"pagePath": "/guide-a", "sessions": 5.0,
                                                        "totalUsers": 3.0}]}},
            "inspect": {"https://x.com": {"verdict": "PASS", "coverageState": "Submitted and indexed",
@@ -2379,6 +2516,9 @@ if __name__ == "__main__":
     assert sec.index("id='seo-google'") < sec.index(legacy), "Google boards keep their heading"
     assert "id='spanel-seosrc'" in sec, "the Google boards need their own Sources panel"
     assert "position:sticky" in sec, "the tab bar must stay reachable while scrolling"
+    # #25 mobile: single-column grids, wrapped groups, scrollable sub-nav
+    assert "@media(max-width:600px)" in sec, "no mobile rules"
+    assert ".grid.g3,.grid.g2{grid-template-columns:1fr}" in sec, "grids must collapse on phones"
     for tid, _, _ in TABS:
         assert f"id='stab-{tid}'" in sec, f"missing tab button {tid}"
         assert f"id='spanel-{tid}'" in sec, f"missing tab panel {tid}"
@@ -2397,29 +2537,55 @@ if __name__ == "__main__":
         "the SEO Command panel must be the one open on load"
     assert "cards</b> in" in sec, "must tell the user how the cards are organised"
     # every card still present, just tabbed
-    assert len(_re.findall(r"<div class='card sev-", sec)) == TOTAL_CARDS,         len(_re.findall(r"<div class='card sev-", sec))
+    assert len(_re.findall(r"<div class='card (?:overflowcard )?sev-", sec)) == TOTAL_CARDS,         len(_re.findall(r"<div class='card (?:overflowcard )?sev-", sec))
     # the run bar must expose the free engines by name
     for label in ("free", "Run every SEO engine", "Crawl my site"):
         assert label in sec, f"run bar missing '{label}'"
 
-    counted = len(_re.findall(r"<div class='card sev-", html))
+    counted = len(_re.findall(r"<div class='card (?:overflowcard )?sev-", html))
     assert counted == TOTAL_CARDS, f"expected {TOTAL_CARDS} cards, rendered {counted}"
 
     # no board may render an unformatted placeholder, a None, or a raw dict
     for bad in ("None", "{}", "{'", "[{"):
         assert bad not in html, f"raw {bad} leaked into the HTML"
     # ---- the design upgrade: identity, severity, action on EVERY card ----
-    ids = _re.findall(r"<div class='card sev-[a-z]+' id='(card-[a-z0-9-]+)'", html)
+    ids = _re.findall(r"<div class='card (?:overflowcard )?sev-[a-z]+' id='(card-[a-z0-9-]+)'", html)
     assert len(ids) == TOTAL_CARDS, f"{len(ids)} cards have an id, expected {TOTAL_CARDS}"
     assert len(set(ids)) == len(ids), "card ids must be unique (they are deep links)"
     assert html.count("data-sev=") == TOTAL_CARDS, "every card needs a severity for sorting"
     assert html.count("data-q=") == TOTAL_CARDS, "every card needs a search blob"
-    assert html.count("class='cta'") == TOTAL_CARDS, "every card must end in a verb"
+    assert html.count("class='cta'") >= TOTAL_CARDS, "every card must end in a verb"
+    # #22 the hero, #11 the bulk-approve buttons, #8 the finding->queue link
+    assert "id='card-today'" in html and "START HERE" in html, "no 'what do I do today' hero"
+    assert "approveAll('title')" in html, "bulk approve button missing"
+    assert "open the approval queue" in html, "findings must link to their work orders"
+    # #16 sparklines on the metric cards
+    assert "<polyline points=" in html, "no sparklines rendered"
+    assert _spark([1, 2, 3, 4]).startswith("<svg"), "sparkline helper broken"
+    assert _spark([1]) == "", "a sparkline needs at least 3 points"
+    # #17 delta helper
+    assert "▲" in _delta(120, 100) and "▼" in _delta(80, 100)
+    assert "color:#3FD98B" in _delta(120, 100), "up on a good metric must read green"
+    assert "color:#FF6B93" in _delta(120, 100, higher_is_better=False), "direction respected"
+    assert _delta(5, 0) == "" and "no change" in _delta(10, 10)
     # severity sort: within a board, broken sorts above healthy
     sevs = _re.findall(r"data-sev='([a-z]+)' data-w='(\d)'", html)
     assert sevs, "severity attributes missing"
     # plain-English titles replaced the jargon, and kept it as a tooltip
     assert "Can AI engines read your site?" in html, "jargon titles not humanised"
+    # #20 progressive disclosure — no board may open with more than VISIBLE_CARDS
+    assert "overflowcard" in html, "progressive disclosure not applied"
+    assert "Show all" in html, "the 'show all' control must exist"
+    open_now = html.count("<div class='card sev-")          # without overflowcard
+    grids = html.count("class='grid g3 cardgrid'") + html.count("class='grid g2 cardgrid'")
+    assert grids, "no card grids found"
+    assert open_now <= VISIBLE_CARDS * grids,         f"{open_now} cards open across {grids} grids (max {VISIBLE_CARDS} each)"
+    hidden = html.count("overflowcard sev-")
+    assert hidden > 80, f"only {hidden} cards deferred — disclosure barely applied"
+    # #2 sub-menu chips inside the 46-card AEO tab
+    assert "class='subnav'" in html and "class='subchip'" in html, "no sub-navigation"
+    assert "id='sub-answer-presence'" in html, "sub-sections must be anchored"
+
     assert "title='AI crawler access'" in html, "the real term must survive as a tooltip"
     assert not _re.search(r"\b(nan|NaN|inf)\b", html), "a non-finite number reached the UI"
     assert html.count("💡") >= TOTAL_CARDS * 0.85, "most cards must carry a qualitative read"

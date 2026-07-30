@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v19 · SEO+AEO+GEO redesign: 4 groups, 235 addressable cards, severity-sorted, CTA on every card, 45 charts across 9 types, search+filter, bulk approve. "
+BUILD_TAG = ("2026-07-30 · v19-r2 · UX: 24/25 flaws closed — 4 groups + sub-nav, 235 addressable cards, hero, progressive disclosure, 11 chart types, bulk approve, mobile. "
              "all inside the ONE SEO/AEO/GEO section as in-page tabs (no extra "
              "sidebar items, no scroll wall)")
 
