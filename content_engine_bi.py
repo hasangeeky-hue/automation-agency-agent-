@@ -670,6 +670,123 @@ def attainment(tg=None, rev=None, lg=None, co=None) -> dict:
                      "against.") if not rows else ""}
 
 
+BI_HISTORY_KEY = "bi_history"
+MAX_BI_HISTORY = 24
+
+
+def record_bi_snapshot(store, channels=None, markets=None) -> list:
+    """One row per month, so 'this month vs last' can be a measurement rather
+    than a guess. GA4 gives a rolling 28-day window with no month dimension —
+    without this there is nothing to compare against."""
+    try:
+        hist = list(store.get_setting(BI_HISTORY_KEY, []) or [])
+    except Exception:
+        hist = []
+    month = _day(_iso())[:7]
+    hist = [h for h in hist if str(_D(h).get("month")) != month]
+    hist.append({"month": month,
+                 "channels": {str(k): _f(v) for k, v in
+                              _L(_D(channels).get("rows"))[:8]},
+                 "markets": {str(k): _f(v) for k, v in
+                             _L(_D(markets).get("rows"))[:8]}})
+    hist = sorted(hist, key=lambda h: str(_D(h).get("month")))[-MAX_BI_HISTORY:]
+    try:
+        store.set_setting(BI_HISTORY_KEY, hist)
+    except Exception as e:
+        log.warning("bi history save failed: %s", e)
+    return hist
+
+
+def mom(history, kind, top=5) -> dict:
+    """Month-over-month by category, shaped for vbars.
+
+    Returns {groups, this_month, last_month, ready, note}. `ready` is False
+    until two months exist, and the note says so — a single month drawn as a
+    comparison would be a lie with a chart around it."""
+    hist = _L(history)
+    if len(hist) < 2:
+        cur = _D(_D(hist[-1]).get(kind)) if hist else {}
+        groups = [k for k, _v in sorted(cur.items(), key=lambda kv: -_f(kv[1]))[:top]]
+        return {"groups": groups,
+                "this_month": [_f(cur.get(g)) for g in groups],
+                "last_month": [], "ready": False,
+                "note": ("Month-over-month needs two months of snapshots. One is "
+                         "recorded so far, so this shows the current month only "
+                         "and the comparison appears next month.")}
+    prev, cur = _D(hist[-2]).get(kind), _D(hist[-1]).get(kind)
+    prev, cur = _D(prev), _D(cur)
+    groups = [k for k, _v in sorted(cur.items(), key=lambda kv: -_f(kv[1]))[:top]]
+    return {"groups": groups,
+            "this_month": [_f(cur.get(g)) for g in groups],
+            "last_month": [_f(prev.get(g)) for g in groups],
+            "ready": True,
+            "note": (f"{_D(hist[-2]).get('month')} against "
+                     f"{_D(hist[-1]).get('month')}, same categories.")}
+
+
+def leads_mom(jobs=None, top=5) -> dict:
+    """Lead volume by source, this month against last. Computable immediately —
+    outreach jobs carry a real created_at."""
+    from datetime import date as _date
+    today = _date.today()
+    cur_m = today.isoformat()[:7]
+    prev_m = _month_add(cur_m, -1)
+    cur, prev = {}, {}
+    for j in _L(jobs):
+        d = _D(j)
+        if d.get("type") != "outreach_campaign":
+            continue
+        p = _D(d.get("payload"))
+        n = len(_L(p.get("raw_leads"))) or len(_L(p.get("leads")))
+        src = str(p.get("source") or p.get("lead_source") or "outreach").lower()
+        m = _day(d.get("created_at"))[:7]
+        if m == cur_m:
+            cur[src] = cur.get(src, 0) + n
+        elif m == prev_m:
+            prev[src] = prev.get(src, 0) + n
+    groups = [k for k, _v in sorted(cur.items(), key=lambda kv: -kv[1])[:top]] or \
+             [k for k, _v in sorted(prev.items(), key=lambda kv: -kv[1])[:top]]
+    return {"groups": groups,
+            "this_month": [cur.get(g, 0) for g in groups],
+            "last_month": [prev.get(g, 0) for g in groups],
+            "ready": bool(groups and (prev or cur)),
+            "note": (f"{prev_m} against {cur_m}, from campaign dates."
+                     if groups else
+                     "No campaign has run in either month yet.")}
+
+
+def client_rank_movement(deals=None, months=6) -> list:
+    """[(client, [rank per month])] for a bump chart. Rank 1 is the biggest
+    client that month; a line climbing means a client is taking a larger share."""
+    dl = _L(deals)
+    if not dl:
+        return []
+    by_month = {}
+    for d in dl:
+        d = _D(d)
+        m = str(d.get("at"))[:7]
+        by_month.setdefault(m, {})
+        c = str(d.get("client") or "unnamed")
+        by_month[m][c] = by_month[m].get(c, 0.0) + _f(d.get("value"))
+    keys = sorted(by_month)[-months:]
+    if len(keys) < 2:
+        return []
+    totals = {}
+    for m in keys:
+        for c, v in by_month[m].items():
+            totals[c] = totals.get(c, 0.0) + v
+    tracked = [c for c, _v in sorted(totals.items(), key=lambda kv: -kv[1])[:5]]
+    out = []
+    for c in tracked:
+        ranks = []
+        for m in keys:
+            order = sorted(by_month[m].items(), key=lambda kv: -kv[1])
+            names = [n for n, _v in order]
+            ranks.append(names.index(c) + 1 if c in names else len(names) + 1)
+        out.append((c[:14], ranks))
+    return out
+
+
 # ---------------------------------------------------------------- self-check
 if __name__ == "__main__":
     class S:

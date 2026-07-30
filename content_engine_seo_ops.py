@@ -607,10 +607,17 @@ def build_bi_ctx(store, *, insights=None, jobs=None, agents=None, meters=None,
     co = BI.consultations(bookings)
     rev = BI.revenue(deals)
     sp = BI.spend_view(meters, month_spent, month_cap, jobs)
+    ch = BI.channel_mix(insights)
+    mk = BI.markets(insights)
+    hist = BI.record_bi_snapshot(store, ch, mk)
     return {
+        "channels_mom": BI.mom(hist, "channels"),
+        "markets_mom": BI.mom(hist, "markets"),
+        "leads_mom": BI.leads_mom(jobs),
+        "client_bump": BI.client_rank_movement(deals),
         "demand": BI.demand(insights),
-        "markets": BI.markets(insights),
-        "channels": BI.channel_mix(insights),
+        "markets": mk,
+        "channels": ch,
         "content": BI.content_attribution(insights, jobs),
         "leadgen": lg, "outreach": ou, "consultations": co,
         "funnel": BI.funnel(jobs, reply_drafts, bookings, deals),

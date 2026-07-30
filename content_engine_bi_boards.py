@@ -77,12 +77,26 @@ def _ctx(ctx):
     """Coerce once at the boundary — a wrong shape must never crash a board."""
     ctx = ctx if isinstance(ctx, dict) else {}
     out = dict(ctx)
-    for k in ("demand", "markets", "channels", "content", "leadgen", "outreach",
+    for k in ("channels_mom", "markets_mom", "leads_mom",
+              "demand", "markets", "channels", "content", "leadgen", "outreach",
               "consultations", "funnel", "revenue", "customers", "econ",
               "unit", "spend", "cost", "targets", "attainment"):
         out[k] = _D(out.get(k))
     out["deals"] = _L(out.get("deals"))
     return out
+
+
+def _vbars(m, colour_a=VIOLET, colour_b=TEAL):
+    """Grouped columns for month-over-month. Draws only what was measured: with
+    one month of history it shows one series, not a fabricated comparison."""
+    m = _D(m)
+    groups = _L(m.get("groups"))
+    if not groups:
+        return ""
+    series = [("this month", _L(m.get("this_month")), colour_b)]
+    if m.get("ready") and _L(m.get("last_month")):
+        series.insert(0, ("last month", _L(m.get("last_month")), colour_a))
+    return _CH().vbars([str(g)[:8] for g in groups], series)
 
 
 def _slots(rows, n, filled, empty_title, empty_sub, empty_why, src, accent=BLUE):
@@ -364,6 +378,12 @@ def board_markets(ctx) -> str:
          _hbars([(n[:20], v) for n, v in rows[:8]]),
          "Ranked by sessions, so the top row is where to double down.",
          "GA4", BLUE, ""),
+        ("Markets month over month",
+         len(_L(_D(ctx.get("markets_mom")).get("groups"))), "compared",
+         _vbars(ctx.get("markets_mom")),
+         _D(ctx.get("markets_mom")).get("note", ""),
+         "monthly snapshots",
+         GREEN if _D(ctx.get("markets_mom")).get("ready") else AMBER, ""),
         ("Market concentration",
          f"{round(100 * rows[0][1] / total) if rows and total else 0}%",
          "from the top market", "",
@@ -376,9 +396,6 @@ def board_markets(ctx) -> str:
         ("Second market", (rows[1][0] if len(rows) > 1 else "—"),
          f"{rows[1][1]:.0f} sessions" if len(rows) > 1 else "no data", "",
          "Depth beyond the top market is what removes single-market risk.",
-         "GA4", BLUE, ""),
-        ("Long tail", f"{len(rows[5:])}", "markets beyond the top five", "",
-         "Small markets are noise individually and signal collectively.",
          "GA4", BLUE, ""),
         ("Third market", (rows[2][0] if len(rows) > 2 else "—"),
          f"{rows[2][1]:.0f} sessions" if len(rows) > 2 else "no third market yet", "",
@@ -424,10 +441,12 @@ def board_channels(ctx) -> str:
          "The Risk board scores this as channel risk; this is where it comes from.",
          "computed", PINK if ch.get("concentrated") else GREEN,
          "<button class='cta' onclick=\"nav('riskinfra')\">See channel risk</button>"),
-        ("Sessions by channel", f"{total:.0f}", "total across channels",
-         _hbars([(n[:20], v) for n, v in rows[:8]]),
-         "Ranked. The gap between first and second is your exposure.",
-         "GA4", BLUE, ""),
+        ("Channels month over month",
+         len(_L(_D(ctx.get("channels_mom")).get("groups"))), "compared",
+         _vbars(ctx.get("channels_mom")),
+         _D(ctx.get("channels_mom")).get("note", ""),
+         "monthly snapshots",
+         GREEN if _D(ctx.get("channels_mom")).get("ready") else AMBER, ""),
     ]
     def _chan(i, row):
         name, v = row
@@ -596,11 +615,6 @@ def board_leads(ctx) -> str:
         ("Campaigns run", lg.get("campaigns", 0), "outreach jobs", "",
          "Each campaign is one sourcing and sending cycle.",
          "jobs", BLUE, ""),
-        ("Leads per campaign",
-         (round(lg.get("found", 0) / lg.get("campaigns", 1))
-          if lg.get("campaigns") else "—"), "average", "",
-         "Yield per cycle. Low yield means the source is thin.",
-         "computed", BLUE, ""),
         ("Daily distribution", len(dist), "days measured",
          _histogram([int(v) for v in dist]),
          ("The shape matters: steady beats spiky, because spiky means one big "
@@ -609,6 +623,12 @@ def board_leads(ctx) -> str:
         ("Best day", (max([v for _d, v in per_day], default=0)), "leads in one day",
          "", "What the pipeline can do when it runs well.",
          "computed", BLUE, ""),
+        ("Leads month over month",
+         len(_L(_D(ctx.get("leads_mom")).get("groups"))), "sources compared",
+         _vbars(ctx.get("leads_mom")),
+         _D(ctx.get("leads_mom")).get("note", ""),
+         "campaign dates",
+         GREEN if _D(ctx.get("leads_mom")).get("ready") else AMBER, ""),
         ("Sources", len(by_src), "distinct lead sources",
          _hbars([(s[:20], v) for s, v in by_src[:6]]),
          ("One source is a single point of failure." if len(by_src) <= 1
@@ -1040,9 +1060,15 @@ def board_customers(ctx) -> str:
          _donut(_f(r.get("top_share"))),
          "The same number the Risk board scores as concentration risk.",
          "computed", PINK if _f(r.get("top_share")) > 33 else GREEN, ""),
-        ("Cohorts tracked", len(_L(cu.get("cohort_rows"))), "months with a first sale",
-         "", "Each cohort is the group of clients who first paid in that month.",
-         "computed", BLUE, ""),
+        ("Client rank movement", len(_L(ctx.get("client_bump"))), "clients tracked",
+         _CH().bump(_L(ctx.get("client_bump"))),
+         ("A line climbing means that client is taking a larger share of "
+          "revenue month by month. Needs two months of recorded deals."
+          if ctx.get("client_bump") else
+          "Fills once deals exist in two different months — rank movement "
+          "cannot be drawn from a single month."),
+         "recorded deals",
+         GREEN if ctx.get("client_bump") else AMBER, ""),
     ]
     cards += _slots(
         ranked, 6,
@@ -1489,6 +1515,18 @@ if __name__ == "__main__":
         "unit": BI.unit_economics(deals, sp, BI.econ(st), bookings, lg["found"]),
         "spend": sp,
         "cost": BI.cost_per_outcome(jobs, agents, deals, bookings, lg["found"]),
+        "channels_mom": BI.mom([{"month": "2026-06",
+                                 "channels": {"Organic Search": 500, "Direct": 120}},
+                                {"month": "2026-07",
+                                 "channels": {"Organic Search": 700, "Direct": 150}}],
+                               "channels"),
+        "markets_mom": BI.mom([{"month": "2026-06",
+                                "markets": {"Germany": 300, "United States": 250}},
+                               {"month": "2026-07",
+                                "markets": {"Germany": 400, "United States": 300}}],
+                              "markets"),
+        "leads_mom": BI.leads_mom(jobs),
+        "client_bump": BI.client_rank_movement(deals),
         "deals": deals,
     }
     ctx["attainment"] = BI.attainment(BI.targets(st), rev, lg, BI.consultations(bookings))
