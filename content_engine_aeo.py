@@ -92,19 +92,36 @@ def find_mentions(text: str, brand: str, domain: str, rivals=None) -> dict:
 # ---------------------------------------------------------------- engines
 def _claude_answer(prompt: str, store=None) -> str:
     """Ask Claude the buyer's question with NO context — exactly as a prospect
-    would. Cheap model; the answer text is all we need."""
+    would.
+
+    Uses the RAW Anthropic client, not call_provider: call_provider forces
+    structured JSON output for skill calls, and this needs plain prose. Same
+    pattern as providers.web_research(). (The first version called
+    P.CHEAP_MODEL — which lives in the orchestrator, not providers — so every
+    probe silently returned "" and the board honestly reported zero mentions
+    for a probe that never ran.)
+    """
+    import os
     try:
         import content_engine_providers as P
-        spec = {"model": P.CHEAP_MODEL, "max_tokens": 500,
-                "system": [{"type": "text",
-                            "text": "Answer the user's question the way you normally would. "
-                                    "Name specific companies where that is genuinely useful."}],
-                "messages": [{"role": "user", "content": prompt}]}
-        res = P.call_provider(P.CHEAP_MODEL, spec)
-        data = getattr(res, "data", None)
-        if isinstance(data, dict):
-            return data.get("text") or data.get("answer") or str(data)
-        return str(data or "")
+        model = os.getenv("CHEAP_MODEL", "claude-haiku-4-5")
+        client = P._get_anthropic()
+        resp = client.messages.create(
+            model=model, max_tokens=600,
+            messages=[{"role": "user", "content": prompt}])
+        text = "\n".join(b.text for b in resp.content
+                         if getattr(b, "type", "") == "text" and getattr(b, "text", ""))
+        try:                                   # cost accounting, best-effort
+            u = resp.usage
+            cost, _ = P._compute_cost(model, {
+                "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
+                "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0})
+            import content_engine_connectors as C
+            C._record_cost(cost, "aeo_probe")
+            C.record_api_spend("anthropic", cost)
+        except Exception:
+            pass
+        return text.strip()
     except Exception as e:
         log.warning("claude probe failed: %s", e)
         return ""
@@ -194,16 +211,19 @@ def _gemini_answer(prompt: str) -> str:
         return ""
 
 
-_ENGINES = [("claude", _claude_answer, "ANTHROPIC_API_KEY"),
-            ("openai", _openai_answer, "OPENAI_API_KEY"),
-            ("perplexity", _perplexity_answer, "PERPLEXITY_API_KEY"),
-            ("gemini", _gemini_answer, "GEMINI_API_KEY")]
+# Resolved by NAME at call time, not captured as function objects — otherwise
+# a test (or a hot-patch) that replaces one of these is silently ignored.
+_ENGINES = [("claude", "_claude_answer", "ANTHROPIC_API_KEY"),
+            ("openai", "_openai_answer", "OPENAI_API_KEY"),
+            ("perplexity", "_perplexity_answer", "PERPLEXITY_API_KEY"),
+            ("gemini", "_gemini_answer", "GEMINI_API_KEY")]
 
 
 def probe(prompt: str, *, brand: str, domain: str, rivals=None, store=None) -> dict:
     """One buyer question, asked of every connected AI engine."""
     out = {"prompt": prompt, "google_ai": _google_ai(prompt, domain)}
-    for name, fn, keyname in _ENGINES:
+    for name, fname, keyname in _ENGINES:
+        fn = globals().get(fname)
         try:
             answer = fn(prompt, store) if name == "claude" else fn(prompt)
         except Exception as e:
@@ -603,6 +623,32 @@ if __name__ == "__main__":
     assert s["placement"]["first"] == 1 and s["recommended"] == 1, s
     assert s["engines_live"] == 1, s["engines_live"]
     assert 0 < s["score"] <= 100, s["score"]
+
+    # ---- REGRESSION: every cross-module symbol the probe uses must EXIST ----
+    # A probe that silently returns "" reads as "no AI mentions you" — an
+    # honest-looking zero produced by a broken call. P.CHEAP_MODEL did not
+    # exist (it lives in the orchestrator) and 18 probes failed in production
+    # while the board reported 0% mention rate. Never again: assert the names.
+    import content_engine_providers as _P
+    import content_engine_orchestrator as _O
+    for _sym in ("_get_anthropic", "_compute_cost"):
+        assert hasattr(_P, _sym), f"providers.{_sym} is gone — _claude_answer would fail"
+    assert not hasattr(_P, "CHEAP_MODEL"), \
+        "CHEAP_MODEL lives in the orchestrator; do not reach for it on providers"
+    assert hasattr(_O, "CHEAP_MODEL"), "orchestrator.CHEAP_MODEL is the real one"
+    import content_engine_connectors as _C
+    for _sym in ("_record_cost", "record_api_spend", "_env", "_post_json", "_requests"):
+        assert hasattr(_C, _sym), f"connectors.{_sym} is gone — the probes would fail"
+
+    # A failing engine must degrade to not-connected, never to a false zero.
+    _orig = globals()["_claude_answer"]
+    globals()["_claude_answer"] = lambda p, s=None: ""
+    try:
+        r = probe("q", brand="Anthropos", domain="x.com")
+        assert r["claude"]["connected"] is False, r["claude"]
+        assert "not set or call failed" in r["claude"]["reason"], r["claude"]
+    finally:
+        globals()["_claude_answer"] = _orig
 
     # ---- E17 citations ----
     assert extract_citations("See https://anthropos-automation.com/guide-a. Also https://x.com/y",
