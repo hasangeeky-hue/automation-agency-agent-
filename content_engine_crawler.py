@@ -80,14 +80,26 @@ def _fetch(url: str):
 
 
 def normalize(url: str) -> str:
-    """Strip fragments and the trailing slash (root included) so the same page
-    is never counted twice — sites link to both '/x/' and '/x' constantly."""
+    """Canonicalise the HOST and drop the fragment — but KEEP the path exactly
+    as the site serves it, trailing slash included.
+
+    An earlier version stripped the trailing slash. WordPress permalinks end
+    with one, so every URL we handed to Google's URL Inspection API was a form
+    that does not exist: '/story-doctors' came back "unknown to Google" while
+    '/story-doctors/' was indexed. Deduplication is handled separately by
+    dedup_key(), so the stored URL is always the real one."""
     try:
         p = urlparse(url)
-        path = (p.path or "").rstrip("/")
-        return urlunparse((p.scheme, p.netloc.lower(), path, "", p.query, ""))
+        return urlunparse((p.scheme, p.netloc.lower(), p.path or "/", "", p.query, ""))
     except Exception:
         return url
+
+
+def dedup_key(url: str) -> str:
+    """Identity for 'have I already seen this page?' — slash-insensitive, so
+    /x and /x/ are one page, without changing the URL we store or report."""
+    n = normalize(url)
+    return n[:-1] if n.endswith("/") and n.count("/") > 2 else n
 
 
 def _same_host(a: str, b: str) -> bool:
@@ -305,22 +317,23 @@ def crawl_site(base_url: str, max_urls: int = 300, delay: float = 0.2,
     base = base_url.rstrip("/")
     home = normalize(base + "/")
     seeds = sitemap_urls(base, max_urls) if use_sitemap else []
-    depth_of = {home: 0}
+    depth_of = {dedup_key(home): 0}
     for u in seeds:
-        depth_of.setdefault(u, 99)          # 99 = not yet reached by a link
-    queue = [home] + [u for u in seeds if u != home]
+        depth_of.setdefault(dedup_key(u), 99)   # 99 = not yet reached by a link
+    queue = [home] + [u for u in seeds if dedup_key(u) != dedup_key(home)]
     seen, records = set(), []
 
     while queue and len(records) < max_urls:
         url = queue.pop(0)
-        if url in seen or _skippable(url):
+        key = dedup_key(url)
+        if key in seen or _skippable(url):
             continue
-        seen.add(url)
+        seen.add(key)
         final, status, html, size, ms, chain = _fetch(url)
         final_n = normalize(final)
         rec = {"url": url, "final_url": final_n, "status": status,
                "redirected": final_n != url, "redirect_hops": len(chain),
-               "bytes": size, "ms": ms, "depth": depth_of.get(url, 99),
+               "bytes": size, "ms": ms, "depth": depth_of.get(key, 99),
                "internal_links": [], "outbound_links": [], "anchors": []}
         if status == 200 and html:
             rec.update(parse_page(html, final))
@@ -334,10 +347,11 @@ def crawl_site(base_url: str, max_urls: int = 300, delay: float = 0.2,
                         continue
                     rec["internal_links"].append(n)
                     rec["anchors"].append((n, anchor[:120]))
+                    nk = dedup_key(n)
                     d = rec["depth"] + 1 if rec["depth"] < 99 else 99
-                    if n not in depth_of or d < depth_of[n]:
-                        depth_of[n] = d
-                    if n not in seen and n not in queue and len(seen) + len(queue) < max_urls * 2:
+                    if nk not in depth_of or d < depth_of[nk]:
+                        depth_of[nk] = d
+                    if nk not in seen and n not in queue and len(seen) + len(queue) < max_urls * 2:
                         queue.append(n)
                 else:
                     rec["outbound_links"].append(n)
@@ -348,7 +362,7 @@ def crawl_site(base_url: str, max_urls: int = 300, delay: float = 0.2,
             time.sleep(delay)
 
     for r in records:                      # final depth after full discovery
-        r["depth"] = depth_of.get(r["url"], 99)
+        r["depth"] = depth_of.get(dedup_key(r["url"]), 99)
     return {"base": base, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "count": len(records), "urls": records}
 
@@ -358,23 +372,27 @@ def link_graph(crawl: dict) -> dict:
     """Internal-link architecture: inbound counts, orphans, depth spread,
     anchor-text distribution, broken internal links."""
     urls = crawl.get("urls") or []
-    known = {r["url"] for r in urls} | {r.get("final_url") for r in urls if r.get("final_url")}
+    known = {dedup_key(r["url"]) for r in urls} | {
+        dedup_key(r["final_url"]) for r in urls if r.get("final_url")}
     ok = {r["url"] for r in urls if r.get("status") == 200}
     inbound = {r["url"]: 0 for r in urls}
+    by_key = {dedup_key(r["url"]): r["url"] for r in urls}
     anchors, broken, pairs = {}, [], 0
     for r in urls:
         for tgt in r.get("internal_links", []):
             pairs += 1
-            if tgt in inbound:
-                inbound[tgt] += 1
-            elif tgt not in known:
+            tk = dedup_key(tgt)
+            if tk in by_key:
+                inbound[by_key[tk]] += 1
+            elif tk not in known:
                 broken.append({"from": r["url"], "to": tgt})
         for tgt, text in r.get("anchors", []):
             t = (text or "").strip().lower()
             if t:
                 anchors[t] = anchors.get(t, 0) + 1
-    home = normalize(crawl.get("base", "") + "/")
-    orphans = [u for u, n in inbound.items() if n == 0 and u != home and u in ok]
+    home_key = dedup_key(crawl.get("base", "") + "/")
+    orphans = [u for u, n in inbound.items()
+               if n == 0 and dedup_key(u) != home_key and u in ok]
     depths = {}
     for r in urls:
         d = r.get("depth", 99)
@@ -431,21 +449,37 @@ if __name__ == "__main__":
     assert rec["words"] > 5, rec["words"]
     assert len(rec["_links"]) == 2, rec["_links"]
 
-    assert normalize("https://X.com/a/?b=1#frag") == "https://x.com/a?b=1"
+    # THE TRAILING-SLASH BUG. WordPress serves '/story-doctors/'. Stripping the
+    # slash produced a URL that does not exist, so Google's URL Inspection API
+    # answered "URL is unknown to Google" for 174 pages that were all indexed.
+    # normalize() must PRESERVE the path the site actually serves.
+    assert normalize("https://X.com/story-doctors/") == "https://x.com/story-doctors/"
+    assert normalize("https://x.com/story-doctors") == "https://x.com/story-doctors"
+    assert normalize("https://X.com/a/?b=1#frag") == "https://x.com/a/?b=1"
+    assert normalize("https://x.com") == "https://x.com/"
+    # ...while dedup_key() still treats the two forms as ONE page.
+    assert dedup_key("https://x.com/a/") == dedup_key("https://x.com/a")
+    assert dedup_key("https://x.com/") == dedup_key("https://x.com")
     assert _skippable("https://x.com/a.png") and not _skippable("https://x.com/a")
 
+    # Realistic WordPress URLs: trailing slashes everywhere, and one link
+    # written WITHOUT the slash — the graph must still match it to the page.
     fake = {"base": "https://x.com", "urls": [
-        {"url": "https://x.com", "status": 200, "depth": 0,
-         "internal_links": ["https://x.com/guide-a"], "anchors": [("https://x.com/guide-a", "Guide A")]},
-        {"url": "https://x.com/guide-a", "status": 200, "depth": 1,
-         "internal_links": ["https://x.com/services/regulated-professionals"], "anchors": []},
-        {"url": "https://x.com/services/regulated-professionals", "status": 200, "depth": 2,
+        {"url": "https://x.com/", "status": 200, "depth": 0,
+         "internal_links": ["https://x.com/guide-a/"],
+         "anchors": [("https://x.com/guide-a/", "Guide A")]},
+        {"url": "https://x.com/guide-a/", "status": 200, "depth": 1,
+         "internal_links": ["https://x.com/services/regulated-professionals"],  # no slash
+         "anchors": []},
+        {"url": "https://x.com/services/regulated-professionals/", "status": 200, "depth": 2,
          "internal_links": [], "anchors": []},
-        {"url": "https://x.com/orphan", "status": 200, "depth": 99,
+        {"url": "https://x.com/orphan/", "status": 200, "depth": 99,
          "internal_links": [], "anchors": []}]}
     g = link_graph(fake)
-    assert g["orphans"] == ["https://x.com/orphan"], g["orphans"]
+    assert g["orphans"] == ["https://x.com/orphan/"], g["orphans"]
     assert g["total_internal_links"] == 2, g
+    assert g["broken_count"] == 0, g["broken_internal"]   # slash mismatch != broken
+    assert g["inbound"]["https://x.com/services/regulated-professionals/"] == 1, g["inbound"]
     m = money_page_support(fake, g)
     assert m["money_pages"] == 1 and m["articles_linking_to_money"] == 1, m
     print("crawler self-check OK — parse, normalize, graph, money-page support")
