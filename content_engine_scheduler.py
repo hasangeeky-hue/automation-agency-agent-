@@ -135,6 +135,8 @@ SEO_CADENCE = {
     "ranks":       {"every_days": 1, "cost": "cheap"},
     "aeo":         {"every_days": 7, "cost": "cheap"},
     "geo":         {"every_days": 7, "cost": "cheap"},
+    "ads":         {"every_days": 1, "cost": "free"},
+    "interlock":   {"every_days": 1, "cost": "free"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }
@@ -173,7 +175,8 @@ def run_seo_due(store, *, include_paid: bool = True) -> dict:
     import content_engine_seo_ops as SEO
     fns = {"crawl": SEO.run_crawl, "inspect": SEO.run_inspect, "speed": SEO.run_speed,
            "indexnow": SEO.run_indexnow, "fixes": SEO.run_fixes, "ranks": SEO.run_ranks,
-           "aeo": SEO.run_aeo, "geo": SEO.run_geo, "offpage": SEO.run_offpage,
+           "aeo": SEO.run_aeo, "geo": SEO.run_geo, "ads": SEO.run_ads,
+           "interlock": SEO.run_interlock, "offpage": SEO.run_offpage,
            "prospecting": SEO.run_prospecting}
     out = {}
     for name in seo_due(store):
@@ -213,7 +216,8 @@ if __name__ == "__main__":
 
     due_all = seo_due(_S({}))
     assert set(due_all) == set(SEO_CADENCE), due_all
-    assert due_all[0] in ("crawl", "indexnow", "inspect", "speed"), due_all
+    assert "ads" in SEO_CADENCE and "interlock" in SEO_CADENCE, "media engines must be scheduled"
+    assert SEO_CADENCE[due_all[0]]["cost"] == "free", due_all   # cheapest first
     costs = [SEO_CADENCE[n]["cost"] for n in due_all]
     assert costs == sorted(costs, key=lambda c: {"free": 0, "cheap": 1, "paid": 2}[c]), costs
 

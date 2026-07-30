@@ -1638,6 +1638,22 @@ def build_app():
     def ads_interlock():
         return api_seo("interlock")
 
+    @app.post("/ads/offline-conversions")
+    def ads_offline():
+        """M9 — feed WON deals back so Google bids for clients, not form fills."""
+        import content_engine_ads as A
+        store = get_store()
+        rows = []
+        try:
+            for j in (store.list_jobs() if hasattr(store, "list_jobs") else []):
+                o = (j.get("payload", {}) or {}).get("outcome") or {}
+                if o.get("gclid") and o.get("revenue"):
+                    rows.append({"gclid": o["gclid"], "value": o["revenue"],
+                                 "conversion_date_time": o.get("won_at", "")})
+        except Exception as e:
+            log.warning("offline conversion gather failed: %s", e)
+        return {"ok": True, **A.upload_offline_conversions(rows)}
+
     @app.get("/ads/economics")
     def ads_econ_get():
         import content_engine_ads as A

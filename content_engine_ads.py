@@ -503,6 +503,119 @@ def keyword_ideas(seed_keywords: list, limit: int = 60) -> dict:
         return {"connected": False, "reason": f"{type(e).__name__}: {e}", "ideas": []}
 
 
+def upload_offline_conversions(rows: list, conversion_action: str = "") -> dict:
+    """M9 - the highest-value wire in the whole media section.
+
+    Google only sees form fills. Uploading WON DEALS teaches it to bid for
+    clients instead of leads. rows = [{gclid, conversion_date_time, value}].
+    """
+    g = _ads()
+    if not g.available():
+        return {"connected": False, "reason": _OFF["reason"], "uploaded": 0}
+    action = conversion_action or _env_action()
+    if not action:
+        return {"connected": True, "uploaded": 0,
+                "reason": ("Create an 'Offline conversion' action in Google Ads and "
+                           "set GOOGLE_ADS_OFFLINE_ACTION to its resource name. "
+                           "One-time setup.")}
+    payload = [{"gclid": r.get("gclid"),
+                "conversionAction": action,
+                "conversionDateTime": r.get("conversion_date_time"),
+                "conversionValue": float(r.get("value") or 0),
+                "currencyCode": r.get("currency", "EUR")}
+               for r in (rows or []) if r.get("gclid")]
+    if not payload:
+        return {"connected": True, "uploaded": 0,
+                "reason": ("No GCLIDs captured yet. The click id must be stored with "
+                           "the lead at form-submit time before a won deal can be "
+                           "traced back to the ad that produced it.")}
+    try:
+        import content_engine_connectors as C
+        tok = g._access_token()
+        j = C._post_json(f"{g._base()}:uploadClickConversions",
+                         {"conversions": payload, "partialFailure": True},
+                         headers=g._headers(tok))
+        results = (j or {}).get("results") or []
+        return {"connected": True, "uploaded": len(results), "sent": len(payload),
+                "errors": (j or {}).get("partialFailureError")}
+    except Exception as e:
+        return {"connected": True, "uploaded": 0, "reason": f"{type(e).__name__}: {e}"}
+
+
+def _env_action() -> str:
+    import content_engine_connectors as C
+    return C._env("GOOGLE_ADS_OFFLINE_ACTION")
+
+
+# ======================================================================
+#  M13 - WORK ORDERS FROM ADS FINDINGS
+# ======================================================================
+def work_orders(snapshot: dict, targets_: dict = None) -> list:
+    """Turn what the pulls found into the same tracked jobs the SEO side uses.
+
+    NOTHING that changes spend is auto-applicable. Adding a negative and pausing
+    a disapproved ad are reversible; a bid or budget change is not.
+    """
+    import content_engine_workorders as WO
+    snap = snapshot or {}
+    out = []
+
+    def add(code, url, sev, detail, fix, impact=None):
+        out.append(WO.make_order(code, url, severity=sev, detail=detail,
+                                 fix=fix, auto=False, impact=impact))
+
+    for t in ((snap.get("terms") or {}).get("waste_terms") or [])[:40]:
+        add("ads_negative", "term:" + str(t.get("term", "")), "high",
+            "EUR %.0f on %s clicks, 0 conversions" % (t.get("cost", 0) or 0,
+                                                      t.get("clicks", 0)),
+            "Add this search term as a negative keyword",
+            impact=min(100, float(t.get("cost", 0) or 0) * 2))
+    for a in ((snap.get("ad_status") or {}).get("disapproved") or [])[:20]:
+        add("ads_disapproved", "campaign:" + str(a.get("campaign", "")), "critical",
+            "Ad is disapproved and not serving at all",
+            "Fix the policy violation or replace the ad", impact=90)
+    for k in ((snap.get("kw") or {}).get("low_qs") or [])[:20]:
+        add("ads_low_qs", "kw:" + str(k.get("text", "")), "high",
+            "Quality Score %s - EUR %.0f spent" % (k.get("qs"), k.get("cost", 0) or 0),
+            "Improve ad relevance or the landing page for this keyword",
+            impact=min(100, float(k.get("cost", 0) or 0)))
+    for c in ((snap.get("ads") or {}).get("campaigns") or []):
+        v = impression_share_verdict(c)
+        if v["verdict"] == "budget":
+            add("ads_budget_limited", "campaign:" + str(c.get("name", "")), "medium",
+                "%s%% of impressions lost to budget" % v["pct"], v["action"], impact=60)
+        elif v["verdict"] == "rank":
+            add("ads_rank_limited", "campaign:" + str(c.get("name", "")), "high",
+                "%s%% of impressions lost to rank" % v["pct"], v["action"], impact=70)
+    for b in (snap.get("bid_advice") or []):
+        if not b.get("ok"):
+            add("ads_bid_strategy", "campaign:" + str(b.get("campaign", "")), "medium",
+                str(b.get("advice", "")), "Review the bid strategy", impact=55)
+    for a in ((snap.get("assets") or {}).get("low") or [])[:20]:
+        add("ads_low_asset", "asset:" + str(a.get("text", ""))[:40], "medium",
+            "Google rates this %s asset LOW" % a.get("field", ""),
+            "Replace this headline or description", impact=40)
+    return out
+
+
+def funnel_flows(impressions=0, clicks=0, leads=0, bookings=0, customers=0,
+                 organic_clicks=0) -> list:
+    """The sankey the Conversion board was built for - paid and organic in one
+    picture. [(source, target, value)]; empty when there is nothing real."""
+    flows = []
+    if impressions and clicks:
+        flows.append(("Ad impressions", "Ad clicks", clicks))
+    if organic_clicks:
+        flows.append(("Organic impressions", "Organic clicks", organic_clicks))
+    if (clicks or organic_clicks) and leads:
+        flows.append(("Ad clicks", "Leads", leads))
+    if leads and bookings:
+        flows.append(("Leads", "Consultations", bookings))
+    if bookings and customers:
+        flows.append(("Consultations", "Clients", customers))
+    return [f for f in flows if f[2]]
+
+
 # ======================================================================
 #  DERIVED DIAGNOSTICS (pure code on whatever was pulled)
 # ======================================================================
@@ -623,6 +736,33 @@ if __name__ == "__main__":
     set_economics(st, avg_deal_value=5000, gross_margin_pct=60, consult_to_client_pct=25)
     assert get_economics(st)["avg_deal_value"] == 5000.0
     assert targets(get_economics(st))["ready"] is True
+    # ---- M9 / M13 / funnel ----
+    up = upload_offline_conversions([{"gclid": "x", "value": 5000}])
+    assert up["connected"] is False and "placeholder" in up["reason"], up
+
+    snap = {"terms": {"waste_terms": [{"term": "free automation", "cost": 45, "clicks": 9}]},
+            "ad_status": {"disapproved": [{"campaign": "Brand"}]},
+            "kw": {"low_qs": [{"text": "automation", "qs": 3, "cost": 80}]},
+            "ads": {"campaigns": [{"name": "Search", "is_lost_budget": 40, "is_lost_rank": 2},
+                                  {"name": "PMax", "is_lost_budget": 1, "is_lost_rank": 50}]},
+            "bid_advice": [{"campaign": "Search", "ok": False, "advice": "too few conversions"}],
+            "assets": {"low": [{"text": "Best automation", "field": "HEADLINE"}]}}
+    wos = work_orders(snap)
+    codes = [w["code"] for w in wos]
+    for expected in ("ads_negative", "ads_disapproved", "ads_low_qs",
+                     "ads_bid_strategy", "ads_budget_limited", "ads_rank_limited",
+                     "ads_low_asset"):
+        assert expected in codes, (expected, codes)
+    assert not any(w["auto"] for w in wos), "nothing touching spend may auto-apply"
+    assert max(w["impact"] for w in wos) >= 90, "a disapproved ad must rank near the top"
+    assert work_orders({}) == [], "no data -> no invented work"
+
+    f = funnel_flows(impressions=1000, clicks=100, leads=10, bookings=4, customers=1,
+                     organic_clicks=40)
+    assert ("Ad impressions", "Ad clicks", 100) in f, f
+    assert ("Consultations", "Clients", 1) in f, f
+    assert funnel_flows() == [], "no data -> no fake funnel"
+
     print("ads self-check OK — unit economics, CPC judgement, pacing, impression "
           "share verdict, bid strategy advice, waste math, honest degrade on all "
           "10 API pulls")

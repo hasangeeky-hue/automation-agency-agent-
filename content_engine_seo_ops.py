@@ -45,6 +45,11 @@ MAX_SPEED = 10
 MAX_RANK_KEYWORDS = 80
 
 
+def _D(v):
+    """Any value -> a dict. The store is not always shaped how we assume."""
+    return v if isinstance(v, dict) else {}
+
+
 def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -496,6 +501,26 @@ def build_media_ctx(store, *, competitor_intel=None) -> dict:
         "competitor_intel": competitor_intel or (_get(store, "competitor_intel", {}) or {}),
         "orders": [], "funnel": [],
     })
+    # M13 — findings become tracked jobs, the same as the SEO side.
+    try:
+        ctx["orders"] = ADS.work_orders(snap)
+    except Exception as e:
+        log.warning("ads work orders failed: %s", e)
+    # The Conversion board's sankey: paid + organic in one picture, from
+    # whatever is real. No data -> no funnel, never a decorative one.
+    try:
+        cac = _D(inter.get("cac"))
+        gsc = _D(_D(_get(store, "google_insights", {})).get("gsc"))
+        organic_clicks = sum(int(q.get("clicks", 0) or 0) for q in (gsc.get("queries") or []))
+        a = _D(snap.get("ads"))
+        ctx["funnel"] = ADS.funnel_flows(
+            impressions=a.get("impressions", 0), clicks=a.get("clicks", 0),
+            leads=int(a.get("conversions", 0) or 0),
+            bookings=cac.get("bookings", 0), customers=cac.get("customers", 0),
+            organic_clicks=organic_clicks)
+    except Exception as e:
+        log.warning("funnel build failed: %s", e)
+
     ctx.setdefault("ads", {"connected": False})
     for k in ("terms", "kw", "assets", "conv_actions", "targeting", "audiences",
               "ad_status", "changes", "recs", "kw_ideas"):
