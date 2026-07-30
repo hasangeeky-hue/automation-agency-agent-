@@ -3571,8 +3571,28 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
 
     # ---- 12. SYSTEM MAP + DIAGNOSTIC ----
     diag_rows = []
+    # A wire can fail two different ways and they need different words. "Not
+    # connected" means no credentials. "Rejected" means credentials exist and
+    # the provider refused them — telling someone to add a key they already
+    # added would be a new kind of wrong answer.
+    try:
+        import content_engine_connectors as _CN
+        _rejected = _CN.auth_reasons()
+    except Exception:
+        _rejected = {}
     for k, name, why, effect, fix in _DIAG:
         on = st.get(k)
+        if not on and k in _rejected:
+            diag_rows.append(
+                "<tr><td>" + _esc(name) + "</td>"
+                "<td><span class='pill p-need' style='border-color:#F5788A;color:#F5788A'>"
+                "<span class='d' style='background:#F5788A'></span>Rejected</span></td>"
+                "<td class='mut'>" + _esc(_rejected[k]) + "</td>"
+                "<td class='mut'>" + _esc(effect) +
+                "<div class='dim' style='margin-top:3px'>The key is saved but the "
+                "provider refused it — replace it below rather than adding a new one."
+                "</div></td></tr>")
+            continue
         if on:
             diag_rows.append(f"<tr><td>{_esc(name)}</td><td><span class='pill p-live'><span class='d' style='background:#3FD98B'></span>Working</span></td><td class='dim'>—</td><td class='dim'>Fully connected.</td></tr>")
         else:

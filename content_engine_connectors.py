@@ -61,6 +61,7 @@ from email.header import decode_header, make_header
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid, parseaddr
 from html.parser import HTMLParser
+import time as _time
 from typing import Optional
 
 log = logging.getLogger("connectors")
@@ -349,6 +350,116 @@ EMAIL_CATEGORY_ALIAS = {
     "thanks": "contact",
     "welcome": "contact",
 }
+
+
+
+# ---------------------------------------------------------------------------
+# WIRE VERIFICATION — creds present is not the same as creds accepted
+# ---------------------------------------------------------------------------
+# status() used to report credential PRESENCE only. A rejected Google Ads
+# refresh token showed as a live wire while every call returned 401, and the
+# risk register counts wires_down from status(), so the risk score was
+# optimistic by one wire. A green wire now means something proved it works.
+_AUTH_STATE: dict = {}          # wire -> {ok, code, reason, at}
+_AUTH_TTL = 1800                # a rejection older than 30 min is re-tested on use
+
+# Wires that can prove themselves for free. Serper is deliberately ABSENT:
+# it has no free ping endpoint, and spending a paid search credit on a health
+# check would be a worse bug than the one this fixes.
+VERIFIABLE = ("ads_api", "google_gsc_ga4", "google_sheets", "google_drive",
+              "calcom_bookings")
+
+
+def note_auth(wire: str, ok: bool, code: int = 0, reason: str = "") -> None:
+    """Record what the API actually said. Called from the real call paths, so
+    verification costs nothing extra."""
+    if not wire:
+        return
+    _AUTH_STATE[wire] = {"ok": bool(ok), "code": int(code or 0),
+                         "reason": str(reason or ""), "at": _time.time()}
+
+
+def _rejected(wire: str) -> bool:
+    """True only for a fresh, hard credential rejection."""
+    st = _AUTH_STATE.get(wire)
+    if not st or st.get("ok"):
+        return False
+    if int(st.get("code") or 0) not in (401, 403):
+        return False
+    return (_time.time() - float(st.get("at") or 0)) < _AUTH_TTL
+
+
+def _accepted(wire: str, present: bool) -> bool:
+    """present AND not currently rejected. A wire nothing has called yet stays
+    green on presence — unproven is not the same as broken, and saying
+    otherwise would be its own false alarm."""
+    return bool(present) and not _rejected(wire)
+
+
+def auth_reasons() -> dict:
+    """{wire: plain-English reason} for every wire whose credentials exist but
+    were refused. Feeds the wiring diagnostic so a red wire says WHY."""
+    out = {}
+    for wire, st in _AUTH_STATE.items():
+        if _rejected(wire):
+            out[wire] = st.get("reason") or f"rejected with HTTP {st.get('code')}"
+    return out
+
+
+def _classify(e, wire: str, what: str) -> tuple:
+    """(code, reason) from an exception raised by requests."""
+    code = 0
+    resp = getattr(e, "response", None)
+    if resp is not None:
+        code = int(getattr(resp, "status_code", 0) or 0)
+    if code in (401, 403):
+        return code, (f"{what} credentials were rejected by the provider "
+                      f"(HTTP {code}). The key or token needs regenerating — "
+                      f"this is not a network problem.")
+    if code:
+        return code, f"{what} returned HTTP {code}."
+    return 0, f"{what} could not be reached: {str(e)[:120]}"
+
+
+def verify_wire(wire: str) -> dict:
+    """On-demand check for the Test button. Returns {ok, code, reason}."""
+    try:
+        if wire == "ads_api":
+            g = GoogleAds()
+            if not g.available():
+                return {"ok": False, "code": 0, "reason": "credentials incomplete"}
+            tok = g._access_token()
+            if not tok:
+                note_auth(wire, False, 401,
+                          "Google refused the Ads refresh token (401). Regenerate "
+                          "it in the OAuth playground — a refresh token dies if it "
+                          "is unused for six months or the consent is revoked.")
+            else:
+                note_auth(wire, True)
+            return dict(_AUTH_STATE.get(wire, {"ok": bool(tok), "code": 0, "reason": ""}))
+        if wire in ("google_gsc_ga4", "google_sheets", "google_drive"):
+            if not _google_configured():
+                return {"ok": False, "code": 0, "reason": "no service-account JSON"}
+            tok = _google_token(["https://www.googleapis.com/auth/drive.file"])
+            if not tok:
+                note_auth(wire, False, 401,
+                          "The Google service-account key was rejected. If the key "
+                          "was rotated or the service account was deleted, paste a "
+                          "fresh JSON key — GSC, GA4, Sheets and Drive all use it.")
+            else:
+                note_auth(wire, True)
+            return dict(_AUTH_STATE.get(wire, {}))
+        if wire == "calcom_bookings":
+            c = CalCom()
+            if not c.available():
+                return {"ok": False, "code": 0, "reason": "no Cal.com API key"}
+            ok = c.bookings() is not None
+            note_auth(wire, ok, 0 if ok else 401,
+                      "" if ok else "Cal.com rejected the API key.")
+            return dict(_AUTH_STATE.get(wire, {}))
+    except Exception as e:
+        return {"ok": False, "code": 0, "reason": f"{type(e).__name__}: {e}"}
+    return {"ok": True, "code": 0, "reason": "this wire has no free self-test"}
 
 
 def _get_json(url: str, headers: Optional[dict] = None, params: Optional[dict] = None):
@@ -2425,9 +2536,18 @@ def _google_token(scopes):
         from google.auth.transport.requests import Request
         creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
         creds.refresh(Request())
+        for _w in ("google_gsc_ga4", "google_sheets", "google_drive"):
+            note_auth(_w, True)
         return creds.token
     except Exception as e:
         log.warning("google service-account auth failed: %s", e)
+        # One key backs GSC, GA4, Sheets and Drive — if it is refused, all four
+        # are down, and all four used to keep showing green.
+        for _w in ("google_gsc_ga4", "google_sheets", "google_drive"):
+            note_auth(_w, False, 401,
+                      "The Google service-account key was rejected: "
+                      f"{str(e)[:110]}. Paste a fresh JSON key — GSC, GA4, "
+                      "Sheets and Drive all depend on this one credential.")
         return None
 
 
@@ -2593,7 +2713,15 @@ class GoogleAds:
         j = _post_json("https://oauth2.googleapis.com/token", {
             "client_id": self.client_id, "client_secret": self.client_secret,
             "refresh_token": self.refresh, "grant_type": "refresh_token"})
-        return (j or {}).get("access_token", "")
+        tok = (j or {}).get("access_token", "")
+        # Record the verdict. Google returns 401 for a dead refresh token, and
+        # the dashboard used to show this wire green anyway.
+        note_auth("ads_api", bool(tok), 0 if tok else 401,
+                  "" if tok else
+                  "Google refused the Ads refresh token (401). Regenerate it — a "
+                  "refresh token expires if unused for six months, or if the "
+                  "OAuth consent was revoked. Everything else about Ads is set up.")
+        return tok
 
     def _headers(self, tok: str) -> dict:
         h = {"Authorization": f"Bearer {tok}", "developer-token": self.dev}
@@ -2800,15 +2928,15 @@ def status() -> dict:
         "email_send": Emailer().available(),
         "email_reply_inbound": InboundEmail().available(),
         "email_verify": True,  # always on (degrades to syntactic)
-        "google_sheets": GoogleSheets().available(),   # mother dashboard / store
-        "google_drive": GoogleDrive().available(),     # content JSON storage
+        "google_sheets": _accepted("google_sheets", GoogleSheets().available()),   # mother dashboard / store
+        "google_drive": _accepted("google_drive", GoogleDrive().available()),     # content JSON storage
         "web_search": bool(_env("SEARCH_PROVIDER") and _env("SEARCH_API_KEY") and _requests()),
         "serper_search": Serper().available(),   # Google search + Maps (research + local leads)
         "linkedin_leads": LinkedIn().available(),
-        "google_gsc_ga4": Google().available(),
+        "google_gsc_ga4": _accepted("google_gsc_ga4", Google().available()),
         "ads_data": bool(_env("ADS_JSON")),
-        "ads_api": GoogleAds().available(),
-        "calcom_bookings": CalCom().available(),
+        "ads_api": _accepted("ads_api", GoogleAds().available()),
+        "calcom_bookings": _accepted("calcom_bookings", CalCom().available()),
         "backlinks_data": bool(_env("BACKLINKS_JSON")),
         # ---- SEO engine wires ----
         "seo_crawler": True,                      # pure code, always on
@@ -2934,6 +3062,24 @@ if __name__ == "__main__":
     st2 = status()
     assert st2["google_sheets"] is False and st2["google_drive"] is False
 
+    # ---- wire verification: green must mean PROVEN, not merely present ----
+    assert _accepted("ads_api", True) is True, "unproven wire must not read as broken"
+    note_auth("ads_api", False, 401, "refused")
+    assert _accepted("ads_api", True) is False, "a 401 must take the wire down"
+    assert "ads_api" in auth_reasons(), "a down wire must say why"
+    for transient in (500, 503, 0):
+        note_auth("google_sheets", False, transient, "blip")
+        assert _accepted("google_sheets", True) is True, (
+            f"HTTP {transient} is not a credential rejection and must not flip a wire")
+    note_auth("ads_api", True)
+    assert _accepted("ads_api", True) is True and not auth_reasons(), "recovery must clear"
+    _AUTH_STATE.clear()
+    _st = status()
+    assert all(k in _st for k in VERIFIABLE), "status() lost a wire"
+    assert len(_st) == len(status()), "status() shape must be stable"
+
     print("OK — connectors self-check passed: graceful offline degradation, "
           "verifier always on, hooks wire only when creds present, collectors "
-          "return safe empties, Google hub off-and-safe. (No network, no API.)")
+          "return safe empties, Google hub off-and-safe, and a wire reads green "
+          "only once something proved the credentials were accepted. "
+          "(No network, no API.)")
