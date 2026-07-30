@@ -1252,26 +1252,31 @@ def seo_pages(ctx) -> dict:
             for tab, boards in _TAB_BOARDS.items()}
 
 
-# Tab order + labels for the single SEO section.
+# Tab order. SEO Command is FIRST and open by default: landing on the old
+# Search & Analytics board made it look like nothing had changed, because the
+# new boards were hidden behind tabs nobody noticed.
 TABS = [
-    ("seooverview", "📊", "Search & Analytics"),
     ("seocmd", "🧭", "SEO Command"),
     ("seotech", "🔧", "Technical & Indexing"),
     ("seoonpage", "📄", "On-Page & Links"),
     ("seokw", "🔑", "Keywords, Content & AEO"),
     ("seooff", "🌐", "Off-Page & Local"),
     ("seowork", "🛠", "Work Orders"),
+    ("seooverview", "📊", "Search & Analytics"),
 ]
 
 _TAB_CSS = """<style>
-.stabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 4px;padding-bottom:10px;
-  border-bottom:1px solid #1B2640}
-.stab{background:#121A2E;border:1px solid #1B2640;color:#8FA0BF;border-radius:9px;
-  padding:8px 13px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;
+.shint{font-size:12px;color:#8FA0BF;margin:14px 0 6px;display:flex;align-items:center;gap:7px}
+.shint b{color:#2FE3D2}
+.stabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 4px;padding-bottom:10px;
+  border-bottom:2px solid #2FE3D2}
+.stab{background:#121A2E;border:1px solid #26456f;color:#B9C6DE;border-radius:9px;
+  padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;
   display:flex;align-items:center;gap:6px;transition:all .15s}
-.stab:hover{border-color:#2FE3D2;color:#EDF1FB}
-.stab.on{background:linear-gradient(180deg,#18314f,#121A2E);border-color:#2FE3D2;color:#EDF1FB}
-.stab .n{background:#0A0E1A;border-radius:20px;padding:1px 7px;font-size:10.5px;color:#8FA0BF}
+.stab:hover{border-color:#2FE3D2;color:#EDF1FB;transform:translateY(-1px)}
+.stab.on{background:linear-gradient(180deg,#1d3f63,#121A2E);border-color:#2FE3D2;
+  color:#FFFFFF;box-shadow:0 0 0 1px #2FE3D2 inset}
+.stab .n{background:#0A0E1A;border-radius:20px;padding:1px 7px;font-size:10.5px;color:#2FE3D2}
 .spanel{display:none}.spanel.on{display:block}
 @media(max-width:860px){.stabs{overflow-x:auto;flex-wrap:nowrap}.stab{white-space:nowrap}}
 </style>"""
@@ -1312,7 +1317,10 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "<button class='cbtn' onclick='runAeo()'>🤖 Probe AI answers</button>"
         "<button class='cbtn' onclick='runProspect()'>🌐 Find link prospects</button>"
         "</div>")
-    return _TAB_CSS + runbar + f"<div class='stabs'>{bar}</div>" + body
+    total = sum(counts.values())
+    hint = (f"<div class='shint'>👇 <b>{total} SEO cards</b> across {len(TABS)} tabs — "
+            f"click a tab to switch. You are on <b>{TABS[0][2]}</b>.</div>")
+    return _TAB_CSS + runbar + hint + f"<div class='stabs'>{bar}</div>" + body
 
 
 CARD_COUNTS = {"command": 12, "technical": 18, "indexing": 12, "on_page": 16,
@@ -1445,7 +1453,13 @@ if __name__ == "__main__":
         assert f"seoTab('{tid}')" in sec, f"tab {tid} has no click handler"
     assert sec.count("class='spanel on'") == 1, "exactly one tab may start open"
     assert sec.count("class='stab on'") == 1, "exactly one tab may start active"
-    assert sec.index("stab-seooverview") < sec.index("stab-seocmd"), "overview must be first"
+    # SEO Command must be FIRST and open — landing on the legacy board made the
+    # new work look like it hadn't shipped.
+    assert TABS[0][0] == "seocmd", "SEO Command must be the first tab"
+    assert sec.index("stab-seocmd") < sec.index("stab-seooverview"), "Command before legacy"
+    assert "id='spanel-seocmd'" in sec and "class='spanel on' id='spanel-seocmd'" in sec, \
+        "the SEO Command panel must be the one open on load"
+    assert "SEO cards</b> across" in sec, "the tab hint must tell the user there are more tabs"
     # every card still present, just tabbed
     assert sec.count("<div class='card'>") == TOTAL_CARDS + 1, sec.count("<div class='card'>")
     # the run bar must expose the free engines by name
