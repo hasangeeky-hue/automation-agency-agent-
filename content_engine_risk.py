@@ -93,7 +93,18 @@ def _risk(key, title, category, likelihood, impact, evidence, mitigation,
 def register(*, status=None, month_spent=0.0, month_cap=200.0, jobs=None,
              wires_down=0, waiting=0, healthy=True, leads=0, backup=None,
              econ=None, outcomes=None, aeo=None, geo=None) -> list:
-    """Every risk, scored from real inputs rather than a hardcoded ladder."""
+    """Every risk, scored from real measured inputs.
+
+    Be precise about what is and is not derived. The INPUTS are real and each
+    risk carries the evidence string it was scored from — budget percentage,
+    wires down, backup presence, market coverage. The likelihood/impact MAPPING
+    is still a fixed threshold ladder (>=85% of cap -> likelihood 3, and so on),
+    chosen by hand. That is how a risk register normally works, but it is a
+    judgement baked into code, not a measurement, and it should be read that
+    way. History is what turns it into evidence over time: record_snapshot()
+    stores every score so the register can show movement rather than a fresh
+    opinion on each page load.
+    """
     status = _D(status)
     jobs = _L(jobs)
     out = []
