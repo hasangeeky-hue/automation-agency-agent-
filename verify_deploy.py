@@ -25,11 +25,11 @@ CARD = re.compile(r"<div class='card (?:overflowcard )?sev-")
 SEC = re.compile(r"id='sec-([a-z0-9_]+)'")
 
 EXPECTED_SECTIONS = [
-    "mission", "bi", "ops", "riskinfra", "content", "leads", "email",
+    "mission", "bi", "ops", "riskinfra", "content", "outreach",
     "social", "seo", "ads", "media", "google", "appr", "learn", "system",
 ]
 BIG_SECTIONS = {"seo": 235, "media": 296, "system": 214, "riskinfra": 208,
-                "bi": 268}
+                "bi": 268, "outreach": 224}
 FELL_BACK = "boards failed to render"
 
 
@@ -42,6 +42,7 @@ def main() -> int:
     for mod in ("content_engine_dashboard", "content_engine_risk",
                 "content_engine_risk_boards", "content_engine_system_boards",
                 "content_engine_bi", "content_engine_bi_boards",
+                "content_engine_outreach", "content_engine_outreach_boards",
                 "content_engine_seo_boards", "content_engine_media_boards",
                 "content_engine_seo_ops", "content_engine_connectors",
                 "content_engine_charts"):
@@ -113,7 +114,7 @@ def main() -> int:
     print("=" * 68)
     for old in ("risk", "workforce", "infra", "agents", "map", "overview",
                 "business", "marketing", "sales", "customer", "finance", "budget",
-                "exec"):
+                "exec", "leads", "email"):
         gone = f"id='sec-{old}'" not in html
         aliased = f"{old}:'" in html
         print(f"   {old:<10} removed: {'yes' if gone else 'NO - still a page'}"
@@ -130,8 +131,9 @@ def main() -> int:
         print()
         print("Paste this whole output back and it says exactly what to fix.")
         return 1
-    print("HEALTHY - 15 sections, Business Intelligence (268) and Risk & "
-          "Infrastructure (208) both merged and full, nothing fell back.")
+    print("HEALTHY - 14 sections. Business Intelligence 268, Leads & Outreach "
+          "224, Risk & Infrastructure 208 - all merged and full, nothing fell "
+          "back.")
     print("If the browser still shows the old layout, it is a cached page: "
           "hard-reload with Ctrl+Shift+R.")
     return 0

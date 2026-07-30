@@ -26,12 +26,13 @@ log = logging.getLogger("content_engine.dashboard")
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v24 · Executive Intelligence merged into Business "
-             "Intelligence: 7 sections became 1 — 268 cards, 15 boards, 66 "
-             "charts, with a Record-a-won-deal path so revenue, LTV and CAC "
-             "compute without Stripe or a CRM. 1,221 engine cards: BI 268, "
-             "SEO/AEO/GEO 235, Media Buying 296, System & Wiring 214, Risk & "
-             "Infrastructure 208 — 15 sidebar entries, each with in-page tabs")
+BUILD_TAG = ("2026-07-30 · v25 · Leads & Outreach: Lead Machine + Email & "
+             "Outreach merged into ONE section — 224 cards, 13 boards, the "
+             "launch pad carried over intact, five fabricated numbers "
+             "deleted, and open/click tracking with a switch. 1,445 engine "
+             "cards: BI 268, Media Buying 296, SEO/AEO/GEO 235, Leads & "
+             "Outreach 224, System & Wiring 214, Risk & Infrastructure 208 "
+             "— 14 sidebar entries, each with in-page tabs")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2781,7 +2782,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
                    content_plan=None, web_tracking=None, reply_drafts=None,
                    competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None,
-                   system_ctx=None, risk_ctx=None, bi_ctx=None):
+                   system_ctx=None, risk_ctx=None, bi_ctx=None,
+                   outreach_ctx=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -3933,6 +3935,30 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                        f"{_esc(type(_e3).__name__)}: {_esc(str(_e3))[:300]}</p></div>"
                        + p_agents + p_map + overview)
 
+    # ---- Leads & Outreach: ONE section replacing Lead Machine and Email &
+    # Outreach. Unlike the other merges these two carry a working launch pad —
+    # the outbox, the replies inbox, the leads table and the Maps form are
+    # passed through ALREADY RENDERED so every send button keeps calling the
+    # same endpoint it always did. Send logic is not touched.
+    try:
+        import content_engine_outreach_boards as _OB
+        _octx = dict(outreach_ctx or {})
+        _octx["live"] = {"outbox": _outbox(jobs),
+                         "replies": _replies_inbox(reply_drafts),
+                         "leads_table": _leads_table(jobs),
+                         "maps_form": maps_form,
+                         "outbox_pointer": _outbox_pointer(jobs)}
+        _outreach_all = _OB.outreach_section(_octx)
+    except Exception as _e6:
+        log.exception("Leads & Outreach boards failed to render - showing the "
+                      "old two modules instead")
+        _outreach_all = ("<div class='card full' style='border-color:#F5788A'>"
+                         "<p class='ct'>Leads &amp; Outreach boards failed to render</p>"
+                         f"<p class='cc'>Showing the older modules below, so the "
+                         f"send buttons still work. Reason: "
+                         f"{_esc(type(_e6).__name__)}: {_esc(str(_e6))[:300]}</p></div>"
+                         + p_leads + p_email)
+
     # ---- Business Intelligence: ONE section replacing Business Performance,
     # Marketing Intelligence, Sales Intelligence, Customer Intelligence, Finance
     # and Budget & Cost — 41 cards that all read the same context dict.
@@ -3976,8 +4002,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          "Risk, workforce and infrastructure — merged. 208 cards across 12 boards.",
          _risk_all),
         ("content", "📝", "Content Factory", "Content Factory", "Everything about creating & publishing content.", p_content),
-        ("leads", "🧲", "Lead Machine", "Lead Machine", "Finding, scoring and grouping your leads.", p_leads),
-        ("email", "✉️", "Email & Outreach", "Email & Outreach", "Cold emails, replies and deliverability.", p_email),
+        ("outreach", "📮", "Leads & Outreach", "Leads & Outreach",
+         "Find them, write to them, track what came back. 224 cards "
+         "across 13 boards.", _outreach_all),
         ("social", "📣", "Social Media", "Social Media", "Posting and engagement across channels.", p_social),
         ("seo", "🔎", "SEO / AEO / GEO", "SEO · AEO · GEO",
          "Search, AI-answer and geo visibility — every SEO board in one place.", _seo_all),
@@ -4044,7 +4071,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  + pause_btn + auto_btn + "</div></details>")
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
-    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi'};"
+    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi',leads:'outreach',email:'outreach'};"
               "function nav(id){id=NAVALIAS[id]||id;"
               "document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
               "var s=document.getElementById('sec-'+id);if(s)s.classList.add('on');"
@@ -4127,6 +4154,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "body:JSON.stringify({avg_deal_value:d,gross_margin_pct:m,consult_to_client_pct:c,lead_to_consult_pct:l})});"
               "var j=await r.json();alert('Saved. Target CPA per lead: EUR '+((j.targets||{}).target_cpa_lead||'-'));location.reload();}"
               "catch(e){alert('Failed: '+e);}}"
+              "function trackToggle(){"
+              "if(!confirm('Toggle open/click tracking for every future send?\\n\\n"
+              "ON adds a 1x1 pixel and rewrites links in the HTML part. In Germany "
+              "and Switzerland that is a GDPR matter, and pixels cost some "
+              "deliverability.'))return;"
+              "fetch('/outreach/tracking',{method:'POST',headers:{'Content-Type':'application/json'},"
+              "body:JSON.stringify({enabled:!window.__track})}).then(function(r){return r.json();})"
+              ".then(function(j){alert(j.message||'Saved');location.reload();})"
+              ".catch(function(e){alert('Failed: '+e);});}"
               "function biDeal(){var c=prompt('Client name');if(!c)return;"
               "var v=prompt('Deal value in euros (numbers only)');if(!v)return;"
               "var s=prompt('Where did it come from? outreach / organic / ads / referral / direct','outreach')||'other';"
@@ -4316,17 +4352,25 @@ if __name__ == "__main__":
     import re as _re
     _ids = _re.findall(r"id='sec-([a-z0-9_]+)'", html)
     assert _ids == ["mission", "bi", "ops", "riskinfra", "content",
-                    "leads", "email", "social", "seo", "ads", "media", "google",
+                    "outreach", "social", "seo", "ads", "media", "google",
                     "appr", "learn", "system"], _ids
-    assert html.count("class='page") == 15, html.count("class='page")
+    assert html.count("class='page") == 14, html.count("class='page")
+    # the launch pad must survive the merge: every endpoint still reachable
+    for _ep in ("/outreach/send_all", "/outreach/send_one", "/outreach/send_batch",
+                "/outreach/edit", "/outreach/trash", "/replies/refresh",
+                "/reply/send", "/reply/edit", "/reply/dismiss", "/leads/maps"):
+        assert _ep in html, f"{_ep} is no longer reachable from the UI"
     # the six merged-away pages must not come back, and every old nav id must
     # still land somewhere real
     for _dead in ("sec-business", "sec-marketing", "sec-sales", "sec-customer",
-                  "sec-finance", "sec-budget", "sec-exec"):
+                  "sec-finance", "sec-budget", "sec-exec",
+                  "sec-leads", "sec-email"):
         assert f"id='{_dead}'" not in html, f"{_dead} should be merged into sec-bi"
     for _old in ("business", "marketing", "sales", "customer", "finance",
                  "budget", "exec"):
         assert f"{_old}:'bi'" in html, f"nav alias {_old} -> bi missing"
+    for _old in ("leads", "email"):
+        assert f"{_old}:'outreach'" in html, f"nav alias {_old} -> outreach missing"
     for _fn in ("biDeal()", "biEcon()", "biTargets()"):
         assert _fn in html, f"{_fn} handler missing"
     assert "CEO Command Center" in html and "Executive briefing" in html
@@ -4344,9 +4388,11 @@ if __name__ == "__main__":
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
-    print("OK — 15 pages. Risk + AI Workforce + Infrastructure now render as ONE "
+    print("OK — 14 pages. Risk + AI Workforce + Infrastructure now render as ONE "
           "Risk & Infrastructure section (208 cards) and six more render as ONE "
           "Business Intelligence section (268 cards, 15 boards, Executive "
-          "Intelligence included); the old nav ids "
+          "Intelligence included), and Lead Machine + Email & Outreach render "
+          "as ONE Leads & Outreach section (224 cards, 13 boards, every send "
+          "endpoint intact); the old nav ids "
           "all alias to them. No page lost, no credential path touched. "
           "No network.")

@@ -28,6 +28,7 @@ Dev with zero API cost: USE_FIXTURES=1 (after RECORD_FIXTURES=1 capture).
 
 from __future__ import annotations
 
+import base64
 import logging
 import hashlib
 import os
@@ -687,7 +688,18 @@ def _outreach_email_for(job, email, touch=1):
     return (lead, q) + C.outreach_touch(lead, q, base_subj, oc.get("body", ""), touch)
 
 
-def _append_ref(p, email, ref):
+def _outreach_alias(mailer=None):
+    """Which address outreach actually leaves from. send_personalized() routes
+    on category="marketing", so ask the mailer rather than assuming."""
+    try:
+        return (mailer or __import__("content_engine_connectors").Emailer()
+                ).from_for("marketing") or ""
+    except Exception:
+        return ""
+
+
+def _append_ref(p, email, ref, subject=None, step=None, alias=None,
+                job_id=None):
     """Record a send in the touch history (sent_to[email] is a LIST, one ref per
     email sent — this is what tracks the 3-email cycle) plus the send TIME in a
     parallel sent_at[email] list, which drives the follow-up schedule/timeline."""
@@ -704,6 +716,21 @@ def _append_ref(p, email, ref):
     if ok:                          # only stamp a time for a real send
         at = p.setdefault("sent_at", {})
         at.setdefault(email, []).append(datetime.now(timezone.utc).isoformat())
+        # Record-only metadata, parallel to sent_at. The dashboard used to
+        # ASSUME every outreach email left from marketing@ and had no idea what
+        # subject was sent, so "Best subject lines" could never rank anything.
+        # Nothing here changes what was sent — it records what already was.
+        try:
+            meta = p.setdefault("sent_meta", {})
+            meta.setdefault(email, []).append({
+                "subject": (subject or "")[:160],
+                "step": int(step) if step else len(at.get(email, [])),
+                "alias": alias or "",
+                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            })
+        except Exception as e:
+            log.warning("send stamp failed for %s (the send itself was fine): %s",
+                        email, e)
 
 
 def api_outreach_edit(job_id, email, subject, body):
@@ -744,8 +771,10 @@ def api_outreach_send_one(job_id, email, touch=None):
     if not got:
         return {"ok": False, "error": "lead not in this campaign"}
     _lead, _q, subj, body = got
-    ref = C.Emailer().send_personalized(email, subj, body, job)
-    _append_ref(p, email.lower(), ref)
+    _mailer = C.Emailer()
+    ref = _mailer.send_personalized(email, subj, body, job)
+    _append_ref(p, email.lower(), ref, subject=subj, step=step,
+                alias=_outreach_alias(_mailer), job_id=job_id)
     try:
         store.save(job)
     except Exception:
@@ -783,7 +812,8 @@ def api_outreach_send_batch(job_id, emails=None):
             continue
         _l, _q, subj, body = got
         ref = mailer.send_personalized(email, subj, body, job)
-        _append_ref(p, email, ref)
+        _append_ref(p, email, ref, subject=subj, step=step,
+                    alias=_outreach_alias(mailer), job_id=job_id)
         if isinstance(ref, str) and ref.startswith("held_"):
             held += 1
         elif isinstance(ref, str) and not ref.startswith(("suppressed:", "send_error", "blocked_quality:")):
@@ -1367,9 +1397,18 @@ def api_dashboard_html() -> str:
     except Exception as e:
         log.warning("BI context unavailable: %s", e)
         bi_ctx = None
+    try:
+        import content_engine_seo_ops as _SEO6
+        import content_engine_bi as _BI6
+        outreach_ctx = _SEO6.build_outreach_ctx(
+            store, jobs=jobs, reply_drafts=reply_drafts,
+            bookings=_bi_bookings(), deals=_BI6.list_deals(store))
+    except Exception as e:
+        log.warning("outreach context unavailable: %s", e)
+        outreach_ctx = None
     return D.dashboard_html(
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
-        risk_ctx=risk_ctx, bi_ctx=bi_ctx,
+        risk_ctx=risk_ctx, bi_ctx=bi_ctx, outreach_ctx=outreach_ctx,
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
@@ -1387,6 +1426,7 @@ def api_dashboard_html() -> str:
 # ---------------------------------------------------------------------------
 def build_app():
     from fastapi import FastAPI
+    from fastapi import Response
     from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
     app = FastAPI(title="Content Engine", version="1.0")
@@ -1400,6 +1440,13 @@ def build_app():
         if not pw:
             return await call_next(request)
         if request.url.path == "/login":
+            return await call_next(request)
+        # The open pixel and the click redirect are the ONLY unauthenticated
+        # paths. A mail client fetching an image has no session, so gating them
+        # would mean tracking silently never worked. They take an opaque token,
+        # append one event (the list is hard-capped), and return an image or a
+        # redirect. They read nothing and return no data.
+        if request.url.path.startswith(("/t/o/", "/t/c/")):
             return await call_next(request)
         cookie_ok = request.cookies.get("aa_dash") == _dash_token()
         key = request.headers.get("x-api-key") or request.query_params.get("key")
@@ -1588,6 +1635,50 @@ def build_app():
         except Exception:
             data = {}
         return api_plan_content(int(data.get("count", 8) or 8))
+
+    # ---- open / click tracking -----------------------------------------
+    # These two are the ONLY unauthenticated routes: a mail client fetching a
+    # pixel has no session. They accept an opaque token, record one event and
+    # return. They read nothing and expose nothing.
+    _PIXEL = base64.b64decode(
+        b"R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+
+    @app.get("/t/o/{token}.png")
+    def track_open(token: str):
+        try:
+            import content_engine_outreach as O
+            O.record_event(get_store(), token, "open")
+        except Exception as e:
+            log.warning("open pixel not recorded: %s", e)
+        return Response(content=_PIXEL, media_type="image/gif",
+                        headers={"Cache-Control": "no-store, max-age=0"})
+
+    @app.get("/t/c/{token}")
+    def track_click(token: str, u: str = ""):
+        """Record the click, then send the reader on. An unsafe or missing
+        target goes to the site root rather than anywhere a link says."""
+        try:
+            import content_engine_outreach as O
+            O.record_event(get_store(), token, "click")
+        except Exception as e:
+            log.warning("click not recorded: %s", e)
+        target = u if u.startswith(("http://", "https://")) else             "https://anthropos-automation.com"
+        return RedirectResponse(target, status_code=302)
+
+    @app.post("/outreach/tracking")
+    async def outreach_tracking(request: Request):
+        """Turn open/click tracking on or off for every future send."""
+        import content_engine_outreach as O
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        r = O.set_tracking(get_store(), bool(d.get("enabled")))
+        return {"ok": True, **r,
+                "message": ("Tracking on — a 1x1 pixel and wrapped links are "
+                            "added to the HTML part of every send."
+                            if r["enabled"] else
+                            "Tracking off — nothing is added to your emails.")}
 
     @app.post("/leads/maps")
     async def leads_maps(request: Request):

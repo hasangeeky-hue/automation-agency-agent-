@@ -227,6 +227,50 @@ def is_suppressed(addr: str) -> bool:
     return a in {str(s).strip().lower() for s in supp}
 
 
+def tracking_on() -> bool:
+    v = _setting("outreach_tracking", {}) or {}
+    return bool(v.get("enabled", True)) if isinstance(v, dict) else True
+
+
+def _apply_tracking(html, to_addr, job):
+    """Add the open pixel and wrap links. Returns html unchanged when tracking
+    is off, when there is no HTML part, or when no base URL is configured."""
+    if not html or not tracking_on():
+        return html
+    base = _env("PUBLIC_BASE_URL") or _env("ENGINE_PUBLIC_URL")
+    if not base:
+        return html                       # nowhere for the pixel to call home
+    base = base.rstrip("/")
+    import re as _re
+    from urllib.parse import quote
+    import content_engine_outreach as _O
+    job_id = str((job or {}).get("job_id") or (job or {}).get("id") or "")
+    p = (job or {}).get("payload") or {}
+    step = len(((p.get("sent_at") or {}).get((to_addr or "").lower())) or []) + 1
+    tok = _O.make_token(job_id, to_addr, step)
+    try:
+        _O.register_token(_STORE_FOR_TRACKING(), job_id, to_addr, step)
+    except Exception:
+        pass
+    html = _re.sub(
+        r'href="(https?://[^"]+)"',
+        lambda m: f'href="{base}/t/c/{tok}?u={quote(m.group(1), safe="")}"',
+        html)
+    return html + f'<img src="{base}/t/o/{tok}.png" width="1" height="1" alt="" '\
+                  f'style="display:none">'
+
+
+def _STORE_FOR_TRACKING():
+    """The settings-backed store, reused from whatever the app already wired."""
+    class _S:
+        def get_setting(self, k, default=None):
+            return _setting(k, default)
+
+        def set_setting(self, k, v):
+            _set_setting(k, v)
+    return _S()
+
+
 def suppress_email(addr: str, reason: str = "bounce") -> None:
     a = (addr or "").strip()
     if not a:
@@ -236,6 +280,17 @@ def suppress_email(addr: str, reason: str = "bounce") -> None:
         supp.append(a)
         _set_setting("email_suppression", supp)
         log.info("suppressed %s (%s)", a, reason)
+    # Record WHY. The list alone cannot tell a bounce from an unsubscribe, and
+    # those two mean very different things about the health of a list.
+    try:
+        from datetime import datetime, timezone
+        meta = dict(_setting("email_suppression_meta", {}) or {})
+        meta.setdefault(a.lower(), {
+            "reason": str(reason or "unrecorded"),
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+        _set_setting("email_suppression_meta", meta)
+    except Exception as e:
+        log.warning("suppression reason not recorded for %s: %s", a, e)
 
 
 def _warmup_cap() -> int:
@@ -1051,6 +1106,15 @@ class Emailer:
                 return f"blocked_quality:{why}"
         except Exception:
             pass
+        # Open/click tracking. OFF changes nothing about the email. ON adds a
+        # 1x1 pixel and rewrites links in the HTML alternative only — the plain
+        # text part is never touched. Wrapped so a tracking failure can never
+        # stop a send.
+        try:
+            html = _apply_tracking(html, to_addr, job)
+        except Exception as e:
+            log.warning("tracking not applied to %s (send unaffected): %s",
+                        to_addr, e)
         ref = self.send_message(to_addr, subject, plain, category="marketing", html=html)
         if isinstance(ref, str) and not ref.startswith(("suppressed:", "send_error", "blocked_quality:")):
             _note_outreach_sent()
@@ -1431,7 +1495,11 @@ def source_leads(job: dict) -> list:
     payload = job.get("payload", {})
     cfg = payload.get("config", {}) or {}
     icp = cfg.get("icp", {}) or {}
-    leads: list = list(payload.get("raw_leads", []) or [])
+    leads: list = []
+    for _raw in (payload.get("raw_leads", []) or []):
+        if isinstance(_raw, dict):
+            _raw.setdefault("source", "imported")
+        leads.append(_raw)
 
     # Maps campaign: use the pre-fetched raw_leads if present (no double credit
     # spend); otherwise scrape maps now. Maps campaigns do NOT mix in LinkedIn.
@@ -1448,7 +1516,13 @@ def source_leads(job: dict) -> list:
             "keywords": cfg.get("search_keywords", ""),
             "limit": int(cfg.get("lead_limit", 25)),
         }
-        leads += li.find_leads(query)
+        # Stamp the provider. maps_leads() and the web branch already do; this
+        # one never did, which is the real reason the dashboard's "Prospeo
+        # (LinkedIn)" bar could only ever read 0.
+        for _L in li.find_leads(query):
+            if isinstance(_L, dict):
+                _L.setdefault("source", "prospeo")
+            leads.append(_L)
 
     search_q = cfg.get("lead_search_query")
     if search_q:
@@ -3035,7 +3109,10 @@ if __name__ == "__main__":
     # 5) source_leads passes through any raw_leads already on the payload.
     job = {"job_id": "t", "payload": {"raw_leads": [{"email": "x@y.com"}],
                                        "config": {}}}
-    assert source_leads(job) == [{"email": "x@y.com"}]
+    # every lead now carries where it came from, so the dashboard can stop
+    # assigning all of them to one provider
+    _sl = source_leads(job)
+    assert _sl == [{"email": "x@y.com", "source": "imported"}], _sl
 
     # 6) With creds present (mock env), wire_all installs the real hooks.
     os.environ.update({

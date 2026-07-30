@@ -586,6 +586,43 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
 
 
 
+def build_outreach_ctx(store, *, jobs=None, reply_drafts=None, bookings=None,
+                       deals=None, live=None) -> dict:
+    """Everything the 13 Leads & Outreach boards read.
+
+    Reads only. Send logic is untouched — the interactive blocks are passed in
+    through `live` already rendered, so the outbox buttons keep calling the same
+    endpoints they always did."""
+    import content_engine_outreach as O
+    jobs = jobs if isinstance(jobs, list) else []
+    sc = O.sourcing(jobs)
+    sd = O.sends(jobs)
+    rp = O.replies(reply_drafts, sd, jobs)
+    bk = O.bookings(bookings, rp)
+    supp = _get(store, "email_suppression", []) or []
+    meta = _get(store, "email_suppression_meta", {}) or {}
+    sent_today = 0
+    try:
+        import content_engine_connectors as CN
+        sent_today = int(_get(store, CN._sent_today_key(), 0) or 0)
+    except Exception:
+        pass
+    outreach_cost = sum(float(_D(j).get("cost_so_far_usd", 0) or 0)
+                        for j in jobs if _D(j).get("type") == "outreach_campaign")
+    return {
+        "sourcing": sc, "quality": O.quality(jobs), "icp": O.icp(jobs),
+        "territories": O.territories(jobs), "sends": sd,
+        "sequence": O.sequence(jobs), "routing": O.routing(sd),
+        "deliverability": O.deliverability(store, sd, supp, meta,
+                                           sent_today=sent_today),
+        "replies": rp, "bookings": bk,
+        "attribution": O.attribution(deals, sc, sd),
+        "costs": O.unit_costs(sc, sd, rp, bk, deals, outreach_cost=outreach_cost),
+        "tracking": O.tracking_stats(store, sends=sd.get("total", 0)),
+        "live": live if isinstance(live, dict) else {},
+    }
+
+
 def build_bi_ctx(store, *, insights=None, jobs=None, agents=None, meters=None,
                  month_spent=0.0, month_cap=200.0, reply_drafts=None,
                  bookings=None, status=None) -> dict:
