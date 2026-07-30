@@ -1842,8 +1842,8 @@ TABS = [
 _TAB_CSS = """<style>
 .shint{font-size:12px;color:#8FA0BF;margin:14px 0 6px;display:flex;align-items:center;gap:7px}
 .shint b{color:#2FE3D2}
-.stabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 4px;padding-bottom:10px;
-  border-bottom:2px solid #2FE3D2}
+.stabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 4px;padding:8px 0 10px;
+  border-bottom:2px solid #2FE3D2;position:sticky;top:0;z-index:20;background:#0A0E1A}
 .stab{background:#121A2E;border:1px solid #26456f;color:#B9C6DE;border-radius:9px;
   padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;
   display:flex;align-items:center;gap:6px;transition:all .15s}
@@ -1898,19 +1898,21 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "<button class='cbtn' onclick='runProspect()'>🌐 Find link prospects</button>"
         "</div>")
     total = sum(counts.values())
-    jump = (f"<div class='shint'>📊 Your Search Console &amp; Analytics boards are below, "
-            f"unchanged. <b>{total} new SEO engine cards</b> sit under them — "
-            f"<button class='stab' style='padding:4px 10px' "
-            f"onclick=\"document.getElementById('seo-engine').scrollIntoView()\">"
-            f"jump to them ↓</button></div>")
-    divider = (f"<div id='seo-engine' class='card full' style='margin-top:18px;"
-               f"border-color:#2FE3D2'><p class='ct'>⚙️ SEO Engine — {total} cards</p>"
-               f"<p class='cc'>Everything below is produced by your own crawler, Search "
-               f"Console, Serper and Claude. Pick a tab — one opens at a time so the page "
-               f"stays readable.</p></div>")
-    return (_TAB_CSS + runbar + jump
-            + (legacy_html or "")          # <- your existing boards, untouched
-            + divider + f"<div class='stabs'>{bar}</div>" + body)
+    hint = (f"<div class='shint'>👇 <b>{total} SEO engine cards</b> across {len(TABS)} tabs — "
+            f"click a tab to switch. Your Search Console &amp; Analytics boards are "
+            f"further down, unchanged.</div>")
+    legacy_head = ("<div id='seo-google' class='card full' style='margin-top:22px;"
+                   "border-color:#4C8DFF'><p class='ct'>📊 Search Console &amp; Analytics</p>"
+                   "<p class='cc'>Your original Google boards — same place, same data, "
+                   "always visible.</p></div>")
+    # Tabs FIRST. The Google boards are long (full GSC + GA4 + 22 competitor
+    # cards), so rendering them above the tab bar buried it ~50 cards down the
+    # page and the engine boards looked like they had never shipped. They keep
+    # their content and order — they just sit below the tabs now, never inside
+    # one.
+    return (_TAB_CSS + runbar + hint
+            + f"<div class='stabs'>{bar}</div>" + body
+            + legacy_head + (legacy_html or ""))
 
 
 CARD_COUNTS = {"command": 13, "technical": 18, "indexing": 12, "on_page": 16,
@@ -2104,21 +2106,25 @@ if __name__ == "__main__":
     # The founder's existing Google boards must be present and NOT inside a tab
     # panel — moving them behind a tab read as deleting them.
     assert legacy in sec, "the existing SEO content must never be dropped"
-    assert sec.index(legacy) < sec.index("id='seo-engine'"), "legacy boards come first"
-    assert sec.index(legacy) < sec.index("class='spanel"), "legacy must sit OUTSIDE the tabs"
     assert "seooverview" not in sec, "legacy is no longer a tab — it is always visible"
+    # Tabs must be reachable WITHOUT scrolling past the long Google boards:
+    # the tab bar comes first, the Google boards follow, still outside any tab.
+    assert sec.index("class='stabs'") < sec.index(legacy), "tab bar must precede the Google boards"
+    assert sec.index("id='seo-google'") < sec.index(legacy), "Google boards keep their heading"
+    assert sec.index(legacy) > sec.index("class='spanel"), "legacy sits OUTSIDE/after the tabs"
+    assert "position:sticky" in sec, "the tab bar must stay reachable while scrolling"
     for tid, _, _ in TABS:
         assert f"id='stab-{tid}'" in sec, f"missing tab button {tid}"
         assert f"id='spanel-{tid}'" in sec, f"missing tab panel {tid}"
         assert f"seoTab('{tid}')" in sec, f"tab {tid} has no click handler"
     assert sec.count("class='spanel on'") == 1, "exactly one tab may start open"
     assert sec.count("class='stab on'") == 1, "exactly one tab may start active"
-    assert "jump to them" in sec, "must offer a jump link to the new boards"
+    assert "further down, unchanged" in sec, "must reassure the Google boards are still there"
     # SEO Command is the first NEW board shown — but only after the legacy ones.
     assert TABS[0][0] == "seocmd", "SEO Command must be the first tab"
     assert "class='spanel on' id='spanel-seocmd'" in sec, \
         "the SEO Command panel must be the one open on load"
-    assert "new SEO engine cards" in sec, "must tell the user the new cards are below"
+    assert "SEO engine cards</b> across" in sec, "must tell the user how many tabs there are"
     # every card still present, just tabbed
     assert sec.count("<div class='card'>") == TOTAL_CARDS + 1, sec.count("<div class='card'>")
     # the run bar must expose the free engines by name
