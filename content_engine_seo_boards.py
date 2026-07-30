@@ -1252,9 +1252,10 @@ def seo_pages(ctx) -> dict:
             for tab, boards in _TAB_BOARDS.items()}
 
 
-# Tab order. SEO Command is FIRST and open by default: landing on the old
-# Search & Analytics board made it look like nothing had changed, because the
-# new boards were hidden behind tabs nobody noticed.
+# The existing Search Console / Analytics / competitor boards are NOT a tab —
+# they stay permanently visible at the top of the section, exactly where they
+# always were. Tabs cover only the NEW engine boards, so nothing the founder
+# already relied on can be hidden or displaced by this work.
 TABS = [
     ("seocmd", "🧭", "SEO Command"),
     ("seotech", "🔧", "Technical & Indexing"),
@@ -1262,7 +1263,6 @@ TABS = [
     ("seokw", "🔑", "Keywords, Content & AEO"),
     ("seooff", "🌐", "Off-Page & Local"),
     ("seowork", "🛠", "Work Orders"),
-    ("seooverview", "📊", "Search & Analytics"),
 ]
 
 _TAB_CSS = """<style>
@@ -1283,17 +1283,20 @@ _TAB_CSS = """<style>
 
 
 def seo_section(ctx, legacy_html: str = "") -> str:
-    """EVERY SEO card in ONE dashboard section.
+    """EVERY SEO card in ONE dashboard section, MERGED — nothing displaced.
 
-    All 158 cards live under the single 'SEO / AEO / GEO' nav item — no extra
-    sidebar entries. They're split across in-page tabs rather than one endless
-    scroll: same section, one click, no 300k-character wall.
+    Layout:
+      1. run bar + a jump link to the new boards
+      2. the EXISTING Search Console / Analytics / competitor boards, always
+         visible, in their original position — never behind a tab
+      3. a divider, then the 11 new engine boards across 6 tabs
+
+    The new work is additive. Anything that was on this page before this build
+    is still on this page, in the same place.
     """
     H = _H()
     panels = seo_pages(ctx)
-    panels["seooverview"] = legacy_html or ""
-    counts = {"seooverview": legacy_html.count("<div class='card'>") if legacy_html else 0,
-              "seocmd": CARD_COUNTS["command"],
+    counts = {"seocmd": CARD_COUNTS["command"],
               "seotech": CARD_COUNTS["technical"] + CARD_COUNTS["indexing"],
               "seoonpage": CARD_COUNTS["on_page"] + CARD_COUNTS["internal_links"],
               "seokw": CARD_COUNTS["keywords"] + CARD_COUNTS["content"] + CARD_COUNTS["aeo"],
@@ -1318,9 +1321,19 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "<button class='cbtn' onclick='runProspect()'>🌐 Find link prospects</button>"
         "</div>")
     total = sum(counts.values())
-    hint = (f"<div class='shint'>👇 <b>{total} SEO cards</b> across {len(TABS)} tabs — "
-            f"click a tab to switch. You are on <b>{TABS[0][2]}</b>.</div>")
-    return _TAB_CSS + runbar + hint + f"<div class='stabs'>{bar}</div>" + body
+    jump = (f"<div class='shint'>📊 Your Search Console &amp; Analytics boards are below, "
+            f"unchanged. <b>{total} new SEO engine cards</b> sit under them — "
+            f"<button class='stab' style='padding:4px 10px' "
+            f"onclick=\"document.getElementById('seo-engine').scrollIntoView()\">"
+            f"jump to them ↓</button></div>")
+    divider = (f"<div id='seo-engine' class='card full' style='margin-top:18px;"
+               f"border-color:#2FE3D2'><p class='ct'>⚙️ SEO Engine — {total} cards</p>"
+               f"<p class='cc'>Everything below is produced by your own crawler, Search "
+               f"Console, Serper and Claude. Pick a tab — one opens at a time so the page "
+               f"stays readable.</p></div>")
+    return (_TAB_CSS + runbar + jump
+            + (legacy_html or "")          # <- your existing boards, untouched
+            + divider + f"<div class='stabs'>{bar}</div>" + body)
 
 
 CARD_COUNTS = {"command": 12, "technical": 18, "indexing": 12, "on_page": 16,
@@ -1443,23 +1456,27 @@ if __name__ == "__main__":
     html = "".join(pages.values())
     assert "failed to render" not in html, "no board may fail on real data"
 
-    # ---- ONE section, in-page tabs (no extra sidebar items) ----
+    # ---- ONE section, MERGED: legacy boards stay put, new boards tabbed ----
     legacy = "<div class='card'>existing GSC/GA4/competitor boards</div>"
     sec = seo_section(ctx, legacy_html=legacy)
-    assert legacy in sec, "the existing SEO content must stay, as the first tab"
+    # The founder's existing Google boards must be present and NOT inside a tab
+    # panel — moving them behind a tab read as deleting them.
+    assert legacy in sec, "the existing SEO content must never be dropped"
+    assert sec.index(legacy) < sec.index("id='seo-engine'"), "legacy boards come first"
+    assert sec.index(legacy) < sec.index("class='spanel"), "legacy must sit OUTSIDE the tabs"
+    assert "seooverview" not in sec, "legacy is no longer a tab — it is always visible"
     for tid, _, _ in TABS:
         assert f"id='stab-{tid}'" in sec, f"missing tab button {tid}"
         assert f"id='spanel-{tid}'" in sec, f"missing tab panel {tid}"
         assert f"seoTab('{tid}')" in sec, f"tab {tid} has no click handler"
     assert sec.count("class='spanel on'") == 1, "exactly one tab may start open"
     assert sec.count("class='stab on'") == 1, "exactly one tab may start active"
-    # SEO Command must be FIRST and open — landing on the legacy board made the
-    # new work look like it hadn't shipped.
+    assert "jump to them" in sec, "must offer a jump link to the new boards"
+    # SEO Command is the first NEW board shown — but only after the legacy ones.
     assert TABS[0][0] == "seocmd", "SEO Command must be the first tab"
-    assert sec.index("stab-seocmd") < sec.index("stab-seooverview"), "Command before legacy"
-    assert "id='spanel-seocmd'" in sec and "class='spanel on' id='spanel-seocmd'" in sec, \
+    assert "class='spanel on' id='spanel-seocmd'" in sec, \
         "the SEO Command panel must be the one open on load"
-    assert "SEO cards</b> across" in sec, "the tab hint must tell the user there are more tabs"
+    assert "new SEO engine cards" in sec, "must tell the user the new cards are below"
     # every card still present, just tabbed
     assert sec.count("<div class='card'>") == TOTAL_CARDS + 1, sec.count("<div class='card'>")
     # the run bar must expose the free engines by name
