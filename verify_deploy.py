@@ -25,11 +25,11 @@ CARD = re.compile(r"<div class='card (?:overflowcard )?sev-")
 SEC = re.compile(r"id='sec-([a-z0-9_]+)'")
 
 EXPECTED_SECTIONS = [
-    "mission", "bi", "ops", "riskinfra", "exec", "content", "leads", "email",
+    "mission", "bi", "ops", "riskinfra", "content", "leads", "email",
     "social", "seo", "ads", "media", "google", "appr", "learn", "system",
 ]
 BIG_SECTIONS = {"seo": 235, "media": 296, "system": 214, "riskinfra": 208,
-                "bi": 252}
+                "bi": 268}
 FELL_BACK = "boards failed to render"
 
 
@@ -112,7 +112,8 @@ def main() -> int:
     print("4. THE MERGED-AWAY SECTIONS")
     print("=" * 68)
     for old in ("risk", "workforce", "infra", "agents", "map", "overview",
-                "business", "marketing", "sales", "customer", "finance", "budget"):
+                "business", "marketing", "sales", "customer", "finance", "budget",
+                "exec"):
         gone = f"id='sec-{old}'" not in html
         aliased = f"{old}:'" in html
         print(f"   {old:<10} removed: {'yes' if gone else 'NO - still a page'}"
@@ -129,7 +130,7 @@ def main() -> int:
         print()
         print("Paste this whole output back and it says exactly what to fix.")
         return 1
-    print("HEALTHY - 16 sections, Business Intelligence (252) and Risk & "
+    print("HEALTHY - 15 sections, Business Intelligence (268) and Risk & "
           "Infrastructure (208) both merged and full, nothing fell back.")
     print("If the browser still shows the old layout, it is a cached page: "
           "hard-reload with Ctrl+Shift+R.")

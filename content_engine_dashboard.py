@@ -26,13 +26,12 @@ log = logging.getLogger("content_engine.dashboard")
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v23 · Business Intelligence: Business + Marketing "
-             "+ Sales + Customer + Finance + Budget merged into ONE section "
-             "— 252 cards, 14 boards, 60 charts, and a way to record a won "
-             "deal so revenue, LTV and CAC compute without Stripe or a CRM. "
-             "1,205 engine cards: BI 252, SEO/AEO/GEO 235, Media Buying 296, "
-             "System & Wiring 214, Risk & Infrastructure 208 — 16 sidebar "
-             "entries, each with in-page tabs")
+BUILD_TAG = ("2026-07-30 · v24 · Executive Intelligence merged into Business "
+             "Intelligence: 7 sections became 1 — 268 cards, 15 boards, 66 "
+             "charts, with a Record-a-won-deal path so revenue, LTV and CAC "
+             "compute without Stripe or a CRM. 1,221 engine cards: BI 268, "
+             "SEO/AEO/GEO 235, Media Buying 296, System & Wiring 214, Risk & "
+             "Infrastructure 208 — 15 sidebar entries, each with in-page tabs")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -3948,7 +3947,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    f"<p class='cc'>Showing the older modules below. Reason: "
                    f"{_esc(type(_e5).__name__)}: {_esc(str(_e5))[:300]}</p></div>"
                    + _mod_business(ctx) + _mod_marketing(ctx) + _mod_sales(ctx)
-                   + _mod_customer(ctx) + _mod_finance(ctx))
+                   + _mod_customer(ctx) + _mod_finance(ctx) + _mod_executive(ctx))
 
     # ---- Risk & Infrastructure: ONE section replacing Risk, AI Workforce and
     # Infrastructure, which held 13 cards between them and read the same three
@@ -3976,7 +3975,6 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("riskinfra", "🛡", "Risk & Infrastructure", "Risk & Infrastructure",
          "Risk, workforce and infrastructure — merged. 208 cards across 12 boards.",
          _risk_all),
-        ("exec", "🏛️", "Executive Int.", "Executive Intelligence", "The whole business on one screen.", _mod_executive(ctx)),
         ("content", "📝", "Content Factory", "Content Factory", "Everything about creating & publishing content.", p_content),
         ("leads", "🧲", "Lead Machine", "Lead Machine", "Finding, scoring and grouping your leads.", p_leads),
         ("email", "✉️", "Email & Outreach", "Email & Outreach", "Cold emails, replies and deliverability.", p_email),
@@ -4046,7 +4044,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  + pause_btn + auto_btn + "</div></details>")
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
-    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi'};"
+    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi'};"
               "function nav(id){id=NAVALIAS[id]||id;"
               "document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
               "var s=document.getElementById('sec-'+id);if(s)s.classList.add('on');"
@@ -4317,22 +4315,23 @@ if __name__ == "__main__":
         assert need in html, need
     import re as _re
     _ids = _re.findall(r"id='sec-([a-z0-9_]+)'", html)
-    assert _ids == ["mission", "bi", "ops", "riskinfra", "exec", "content",
+    assert _ids == ["mission", "bi", "ops", "riskinfra", "content",
                     "leads", "email", "social", "seo", "ads", "media", "google",
                     "appr", "learn", "system"], _ids
-    assert html.count("class='page") == 16, html.count("class='page")
+    assert html.count("class='page") == 15, html.count("class='page")
     # the six merged-away pages must not come back, and every old nav id must
     # still land somewhere real
     for _dead in ("sec-business", "sec-marketing", "sec-sales", "sec-customer",
-                  "sec-finance", "sec-budget"):
+                  "sec-finance", "sec-budget", "sec-exec"):
         assert f"id='{_dead}'" not in html, f"{_dead} should be merged into sec-bi"
-    for _old in ("business", "marketing", "sales", "customer", "finance", "budget"):
+    for _old in ("business", "marketing", "sales", "customer", "finance",
+                 "budget", "exec"):
         assert f"{_old}:'bi'" in html, f"nav alias {_old} -> bi missing"
     for _fn in ("biDeal()", "biEcon()", "biTargets()"):
         assert _fn in html, f"{_fn} handler missing"
     assert "CEO Command Center" in html and "Executive briefing" in html
     for _m in ("Business Intelligence", "AI Workforce", "Operations",
-               "Executive Intelligence", "AI Decision Engine"):
+               "Executive brief", "AI Decision Engine"):
         assert _m in html, _m
     # the three merged-away sections must not come back as pages, and every old
     # nav id must still land somewhere real
@@ -4345,8 +4344,9 @@ if __name__ == "__main__":
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
-    print("OK — 16 pages. Risk + AI Workforce + Infrastructure now render as ONE "
+    print("OK — 15 pages. Risk + AI Workforce + Infrastructure now render as ONE "
           "Risk & Infrastructure section (208 cards) and six more render as ONE "
-          "Business Intelligence section (252 cards, 14 boards); the old nav ids "
+          "Business Intelligence section (268 cards, 15 boards, Executive "
+          "Intelligence included); the old nav ids "
           "all alias to them. No page lost, no credential path touched. "
           "No network.")

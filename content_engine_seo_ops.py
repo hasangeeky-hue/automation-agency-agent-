@@ -588,7 +588,7 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
 
 def build_bi_ctx(store, *, insights=None, jobs=None, agents=None, meters=None,
                  month_spent=0.0, month_cap=200.0, reply_drafts=None,
-                 bookings=None) -> dict:
+                 bookings=None, status=None) -> dict:
     """Everything the 14 Business Intelligence boards read.
 
     Six sections used to share one context dict and render the same four numbers
@@ -610,17 +610,24 @@ def build_bi_ctx(store, *, insights=None, jobs=None, agents=None, meters=None,
     ch = BI.channel_mix(insights)
     mk = BI.markets(insights)
     hist = BI.record_bi_snapshot(store, ch, mk)
+    dm = BI.demand(insights)
+    cn = BI.content_attribution(insights, jobs)
+    fn = BI.funnel(jobs, reply_drafts, bookings, deals)
     return {
+        "exec": BI.executive_brief(
+            store, status=status, spend=sp, funnel_=fn, demand_=dm, markets_=mk,
+            content_=cn, econ_=ec, revenue_=rev, leadgen_=lg,
+            unit_=None),
         "channels_mom": BI.mom(hist, "channels"),
         "markets_mom": BI.mom(hist, "markets"),
         "leads_mom": BI.leads_mom(jobs),
         "client_bump": BI.client_rank_movement(deals),
-        "demand": BI.demand(insights),
+        "demand": dm,
         "markets": mk,
         "channels": ch,
-        "content": BI.content_attribution(insights, jobs),
+        "content": cn,
         "leadgen": lg, "outreach": ou, "consultations": co,
-        "funnel": BI.funnel(jobs, reply_drafts, bookings, deals),
+        "funnel": fn,
         "revenue": rev, "customers": BI.customers(deals),
         "econ": ec, "targets": tg,
         "unit": BI.unit_economics(deals, sp, ec, bookings, lg.get("found", 0)),

@@ -787,6 +787,159 @@ def client_rank_movement(deals=None, months=6) -> list:
     return out
 
 
+def health_score(status=None, spend=None, funnel_=None, demand_=None,
+                 criticals=0) -> dict:
+    """A composite the CEO board can show, built only from measured parts and
+    with those parts shown. A single score nobody can decompose is a mood, not
+    a metric."""
+    st = _D(status)
+    live = sum(1 for v in st.values() if v)
+    parts = []
+    if st:
+        parts.append(("wires live", _pct(live, len(st))))
+    sp = _D(spend)
+    if sp.get("cap"):
+        parts.append(("budget headroom", max(0.0, 100 - _f(sp.get("pct")))))
+    fn = _D(funnel_)
+    if fn.get("has_data"):
+        parts.append(("funnel conversion", min(100.0, _f(fn.get("overall_pct")) * 20)))
+    dm = _D(demand_)
+    if dm.get("has_ga4"):
+        parts.append(("demand trend", min(100.0, max(0.0, 50 + _f(dm.get("trend_pct"))))))
+    if criticals:
+        parts.append(("risks clear", max(0.0, 100 - _f(criticals) * 20)))
+    score = round(sum(v for _n, v in parts) / len(parts)) if parts else None
+    return {"score": score, "parts": parts,
+            "note": ("Averaged from " + ", ".join(n for n, _v in parts) + "."
+                     if parts else
+                     "Nothing measurable is reporting yet, so there is no score "
+                     "to show. A number here without inputs would be decoration.")}
+
+
+def opportunities(funnel_=None, demand_=None, markets_=None, content_=None,
+                  econ_=None, revenue_=None) -> list:
+    """Ranked by what they would actually move, each traced to the measurement
+    it came from. No generic advice."""
+    out = []
+    fn, dm = _D(funnel_), _D(demand_)
+    mk, cn = _D(markets_), _D(content_)
+    ec, rv = _D(econ_), _D(revenue_)
+    if fn.get("worst"):
+        label, lost, pct = fn["worst"]
+        out.append({"title": f"Fix the {label} drop",
+                    "why": (f"{lost:,.0f} people are lost there, {pct}% of everyone "
+                            f"who reaches that stage. It is the largest single "
+                            f"leak measured."),
+                    "where": "bifunnel", "weight": _f(lost)})
+    for m in _L(mk.get("missing"))[:2]:
+        out.append({"title": f"No traffic at all from {m}",
+                    "why": (f"{m} is one of your five target markets and GA4 "
+                            f"records zero sessions from it."
+                            + (" The site has no German content, which is the "
+                               "whole reason for DE and CH."
+                               if m in ("Germany", "Switzerland") else "")),
+                    "where": "bimarkets", "weight": 900})
+    silent = max(0, _i(cn.get("published")) - _i(cn.get("carrying")))
+    if silent:
+        out.append({"title": f"{silent} published pages earn no traffic",
+                    "why": ("Already written and already paid for. Getting them "
+                            "indexed or retargeted costs nothing to produce."),
+                    "where": "bicontent", "weight": silent * 30})
+    if dm.get("avg_position") and _f(dm.get("avg_position")) > 10:
+        out.append({"title": "Rankings sit off page one",
+                    "why": (f"Average position {dm.get('avg_position')} across "
+                            f"{dm.get('queries')} queries. Clicks stay near zero "
+                            f"until that crosses 10."),
+                    "where": "bidemand", "weight": 700})
+    if not ec.get("set"):
+        out.append({"title": "Three numbers unlock the economics boards",
+                    "why": ("Gross margin, average deal and close rate. Without "
+                            "them LTV reads as turnover and pipeline cannot be "
+                            "valued in euros."),
+                    "where": "biecon", "weight": 600})
+    if not _D(revenue_).get("has_data"):
+        out.append({"title": "Record your first won deal",
+                    "why": ("Revenue, customers, cohorts, CAC and LTV:CAC are all "
+                            "computable the moment one deal exists. Nothing else "
+                            "is blocking them."),
+                    "where": "birevenue", "weight": 1000})
+    return sorted(out, key=lambda o: -o["weight"])[:6]
+
+
+def next_actions(risks=None, opps=None, spend=None) -> list:
+    """What to actually do, each pointing at the thing that does it."""
+    acts = []
+    for r in _L(risks)[:2]:
+        r = _D(r)
+        if r.get("mitigation"):
+            acts.append({"label": str(r.get("title"))[:38],
+                         "detail": str(r.get("mitigation"))[:150],
+                         "cta": "Open Risk", "js": "nav('riskinfra')"})
+    for o in _L(opps)[:2]:
+        o = _D(o)
+        acts.append({"label": str(o.get("title"))[:38],
+                     "detail": str(o.get("why"))[:150],
+                     "cta": "Open the board", "js": f"seoTab('{o.get('where', 'bicmd')}')"})
+    if _f(_D(spend).get("pct")) > 85:
+        acts.append({"label": "Spend is near the cap",
+                     "detail": ("The engine halts new LLM steps at 100%. Raise the "
+                                "cap or let it stop."),
+                     "cta": "Open Spend", "js": "seoTab('bispend')"})
+    return acts[:6]
+
+
+def movement(demand_=None, spend=None, revenue_=None, days=7) -> list:
+    """Week over week, from series already measured. Only metrics with two full
+    windows appear — a delta against a partial window is noise."""
+    out = []
+    ser = _L(_D(demand_).get("series"))
+    if len(ser) >= days * 2:
+        now, before = sum(ser[-days:]), sum(ser[-days * 2:-days])
+        out.append(("Sessions", now, before, True))
+    sp = _L(_D(spend).get("series"))
+    if len(sp) >= days * 2:
+        out.append(("Spend", round(sum(sp[-days:]), 2),
+                    round(sum(sp[-days * 2:-days]), 2), False))
+    by_m = _L(_D(revenue_).get("by_month"))
+    if len(by_m) >= 2:
+        out.append(("Revenue", by_m[-1][1], by_m[-2][1], True))
+    return out
+
+
+def executive_brief(store=None, status=None, spend=None, funnel_=None,
+                    demand_=None, markets_=None, content_=None, econ_=None,
+                    revenue_=None, leadgen_=None, unit_=None) -> dict:
+    """Board 15 — the whole business on one screen, every number traced to the
+    board that owns it."""
+    risks = []
+    try:
+        import content_engine_risk as RK
+        risks = sorted(RK.load_register(store), key=lambda r: -_f(_D(r).get("score")))
+    except Exception as e:
+        log.warning("risk register unavailable to the executive brief: %s", e)
+    criticals = sum(1 for r in risks if _f(_D(r).get("score")) >= 6)
+    opps = opportunities(funnel_, demand_, markets_, content_, econ_, revenue_)
+    return {
+        "health": health_score(status, spend, funnel_, demand_, criticals),
+        "risks": risks[:3], "risk_total": len(risks), "criticals": criticals,
+        "opportunities": opps,
+        "actions": next_actions(risks, opps, spend),
+        "movement": movement(demand_, spend, revenue_),
+        "flows": _L(_D(funnel_).get("flows")),
+        "headlines": [
+            ("SEO / AEO / GEO", f"{_i(_D(demand_).get('clicks'))} search clicks",
+             "seo", _f(_D(demand_).get("clicks"))),
+            ("Media Buying", f"{_i(_D(leadgen_).get('found'))} leads sourced",
+             "media", _f(_D(leadgen_).get("found"))),
+            ("Risk & Infrastructure", f"{criticals} critical risks",
+             "riskinfra", _f(criticals) * 10),
+            ("System & Wiring",
+             f"{sum(1 for v in _D(status).values() if v)}/{len(_D(status))} wires live",
+             "system", _f(sum(1 for v in _D(status).values() if v))),
+        ],
+    }
+
+
 # ---------------------------------------------------------------- self-check
 if __name__ == "__main__":
     class S:
@@ -908,6 +1061,35 @@ if __name__ == "__main__":
         consultations(bad if isinstance(bad, list) else None)
         funnel(None, None, None, None)
         attainment(bad, bad, bad, bad)
+
+    # the executive brief: composite score decomposes, nothing invented
+    hs = health_score({}, {}, {}, {})
+    assert hs["score"] is None and "decoration" in hs["note"], hs
+    hs2 = health_score({"a": True, "b": False}, {"cap": 200, "pct": 20},
+                       {"has_data": True, "overall_pct": 2.5},
+                       {"has_ga4": True, "trend_pct": 10}, criticals=1)
+    assert hs2["score"] is not None and len(hs2["parts"]) == 5, hs2
+    assert all(0 <= v <= 100 for _n, v in hs2["parts"]), hs2["parts"]
+
+    ops = opportunities({"worst": ("Emailed → Replied", 150, 83.0)},
+                        {"avg_position": 42.0, "queries": 30},
+                        {"missing": ["UK", "Switzerland"]},
+                        {"published": 10, "carrying": 4}, {"set": False}, {})
+    assert ops and ops[0]["weight"] >= ops[-1]["weight"], "must rank by impact"
+    assert any("Record your first won deal" in o["title"] for o in ops)
+    assert all(o.get("where") for o in ops), "every opportunity needs a destination"
+
+    eb = executive_brief(st, status={"a": True}, spend={"cap": 200, "pct": 20},
+                         funnel_=fn, demand_=d1, markets_=mk, content_={},
+                         econ_=econ(st), revenue_=rev, leadgen_=lg)
+    assert eb["flows"] == fn["flows"], "the value flow must reuse the MEASURED funnel"
+    assert len(eb["headlines"]) == 4
+    # no fabricated attribution survives
+    assert not any("0.6" in str(f) or "0.4" in str(f) for f in eb["flows"])
+    mv = movement({"series": list(range(20))}, {"series": [1.0] * 20}, rev)
+    assert len(mv) >= 2 and all(len(m) == 4 for m in mv)
+    assert movement({"series": [1, 2, 3]}, {}, {}) == [], \
+        "a delta needs two full windows"
 
     print("bi self-check OK — deals recorded with the client name that "
           "concentration needs, revenue/LTV/cohorts computed, CAC and LTV:CAC "

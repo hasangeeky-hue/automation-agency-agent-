@@ -1363,7 +1363,7 @@ def api_dashboard_html() -> str:
             store, insights=_safe_google_insights(), jobs=jobs,
             agents=(system_ctx or {}).get("agents") if system_ctx else [],
             meters=meters, month_spent=month_spent, month_cap=month_cap,
-            reply_drafts=reply_drafts, bookings=_bi_bookings())
+            reply_drafts=reply_drafts, bookings=_bi_bookings(), status=st)
     except Exception as e:
         log.warning("BI context unavailable: %s", e)
         bi_ctx = None

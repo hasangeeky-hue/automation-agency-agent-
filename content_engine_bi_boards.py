@@ -32,6 +32,7 @@ from content_engine_seo_boards import (
 )
 
 BOARD_CTA.update({
+    "Executive Brief": ("Open Risk", "nav('riskinfra')"),
     "BI Command": ("Record a won deal", "biDeal()"),
     "Demand": ("Open SEO", "nav('seo')"),
     "Markets": ("Open GEO", "seoTab('geo')"),
@@ -77,7 +78,7 @@ def _ctx(ctx):
     """Coerce once at the boundary — a wrong shape must never crash a board."""
     ctx = ctx if isinstance(ctx, dict) else {}
     out = dict(ctx)
-    for k in ("channels_mom", "markets_mom", "leads_mom",
+    for k in ("exec", "channels_mom", "markets_mom", "leads_mom",
               "demand", "markets", "channels", "content", "leadgen", "outreach",
               "consultations", "funnel", "revenue", "customers", "econ",
               "unit", "spend", "cost", "targets", "attainment"):
@@ -1346,9 +1347,133 @@ def board_cost(ctx) -> str:
 
 
 # ======================================================================
+#  (15) EXECUTIVE BRIEF  (16)
+# ======================================================================
+def board_exec(ctx) -> str:
+    """The whole business on one screen. Replaces the Executive Intelligence
+    section, whose eight tiles are now BI Command cards and whose value-flow
+    sankey split leads 60/40 between SEO and Outreach with hardcoded
+    multipliers — an attribution nothing in the engine actually measures."""
+    ctx = _ctx(ctx)
+    ex = _D(ctx.get("exec"))
+    h = _D(ex.get("health"))
+    risks = _L(ex.get("risks"))
+    opps = _L(ex.get("opportunities"))
+    acts = _L(ex.get("actions"))
+    mv = _L(ex.get("movement"))
+    heads = _L(ex.get("headlines"))
+    flows = _L(ex.get("flows"))
+    score = h.get("score")
+
+    cards = [
+        ("Business health", _n(score), "out of 100",
+         _score_gauge(_f(score), 70) if score is not None else "",
+         h.get("note", ""), "composite",
+         (GREEN if _f(score) >= 70 else AMBER if _f(score) >= 40 else PINK)
+         if score is not None else AMBER, ""),
+        ("What the score is made of", len(_L(h.get("parts"))), "measured parts",
+         _hbars([(n[:20], v) for n, v in _L(h.get("parts"))]),
+         ("Every part is shown, so the score can be argued with. A single number "
+          "nobody can decompose is a mood, not a metric."),
+         "composite", BLUE, ""),
+        ("Critical risks", ex.get("criticals", 0),
+         f"of {ex.get('risk_total', 0)} scored",
+         _statusgrid([(str(_D(r).get("title"))[:18],
+                       _f(_D(r).get("score")) < 6,
+                       str(_D(r).get("severity", "")))
+                      for r in _L(ex.get("risks"))]),
+         ("Read from the risk register, so this is the same number the Risk "
+          "board shows — not a separate list."),
+         "risk register", PINK if ex.get("criticals") else GREEN,
+         "<button class='cta' onclick=\"nav('riskinfra')\">Open Risk</button>"),
+    ]
+    # top 3 risks — the register's own scored entries
+    cards += _slots(
+        risks, 3,
+        lambda i, r: (f"Risk {i + 1}: {str(_D(r).get('title'))[:28]}",
+                      _D(r).get("severity", "—"),
+                      f"score {_D(r).get('score', '—')}", "",
+                      str(_D(r).get("evidence") or _D(r).get("mitigation") or "")[:190],
+                      "risk register",
+                      PINK if _f(_D(r).get("score")) >= 6 else AMBER,
+                      "<button class='cta' onclick=\"nav('riskinfra')\">Open Risk</button>"),
+        "Risk", "register not built yet",
+        ("The register recomputes on every dashboard load. This fills as soon "
+         "as the Risk section has been opened once."), "risk register", AMBER)
+    # top 3 opportunities — derived from measured gaps, each with a destination
+    cards += _slots(
+        opps, 3,
+        lambda i, o: (f"Opportunity {i + 1}", str(_D(o).get("title"))[:30],
+                      "ranked by impact", "",
+                      str(_D(o).get("why"))[:200], "computed", TEAL,
+                      f"<button class='cta' onclick=\"seoTab('{_D(o).get('where', 'bicmd')}')\">"
+                      f"Open the board</button>"),
+        "Opportunity", "nothing ranked yet",
+        ("Opportunities are derived from measured gaps — the biggest funnel "
+         "leak, a target market with no traffic, pages earning nothing. They "
+         "appear as those measurements arrive."), "computed", AMBER)
+    # next 3 actions
+    cards += _slots(
+        acts, 3,
+        lambda i, a: (f"Do next {i + 1}", str(_D(a).get("label"))[:28], "action", "",
+                      str(_D(a).get("detail"))[:190], "computed", VIOLET,
+                      f"<button class='cta' onclick=\"{_D(a).get('js', '')}\">"
+                      f"{_H()._esc(str(_D(a).get('cta', 'Open')))}</button>"),
+        "Action", "none outstanding",
+        ("Actions come from the top risks and the top opportunities. An empty "
+         "slot means neither has produced one."), "computed", GREEN)
+    cards += [
+        ("Value flow", len(flows), "measured steps",
+         _CH().sankey(flows),
+         ("Leads through to revenue, from the same stage counts the Funnel "
+          "board uses. The old version of this chart split leads 60/40 between "
+          "SEO and Outreach using hardcoded multipliers — nothing in the engine "
+          "measures that, so it is gone." if flows else
+          "No one has moved through the funnel yet. The old chart drew ribbons "
+          "anyway by flooring every flow at 1; this one says nothing has flowed."),
+         "measured funnel", BLUE if flows else AMBER,
+         "<button class='cta' onclick=\"seoTab('bifunnel')\">Open the funnel</button>"),
+        ("Week over week", len(mv), "metrics with two full windows",
+         _hbars([(m[0], _f(m[1])) for m in mv]),
+         ("".join(f"{m[0]}: {m[1]:,.0f} vs {m[2]:,.0f}. " for m in mv)
+          if mv else
+          "A week-over-week delta needs two complete weeks of data. Metrics "
+          "appear here as they reach that, not before."),
+         "computed", BLUE if mv else AMBER, ""),
+    ]
+    for m in mv[:2]:
+        label, now, before, higher = m[0], _f(m[1]), _f(m[2]), bool(m[3])
+        better = (now >= before) if higher else (now <= before)
+        cards.append((f"{label} this week", f"{now:,.0f}",
+                      f"last week {before:,.0f}",
+                      _delta(now, before, higher_is_better=higher),
+                      ("Moving the right way." if better else
+                       "Moving the wrong way — worth a look this week."),
+                      "computed", GREEN if better else AMBER, ""))
+    while len([c for c in cards]) < 14:
+        cards.append(("Week-over-week slot", "—", "awaiting two full weeks", "",
+                      ("Sessions, spend and revenue each appear here once two "
+                       "complete weeks exist."), "computed", AMBER, ""))
+    # four section headlines, each a real link
+    cards += _slots(
+        heads, 4,
+        lambda i, hd: (str(hd[0])[:26], str(hd[1])[:22], "section headline", "",
+                       "The one number that section leads with.", "cross-section",
+                       BLUE,
+                       f"<button class='cta' onclick=\"nav('{hd[2]}')\">Open</button>"),
+        "Section", "not reporting",
+        "Each section reports one headline number here.", "cross-section", AMBER)
+    return _head("🏛", "Executive brief",
+                 "The whole business on one screen — health, the three risks "
+                 "that matter, what to do next.") + _vizcards(cards[:16])
+
+
+
+# ======================================================================
 #  SECTION
 # ======================================================================
 TABS = [
+    ("biexec", "🏛", "Executive Brief"),
     ("bicmd", "📊", "BI Command"),
     ("bidemand", "📈", "Demand"),
     ("bimarkets", "🌍", "Markets"),
@@ -1367,7 +1492,7 @@ TABS = [
 
 GROUPS = [
     ("bidem", "① IS DEMAND THERE", "Is anyone looking?",
-     ["bicmd", "bidemand", "bimarkets", "bichannel", "bicontent"]),
+     ["biexec", "bicmd", "bidemand", "bimarkets", "bichannel", "bicontent"]),
     ("bipipe", "② IS IT BECOMING PIPELINE", "Do they become leads?",
      ["bileads", "bioutreach", "biconsult", "bifunnel"]),
     ("bimoney", "③ IS IT BECOMING MONEY", "Do they pay?",
@@ -1377,6 +1502,7 @@ GROUPS = [
 ]
 
 _TAB_BOARDS = {
+    "biexec": [("Executive Brief", board_exec)],
     "bicmd": [("BI Command", board_command)],
     "bidemand": [("Demand", board_demand)],
     "bimarkets": [("Markets", board_markets)],
@@ -1393,7 +1519,7 @@ _TAB_BOARDS = {
     "bicost": [("Cost per Outcome", board_cost)],
 }
 
-_TAB_COUNTS = {"bicmd": 16, "bidemand": 20, "bimarkets": 18, "bichannel": 18,
+_TAB_COUNTS = {"biexec": 16, "bicmd": 16, "bidemand": 20, "bimarkets": 18, "bichannel": 18,
                "bicontent": 18, "bileads": 20, "bioutreach": 18, "biconsult": 16,
                "bifunnel": 20, "birevenue": 20, "bicustomers": 18, "biecon": 20,
                "bispend": 18, "bicost": 12}
@@ -1515,6 +1641,12 @@ if __name__ == "__main__":
         "unit": BI.unit_economics(deals, sp, BI.econ(st), bookings, lg["found"]),
         "spend": sp,
         "cost": BI.cost_per_outcome(jobs, agents, deals, bookings, lg["found"]),
+        "exec": BI.executive_brief(
+            st, status={"anthropic": True, "gsc": True, "google_ads": False},
+            spend=sp, funnel_=BI.funnel(jobs, [{}, {}, {}], bookings, deals),
+            demand_=BI.demand(ins), markets_=BI.markets(ins),
+            content_=BI.content_attribution(ins, jobs), econ_=BI.econ(st),
+            revenue_=rev, leadgen_=lg),
         "channels_mom": BI.mom([{"month": "2026-06",
                                  "channels": {"Organic Search": 500, "Direct": 120}},
                                 {"month": "2026-07",
@@ -1559,6 +1691,13 @@ if __name__ == "__main__":
     assert "Repeat rate" in pages["bicustomers"], "Customer Intelligence, now real"
     assert "Projected month end" in pages["bispend"], "Finance/Budget projection"
     assert "Cost per published piece" in pages["bicost"], "Budget cost-per-piece"
+    # Executive Intelligence: the decision layer survives, the invention does not
+    assert "Business health" in pages["biexec"], "exec scoreboard"
+    assert "Opportunity" in pages["biexec"] and "Do next" in pages["biexec"], \
+        "the decision strip is the one thing Executive Intelligence had"
+    assert "Value flow" in pages["biexec"], "value flow"
+    assert "hardcoded multipliers" in pages["biexec"], \
+        "say plainly that the 60/40 attribution is gone"
 
     # NO DEAD PLACEHOLDERS: every card must offer a live number or an action
     dead = re.findall(r"Connect (?:Stripe|HubSpot|Salesforce|Zendesk|QuickBooks|Xero)", html)
