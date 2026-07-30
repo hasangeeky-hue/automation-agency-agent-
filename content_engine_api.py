@@ -1328,8 +1328,22 @@ def api_dashboard_html() -> str:
     except Exception as e:
         log.warning("system context unavailable: %s", e)
         system_ctx = None
+    try:
+        import content_engine_seo_ops as _SEO4
+        risk_ctx = _SEO4.build_risk_ctx(
+            store, status=st, health=health, meters=meters,
+            month_spent=month_spent, month_cap=month_cap, jobs=jobs,
+            agents=(system_ctx or {}).get("agents") if system_ctx else [],
+            needles=needles, last_eval=last_eval,
+            content_cost=sum(float(j.get("cost_so_far_usd", 0) or 0)
+                             for j in jobs if j.get("type") != "outreach_campaign"),
+            storage=(system_ctx or {}).get("storage") if system_ctx else {})
+    except Exception as e:
+        log.warning("risk context unavailable: %s", e)
+        risk_ctx = None
     return D.dashboard_html(
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
+        risk_ctx=risk_ctx,
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
@@ -1638,6 +1652,34 @@ def build_app():
     @app.post("/geo/audit")
     def geo_audit():
         return api_seo("geo")
+
+    @app.post("/risk/refresh")
+    def risk_refresh():
+        """Recompute the register from current data. Free — reads only."""
+        try:
+            import content_engine_seo_ops as SEO
+            import content_engine_dashboard as DD
+            store = get_store()
+            ctx = SEO.build_risk_ctx(store, status=_connectors_status(),
+                                     health=run_health(), jobs=store.list_jobs()
+                                     if hasattr(store, "list_jobs") else [])
+            risks = ctx.get("risks") or []
+            return {"ok": True, "risks": len(risks),
+                    "critical": sum(1 for r in risks if r.get("score", 0) >= 6),
+                    "top": (risks[0].get("title") if risks else None)}
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+    @app.post("/risk/status/{risk_id}")
+    async def risk_status(risk_id: str, request: Request):
+        import content_engine_risk as RK
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        ok = RK.set_status(get_store(), risk_id, data.get("status", "accepted"),
+                           data.get("note", ""))
+        return {"ok": ok}
 
     # ---- Media buying ----
     @app.post("/ads/pull")

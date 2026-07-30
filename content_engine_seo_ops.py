@@ -585,6 +585,63 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
     }
 
 
+
+def build_risk_ctx(store, *, status=None, health=None, meters=None,
+                   month_spent=0.0, month_cap=200.0, jobs=None, agents=None,
+                   needles=None, last_eval=None, content_cost=0.0,
+                   storage=None) -> dict:
+    """Everything the 12 Risk & Infrastructure boards read. Recomputes the
+    register, keeps the mitigation decisions, and records a history snapshot so
+    the trend charts have something real to draw."""
+    import content_engine_risk as RK
+    status = status if isinstance(status, dict) else {}
+    jobs = jobs if isinstance(jobs, list) else []
+    agents = agents if isinstance(agents, list) else []
+    live = sum(1 for v in status.values() if v)
+    waiting = sum(1 for j in jobs
+                  if _D(j).get("status") == "AWAITING_APPROVAL" and not _D(j).get("approved"))
+    leads = sum(len(_D(_D(j).get("payload")).get("leads") or []) for j in jobs)
+    backup = _get(store, "backup_config", None)
+    fresh = RK.register(status=status, month_spent=month_spent, month_cap=month_cap,
+                        jobs=jobs, wires_down=max(0, len(status) - live),
+                        waiting=waiting, healthy=bool(_D(health).get("healthy")),
+                        leads=leads, backup=backup,
+                        aeo=_get(store, "aeo_visibility", {}) or {},
+                        geo=_get(store, "geo_market_audit", {}) or {})
+    risks = RK.merge_register(RK.load_register(store), fresh)
+    RK.save_register(store, risks)
+    hist = RK.record_snapshot(store, risks)
+    nodes, edges = RK.channel_blast(status)
+    rows, grid = RK.cohort_grid(agents)
+    try:
+        import content_engine_scheduler as SCH
+        targets = {"blogs": 2, "outreach": 1, "social_per_channel": 1}
+    except Exception:
+        targets = {}
+    return {
+        "risks": risks, "history": hist,
+        "by_category": RK.by_category(risks),
+        "bump": RK.rank_movement(hist, [r["key"] for r in risks[:5]]),
+        "concentration": RK.concentration(jobs),
+        "compliance": RK.compliance(),
+        "credentials": RK.credential_age(status),
+        "vendor_share": RK.vendor_share(status),
+        "blast_nodes": nodes, "blast_edges": edges,
+        "workforce": RK.workforce(agents, jobs, content_cost=content_cost),
+        "capacity": RK.capacity(jobs, targets),
+        "cohort_rows": rows, "cohort_grid": grid,
+        "infra": RK.infra(storage or {}, health or {}, _get(store, K_RUNS, {}) or {}),
+        "continuity": RK.continuity(backup),
+        "status": status, "agents": agents, "jobs": jobs,
+        "health": health or {}, "needles": needles or {}, "last_eval": last_eval or {},
+        "cost": {"month_spent": month_spent, "month_cap": month_cap,
+                 "pct_of_cap": round(100 * float(month_spent or 0)
+                                     / float(month_cap or 1), 1)},
+        "aeo": _get(store, "aeo_visibility", {}) or {},
+        "geo": _get(store, "geo_market_audit", {}) or {},
+    }
+
+
 # ======================================================================
 #  CONTEXT FOR THE BOARDS
 # ======================================================================

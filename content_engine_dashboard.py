@@ -22,9 +22,11 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v21 · System & Wiring: 3 sections merged into 1, 214 cards, 12 wires that had no diagnostic now connectable from the browser. 745 engine cards. "
-             "all inside the ONE SEO/AEO/GEO section as in-page tabs (no extra "
-             "sidebar items, no scroll wall)")
+BUILD_TAG = ("2026-07-30 · v22 · Risk & Infrastructure: Risk + AI Workforce + "
+             "Infrastructure merged into ONE section — 208 cards, 12 boards, 30 charts. "
+             "953 engine cards total: SEO/AEO/GEO 235, Media Buying 296, "
+             "System & Wiring 214, Risk & Infrastructure 208 — each one sidebar "
+             "entry with in-page tabs, no scroll wall")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2774,7 +2776,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
                    content_plan=None, web_tracking=None, reply_drafts=None,
                    competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None,
-                   system_ctx=None):
+                   system_ctx=None, risk_ctx=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -3900,17 +3902,28 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                        + "<div class='card full'><p class='ct'>System boards unavailable</p>"
                        f"<p class='cc'>{_esc(str(_e3))}</p></div>")
 
+    # ---- Risk & Infrastructure: ONE section replacing Risk, AI Workforce and
+    # Infrastructure, which held 13 cards between them and read the same three
+    # numbers. No credential path is touched.
+    try:
+        import content_engine_risk_boards as _RKB
+        _risk_all = _RKB.risk_section(risk_ctx or {})
+    except Exception as _e4:
+        _risk_all = (_mod_risk(ctx) + _mod_workforce(ctx) + _mod_infra(ctx)
+                     + "<div class='card full'><p class='ct'>Risk boards unavailable</p>"
+                     f"<p class='cc'>{_esc(str(_e4))}</p></div>")
+
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
         ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum in one view.", _mod_business(ctx)),
         ("marketing", "📣", "Marketing Int.", "Marketing Intelligence", "SEO · AEO · GEO · Ads — visibility to revenue.", _mod_marketing(ctx)),
         ("sales", "💼", "Sales Int.", "Sales Intelligence", "Pipeline from stranger to won.", _mod_sales(ctx)),
         ("customer", "🫂", "Customer Int.", "Customer Intelligence", "Who's booking, buying and staying.", _mod_customer(ctx)),
-        ("workforce", "🤖", "AI Workforce", "AI Workforce", "Your agents — running, healthy, productive.", _mod_workforce(ctx)),
         ("ops", "⚙️", "Operations", "Operations", "Throughput, schedule and the approval queue.", _mod_operations(ctx)),
         ("finance", "💰", "Finance", "Finance", "Spend against the cap, and cost per outcome.", _mod_finance(ctx)),
-        ("infra", "🛰️", "Infrastructure", "Infrastructure", "Every connection, live or down.", _mod_infra(ctx)),
-        ("risk", "⚠️", "Risk", "Risk", "What could hurt the business, ranked.", _mod_risk(ctx)),
+        ("riskinfra", "🛡", "Risk & Infrastructure", "Risk & Infrastructure",
+         "Risk, workforce and infrastructure — merged. 208 cards across 12 boards.",
+         _risk_all),
         ("exec", "🏛️", "Executive Int.", "Executive Intelligence", "The whole business on one screen.", _mod_executive(ctx)),
         ("content", "📝", "Content Factory", "Content Factory", "Everything about creating & publishing content.", p_content),
         ("leads", "🧲", "Lead Machine", "Lead Machine", "Finding, scoring and grouping your leads.", p_leads),
@@ -3982,7 +3995,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  + pause_btn + auto_btn + "</div></details>")
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
-    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system'};"
+    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra'};"
               "function nav(id){id=NAVALIAS[id]||id;"
               "document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
               "var s=document.getElementById('sec-'+id);if(s)s.classList.add('on');"
@@ -4065,6 +4078,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "body:JSON.stringify({avg_deal_value:d,gross_margin_pct:m,consult_to_client_pct:c,lead_to_consult_pct:l})});"
               "var j=await r.json();alert('Saved. Target CPA per lead: EUR '+((j.targets||{}).target_cpa_lead||'-'));location.reload();}"
               "catch(e){alert('Failed: '+e);}}"
+              "function runRisk(){seoRun('/risk/refresh','Recomputing the risk register…',"
+              "'Recompute the risk register from current data? Free — it reads what is already stored.');}"
               "function runGeo(){seoRun('/geo/audit','Auditing your 5 markets… ~1 min',"
               "'Audit hreflang, language coverage and the local pack across your five markets? Uses a few Serper credits.');}"
               "function approveAll(kind){if(!confirm('Publish EVERY drafted '+kind+' rewrite to your website? Review a few first — this cannot be undone in bulk.'))return;"
@@ -4224,16 +4239,36 @@ if __name__ == "__main__":
                           health={"healthy": True, "anthropic": {"status": "ok"}, "postgres": {"status": "ok"}},
                           month_spent=63, month_cap=200, day_spent=4.2, day_cap=50,
                           taste_skills=["content_producer", "seo_optimizer"])
-    for need in ("Operational Machines", "Content Factory", "System Map", "Wiring diagnostic", "Automation Engine",
-                 "sec-map", "nav('leads')", "24/7 competitor", "What it breaks", "Not connected"):
+    for need in ("Content Factory", "System Map", "Wiring diagnostic", "Automation Engine",
+                 "nav('leads')", "24/7 competitor", "What it breaks", "Not connected",
+                 # Risk & Infrastructure: the merged section and its four groups
+                 "Risk &amp; Infrastructure", "WHAT COULD HURT", "WHO DOES THE WORK",
+                 "WILL IT KEEP RUNNING", "ARE WE COVERED"):
         assert need in html, need
-    assert html.count("class='page") == 25, html.count("class='page")
+    import re as _re
+    _ids = _re.findall(r"id='sec-([a-z0-9_]+)'", html)
+    assert _ids == ["mission", "business", "marketing", "sales", "customer", "ops",
+                    "finance", "riskinfra", "exec", "content", "leads", "email",
+                    "social", "seo", "ads", "media", "budget", "google", "appr",
+                    "learn", "system"], _ids
+    assert html.count("class='page") == 21, html.count("class='page")
     assert "CEO Command Center" in html and "Executive briefing" in html
     for _m in ("Business Performance", "Marketing Intelligence", "Sales Intelligence",
                "Customer Intelligence", "AI Workforce", "Operations", "Finance",
-               "Infrastructure", "Risk", "Executive Intelligence", "AI Decision Engine"):
+               "Executive Intelligence", "AI Decision Engine"):
         assert _m in html, _m
+    # the three merged-away sections must not come back as pages, and every old
+    # nav id must still land somewhere real
+    for _dead in ("id='sec-risk'", "id='sec-workforce'", "id='sec-infra'"):
+        assert _dead not in html, f"{_dead} should be merged into sec-riskinfra"
+    assert "id='sec-riskinfra'" in html
+    for _old, _new in (("risk", "riskinfra"), ("workforce", "riskinfra"),
+                       ("infra", "riskinfra"), ("agents", "system"), ("map", "system")):
+        assert f"{_old}:'{_new}'" in html, f"nav alias {_old} -> {_new} missing"
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
-    print("OK — 14-page tabbed dashboard (overview + 13 machines incl. Media Buying) + wiring diagnostic render. No network.")
+    print("OK — 21 pages. Risk + AI Workforce + Infrastructure now render as ONE "
+          "Risk & Infrastructure section (208 cards, 12 boards, 4 groups); the old "
+          "nav ids risk/workforce/infra alias to it. No page lost, no credential "
+          "path touched. No network.")
