@@ -161,8 +161,16 @@ def merge(existing: list, fresh: list) -> list:
             o["status"] = "resolved"
             o["done_at"] = _now()
             o["result"] = "No longer detected in the latest crawl"
-    out = sorted(by_id.values(), key=lambda o: (-o["priority"], o["code"]))
-    return out[:MAX_ORDERS]
+
+    # LIVE work must never be evicted by history. A re-crawl that re-keys every
+    # URL (the trailing-slash fix did exactly that) resolves the whole old set,
+    # and a flat priority sort then let 314 resolved orders occupy half the cap
+    # and truncate real, open work off the end.
+    live = [o for o in by_id.values() if o["status"] not in ("resolved", "done", "skipped")]
+    history = [o for o in by_id.values() if o["status"] in ("resolved", "done", "skipped")]
+    live.sort(key=lambda o: (-o["priority"], o["code"]))
+    history.sort(key=lambda o: (o.get("done_at") or "", o["code"]), reverse=True)
+    return (live + history)[:MAX_ORDERS]
 
 
 # ---------------------------------------------------------------- store
@@ -283,4 +291,22 @@ if __name__ == "__main__":
 
     batch = next_batch(load(st), auto_only=False, limit=5)
     assert all(o["status"] == "open" for o in batch)
+
+    # ---- LIVE work must never be evicted by resolved history ----
+    # Reproduces the re-crawl that re-keyed every URL: a full set of old orders
+    # resolves at once, and a flat priority sort would truncate real open work.
+    old = [make_order("title_long", f"https://x.com/old-{i}", severity="critical")
+           for i in range(MAX_ORDERS)]
+    for o in old:
+        o["status"] = "resolved"
+        o["done_at"] = "2026-07-30T09:00:00"
+    fresh = [make_order("meta_missing", f"https://x.com/new-{i}/", severity="low")
+             for i in range(40)]
+    merged = merge(old, fresh)
+    open_kept = [o for o in merged if o["status"] == "open"]
+    assert len(open_kept) == 40, f"live work was evicted: only {len(open_kept)} of 40 kept"
+    assert len(merged) == MAX_ORDERS, len(merged)
+    assert merged[0]["status"] == "open", "open work must sort ahead of history"
+    # ...and critical-but-resolved must NOT outrank low-priority-but-open
+    assert all(o["status"] == "open" for o in merged[:40]), [o["status"] for o in merged[:45]]
     print("workorders self-check OK — generate, merge, persist, resolve, batch")
