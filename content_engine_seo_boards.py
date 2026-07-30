@@ -23,6 +23,8 @@ Run offline self-check:  python content_engine_seo_boards.py
 
 from __future__ import annotations
 
+import re
+
 TEAL, VIOLET, BLUE, GREEN, AMBER, PINK = (
     "#2FE3D2", "#8B7CFF", "#4C8DFF", "#3FD98B", "#F5B14C", "#FF6B93")
 
@@ -52,12 +54,118 @@ def _spend(v):
         return 0.0
 
 
+# ======================================================================
+#  SEVERITY, IDENTITY, LANGUAGE, ACTION
+#  Every card on these boards flows through _viz(). Upgrading it upgrades
+#  all 235 at once — that is why the card kit lives here and not inline.
+# ======================================================================
+SEV = {                      # accent colour -> severity, badge, weight
+    PINK:   ("critical", "⛔ NEEDS FIXING", 0),
+    AMBER:  ("warn", "⚠ WORTH A LOOK", 1),
+    GREEN:  ("ok", "✓ HEALTHY", 3),
+}
+_DEFAULT_SEV = ("info", "", 2)
+
+# Plain-English card titles. The jargon survives as a tooltip so you still
+# learn the real term — you just don't have to know it to scan the board.
+TITLE_MAP = {
+    "AI crawler access": "Can AI engines read your site?",
+    "hreflang coverage": "Does Google know which country each page serves?",
+    "hreflang errors": "Are the country tags broken?",
+    "Declared locales": "Which countries do your pages claim?",
+    "Missing locales": "Which target markets are undeclared?",
+    "Canonical conflicts": "Are pages pointing Google somewhere unexpected?",
+    "Canonical overridden": "Did Google pick a different page than you did?",
+    "Striking distance": "Which keywords are one push from page one?",
+    "Cannibalisation": "Are your own pages competing with each other?",
+    "Zero-click queries": "Where are you seen but never clicked?",
+    "CTR underperformers": "Which good rankings earn no clicks?",
+    "Orphan pages": "Which pages have nothing linking to them?",
+    "Money-page support": "Do your articles link to pages that sell?",
+    "Thin pages": "Which pages are too short to rank?",
+    "Schema coverage": "Can Google read your pages as data?",
+    "Entity links (sameAs)": "Can AI confirm you are a real company?",
+    "Quotable pages": "Are your pages written to be quoted?",
+    "Share of voice": "How often are you named vs competitors?",
+    "Answer gaps": "Which questions name a rival instead of you?",
+    "Core Web Vitals": "Is the site fast enough for Google?",
+    "Click depth": "How many clicks from the homepage?",
+    "Local pack grid": "Where do you rank on the map, per market?",
+    "Service-area pages": "Do you have a page per target market?",
+    "Language coverage": "Do you publish in each market's language?",
+    "Redirect chains": "Are links bouncing through extra hops?",
+    "Duplicate titles": "Do pages share the same title?",
+    "Indexed URLs": "How many pages has Google actually indexed?",
+    "Not indexed": "Which pages is Google refusing to index?",
+    "Broken internal links": "Which links point nowhere?",
+    "Decaying pages": "Which pages are losing traffic?",
+    "Zero-impression pages": "Which pages has search never shown?",
+    "Prompts lost": "Which buyer questions do you lose?",
+    "Uncovered markets": "Which markets have no content in their language?",
+    "Missing market pages": "Which markets have no landing page?",
+    "Awaiting your approval": "What is waiting on your decision?",
+    "Open work orders": "What needs doing?",
+}
+
+# Which run/fix action fills or resolves each board's cards.
+BOARD_CTA = {
+    "SEO Command": ("Run every engine", "runSeoAll()"),
+    "Technical": ("Re-crawl the site", "runCrawl()"),
+    "Indexing": ("Ask Google what's indexed", "runInspect()"),
+    "On-Page": ("Re-crawl the site", "runCrawl()"),
+    "Internal Links": ("Fix links automatically", "runFixes()"),
+    "Keywords": ("Check rankings", "runRanks()"),
+    "Content": ("Re-crawl the site", "runCrawl()"),
+    "AEO": ("Probe AI answers", "runAeo()"),
+    "GEO Generative": ("Probe AI answers", "runAeo()"),
+    "GEO Local": ("Run market audit", "runGeo()"),
+    "Off-Page": ("Find link prospects", "runProspect()"),
+    "Work Orders": ("Apply safe fixes", "runFixes()"),
+}
+_CURRENT_BOARD = {"name": ""}      # set by _safe_board while rendering
+
+
+def _section_mix(pages):
+    """Content library grouped by the section of the site it lives in."""
+    mix = {}
+    for r in pages or []:
+        u = r.get("url", "")
+        key = ("Services" if "/services/" in u else
+               "Guides" if "/guide" in u else
+               "Blog" if "/blog" in u else "Other")
+        mix[key] = mix.get(key, 0) + 1
+    return mix
+
+
+def _slug(text):
+    out = re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")
+    return out[:48] or "card"
+
+
+def _severity(accent):
+    return SEV.get(accent, _DEFAULT_SEV)
+
+
+def _plain(title):
+    """Plain-English question, with the original term kept as a tooltip."""
+    mapped = TITLE_MAP.get(title)
+    return (mapped, title) if mapped else (title, "")
+
+
+def _cta(links_html):
+    """Every card ends in a verb. If a card has no specific action, it inherits
+    the one that refreshes its board — never nothing."""
+    board = _CURRENT_BOARD["name"]
+    label, action = BOARD_CTA.get(board, ("Run every engine", "runSeoAll()"))
+    return (f"<div class='cta'><button class='cbtn sm' onclick=\"{action}\">"
+            f"{_H()._esc(label)}</button>{links_html}</div>")
+
+
 def _cards(rows, cols=3):
-    """rows = [(title, big, sub, body, insight, src, accent)] -> a card grid."""
-    H = _H()
-    inner = "".join(H._insight_card(t, b, s, body or "", ins or "", src or "", acc)
-                    for t, b, s, body, ins, src, acc in rows)
-    return f"<div class='grid g{cols}' style='margin-top:8px'>{inner}</div>"
+    """rows = [(title, big, sub, body, insight, src, accent)] -> a card grid.
+    Delegates to _viz so the older boards get IDs, severity and CTAs too."""
+    return _vizcards([(t, b, s, body, ins, src, acc, "") for
+                      t, b, s, body, ins, src, acc in rows], cols)
 
 
 # ======================================================================
@@ -125,31 +233,120 @@ def _gauge(value, cap, label="", color=None):
     return _donut(pct, label=label, color=color)
 
 
-def _viz(title, big, sub, chart, insight, src, accent=BLUE, links=""):
-    """THE card style for these boards: a chart, a headline number, a plain
-    English read, clickable evidence, and where the number came from."""
+def _score_gauge(value, target=80, label=""):
+    """A 0-100 SCORE is not a proportion of anything — a donut misrepresents it.
+    This is a bullet gauge: the value, a target line, and the bands behind it."""
     H = _H()
-    return ("<div class='card'>"
-            f"<p class='ct' style='margin:0'>{H._esc(title)}</p>"
+    v = max(0, min(100, float(value or 0)))
+    col = _pct_color(v)
+    W, HGT = 240, 54
+    bands = (f"<rect x='0' y='16' width='{W}' height='14' rx='7' fill='#141d31'/>"
+             f"<rect x='0' y='16' width='{W*0.5:.0f}' height='14' fill='#2a1420' opacity='.5'/>"
+             f"<rect x='{W*0.5:.0f}' y='16' width='{W*0.3:.0f}' height='14' fill='#2a2414' opacity='.5'/>")
+    bar = f"<rect x='0' y='18' width='{W*v/100:.1f}' height='10' rx='5' fill='{col}'/>"
+    tgt = (f"<line x1='{W*target/100:.1f}' y1='12' x2='{W*target/100:.1f}' y2='34' "
+           f"stroke='#EDF1FB' stroke-width='2'/>"
+           f"<text x='{W*target/100:.1f}' y='48' text-anchor='middle' fill='#8FA0BF' "
+           f"font-size='9'>target {int(target)}</text>")
+    txt = (f"<text x='{W}' y='12' text-anchor='end' fill='{col}' font-size='13' "
+           f"font-weight='800'>{v:.0f}</text>")
+    return (f"<svg viewBox='0 0 {W} {HGT}' width='100%' height='{HGT}' "
+            f"xmlns='http://www.w3.org/2000/svg'>{bands}{bar}{tgt}{txt}</svg>"
+            + (f"<div class='dim' style='font-size:10px'>{H._esc(label)}</div>" if label else ""))
+
+
+def _histogram(values, buckets=8, unit=""):
+    """Distribution of a measurement — title length, word count, click depth.
+    A donut cannot show a distribution; this is the shape that can."""
+    vals = [float(v) for v in (values or []) if v is not None]
+    if len(vals) < 2:
+        return ""
+    lo, hi = min(vals), max(vals)
+    if hi <= lo:
+        return ""
+    step = (hi - lo) / buckets
+    counts = [0] * buckets
+    for v in vals:
+        counts[min(int((v - lo) / step), buckets - 1)] += 1
+    mx = max(counts) or 1
+    W, HGT, pad = 260, 92, 16
+    bw = (W - 2 * pad) / buckets
+    bars = ""
+    for i, c in enumerate(counts):
+        h = (c / mx) * (HGT - 30)
+        x = pad + i * bw
+        bars += (f"<rect x='{x:.1f}' y='{HGT-14-h:.1f}' width='{bw*0.84:.1f}' "
+                 f"height='{h:.1f}' rx='2' fill='{TEAL}' opacity='.85'/>")
+    labels = (f"<text x='{pad}' y='{HGT-2}' fill='#8FA0BF' font-size='9'>{lo:.0f}{unit}</text>"
+              f"<text x='{W-pad}' y='{HGT-2}' text-anchor='end' fill='#8FA0BF' "
+              f"font-size='9'>{hi:.0f}{unit}</text>")
+    return (f"<svg viewBox='0 0 {W} {HGT}' width='100%' height='{HGT}' "
+            f"xmlns='http://www.w3.org/2000/svg'>{bars}{labels}</svg>")
+
+
+def _heatmap(rows, cols, matrix):
+    """A matrix is a matrix. The local pack grid was a text list."""
+    return _CH().heatmap(rows, cols, matrix) if rows and cols else ""
+
+
+def _riskmatrix(items):
+    """Work orders carry impact AND effort — that is a scatter, not a list."""
+    return _CH().risk_matrix(items) if items else ""
+
+
+def _statusgrid(items):
+    return _CH().statusgrid(items) if items else ""
+
+
+def _treemap(items):
+    return _CH().treemap(items) if items else ""
+
+
+def _waterfall(steps):
+    return _CH().waterfall(steps) if steps else ""
+
+
+def _viz(title, big, sub, chart, insight, src, accent=BLUE, links=""):
+    """THE card. One question, one number, the right chart, a plain-English
+    read, clickable evidence, an action — and an address of its own.
+
+    Carries data-sev / data-q so the board can filter, sort by severity and
+    progressively disclose without re-rendering anything server-side."""
+    H = _H()
+    sev, badge, weight = _severity(accent)
+    plain, jargon = _plain(title)
+    cid = f"card-{_slug(_CURRENT_BOARD['name'])}-{_slug(plain)}"
+    search_blob = H._esc(f"{plain} {jargon} {sub} {insight}".lower())[:400]
+    tip = f" title='{H._esc(jargon)}'" if jargon else ""
+    return (f"<div class='card sev-{sev}' id='{cid}' data-sev='{sev}' "
+            f"data-w='{weight}' data-q=\"{search_blob}\">"
+            + (f"<div class='sevbadge s-{sev}'>{badge}</div>" if badge else "")
+            + f"<p class='ct' style='margin:0'{tip}>{H._esc(plain)}</p>"
             f"<div style='display:flex;align-items:baseline;gap:8px;margin-top:7px'>"
             f"<span style='font-size:27px;font-weight:800;color:{accent}' class='tnum'>{H._esc(str(big))}</span>"
             f"<span class='dim'>{H._esc(sub)}</span></div>"
             + (f"<div style='margin-top:8px;text-align:center;overflow-x:auto'>{chart}</div>"
                if chart else "")
-            + (f"<div style='margin-top:8px'>{links}</div>" if links else "")
             + (f"<div style='margin-top:8px;padding:7px 10px;border-radius:8px;"
                f"background:rgba(139,124,255,.08);border-left:3px solid #8B7CFF;"
                f"font-size:12px'>💡 {H._esc(insight)}</div>" if insight else "")
+            + _cta(f"<a class='cbtn sm ghost' href='#{cid}'>🔗 link</a>")
+            + (f"<div style='margin-top:8px'>{links}</div>" if links else "")
             + (f"<div class='dim' style='font-size:10px;margin-top:7px'>🔌 {H._esc(src)}</div>"
                if src else "")
             + "</div>")
 
 
 def _vizcards(rows, cols=3):
-    """rows = [(title, big, sub, chart, insight, src, accent, links)]"""
-    inner = "".join(_viz(t, b, s, ch, ins, src, acc, lk)
-                    for t, b, s, ch, ins, src, acc, lk in rows)
-    return f"<div class='grid g{cols}' style='margin-top:8px'>{inner}</div>"
+    """rows = [(title, big, sub, chart, insight, src, accent, links)].
+
+    Sorted by severity: what is broken sorts above what is healthy, so the top
+    of every board is the part that needs you. Authoring order is preserved
+    within a severity band."""
+    decorated = [(_severity(r[6])[2], i, r) for i, r in enumerate(rows)]
+    decorated.sort(key=lambda t: (t[0], t[1]))
+    inner = "".join(_viz(*r) for _, _, r in decorated)
+    return f"<div class='grid g{cols} cardgrid' style='margin-top:8px'>{inner}</div>"
 
 
 def _sub(title, desc):
@@ -257,7 +454,7 @@ def board_command(ctx) -> str:
                          empty="Needs two crawls to compare — check back after the next run.")
 
     return _head("🧭", "SEO Command", "Six scores, the three moves that matter, and what the machine did without you.") + _vizcards([
-        ("Overall SEO score", sc.get("overall", 0), "of 100", _donut(sc.get("overall", 0)),
+        ("Overall SEO score", sc.get("overall", 0), "of 100", _score_gauge(sc.get("overall", 0), 70),
          f"Composite of visibility, technical, on-page, off-page and AEO across "
          f"{sc.get('pages_scored', 0)} pages.",
          "computed from your own crawl + Search Console", _pct_color(sc.get("overall", 0)), ""),
@@ -266,21 +463,23 @@ def board_command(ctx) -> str:
          ("Google confirmed these pages are in the index. Anything not indexed cannot rank at all."
           if inspect else "Run the index inspection to get Google's own verdict per URL — it's free."),
          "URL Inspection API", _pct_color(100 * indexed / max(len(inspect), 1)), ""),
-        ("Technical health", tech, "of 100", _donut(tech),
+        ("Technical health", tech, "of 100", _score_gauge(tech, 90),
          f"{len(audit.get('technical') or [])} technical findings across the crawl.",
          "own crawler", _pct_color(tech), ""),
-        ("On-page score", onp, "of 100", _donut(onp),
+        ("On-page score", onp, "of 100", _score_gauge(onp, 85),
          f"{len(audit.get('on_page') or [])} on-page findings — titles, metas, headings, schema, alt text.",
          "own crawler", _pct_color(onp), ""),
-        ("Off-page authority", off or "—", "of 100", _donut(off) if off else "",
+        ("Off-page authority", off or "—", "of 100", _score_gauge(off, 40) if off else "",
          ((ctx.get("offpage") or {}).get("reason")
           or f"{(ctx.get('offpage') or {}).get('referring_domains', 0)} referring domains."),
          "DataForSEO" if off else "not connected", _pct_color(off) if off else AMBER, ""),
-        ("AEO presence", aeo_score or "—", "of 100", _donut(aeo_score) if aeo else "",
+        ("AEO presence", aeo_score or "—", "of 100", _score_gauge(aeo_score, 30) if aeo else "",
          (f"You appear in {aeo.get('mention_rate', 0)}% of {aeo.get('prompts_tested', 0)} buyer-intent AI answers."
           if aeo else "Run an AI-visibility probe to see whether AI answers name you."),
          "Claude + Serper" if aeo else "not run", _pct_color(aeo_score) if aeo else AMBER, ""),
-        ("Score breakdown", sc.get("overall", 0), "where you stand",
+        ("Score breakdown", sc.get("overall", 0), "what makes up the overall score",
+         _waterfall([("Visibility", vis), ("Technical", tech), ("On-page", onp),
+                     ("Off-page", off), ("AEO", aeo_score)]) or
          _hbars([("Visibility", vis), ("Technical", tech), ("On-page", onp),
                  ("Off-page", off), ("AEO", aeo_score)], VIOLET),
          "The lowest bar is where the next hour of work belongs.",
@@ -581,7 +780,9 @@ def board_onpage(ctx) -> str:
                         empty="No structured data found anywhere on the site.")
     return _head("📄", "On-page quality",
                  f"Every one of your {len(pages)} live pages, audited element by element.") + _cards([
-        ("Titles in range", f"{good_title}/{len(pages)}", "30–60 characters", "",
+        ("Titles in range", f"{good_title}/{len(pages)}", "30–60 characters",
+         _histogram([r.get("title_len", 0) for r in pages if r.get("title_len")],
+                    unit=" chars"),
          ("A title over 60 chars gets cut off mid-sentence in Google; under 30 wastes the slot."),
          "own crawler", _pct_color(100 * good_title / max(len(pages), 1))),
         ("Missing titles", n("title_missing"), "no <title> at all", "",
@@ -600,7 +801,8 @@ def board_onpage(ctx) -> str:
         ("Heading structure", f"{order_ok}/{len(pages)}", "correct hierarchy", "",
          "Skipping H2→H4 breaks the outline both screen readers and AI engines rely on.",
          "own crawler", _pct_color(100 * order_ok / max(len(pages), 1))),
-        ("Average length", f"{avg_words:,}", "words per page", "",
+        ("Average length", f"{avg_words:,}", "words per page",
+         _histogram(words, unit="w"),
          ("Depth alone doesn't rank, but under 300 words rarely competes for anything commercial."),
          "own crawler", BLUE),
         ("Thin pages", n("thin_content"), "under 300 words", "",
@@ -808,7 +1010,8 @@ def board_content(ctx) -> str:
                      empty="No Analytics page data yet.")
     return _head("📚", "Content performance & decay",
                  f"All {len(live)} live pages measured against what search actually did with them.") + _cards([
-        ("Live pages", len(live), "crawled and indexable", "",
+        ("Live pages", len(live), "crawled and indexable",
+         _treemap(sorted(_section_mix(live).items(), key=lambda kv: -kv[1])),
          f"The library is {len(live)} pages. Publishing more only helps once these earn their keep.",
          "own crawler", BLUE),
         ("Pages earning clicks", len(pages), "seen in Search Console", top_body,
@@ -867,8 +1070,6 @@ def board_content(ctx) -> str:
     ])
 
 
-# ======================================================================
-#  BOARD 7 — INTERNAL LINKS  (12 cards)
 # ======================================================================
 def board_links(ctx) -> str:
     H = _H()
@@ -951,8 +1152,6 @@ def board_links(ctx) -> str:
     ])
 
 
-# ======================================================================
-#  BOARD 8 — OFF-PAGE  (20 cards)
 # ======================================================================
 def board_offpage(ctx) -> str:
     H = _H()
@@ -1072,9 +1271,7 @@ def board_offpage(ctx) -> str:
 
 
 # ======================================================================
-#  BOARD 9 — AEO / GEO  (12 cards)
-# ======================================================================
-#  BOARD 9 — AEO / ANSWER ENGINE  (46 cards, chart-led)
+#  BOARD 10 — GEO / GENERATIVE ENGINES  (20 cards)
 # ======================================================================
 def board_aeo(ctx) -> str:
     H = _H()
@@ -1350,8 +1547,6 @@ def board_aeo(ctx) -> str:
 
 
 # ======================================================================
-#  BOARD 10 — GEO / GENERATIVE ENGINES  (20 cards)
-# ======================================================================
 def board_geo_generative(ctx) -> str:
     H = _H()
     aeo = ctx.get("aeo") or {}
@@ -1406,7 +1601,7 @@ def board_geo_generative(ctx) -> str:
     return _head("🌐", "GEO — Generative Engine Optimisation",
                  "Share of voice inside AI answers: who gets named when a buyer asks, "
                  "across every engine we can reach.") + _vizcards([
-        ("Generative visibility", aeo.get("score", 0), "of 100", _donut(aeo.get("score", 0)),
+        ("Generative visibility", aeo.get("score", 0), "of 100", _score_gauge(aeo.get("score", 0), 30),
          f"Composite across {live} connected engine(s) and {n} buyer questions.",
          "AEO engine", _pct_color(aeo.get("score", 0)), ""),
         ("Share of voice", f"{sov_pct}%", "of all brands named",
@@ -1541,7 +1736,7 @@ def board_local(ctx) -> str:
     return _head("📍", "GEO — Local & multi-market",
                  "Your five target markets: where you show up, in which language, and "
                  "whether the technical signals tell Google which page belongs where.") + _vizcards([
-        ("Market readiness", geo.get("score", 0), "of 100", _donut(geo.get("score", 0)),
+        ("Market readiness", geo.get("score", 0), "of 100", _score_gauge(geo.get("score", 0), 70),
          "Language coverage, hreflang correctness and service-area pages, combined.",
          "market audit", _pct_color(geo.get("score", 0)), ""),
         ("Markets targeted", len(markets) or 5, "USA · UK · DE · CH · CA", mk_donut,
@@ -1617,7 +1812,13 @@ def board_local(ctx) -> str:
         ("Organization schema", schema.get("organization", 0), "pages", "",
          "The entity record that ties every market page back to one business.",
          "own crawler", GREEN if schema.get("organization") else AMBER, ""),
-        ("Local pack grid", len(grid), "market × query checks", "",
+        ("Local pack grid", len(grid), "market × query checks",
+         (lambda _mk=sorted({r["market"] for r in grid}),
+                 _q=sorted({r["query"][:18] for r in grid}):
+          _heatmap(_mk, _q, [[next((51 - (x.get("position") or 51)
+                                    for x in grid
+                                    if x["market"] == m and x["query"][:18] == q), 0)
+                              for q in _q] for m in _mk]))() if grid else "",
          ("Where you sit in the map pack, per market." if grid
           else "Not run yet. Serper Maps is already connected — about one credit per cell."),
          "Serper Maps", TEAL if grid else AMBER,
@@ -1729,7 +1930,12 @@ def board_work(ctx) -> str:
     return _head("🛠", "SEO automation & work orders",
                  "Every finding becomes a tracked job. Markup and links apply themselves; "
                  "anything a visitor reads waits for you.") + _cards([
-        ("Open work orders", len(open_o), "queued", queue_body,
+        ("Open work orders", len(open_o), "queued",
+         _riskmatrix([((o.get("code") or "")[:14],
+                       min(3, max(1, 4 - round(o.get("effort", 3) / 2))),
+                       min(3, max(1, round(o.get("impact", 30) / 34) + 1)))
+                      for o in sorted(open_o, key=lambda x: -x.get("priority", 0))[:12]])
+         or queue_body,
          ("Ranked by impact ÷ effort, so the top of this list is always the best next hour of work."
           if open_o else "Nothing outstanding."),
          "work-order engine", AMBER if open_o else GREEN),
@@ -1753,7 +1959,9 @@ def board_work(ctx) -> str:
         ("By type", len(stats.get("by_type") or {}), "work categories", type_body,
          "Where the work actually sits — technical, on-page, schema, links or content.",
          "work-order engine", VIOLET),
-        ("SEO engines live", f"{live}/{len(ENGINES)}", "of 14", eng_body,
+        ("SEO engines live", f"{live}/{len(ENGINES)}", "of 22",
+         _statusgrid([(lbl, bool(on), "live" if on else "needs a key")
+                      for lbl, on in eng_rows]) or eng_body,
          (f"{live} engines are wired and running. The rest need a key — each says which."),
          "connector status", _pct_color(100 * live / len(ENGINES))),
         ("Blocked on a key", len(blocked), "waiting on you", blocked_body,
@@ -1804,6 +2012,7 @@ def _safe_board(name, fn, ctx) -> str:
     Previously a single board raising took the entire SEO section down to a
     fallback (a TypeError in the spend meter blanked all 158 cards). Now the
     broken board shows what broke and the other ten still render."""
+    _CURRENT_BOARD["name"] = name
     try:
         return fn(ctx)
     except Exception as e:
@@ -1837,6 +2046,17 @@ TABS = [
     ("seogeo", "📍", "GEO — Local & Markets"),
     ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
+    ("seosrc", "📊", "Sources"),
+]
+
+# Nine flat tabs is past the limit of what anyone scans. Four groups, each
+# answering one question, with the tabs as their second level.
+GROUPS = [
+    ("act", "③ ACT", "What should I do?", ["seocmd", "seowork"]),
+    ("diagnose", "① DIAGNOSE", "What's wrong?", ["seotech", "seoonpage"]),
+    ("compete", "② COMPETE", "Where do I stand?",
+     ["seokw", "seoaeo", "seogen", "seogeo", "seooff"]),
+    ("sources", "④ SOURCES", "Where does the data come from?", ["seosrc"]),
 ]
 
 _TAB_CSS = """<style>
@@ -1852,6 +2072,27 @@ _TAB_CSS = """<style>
   color:#FFFFFF;box-shadow:0 0 0 1px #2FE3D2 inset}
 .stab .n{background:#0A0E1A;border-radius:20px;padding:1px 7px;font-size:10.5px;color:#2FE3D2}
 .spanel{display:none}.spanel.on{display:block}
+.sgroups{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 10px}
+.sgrp{background:#101d33;border:1px solid #26456f;color:#B9C6DE;border-radius:11px;
+  padding:9px 14px;cursor:pointer;font-family:inherit;text-align:left;line-height:1.25}
+.sgrp b{display:block;font-size:12px;letter-spacing:.04em}
+.sgrp .gq{font-size:10.5px;color:#8FA0BF}
+.sgrp.on{background:linear-gradient(180deg,#1d3f63,#101d33);border-color:#8B7CFF;color:#fff}
+.sgrp.on .gq{color:#CFC7FF}
+.stools{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:10px 0 2px}
+.cinput{background:#0A0E1A;border:1px solid #26456f;color:#EDF1FB;border-radius:9px;
+  padding:8px 12px;font-family:inherit;font-size:12.5px;min-width:230px;flex:1}
+.cinput:focus{outline:none;border-color:#2FE3D2}
+.cbtn.sm{padding:5px 10px;font-size:11.5px}
+.cbtn.ghost{background:transparent;border-color:#26456f;color:#8FA0BF;text-decoration:none}
+.card{position:relative}
+.sevbadge{font-size:9.5px;font-weight:800;letter-spacing:.05em;margin-bottom:5px}
+.s-critical{color:#FF6B93}.s-warn{color:#F5B14C}.s-ok{color:#3FD98B}
+.card.sev-critical{border-color:#FF6B93}
+.card.sev-warn{border-color:#F5B14C}
+.cta{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.card.hidecard{display:none}
+.morewrap{margin-top:10px;text-align:center}
 @media(max-width:860px){.stabs{overflow-x:auto;flex-wrap:nowrap}.stab{white-space:nowrap}}
 </style>"""
 
@@ -1878,9 +2119,12 @@ def seo_section(ctx, legacy_html: str = "") -> str:
               "seogen": CARD_COUNTS["geo_generative"],
               "seogeo": CARD_COUNTS["local"],
               "seooff": CARD_COUNTS["off_page"],
-              "seowork": CARD_COUNTS["work_orders"]}
+              "seowork": CARD_COUNTS["work_orders"],
+              "seosrc": (legacy_html or "").count("<div class='card'>")}
+    gof = {t: gid for gid, _l, _q, ts in GROUPS for t in ts}
     bar = "".join(
         f"<button class='stab{' on' if i == 0 else ''}' id='stab-{tid}' "
+        f"data-grp='{gof.get(tid, 'act')}' "
         f"onclick=\"seoTab('{tid}')\"><span>{icon}</span>{H._esc(label)}"
         f"<span class='n'>{counts.get(tid, 0)}</span></button>"
         for i, (tid, icon, label) in enumerate(TABS))
@@ -1898,21 +2142,36 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "<button class='cbtn' onclick='runProspect()'>🌐 Find link prospects</button>"
         "</div>")
     total = sum(counts.values())
-    hint = (f"<div class='shint'>👇 <b>{total} SEO engine cards</b> across {len(TABS)} tabs — "
-            f"click a tab to switch. Your Search Console &amp; Analytics boards are "
-            f"further down, unchanged.</div>")
-    legacy_head = ("<div id='seo-google' class='card full' style='margin-top:22px;"
+    # ---- ① group rail  ->  ② tab chips  ->  ③ cards ----
+    grouprail = "".join(
+        f"<button class='sgrp{' on' if i == 0 else ''}' id='sgrp-{gid}' "
+        f"onclick=\"seoGroup('{gid}')\"><b>{H._esc(label)}</b>"
+        f"<span class='gq'>{H._esc(question)}</span></button>"
+        for i, (gid, label, question, _t) in enumerate(GROUPS))
+    tools = (
+        "<div class='stools'>"
+        "<input id='cardq' class='cinput' placeholder='🔎 Search all 235 cards…' "
+        "oninput='seoFilter()'>"
+        "<button class='cbtn sm' id='fl-all' onclick=\"seoSev('all')\">All</button>"
+        "<button class='cbtn sm' onclick=\"seoSev('critical')\">⛔ Needs fixing</button>"
+        "<button class='cbtn sm' onclick=\"seoSev('warn')\">⚠ Worth a look</button>"
+        "<button class='cbtn sm' onclick=\"seoSev('ok')\">✓ Healthy</button>"
+        "<span class='dim' id='cardcount'></span></div>")
+    hint = (f"<div class='shint'>👇 <b>{total} cards</b> in {len(GROUPS)} groups. "
+            f"Broken things sort to the top of every board. Every card has an action "
+            f"and its own link.</div>")
+    legacy_head = ("<div id='seo-google' class='card full' style='margin-top:14px;"
                    "border-color:#4C8DFF'><p class='ct'>📊 Search Console &amp; Analytics</p>"
-                   "<p class='cc'>Your original Google boards — same place, same data, "
-                   "always visible.</p></div>")
-    # Tabs FIRST. The Google boards are long (full GSC + GA4 + 22 competitor
-    # cards), so rendering them above the tab bar buried it ~50 cards down the
-    # page and the engine boards looked like they had never shipped. They keep
-    # their content and order — they just sit below the tabs now, never inside
-    # one.
+                   "<p class='cc'>Your original Google boards — same data, same order, "
+                   "now with a home of their own in ④ Sources.</p></div>")
+    # The Google boards become the ④ Sources panel: still every card, still
+    # outside the engine tabs, but reachable from the nav instead of stranded
+    # 130k characters below everything else.
+    sources_panel = (f"<div class='spanel' id='spanel-seosrc'>{legacy_head}"
+                     f"{legacy_html or ''}</div>")
     return (_TAB_CSS + runbar + hint
-            + f"<div class='stabs'>{bar}</div>" + body
-            + legacy_head + (legacy_html or ""))
+            + f"<div class='sgroups'>{grouprail}</div>"
+            + f"<div class='stabs'>{bar}</div>" + tools + body + sources_panel)
 
 
 CARD_COUNTS = {"command": 13, "technical": 18, "indexing": 12, "on_page": 16,
@@ -2086,7 +2345,9 @@ if __name__ == "__main__":
     # GA4 floats must render as whole visits, not "8.0"
     _cmd = board_command(ctx)
     assert ">8<" in _cmd or "8 " in _cmd, "sessions must show as an integer"
-    assert "8.0" not in _cmd, "GA4 float leaked into the UI"
+    # NB: match the RENDERED value, not the bare string — SVG coordinates
+    # legitimately contain things like width='8.0'.
+    assert ">8.0<" not in _cmd and "8.0 sessions" not in _cmd, "GA4 float leaked into the UI"
     assert "5.0 sessions" not in board_content(ctx), "GA4 float leaked into the UI"
 
     # a failing board must NOT take the others down
@@ -2095,8 +2356,12 @@ if __name__ == "__main__":
     assert "ZeroDivisionError" in _safe_board("Boom", lambda c: 1 / 0, ctx)
 
     pages = seo_pages(ctx)
-    assert set(pages) == {t for t, _, _ in TABS}, list(pages)
-    assert len(TABS) == 9, len(TABS)
+    assert set(pages) == {t for t, _, _ in TABS if t != "seosrc"}, list(pages)
+    assert len(TABS) == 10 and len(GROUPS) == 4, (len(TABS), len(GROUPS))
+    # every tab belongs to exactly one group
+    grouped = [t for _g, _l, _q, ts in GROUPS for t in ts]
+    assert sorted(grouped) == sorted(t for t, _, _ in TABS), grouped
+    assert len(grouped) == len(set(grouped)), "a tab cannot be in two groups"
     html = "".join(pages.values())
     assert "failed to render" not in html, "no board may fail on real data"
 
@@ -2109,34 +2374,53 @@ if __name__ == "__main__":
     assert "seooverview" not in sec, "legacy is no longer a tab — it is always visible"
     # Tabs must be reachable WITHOUT scrolling past the long Google boards:
     # the tab bar comes first, the Google boards follow, still outside any tab.
+    assert sec.index("class='sgroups'") < sec.index("class='stabs'"), "groups above tabs"
     assert sec.index("class='stabs'") < sec.index(legacy), "tab bar must precede the Google boards"
     assert sec.index("id='seo-google'") < sec.index(legacy), "Google boards keep their heading"
-    assert sec.index(legacy) > sec.index("class='spanel"), "legacy sits OUTSIDE/after the tabs"
+    assert "id='spanel-seosrc'" in sec, "the Google boards need their own Sources panel"
     assert "position:sticky" in sec, "the tab bar must stay reachable while scrolling"
     for tid, _, _ in TABS:
         assert f"id='stab-{tid}'" in sec, f"missing tab button {tid}"
         assert f"id='spanel-{tid}'" in sec, f"missing tab panel {tid}"
         assert f"seoTab('{tid}')" in sec, f"tab {tid} has no click handler"
+    for gid, _l, _q, _t in GROUPS:
+        assert f"id='sgrp-{gid}'" in sec, f"missing group button {gid}"
+        assert f"seoGroup('{gid}')" in sec, f"group {gid} has no click handler"
+    assert "id='cardq'" in sec, "card search box missing"
+    assert "seoSev('critical')" in sec, "severity filter missing"
     assert sec.count("class='spanel on'") == 1, "exactly one tab may start open"
     assert sec.count("class='stab on'") == 1, "exactly one tab may start active"
-    assert "further down, unchanged" in sec, "must reassure the Google boards are still there"
+    assert "same data, same order" in sec, "must reassure the Google boards are intact"
     # SEO Command is the first NEW board shown — but only after the legacy ones.
     assert TABS[0][0] == "seocmd", "SEO Command must be the first tab"
     assert "class='spanel on' id='spanel-seocmd'" in sec, \
         "the SEO Command panel must be the one open on load"
-    assert "SEO engine cards</b> across" in sec, "must tell the user how many tabs there are"
+    assert "cards</b> in" in sec, "must tell the user how the cards are organised"
     # every card still present, just tabbed
-    assert sec.count("<div class='card'>") == TOTAL_CARDS + 1, sec.count("<div class='card'>")
+    assert len(_re.findall(r"<div class='card sev-", sec)) == TOTAL_CARDS,         len(_re.findall(r"<div class='card sev-", sec))
     # the run bar must expose the free engines by name
     for label in ("free", "Run every SEO engine", "Crawl my site"):
         assert label in sec, f"run bar missing '{label}'"
 
-    counted = html.count("<div class='card'>")
+    counted = len(_re.findall(r"<div class='card sev-", html))
     assert counted == TOTAL_CARDS, f"expected {TOTAL_CARDS} cards, rendered {counted}"
 
     # no board may render an unformatted placeholder, a None, or a raw dict
     for bad in ("None", "{}", "{'", "[{"):
         assert bad not in html, f"raw {bad} leaked into the HTML"
+    # ---- the design upgrade: identity, severity, action on EVERY card ----
+    ids = _re.findall(r"<div class='card sev-[a-z]+' id='(card-[a-z0-9-]+)'", html)
+    assert len(ids) == TOTAL_CARDS, f"{len(ids)} cards have an id, expected {TOTAL_CARDS}"
+    assert len(set(ids)) == len(ids), "card ids must be unique (they are deep links)"
+    assert html.count("data-sev=") == TOTAL_CARDS, "every card needs a severity for sorting"
+    assert html.count("data-q=") == TOTAL_CARDS, "every card needs a search blob"
+    assert html.count("class='cta'") == TOTAL_CARDS, "every card must end in a verb"
+    # severity sort: within a board, broken sorts above healthy
+    sevs = _re.findall(r"data-sev='([a-z]+)' data-w='(\d)'", html)
+    assert sevs, "severity attributes missing"
+    # plain-English titles replaced the jargon, and kept it as a tooltip
+    assert "Can AI engines read your site?" in html, "jargon titles not humanised"
+    assert "title='AI crawler access'" in html, "the real term must survive as a tooltip"
     assert not _re.search(r"\b(nan|NaN|inf)\b", html), "a non-finite number reached the UI"
     assert html.count("💡") >= TOTAL_CARDS * 0.85, "most cards must carry a qualitative read"
     # honest degradation, not fake numbers

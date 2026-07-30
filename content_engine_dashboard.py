@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v18-r2 · SEO + AEO + GEO: 22 engines, 234 chart-led cards with clickable evidence, "
+BUILD_TAG = ("2026-07-30 · v19 · SEO+AEO+GEO redesign: 4 groups, 235 addressable cards, severity-sorted, CTA on every card, 45 charts across 9 types, search+filter, bulk approve. "
              "all inside the ONE SEO/AEO/GEO section as in-page tabs (no extra "
              "sidebar items, no scroll wall)")
 
@@ -3925,8 +3925,30 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "if(j.ok){location.reload();}else{alert(j.error||'refresh failed');if(b){b.disabled=false;b.textContent='↻ Refresh Google data';}}}"
               "catch(e){alert('Failed: '+e);if(b){b.disabled=false;b.textContent='↻ Refresh Google data';}}}"
               # ---- SEO section: in-page tabs (one nav item holds every board) ----
+              # group rail: show only that group's tabs, open its first
+              "function seoGroup(g){document.querySelectorAll('.sgrp').forEach(b=>b.classList.remove('on'));"
+              "var gb=document.getElementById('sgrp-'+g);if(gb)gb.classList.add('on');"
+              "var first=null;document.querySelectorAll('.stab').forEach(function(t){"
+              "var show=t.getAttribute('data-grp')===g;t.style.display=show?'flex':'none';"
+              "if(show&&!first)first=t.id.replace('stab-','');});"
+              "if(first)seoTab(first);}"
+              # live search across all 235 cards, by title, read and source
+              "function seoFilter(){var q=(document.getElementById('cardq')||{}).value||'';"
+              "q=q.toLowerCase().trim();var shown=0,tot=0;"
+              "document.querySelectorAll('.card[data-q]').forEach(function(c){tot++;"
+              "var okq=!q||(c.getAttribute('data-q')||'').indexOf(q)>=0;"
+              "var oks=!window._sevf||window._sevf==='all'||c.getAttribute('data-sev')===window._sevf;"
+              "if(okq&&oks){c.classList.remove('hidecard');shown++;}else{c.classList.add('hidecard');}});"
+              "var cc=document.getElementById('cardcount');"
+              "if(cc)cc.textContent=(q||(window._sevf&&window._sevf!=='all'))?(shown+' of '+tot+' cards'):'';}"
+              "function seoSev(s){window._sevf=s;seoFilter();}"
+              # progressive disclosure: 8 cards per board, rest one click away
+              "function seoMore(id){var g=document.getElementById(id);if(!g)return;"
+              "g.classList.add('expanded');g.querySelectorAll('.card').forEach(c=>c.classList.remove('overflowcard'));"
+              "var b=document.getElementById('more-'+id);if(b)b.remove();}"
               "function seoTab(id){document.querySelectorAll('.spanel').forEach(p=>p.classList.remove('on'));"
               "var p=document.getElementById('spanel-'+id);if(p)p.classList.add('on');"
+              "var q=document.getElementById('cardq');if(q&&q.value){q.value='';window._sevf='all';seoFilter();}"
               "document.querySelectorAll('.stab').forEach(b=>b.classList.remove('on'));"
               "var b=document.getElementById('stab-'+id);if(b)b.classList.add('on');"
               "try{history.replaceState(null,'','#seo/'+id);}catch(e){}"
@@ -3952,6 +3974,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "function runAeo(){seoRun('/aeo/probe','Asking the AI engines… ~2 min',"
               "'Ask AI engines the questions your buyers ask, and see if they name you? ~30 small Claude calls plus Serper credits.');}"
               "function runOffpage(){seoRun('/offpage/scan','Pulling backlinks…','Pull your backlink profile? Requires DataForSEO.');}"
+              "function runGeo(){seoRun('/geo/audit','Auditing your 5 markets… ~1 min',"
+              "'Audit hreflang, language coverage and the local pack across your five markets? Uses a few Serper credits.');}"
+              "function approveAll(kind){if(!confirm('Publish EVERY drafted '+kind+' rewrite to your website? Review a few first — this cannot be undone in bulk.'))return;"
+              "seoRun('/seo/approve-all?type='+kind,'Publishing…');}"
               "function runProspect(){seoRun('/offpage/prospect','Finding link prospects… ~2 min',"
               "'Find link prospects and draft pitches? NOTHING is sent — every pitch waits for your approval.');}"
               "function runSeoAll(){seoRun('/seo/run-all','Running every SEO engine… ~5 min',"

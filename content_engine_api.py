@@ -1185,6 +1185,41 @@ def api_seo_workorders(status: str = "") -> dict:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+def api_seo_approve_all(kind: str = "title", limit: int = 250) -> dict:
+    """Approve and publish EVERY drafted rewrite of one type.
+
+    271 individual approvals is not a workflow, it is a wall. The per-order
+    route stays for reviewing one at a time; this is the bulk path, and it
+    only ever touches orders that already carry a model-written proposal the
+    founder can read on the board first."""
+    try:
+        import content_engine_workorders as WO
+        import content_engine_seo_fixer as FIX
+        store = get_store()
+        orders = WO.load(store)
+        targets = [o for o in orders
+                   if o.get("type") == kind
+                   and (o.get("extra") or {}).get("proposal")
+                   and o.get("status") in ("awaiting_approval", "open")][:limit]
+        if not targets:
+            return {"ok": True, "applied": 0,
+                    "reason": f"no drafted {kind} rewrites are waiting — "
+                              f"run the fixer first to generate them"}
+        applied, failed = 0, []
+        for o in targets:
+            out = FIX.apply_proposal(o)
+            WO.mark(store, o["id"], out["status"], out.get("result", ""))
+            if out["status"] == "done":
+                applied += 1
+            else:
+                failed.append({"url": o.get("url"), "why": out.get("result", "")})
+        return {"ok": True, "applied": applied, "failed": len(failed),
+                "details": failed[:10], "type": kind}
+    except Exception as e:
+        log.exception("bulk approve failed")
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 def api_seo_apply(order_id: str) -> dict:
     """Approve and publish ONE drafted copy change (title/meta)."""
     try:
@@ -1565,6 +1600,10 @@ def build_app():
     @app.post("/seo/fix/{order_id}")
     def seo_fix_one(order_id: str):
         return api_seo_apply(order_id)
+
+    @app.post("/seo/approve-all")
+    def seo_approve_all(type: str = "title"):
+        return api_seo_approve_all(type)
 
     @app.get("/seo/llms.txt")
     def seo_llms_txt():
