@@ -208,12 +208,22 @@ def run_speed(store, *, limit: int = MAX_SPEED) -> dict:
         seen.add(kind)
         picks.append(r["url"])
     picks = (picks + [r["url"] for r in live])[:limit]
+    if not picks:
+        return {"connected": True, "checked": 0,
+                "reason": "no crawled pages yet — run a crawl first"}
     results = ps.check_many(picks, limit=limit)
     _set(store, K_SPEED, results)
     _stamp(store, "speed")
     perf = [r.get("performance", 0) for r in results]
-    return {"connected": True, "checked": len(results),
-            "avg_performance": round(sum(perf) / max(len(perf), 1))}
+    out = {"connected": True, "checked": len(results), "attempted": len(picks),
+           "avg_performance": round(sum(perf) / max(len(perf), 1))}
+    if not results:
+        # A silent zero here is the exact failure mode this engine exists to
+        # avoid. PageSpeed works keyless but is heavily rate-limited.
+        out["reason"] = ("PageSpeed returned nothing for any URL. It works without "
+                         "a key but is rate-limited hard — set PAGESPEED_API_KEY "
+                         "(free from Google Cloud) to raise the quota.")
+    return out
 
 
 def run_indexnow(store, urls=None) -> dict:

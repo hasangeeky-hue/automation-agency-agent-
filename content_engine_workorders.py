@@ -37,9 +37,15 @@ MAX_ORDERS = 600          # keep the settings row sane
 # Which finding codes the machine may fix WITHOUT human approval.
 # Rule: it may add machine-readable markup and links; it may not rewrite prose.
 AUTO_CODES = {
-    "schema_missing", "img_alt_missing", "og_missing", "few_internal_links",
+    "schema_missing", "img_alt_missing", "few_internal_links",
     "orphan_page", "canonical_missing", "indexnow_pending",
 }
+
+# Real findings the ENGINE cannot fix, because they live outside the post body
+# (theme <head>, server config). They must stay visible as human work rather
+# than being marked "skipped" and disappearing from the queue.
+THEME_CODES = {"og_missing", "canonical_missing", "noindex", "slow_page",
+               "server_error", "unreachable", "mobile_fail", "redirect_chain"}
 
 # Which codes must be approved (they change copy a human will read).
 APPROVAL_CODES = {

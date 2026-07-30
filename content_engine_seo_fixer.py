@@ -287,6 +287,27 @@ _HANDLERS = {
 }
 
 
+_THEME_FIX = {
+    "og_missing": ("Open Graph tags are emitted by the THEME, not the post body — "
+                   "the engine cannot reach <head>. Extend anthropos_seo_head() in "
+                   "inc/ so it outputs og:title and og:description on pages and "
+                   "service templates, not only single posts."),
+    "canonical_missing": ("Canonical is a <head> tag. Add it in the theme's "
+                          "anthropos_seo_head() for this template."),
+    "noindex": "Remove the noindex robots meta from this template in the theme.",
+    "slow_page": ("Server-side: caching, image weight or hosting. Not fixable "
+                  "from the post body."),
+    "server_error": "Server or plugin error — check the WordPress error log.",
+    "unreachable": "The URL did not respond at all. Check it still exists.",
+    "mobile_fail": "Mobile layout issue in the theme template.",
+    "redirect_chain": "Update the link to point straight at the destination.",
+}
+
+
+def _theme_instruction(code, url):
+    return _THEME_FIX.get(code, "Needs a human.") + f"  ({url})"
+
+
 def run_batch(store, *, crawl=None, limit: int = 20, auto_only: bool = True,
               dry_run: bool = False) -> dict:
     """Execute the highest-priority open work orders. Returns a run report.
@@ -322,9 +343,17 @@ def run_batch(store, *, crawl=None, limit: int = 20, auto_only: bool = True,
                 out = propose_copy(o, rec, store, "title")
             elif code in ("meta_missing", "meta_short", "meta_long", "meta_duplicate"):
                 out = propose_copy(o, rec, store, "meta")
+            elif code in WO.THEME_CODES:
+                # Not a failure and not skippable-and-forgotten: these are real
+                # findings the engine cannot reach from the post body. They stay
+                # in the queue as human work, with the actual instruction.
+                out = {"status": "awaiting_approval",
+                       "result": _theme_instruction(code, o["url"])}
             else:
-                out = {"status": "skipped",
-                       "result": "no automated handler — needs a human"}
+                out = {"status": "awaiting_approval",
+                       "result": ("No automated handler for this yet — it stays "
+                                  "in the queue as human work rather than being "
+                                  "silently dropped.")}
         except Exception as e:                       # never let one fix kill the run
             log.warning("fix %s on %s failed: %s", code, o["url"], e)
             out = {"status": "failed", "result": f"{type(e).__name__}: {e}"}
