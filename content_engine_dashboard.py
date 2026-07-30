@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v17-r5 · SEO engine: 14 automation engines + 158 cards, "
+BUILD_TAG = ("2026-07-30 · v18 · SEO + AEO + GEO: 22 engines, 234 chart-led cards with clickable evidence, "
              "all inside the ONE SEO/AEO/GEO section as in-page tabs (no extra "
              "sidebar items, no scroll wall)")
 

@@ -36,6 +36,7 @@ K_AUDIT, K_INSPECT, K_SPEED = "seo_audit", "seo_inspect", "seo_speed"
 K_RANKS, K_RUNS, K_QUOT = "seo_ranks", "seo_engine_runs", "seo_quotable"
 K_LLMS, K_KEYWORDS, K_INDEXNOW = "seo_llms_txt", "seo_keywords", "seo_indexnow"
 K_LOCAL = "seo_local"
+K_ACCESS, K_ENTITY, K_NAP = "aeo_crawler_access", "aeo_entity", "geo_nap"
 
 MAX_CRAWL_URLS = 300
 MAX_INSPECT = 180          # free quota is 2000/day; stay well under
@@ -276,7 +277,12 @@ def run_ranks(store, *, markets=("us",), limit: int = MAX_RANK_KEYWORDS) -> dict
 
 
 def run_aeo(store, *, limit: int = 30) -> dict:
-    """E14. Do AI answers name you? Plus the on-site quotable audit + llms.txt."""
+    """E14 + E15/E16/E17/E18/E19/E20.
+
+    Probes every connected AI engine, extracts citations, scores answer quality,
+    checks whether the AI crawlers are even ALLOWED to read you, audits the
+    entity graph, and records a history row so the boards can show a trend.
+    """
     import content_engine_aeo as AEO
     crawl = _get(store, K_CRAWL, {}) or {}
     rivals = []
@@ -285,16 +291,53 @@ def run_aeo(store, *, limit: int = 30) -> dict:
         rivals = [c.get("domain") for c in (ci.get("competitors") or []) if c.get("domain")]
     except Exception:
         pass
-    domain = _site(store).replace("https://", "").replace("http://", "").strip("/")
+    site = _site(store)
+    domain = site.replace("https://", "").replace("http://", "").strip("/")
+
+    # E16 first — if the bots are blocked, everything else is academic.
+    access = AEO.crawler_access(site)
+    _set(store, K_ACCESS, access)
+
     out = AEO.run_probes(store, brand="Anthropos", domain=domain,
                          rivals=rivals[:6], limit=limit)
     _set(store, K_QUOT, AEO.quotable_audit(crawl))
+    _set(store, K_ENTITY, AEO.entity_audit(crawl))
     _set(store, K_LLMS, AEO.llms_txt(crawl, site_name="Anthropos Automation",
                                      description="AI and n8n business automation for small "
                                                  "and mid-sized companies."))
     _stamp(store, "aeo")
     return {"score": out.get("score", 0), "mention_rate": out.get("mention_rate", 0),
-            "prompts": out.get("prompts_tested", 0), "gaps": len(out.get("gaps") or [])}
+            "prompts": out.get("prompts_tested", 0),
+            "engines_live": out.get("engines_live", 0),
+            "citations": (out.get("citations") or {}).get("total", 0),
+            "gaps": len(out.get("gaps") or []),
+            "ai_crawlers_blocked": access.get("blocked_count", 0),
+            "ai_crawlers_allowed": access.get("allowed_count", 0)}
+
+
+def run_geo(store, *, grid_queries: int = 4) -> dict:
+    """E21 + E22 — the GEOGRAPHIC half: hreflang, language coverage, market
+    performance, service areas, and the local pack grid."""
+    import content_engine_geo as GEO
+    crawl = _get(store, K_CRAWL, {}) or {}
+    gsc = ((_get(store, "google_insights", {}) or {}).get("gsc") or {})
+    audit = GEO.run_market_audit(store, crawl, gsc)
+
+    domain = _site(store).replace("https://", "").replace("http://", "").strip("/")
+    queries = [q["query"] for q in (_get(store, K_AUDIT, {}) or {}).get("striking", [])]
+    if not queries:
+        queries = [r.get("key", "") for r in (gsc.get("queries") or [])][:grid_queries]
+    grid = GEO.local_grid([q for q in queries if q][:grid_queries], domain)
+    if grid:
+        _set(store, GEO.GRID_KEY, grid)
+    _set(store, K_NAP, GEO.nap_consistency(
+        crawl, name=_get(store, "BRAND_NAME", "Anthropos Automation") or ""))
+    _stamp(store, "geo")
+    return {"score": audit.get("score", 0),
+            "hreflang_issues": (audit.get("hreflang") or {}).get("issue_count", 0),
+            "uncovered_markets": (audit.get("language") or {}).get("uncovered", []),
+            "missing_market_pages": (audit.get("service_areas") or {}).get("missing", []),
+            "grid_cells": len(grid)}
 
 
 def run_offpage(store) -> dict:
@@ -349,6 +392,7 @@ def run_all(store, *, deep: bool = False) -> dict:
              ("ranks", lambda: run_ranks(store))]
     if deep:
         steps += [("aeo", lambda: run_aeo(store)),
+                  ("geo", lambda: run_geo(store)),
                   ("offpage", lambda: run_offpage(store)),
                   ("prospecting", lambda: run_prospecting(store))]
     for name, fn in steps:
@@ -384,6 +428,12 @@ def build_ctx(store, *, status=None, insights=None, meters=None,
         "ranks": [r for r in (_get(store, K_RANKS, []) or [])
                   if r.get("at", "")[:10] == _now()[:10]] or (_get(store, K_RANKS, []) or [])[-100:],
         "aeo": _get(store, "aeo_visibility", {}) or {},
+        "aeo_history": _get(store, "aeo_history", []) or [],
+        "crawler_access": _get(store, K_ACCESS, {}) or {},
+        "entity": _get(store, K_ENTITY, {}) or {},
+        "geo": _get(store, "geo_market_audit", {}) or {},
+        "local_grid": _get(store, "geo_local_grid", []) or [],
+        "nap": _get(store, K_NAP, {}) or {},
         "quotable": _get(store, K_QUOT, {}) or {},
         "llms_txt": _get(store, K_LLMS, "") or "",
         "offpage": _get(store, "backlink_profile", {}) or

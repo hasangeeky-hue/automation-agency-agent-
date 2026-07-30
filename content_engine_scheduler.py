@@ -134,6 +134,7 @@ SEO_CADENCE = {
     "fixes":       {"every_days": 1, "cost": "cheap"},
     "ranks":       {"every_days": 1, "cost": "cheap"},
     "aeo":         {"every_days": 7, "cost": "cheap"},
+    "geo":         {"every_days": 7, "cost": "cheap"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }
@@ -172,7 +173,7 @@ def run_seo_due(store, *, include_paid: bool = True) -> dict:
     import content_engine_seo_ops as SEO
     fns = {"crawl": SEO.run_crawl, "inspect": SEO.run_inspect, "speed": SEO.run_speed,
            "indexnow": SEO.run_indexnow, "fixes": SEO.run_fixes, "ranks": SEO.run_ranks,
-           "aeo": SEO.run_aeo, "offpage": SEO.run_offpage,
+           "aeo": SEO.run_aeo, "geo": SEO.run_geo, "offpage": SEO.run_offpage,
            "prospecting": SEO.run_prospecting}
     out = {}
     for name in seo_due(store):

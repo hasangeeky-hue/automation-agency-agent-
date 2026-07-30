@@ -60,6 +60,106 @@ def _cards(rows, cols=3):
     return f"<div class='grid g{cols}' style='margin-top:8px'>{inner}</div>"
 
 
+# ======================================================================
+#  VISUAL CARD KIT — donuts, bars, trend lines, clickable links
+# ======================================================================
+def _CH():
+    import content_engine_charts as CH
+    return CH
+
+
+def _link(url, label=None, max_len=46):
+    """A REAL clickable link. Every URL on these boards opens the page."""
+    H = _H()
+    if not url:
+        return H._esc(label or "")
+    text = label if label is not None else url.split("://")[-1]
+    return (f"<a href='{H._esc(url)}' target='_blank' rel='noopener' "
+            f"style='color:#2FE3D2;text-decoration:none;border-bottom:1px dotted #2FE3D2'>"
+            f"{H._esc(str(text)[:max_len])}</a>")
+
+
+def _linkrows(items, url_fn, right_fn=lambda x: "", label_fn=None, limit=12, empty=""):
+    """Rows where the left side is a clickable link to the actual page."""
+    H = _H()
+    if not items:
+        return H._empty(empty or "Nothing here yet.")
+    out = []
+    for i in items[:limit]:
+        u = url_fn(i)
+        lbl = label_fn(i) if label_fn else (u or "").rstrip("/").split("/")[-1] or "/"
+        out.append(f"<div class='fe'>{_link(u, lbl)}"
+                   f"<span class='dim' style='margin-left:auto'>{H._esc(right_fn(i))}</span></div>")
+    return "".join(out)
+
+
+def _donut(pct, label="", color=None, danger_low=True):
+    """Single-value donut: the share, in colour, with the number in the middle."""
+    CH = _CH()
+    pct = max(0, min(100, float(pct or 0)))
+    col = color or (_pct_color(pct) if danger_low else TEAL)
+    return CH.ring([(label or "yes", pct, col), ("", 100 - pct, "#1B2640")],
+                   center=f"{pct:.0f}%")
+
+
+def _split_donut(segments, center=""):
+    """Multi-segment donut: [(label, value, color)]."""
+    return _CH().ring([s for s in segments if s[1]], center=center)
+
+
+def _trend(series, ymax=None):
+    """[(name, [values], color)] -> line chart. Empty string if no history."""
+    series = [(n, v, c) for n, v, c in series if v and len(v) > 1]
+    return _CH().lines(series, ymax=ymax) if series else ""
+
+
+def _hbars(rows, color=BLUE):
+    """[(label, value)] -> horizontal bars (dashboard's own, keeps the look)."""
+    H = _H()
+    return H._bars(rows, color) if rows else ""
+
+
+def _gauge(value, cap, label="", color=None):
+    """A value against a ceiling — e.g. engines connected, quota used."""
+    pct = 100 * (value or 0) / max(cap or 1, 1)
+    return _donut(pct, label=label, color=color)
+
+
+def _viz(title, big, sub, chart, insight, src, accent=BLUE, links=""):
+    """THE card style for these boards: a chart, a headline number, a plain
+    English read, clickable evidence, and where the number came from."""
+    H = _H()
+    return ("<div class='card'>"
+            f"<p class='ct' style='margin:0'>{H._esc(title)}</p>"
+            f"<div style='display:flex;align-items:baseline;gap:8px;margin-top:7px'>"
+            f"<span style='font-size:27px;font-weight:800;color:{accent}' class='tnum'>{H._esc(str(big))}</span>"
+            f"<span class='dim'>{H._esc(sub)}</span></div>"
+            + (f"<div style='margin-top:8px;text-align:center;overflow-x:auto'>{chart}</div>"
+               if chart else "")
+            + (f"<div style='margin-top:8px'>{links}</div>" if links else "")
+            + (f"<div style='margin-top:8px;padding:7px 10px;border-radius:8px;"
+               f"background:rgba(139,124,255,.08);border-left:3px solid #8B7CFF;"
+               f"font-size:12px'>💡 {H._esc(insight)}</div>" if insight else "")
+            + (f"<div class='dim' style='font-size:10px;margin-top:7px'>🔌 {H._esc(src)}</div>"
+               if src else "")
+            + "</div>")
+
+
+def _vizcards(rows, cols=3):
+    """rows = [(title, big, sub, chart, insight, src, accent, links)]"""
+    inner = "".join(_viz(t, b, s, ch, ins, src, acc, lk)
+                    for t, b, s, ch, ins, src, acc, lk in rows)
+    return f"<div class='grid g{cols}' style='margin-top:8px'>{inner}</div>"
+
+
+def _sub(title, desc):
+    """A sub-heading inside a board — keeps 46 cards readable."""
+    H = _H()
+    return (f"<div class='card full' style='margin-top:14px;background:transparent;"
+            f"border-color:#26456f'><p class='ct' style='margin:0'>{H._esc(title)}</p>"
+            f"<p class='cc' style='margin:2px 0 0'>{H._esc(desc)}</p></div>")
+
+
 def _head(icon, title, desc):
     H = _H()
     return (f"<div class='card full' style='margin-top:12px'><p class='ct'>{icon} {H._esc(title)}</p>"
@@ -67,13 +167,25 @@ def _head(icon, title, desc):
 
 
 def _rows(items, right_fmt=lambda x: "", left_fmt=lambda x: str(x), limit=12, empty=""):
+    """A list row. If the item carries a URL (a dict with 'url'/'from', or a
+    (url, n) tuple), the left side becomes a REAL clickable link — so every
+    piece of evidence on every board opens the page it is talking about."""
     H = _H()
     if not items:
         return H._empty(empty or "Nothing here yet.")
-    return "".join(
-        f"<div class='fe'><span class='mut'>{H._esc(left_fmt(i))}</span>"
-        f"<span class='dim' style='margin-left:auto'>{H._esc(right_fmt(i))}</span></div>"
-        for i in items[:limit])
+    out = []
+    for i in items[:limit]:
+        url = ""
+        if isinstance(i, dict):
+            url = i.get("url") or i.get("from") or i.get("page") or ""
+        elif isinstance(i, (tuple, list)) and i and isinstance(i[0], str)                 and i[0].startswith("http"):
+            url = i[0]
+        label = left_fmt(i)
+        left = (_link(url, label) if url and str(url).startswith("http")
+                else f"<span class='mut'>{H._esc(label)}</span>")
+        out.append(f"<div class='fe'>{left}"
+                   f"<span class='dim' style='margin-left:auto'>{H._esc(right_fmt(i))}</span></div>")
+    return "".join(out)
 
 
 def _btn(label, action):
@@ -144,49 +256,56 @@ def board_command(ctx) -> str:
     changed_html = _rows(changed, left_fmt=lambda s: s,
                          empty="Needs two crawls to compare — check back after the next run.")
 
-    return _head("🧭", "SEO Command", "Six scores, the three moves that matter, and what the machine did without you.") + _cards([
-        ("Overall SEO score", sc.get("overall", 0), "of 100", "",
-         f"Composite of visibility, technical, on-page, off-page and AEO across {sc.get('pages_scored',0)} pages.",
-         "computed from your own crawl + Search Console", _pct_color(sc.get("overall", 0))),
-        ("Indexed URLs", f"{indexed}/{len(inspect) or pages}",
-         "confirmed by Google", "",
+    return _head("🧭", "SEO Command", "Six scores, the three moves that matter, and what the machine did without you.") + _vizcards([
+        ("Overall SEO score", sc.get("overall", 0), "of 100", _donut(sc.get("overall", 0)),
+         f"Composite of visibility, technical, on-page, off-page and AEO across "
+         f"{sc.get('pages_scored', 0)} pages.",
+         "computed from your own crawl + Search Console", _pct_color(sc.get("overall", 0)), ""),
+        ("Indexed URLs", f"{indexed}/{len(inspect) or pages}", "confirmed by Google",
+         _donut(100 * indexed / max(len(inspect), 1)) if inspect else "",
          ("Google confirmed these pages are in the index. Anything not indexed cannot rank at all."
           if inspect else "Run the index inspection to get Google's own verdict per URL — it's free."),
-         "URL Inspection API", _pct_color(100 * indexed / max(len(inspect), 1))),
-        ("Technical health", tech, "of 100", "",
+         "URL Inspection API", _pct_color(100 * indexed / max(len(inspect), 1)), ""),
+        ("Technical health", tech, "of 100", _donut(tech),
          f"{len(audit.get('technical') or [])} technical findings across the crawl.",
-         "own crawler", _pct_color(tech)),
-        ("On-page score", onp, "of 100", "",
+         "own crawler", _pct_color(tech), ""),
+        ("On-page score", onp, "of 100", _donut(onp),
          f"{len(audit.get('on_page') or [])} on-page findings — titles, metas, headings, schema, alt text.",
-         "own crawler", _pct_color(onp)),
-        ("Off-page authority", off or "—", "of 100", "",
+         "own crawler", _pct_color(onp), ""),
+        ("Off-page authority", off or "—", "of 100", _donut(off) if off else "",
          ((ctx.get("offpage") or {}).get("reason")
           or f"{(ctx.get('offpage') or {}).get('referring_domains', 0)} referring domains."),
-         "DataForSEO" if off else "not connected", _pct_color(off) if off else AMBER),
-        ("AEO presence", aeo_score or "—", "of 100", "",
+         "DataForSEO" if off else "not connected", _pct_color(off) if off else AMBER, ""),
+        ("AEO presence", aeo_score or "—", "of 100", _donut(aeo_score) if aeo else "",
          (f"You appear in {aeo.get('mention_rate', 0)}% of {aeo.get('prompts_tested', 0)} buyer-intent AI answers."
           if aeo else "Run an AI-visibility probe to see whether AI answers name you."),
-         "Claude + Serper" if aeo else "not run", _pct_color(aeo_score) if aeo else AMBER),
+         "Claude + Serper" if aeo else "not run", _pct_color(aeo_score) if aeo else AMBER, ""),
+        ("Score breakdown", sc.get("overall", 0), "where you stand",
+         _hbars([("Visibility", vis), ("Technical", tech), ("On-page", onp),
+                 ("Off-page", off), ("AEO", aeo_score)], VIOLET),
+         "The lowest bar is where the next hour of work belongs.",
+         "computed", VIOLET, ""),
         ("Organic sessions", f"{sessions:,}", "last 28 days", "",
          ("Real visits from search." if sessions
           else "Zero sessions is expected while rankings are still climbing — impressions come first."),
-         "GA4", BLUE),
-        ("Search clicks", f"{clicks:,}", f"on {impr:,} impressions", "",
+         "GA4", BLUE, ""),
+        ("Search clicks", f"{clicks:,}", f"on {impr:,} impressions",
+         _donut(100 * clicks / max(impr, 1)) if impr else "",
          (f"CTR {round(100*clicks/impr,1)}% — people saw you {impr:,} times."
           if impr else "No impressions yet: Google hasn't ranked these pages high enough to show them."),
-         "Search Console", TEAL),
-        ("Today's top 3 moves", len(top3), "highest impact ÷ effort", moves,
+         "Search Console", TEAL, ""),
+        ("Today's top 3 moves", len(top3), "highest impact ÷ effort", "",
          "Ranked by how much they move rankings against how long they take.",
-         "work-order engine", VIOLET),
-        ("What changed", len(changed), "pages up or down", changed_html,
+         "work-order engine", VIOLET, moves),
+        ("What changed", len(changed), "pages up or down", "",
          "Week-over-week movement per page — the early warning that used to be silent.",
-         "Search Console comparison", AMBER),
-        ("Fixed while you slept", len(done), "auto-applied", fixed,
+         "Search Console comparison", AMBER, changed_html),
+        ("Fixed while you slept", len(done), "auto-applied", "",
          "Schema, internal links and alt text are applied without asking. Copy always waits for you.",
-         "work-order log", GREEN),
-        ("Risk radar", len(risks), "flagged", risk_html,
+         "work-order log", GREEN, fixed),
+        ("Risk radar", len(risks), "flagged", "",
          "Anything that could cost you traffic if it stays unfixed.",
-         "audit + index status", PINK if risks else GREEN),
+         "audit + index status", PINK if risks else GREEN, risk_html),
     ])
 
 
@@ -955,153 +1074,603 @@ def board_offpage(ctx) -> str:
 # ======================================================================
 #  BOARD 9 — AEO / GEO  (12 cards)
 # ======================================================================
+#  BOARD 9 — AEO / ANSWER ENGINE  (46 cards, chart-led)
+# ======================================================================
 def board_aeo(ctx) -> str:
     H = _H()
     aeo = ctx.get("aeo") or {}
+    hist = ctx.get("aeo_history") or []
+    access = ctx.get("crawler_access") or {}
+    ent = ctx.get("entity") or {}
     quot = ctx.get("quotable") or {}
-    if not aeo:
-        return (_head("🤖", "AEO / GEO — AI answers",
-                      "Whether AI engines name you when a buyer asks. You measure this for "
-                      "competitors already; this measures it for you.")
-                + _not_run("AI-visibility probe has not run", "▶ Probe AI answers", "runAeo()"))
-
+    crawl = ctx.get("crawl") or {}
+    cites = aeo.get("citations") or {}
     eng = aeo.get("engines") or {}
     sov = aeo.get("share_of_voice") or {}
+    place = aeo.get("placement") or {}
     gaps = aeo.get("gaps") or []
+    n = aeo.get("prompts_tested", 0)
+    won, lost = aeo.get("prompts_won", 0), aeo.get("prompts_lost", 0)
     you = sov.get("_you", 0)
     rivals = {k: v for k, v in sov.items() if k != "_you"}
+    live = aeo.get("engines_live", 0)
 
-    sov_body = _rows(sorted(sov.items(), key=lambda kv: -kv[1]),
-                     left_fmt=lambda kv: "You" if kv[0] == "_you" else kv[0],
-                     right_fmt=lambda kv: f"{kv[1]} answers",
-                     empty="No mentions recorded.")
-    gap_body = _rows(gaps, left_fmt=lambda g: g["prompt"][:44],
-                     right_fmt=lambda g: ", ".join(g.get("rivals", []))[:28] or "nobody named",
-                     empty="No prompt names a rival instead of you.")
-    eng_body = _rows(list(eng.items()),
-                     left_fmt=lambda kv: kv[0].replace("_", " ").title(),
-                     right_fmt=lambda kv: ("connected" if kv[1].get("connected") else "not connected"),
-                     empty="")
-    weak_body = _rows(quot.get("weakest") or [],
-                      left_fmt=lambda r: r["url"].split("/")[-1][:38] or "/",
-                      right_fmt=lambda r: f"{r['question_headings']} question headings",
-                      empty="Every page has quotable question headings.")
-    return _head("🤖", "AEO / GEO — AI answers",
-                 "Buyers ask AI before they ask Google. This measures whether the answer says your name.") + _cards([
-        ("AEO score", aeo.get("score", 0), "of 100", "",
-         f"Blend of AI mentions, snippet ownership and organic presence across "
-         f"{aeo.get('prompts_tested', 0)} buyer-intent prompts.",
-         "Claude + Serper", _pct_color(aeo.get("score", 0))),
-        ("Mention rate", f"{aeo.get('mention_rate', 0)}%", "of AI answers name you", "",
-         (f"You were named in {you} of {aeo.get('prompts_tested',0)} answers to questions a "
-          "real buyer would ask."),
-         "Claude probe", _pct_color(aeo.get("mention_rate", 0), good=30, ok=10)),
-        ("Prompts tested", aeo.get("prompts_tested", 0), "buyer-intent questions", "",
-         "Ten general plus one per audience segment — the questions that precede a purchase.",
-         "AEO engine", BLUE),
-        ("Engines probed", len(eng), "AI surfaces", eng_body,
-         ("Claude runs on your own key. Google AI surfaces come through Serper. OpenAI and "
-          "Perplexity need their own keys — they're reported as not connected, never guessed."),
-         "AEO engine", VIOLET),
-        ("Share of voice", len(rivals) + (1 if you else 0), "brands named", sov_body,
-         (f"You: {you}. " + (f"Most-named rival: {max(rivals, key=rivals.get)}."
-                             if rivals else "No rival was named either.")),
-         "computed", TEAL),
-        ("Answer gaps", len(gaps), "prompts naming a rival, not you", gap_body,
-         ("Each gap is a page you could write that would put you in that answer."
+    trend_score = _trend([("AEO score", [h.get("score", 0) for h in hist], TEAL)])
+    trend_cite = _trend([("Citations", [h.get("citations", 0) for h in hist], VIOLET)])
+    engine_bars = _hbars([(e.replace("_", " ").title(),
+                           (eng.get(e) or {}).get("mentions", 0)) for e in
+                          ("claude", "openai", "perplexity", "gemini")], VIOLET)
+    sov_bars = _hbars(sorted(rivals.items(), key=lambda kv: -kv[1])[:8], PINK) if rivals else ""
+
+    def _eng(name, label, vendor):
+        e = eng.get(name) or {}
+        on = e.get("connected")
+        return (label, f"{e.get('mentions', 0)}/{n}" if on else "—",
+                "answers naming you" if on else "not connected",
+                _donut(e.get("rate", 0)) if on else "",
+                (f"{vendor} names you in {e.get('rate', 0)}% of the buyer questions tested."
+                 if on else (e.get("reason") or f"{vendor} needs its own API key. "
+                             "Reported as not connected rather than guessed.")),
+                f"{vendor} API" if on else "not connected",
+                _pct_color(e.get("rate", 0), good=30, ok=10) if on else AMBER, "")
+
+    presence = _vizcards([
+        ("AEO score", aeo.get("score", 0), "of 100", _donut(aeo.get("score", 0)),
+         f"Blend of AI mentions, snippet ownership and organic presence across {n} buyer questions.",
+         "AEO engine", _pct_color(aeo.get("score", 0)), ""),
+        ("Mention rate", f"{aeo.get('mention_rate', 0)}%", "of AI answers name you",
+         _donut(aeo.get("mention_rate", 0), danger_low=True),
+         f"You were named in {won} of {n} answers to questions a real buyer asks before hiring.",
+         "multi-engine probe", _pct_color(aeo.get("mention_rate", 0), good=30, ok=10), ""),
+        ("Prompts tested", n, "buyer questions", "",
+         "Ten general plus one per audience segment — editable in the prompt library.",
+         "prompt library", BLUE, ""),
+        ("Won vs lost", f"{won}/{n}", "answers you appear in",
+         _split_donut([("Won", won, GREEN), ("Lost", lost, PINK)], center=f"{won}"),
+         ("Every lost prompt is a question where a buyer hears someone else's name."
+          if lost else "You appear in every tested answer."),
+         "multi-engine probe", GREEN if won else PINK, ""),
+        ("Prompts lost", lost, "no mention at all", "",
+         ("These are the content gaps that matter most — they are literally the "
+          "questions your buyers ask." if lost else "Nothing lost."),
+         "computed", PINK if lost else GREEN, ""),
+        _eng("claude", "Claude", "Anthropic"),
+        _eng("openai", "ChatGPT", "OpenAI"),
+        _eng("perplexity", "Perplexity", "Perplexity"),
+        _eng("gemini", "Gemini", "Google"),
+        ("Google AI surfaces", (eng.get("google_ai") or {}).get("snippets", 0),
+         "answer boxes owned",
+         _donut(100 * (eng.get("google_ai") or {}).get("snippets", 0) / max(n, 1)),
+         ("The answer box is what AI Overviews quote and voice assistants read aloud."),
+         "Serper", GREEN if (eng.get("google_ai") or {}).get("snippets") else AMBER, ""),
+        ("Visibility trend", len(hist), "probes recorded", trend_score,
+         ("Each probe is a point on this line — this is how you prove AEO work is "
+          "working." if len(hist) > 1
+          else "Run the probe weekly; the second run starts the trend."),
+         "probe history", TEAL, ""),
+        ("Where you appear", place.get("first", 0), "named in the opening",
+         _split_donut([("First", place.get("first", 0), GREEN),
+                       ("Middle", place.get("middle", 0), AMBER),
+                       ("Buried", place.get("buried", 0), PINK)],
+                      center=str(place.get("first", 0))),
+         "Named in the first sentence is worth far more than a mention in paragraph six.",
+         "answer-quality pass", GREEN if place.get("first") else AMBER, ""),
+        ("Recommended", aeo.get("recommended", 0), "answers actively recommend you",
+         _donut(100 * aeo.get("recommended", 0) / max(won, 1) if won else 0),
+         ("Being listed is not the same as being recommended. This counts the answers "
+          "that actually endorse you."),
+         "answer-quality pass", GREEN if aeo.get("recommended") else AMBER, ""),
+        ("Engines connected", f"{live}/4", "AI engines probed", _gauge(live, 4),
+         ("Claude runs on your existing key. ChatGPT, Perplexity and Gemini each need "
+          "their own — Gemini has a free tier."),
+         "connector status", _pct_color(100 * live / 4), ""),
+    ])
+
+    citations = _vizcards([
+        ("Citations", cites.get("total", 0), "links to your pages in AI answers",
+         _hbars(sorted((cites.get("by_engine") or {}).items(), key=lambda kv: -kv[1]), TEAL),
+         ("A citation is stronger than a mention — the engine is sending people to a "
+          "specific page." if cites.get("total") else
+          "No AI answer has linked to you yet. Perplexity cites sources most reliably, "
+          "so connecting it would show this fastest."),
+         "citation extractor", GREEN if cites.get("total") else AMBER, ""),
+        ("Pages cited", cites.get("unique_pages", 0), "distinct URLs", "",
+         "Which of your 266 pages the engines consider quotable.",
+         "citation extractor", TEAL, ""),
+        ("Citations by engine", len(cites.get("by_engine") or {}), "engines citing you",
+         _hbars(sorted((cites.get("by_engine") or {}).items(), key=lambda kv: -kv[1]), VIOLET),
+         "Different engines cite different pages — spread means broad quotability.",
+         "citation extractor", VIOLET, ""),
+        ("Most-cited pages", len(cites.get("top_pages") or []), "ranked", "",
+         "Study what these pages do differently, then copy it across the library.",
+         "citation extractor", GREEN,
+         _linkrows(cites.get("top_pages") or [], url_fn=lambda kv: kv[0],
+                   right_fn=lambda kv: f"{kv[1]}×",
+                   empty="No page has been cited yet.")),
+        ("Citation trend", cites.get("total", 0), "over time", trend_cite,
+         ("Rising citations is the clearest proof AEO work is landing."
+          if len(hist) > 1 else "Starts once you have two probe runs."),
+         "probe history", VIOLET, ""),
+        ("Quotable but uncited", max(0, quot.get("quotable", 0) - cites.get("unique_pages", 0)),
+         "ready, not yet cited", "",
+         ("These pages have question headings and answers but no engine cites them — "
+          "usually an authority or indexing problem, not a content one."),
+         "computed", AMBER, ""),
+        ("Share of voice", f"{round(100*you/max(you+sum(rivals.values()),1))}%",
+         "of all brand mentions",
+         _split_donut([("You", you, TEAL)] +
+                      [(k, v, c) for (k, v), c in
+                       zip(sorted(rivals.items(), key=lambda kv: -kv[1])[:4],
+                           (PINK, AMBER, VIOLET, BLUE))], center=str(you)),
+         (f"You: {you} mentions. " +
+          (f"Most-named rival: {max(rivals, key=rivals.get)}." if rivals
+           else "No rival was named either — the category is wide open in AI answers.")),
+         "computed", TEAL if you else AMBER, ""),
+        ("Rival leaderboard", len(rivals), "rivals named in your questions", sov_bars,
+         ("These are the names buyers hear instead of yours." if rivals
+          else "No rival dominates these answers yet."),
+         "computed", PINK if rivals else GREEN, ""),
+        ("Answer gaps", len(gaps), "prompts naming a rival, not you", "",
+         ("Each gap is one page you could write that would put you in that answer."
           if gaps else "No rival is taking an answer you should own."),
-         "computed", PINK if gaps else GREEN),
-        ("Featured snippets", (eng.get("google_ai") or {}).get("snippets", 0), "owned", "",
-         ("The snippet is what voice assistants read aloud and what AI Overviews quote."),
-         "Serper", GREEN if (eng.get("google_ai") or {}).get("snippets") else AMBER),
-        ("Ranked on the SERP", (eng.get("google_ai") or {}).get("ranked", 0), "of the tested prompts", "",
-         ("AI Overviews draw heavily on the top organic results. Ranking is still the entry ticket."),
-         "Serper", BLUE),
-        ("Quotable pages", f"{quot.get('quotable', 0)}/{quot.get('pages', 0)}",
-         "2+ question headings", weak_body,
-         ("AI engines quote a heading that asks and a paragraph that answers. Vague headings "
-          "never get cited, however good the prose is."),
-         "own crawler", _pct_color(quot.get("quotable_pct", 0))),
-        ("FAQ schema", f"{quot.get('faq_schema', 0)}/{quot.get('pages', 0)}", "pages marked up", "",
-         ("FAQPage markup is the most direct way to hand an AI engine a ready-made answer. "
-          "The fixer injects it automatically."),
-         "own crawler", _pct_color(quot.get("faq_pct", 0))),
+         "computed", PINK if gaps else GREEN,
+         _rows(gaps, left_fmt=lambda g: g["prompt"][:44],
+               right_fmt=lambda g: ", ".join(g.get("rivals", []))[:26] or "nobody named",
+               empty="No gaps.")),
+        ("Prompts you own", won, "answers naming you", "",
+         "Defend these — they are the questions where you already win.",
+         "computed", GREEN, ""),
+    ])
+
+    bots = access.get("bots") or []
+    blocked = [b for b in bots if b.get("blocked")]
+
+    def _bot(name):
+        b = next((x for x in bots if x["bot"] == name), None)
+        if not b:
+            return (name, "—", "not checked", "",
+                    "Run the AI-visibility probe to check robots.txt.", "not run", AMBER, "")
+        ok = not b["blocked"]
+        return (f"{name}", "ALLOWED" if ok else "BLOCKED", b["vendor"], "",
+                b["why"] + ("" if ok else
+                            "  This is a hard blocker: it can never cite you while this stands."),
+                "robots.txt", GREEN if ok else PINK, "")
+
+    readiness = _vizcards([
+        ("AI crawler access", f"{access.get('allowed_count', 0)}/{len(bots) or 8}",
+         "AI bots allowed to read you",
+         _split_donut([("Allowed", access.get("allowed_count", 0), GREEN),
+                       ("Blocked", access.get("blocked_count", 0), PINK)],
+                      center=str(access.get("allowed_count", 0))) if bots else "",
+         ("If a bot is blocked in robots.txt it can NEVER cite you, however good the "
+          "content is. This is the first thing to check and nothing checked it before."
+          if bots else "Not checked yet — run the AI probe."),
+         "robots.txt", PINK if blocked else (GREEN if bots else AMBER), ""),
+        _bot("GPTBot"), _bot("ClaudeBot"), _bot("PerplexityBot"), _bot("Google-Extended"),
+        ("robots.txt", "found" if access.get("robots_found") else "none", "on your site", "",
+         ("Present and parsed." if access.get("robots_found")
+          else "No robots.txt means everything is allowed — fine, but you have no control."),
+         "own crawler", GREEN if access.get("robots_found") else AMBER, ""),
         ("llms.txt", "ready" if ctx.get("llms_txt") else "—", "AI crawler manifest", "",
-         ("A single file telling AI crawlers what your site is and which pages matter. "
-          "Free, one upload, generated from your live crawl."),
-         "AEO engine", GREEN if ctx.get("llms_txt") else AMBER),
-        ("AEO fix queue", len(quot.get("weakest") or []), "pages to make quotable", "",
-         ("Rewrite these H2s as the questions your buyers actually ask, then answer in the "
-          "first sentence underneath."),
-         "computed", AMBER if quot.get("weakest") else GREEN),
+         ("Generated from your live crawl. Upload it to your site root — one file, free, "
+          "and it tells AI crawlers what you are and which pages matter."
+          if ctx.get("llms_txt") else "Run the AI probe to generate it."),
+         "AEO engine", GREEN if ctx.get("llms_txt") else AMBER,
+         _link("/seo/llms.txt", "view the generated llms.txt") if ctx.get("llms_txt") else ""),
+        ("FAQ schema", f"{quot.get('faq_schema', 0)}/{quot.get('pages', 0)}",
+         "pages marked up", _donut(quot.get("faq_pct", 0)),
+         "FAQPage markup hands an engine a ready-made answer. The fixer injects it free.",
+         "own crawler", _pct_color(quot.get("faq_pct", 0)), ""),
+        ("Structured data types", len(ent.get("schema_types") or []), "distinct types",
+         _hbars((ent.get("schema_types") or [])[:6], VIOLET),
+         "HowTo, QAPage and Speakable are all quotable formats most sites never use.",
+         "own crawler", VIOLET, ""),
+        ("Author & credentials", ent.get("person_pages", 0), "pages declaring a Person", "",
+         ("Generative engines weigh who wrote it. Author markup with real credentials is "
+          "the cheapest trust signal you are not using."),
+         "own crawler", GREEN if ent.get("person_pages") else AMBER, ""),
+        ("Entity links (sameAs)", len(ent.get("entity_links") or []), "authority profiles linked",
+         _gauge(len(ent.get("entity_links") or []), 4),
+         ("Wikidata, Wikipedia, LinkedIn and Crunchbase links are how an engine confirms "
+          "you are a real company. Missing: "
+          + (", ".join(ent.get("missing_entities") or []) or "none")),
+         "own crawler", _pct_color(25 * len(ent.get("entity_links") or [])), ""),
+        ("Entity score", ent.get("score", 0), "of 100", _donut(ent.get("score", 0)),
+         "Organization + Person markup plus outbound authority links, combined.",
+         "entity audit", _pct_color(ent.get("score", 0)), ""),
+    ])
+
+    pages = [r for r in crawl.get("urls", []) if r.get("status") == 200]
+    q_pages = [r for r in pages if len([h for h in (r.get("h2") or [])
+                                        if h.strip().endswith("?")]) >= 2]
+    paa = []
+    for r in (ctx.get("ranks") or []):
+        paa.extend(r.get("paa") or [])
+    paa = list(dict.fromkeys(paa))
+    answered = [q for q in paa if any(q.lower()[:28] in " ".join(p.get("h2") or []).lower()
+                                      for p in pages)]
+
+    content = _vizcards([
+        ("Quotable pages", f"{quot.get('quotable', 0)}/{quot.get('pages', 0)}",
+         "2+ question headings", _donut(quot.get("quotable_pct", 0)),
+         ("Engines quote a heading that ASKS and a paragraph that ANSWERS. Vague headings "
+          "never get cited however good the prose is."),
+         "own crawler", _pct_color(quot.get("quotable_pct", 0)), ""),
+        ("Question headings", sum(len([h for h in (r.get("h2") or [])
+                                       if h.strip().endswith("?")]) for r in pages),
+         "across the library", "",
+         "Your article template already uses seven question headings — that is why this works.",
+         "own crawler", TEAL, ""),
+        ("Pages needing work", len(quot.get("weakest") or []), "not quotable yet", "",
+         "Rewrite these H2s as the questions your buyers actually ask.",
+         "computed", AMBER if quot.get("weakest") else GREEN,
+         _linkrows(quot.get("weakest") or [], url_fn=lambda r: r["url"],
+                   right_fn=lambda r: f"{r['question_headings']} question headings",
+                   empty="Every page is quotable.")),
+        ("PAA questions found", len(paa), "People Also Ask", "",
+         ("Google is telling you exactly what people ask around your topics."
+          if paa else "Run the rank tracker — it collects PAA questions for free."),
+         "Serper", TEAL if paa else AMBER,
+         _rows(paa, left_fmt=lambda q: q[:52], empty="Run the rank tracker to collect these.")),
+        ("PAA answered", f"{len(answered)}/{len(paa)}", "already covered",
+         _donut(100 * len(answered) / max(len(paa), 1)),
+         "Each unanswered PAA question is a heading you could add to an existing page.",
+         "computed", _pct_color(100 * len(answered) / max(len(paa), 1)), ""),
+        ("Content → prompt map", len(q_pages), "pages that could answer a buyer question", "",
+         "These are your candidates for winning the prompts you currently lose.",
+         "computed", TEAL,
+         _linkrows(q_pages, url_fn=lambda r: r["url"],
+                   right_fn=lambda r: f"{len([h for h in (r.get('h2') or []) if h.strip().endswith('?')])} questions",
+                   empty="No page has question headings yet.")),
+        ("Segment coverage", 8, "audience segments", "",
+         ("One prompt per segment is tested: regulated, medical, e-commerce, service, "
+          "freelancers, creators, B2B and business-launch."),
+         "prompt library", VIOLET, ""),
+        ("Unanswered buyer questions", len(gaps), "prompts with no page behind them", "",
+         "Write one page per gap, with the question as the H2 and the answer directly under it.",
+         "computed", AMBER if gaps else GREEN,
+         _rows(gaps, left_fmt=lambda g: g["prompt"][:52], empty="Nothing unanswered.")),
+        ("Freshness", sum(1 for r in pages if r.get("words", 0) > 600), "substantial pages", "",
+         ("Generative engines favour recently updated, dated content. Refreshing beats "
+          "publishing new when the page already ranks."),
+         "own crawler", BLUE, ""),
+        ("AEO fix queue", len(quot.get("weakest") or []) + len(gaps), "actions", "",
+         "Quotability rewrites plus the missing answers, in one list.",
+         "computed", AMBER if (quot.get("weakest") or gaps) else GREEN, ""),
+    ])
+
+    return (_head("🤖", "AEO — Answer Engine Optimisation",
+                  "Buyers ask an AI before they ask you. These 46 cards measure whether "
+                  "the answer says your name, which page it cites, and whether the "
+                  "engines are even allowed to read you.")
+            + _sub("Answer presence", "Are you in the answer, on every engine?") + presence
+            + _sub("Citations & share of voice", "When you are named, which page gets the link?") + citations
+            + _sub("AI readiness", "Can the engines read you, and is your markup quotable?") + readiness
+            + _sub("Answer content", "The pages and questions that win the answers.") + content)
+
+
+# ======================================================================
+#  BOARD 10 — GEO / GENERATIVE ENGINES  (20 cards)
+# ======================================================================
+def board_geo_generative(ctx) -> str:
+    H = _H()
+    aeo = ctx.get("aeo") or {}
+    hist = ctx.get("aeo_history") or []
+    sov = aeo.get("share_of_voice") or {}
+    eng = aeo.get("engines") or {}
+    gaps = aeo.get("gaps") or []
+    results = aeo.get("results") or []
+    you = sov.get("_you", 0)
+    rivals = {k: v for k, v in sov.items() if k != "_you"}
+    total_mentions = you + sum(rivals.values())
+    n = aeo.get("prompts_tested", 0)
+    live = aeo.get("engines_live", 0)
+    sov_pct = round(100 * you / max(total_mentions, 1), 1)
+
+    # contested = at least one engine named us AND at least one named a rival
+    contested = 0
+    for r in results:
+        named = any((r.get(e) or {}).get("mentioned") for e in ("claude", "openai",
+                                                               "perplexity", "gemini"))
+        riv = any((r.get(e) or {}).get("rivals_mentioned") for e in ("claude", "openai",
+                                                                    "perplexity", "gemini"))
+        if named and riv:
+            contested += 1
+    # engine agreement: do the connected engines name the same brands?
+    agree = 0
+    for r in results:
+        named = [e for e in ("claude", "openai", "perplexity", "gemini")
+                 if (r.get(e) or {}).get("mentioned")]
+        if len(named) > 1:
+            agree += 1
+
+    def _kind(word):
+        return sum(1 for r in results if word in r.get("prompt", "").lower())
+
+    def _kind_won(word):
+        return sum(1 for r in results if word in r.get("prompt", "").lower()
+                   and any((r.get(e) or {}).get("mentioned")
+                           for e in ("claude", "openai", "perplexity", "gemini")))
+
+    trend_sov = _trend([("Mention rate %", [h.get("mention_rate", 0) for h in hist], TEAL)])
+    trend_cit = _trend([("Citations", [h.get("citations", 0) for h in hist], VIOLET)])
+    rival_bars = _hbars(sorted(rivals.items(), key=lambda kv: -kv[1])[:8], PINK) if rivals else ""
+    engine_bars = _hbars([(e.title(), (eng.get(e) or {}).get("mentions", 0))
+                          for e in ("claude", "openai", "perplexity", "gemini")], VIOLET)
+    winning = []
+    for r in results:
+        for e in ("claude", "openai", "perplexity", "gemini"):
+            for c in ((r.get(e) or {}).get("citations") or []):
+                winning.append((c, r.get("prompt", "")))
+
+    return _head("🌐", "GEO — Generative Engine Optimisation",
+                 "Share of voice inside AI answers: who gets named when a buyer asks, "
+                 "across every engine we can reach.") + _vizcards([
+        ("Generative visibility", aeo.get("score", 0), "of 100", _donut(aeo.get("score", 0)),
+         f"Composite across {live} connected engine(s) and {n} buyer questions.",
+         "AEO engine", _pct_color(aeo.get("score", 0)), ""),
+        ("Share of voice", f"{sov_pct}%", "of all brands named",
+         _split_donut([("You", you, TEAL)] +
+                      [(k, v, c) for (k, v), c in
+                       zip(sorted(rivals.items(), key=lambda kv: -kv[1])[:4],
+                           (PINK, AMBER, VIOLET, BLUE))], center=f"{sov_pct:.0f}%"),
+         (f"Of {total_mentions} brand mentions across the tested answers, {you} were you."
+          if total_mentions else
+          "No brand was named in any answer — the engines answered generically. "
+          "That is an open category, not a loss."),
+         "computed", TEAL if sov_pct >= 20 else AMBER, ""),
+        ("Engines answering", f"{live}/4", "generative engines probed", _gauge(live, 4),
+         "Claude is live on your key. ChatGPT, Perplexity and Gemini each need one — "
+         "Gemini has a free tier, Perplexity is about $1 per 1,000 questions.",
+         "connector status", _pct_color(100 * live / 4), ""),
+        ("Prompts won", aeo.get("prompts_won", 0), f"of {n}",
+         _split_donut([("Won", aeo.get("prompts_won", 0), GREEN),
+                       ("Lost", aeo.get("prompts_lost", 0), PINK)],
+                      center=str(aeo.get("prompts_won", 0))),
+         "A win means at least one engine named you in its answer.",
+         "computed", GREEN if aeo.get("prompts_won") else PINK, ""),
+        ("Prompts contested", contested, "you AND a rival named", "",
+         ("Both of you are in the answer — the buyer is comparing you right there."
+          if contested else "No answer names you alongside a rival."),
+         "computed", AMBER, ""),
+        ("Prompts lost", aeo.get("prompts_lost", 0), "no mention", "",
+         "Each one is a buyer hearing a recommendation that is not you.",
+         "computed", PINK if aeo.get("prompts_lost") else GREEN, ""),
+        ("Visibility trend", len(hist), "runs recorded", trend_sov,
+         ("The only honest proof that GEO work is moving." if len(hist) > 1
+          else "One run so far — the trend starts at the second."),
+         "probe history", TEAL, ""),
+        ("Top rival", (max(rivals, key=rivals.get) if rivals else "—"),
+         "most-named competitor", "",
+         (f"Named in {max(rivals.values())} of {n} answers." if rivals
+          else "No competitor is dominating these answers."),
+         "computed", PINK if rivals else GREEN, ""),
+        ("Rival leaderboard", len(rivals), "brands named instead of you", rival_bars,
+         ("Study what the top one publishes — engines quote what they can verify."
+          if rivals else "No rival leaderboard yet."),
+         "computed", PINK if rivals else GREEN, ""),
+        ("Engine agreement", agree, "prompts where 2+ engines name you", "",
+         ("Agreement across engines means the signal is in your content, not one model's "
+          "training quirk."),
+         "computed", GREEN if agree else AMBER, ""),
+        ("Citation velocity", (aeo.get("citations") or {}).get("total", 0),
+         "links earned in answers", trend_cit,
+         "Citations are the generative equivalent of a backlink.",
+         "citation extractor", VIOLET, ""),
+        ("Recommendation rate", f"{round(100*aeo.get('recommended',0)/max(aeo.get('prompts_won',1),1))}%",
+         "of wins actively recommend you",
+         _donut(100 * aeo.get("recommended", 0) / max(aeo.get("prompts_won", 1), 1)),
+         "Listed and recommended are different outcomes. This measures the second.",
+         "answer-quality pass", GREEN if aeo.get("recommended") else AMBER, ""),
+        ("Qualified mentions", sum(1 for r in results for e in ("claude", "openai",
+                                                                "perplexity", "gemini")
+                                   if ((r.get(e) or {}).get("quality") or {}).get("qualified")),
+         "hedged or caveated", "",
+         "Mentions wrapped in 'however' or 'less known' — visible, but not persuasive.",
+         "answer-quality pass", AMBER, ""),
+        ("Comparison queries", f"{_kind_won('vs')}/{_kind('vs')}", "'X vs Y' prompts won", "",
+         "Comparison answers convert hardest — the buyer is already choosing.",
+         "computed", TEAL, ""),
+        ("'Best X' ownership", f"{_kind_won('best')}/{_kind('best')}", "prompts won", "",
+         "The highest-intent generative query there is.",
+         "computed", _pct_color(100 * _kind_won("best") / max(_kind("best"), 1)), ""),
+        ("Alternatives queries", f"{_kind_won('alternativ')}/{_kind('alternativ')}",
+         "prompts won", "",
+         "Where switchers look. Being absent here loses ready-to-move buyers.",
+         "computed", TEAL, ""),
+        ("Winning pages", len({w[0] for w in winning}), "pages engines actually cite", "",
+         "Copy the structure of these across the library.",
+         "citation extractor", GREEN if winning else AMBER,
+         _linkrows(list(dict.fromkeys(winning)), url_fn=lambda w: w[0],
+                   right_fn=lambda w: w[1][:26],
+                   empty="No page cited yet — Perplexity would show this fastest.")),
+        ("Losing prompts", len(gaps), "rival named, you were not", "",
+         "The shortest path to share of voice: one page per line, answering it directly.",
+         "computed", PINK if gaps else GREEN,
+         _rows(gaps, left_fmt=lambda g: g["prompt"][:46],
+               right_fmt=lambda g: ", ".join(g.get("rivals", []))[:24],
+               empty="Nothing lost to a rival.")),
+        ("Segment coverage", 8, "audience segments probed", "",
+         "Each of your eight segments gets its own buyer question in the prompt set.",
+         "prompt library", VIOLET, ""),
+        ("GEO fix queue", len(gaps) + aeo.get("prompts_lost", 0), "actions", "",
+         "Lost prompts plus rival-owned answers — the generative work list.",
+         "computed", AMBER if gaps else GREEN, ""),
     ])
 
 
 # ======================================================================
-#  BOARD 10 — LOCAL  (10 cards)
+#  BOARD 11 — GEO / LOCAL & MULTI-MARKET  (30 cards)
 # ======================================================================
 def board_local(ctx) -> str:
     H = _H()
-    local = ctx.get("local") or {}
-    markets = ["United States", "United Kingdom", "Germany", "Switzerland", "Canada"]
-    grid_rows = local.get("grid") or []
-    gbp = local.get("gbp") or {}
+    geo = ctx.get("geo") or {}
+    grid = ctx.get("local_grid") or []
+    gbp = (ctx.get("local") or {}).get("gbp") or {}
+    hre = geo.get("hreflang") or {}
+    lang = geo.get("language") or {}
+    perf = geo.get("performance") or {}
+    areas = geo.get("service_areas") or {}
+    schema = geo.get("schema") or {}
+    nap = ctx.get("nap") or {}
+    comps = (ctx.get("local") or {}).get("competitors") or []
+    markets = perf.get("markets") or []
     connected = bool(gbp.get("connected"))
 
-    grid_body = _rows(grid_rows, left_fmt=lambda r: f"{r.get('market','')} · {r.get('query','')[:26]}",
-                      right_fmt=lambda r: (f"#{r.get('position')}" if r.get("position") else "not in top 50"),
-                      empty="Run a local rank check to fill this — Serper Maps is already connected.")
-    return _head("📍", "Local & multi-market",
-                 "Five target markets. Local intent converts hardest — and it's the cheapest to win.") + _cards([
-        ("Target markets", len(markets), "USA · UK · DE · CH · CA",
-         _rows(markets, left_fmt=lambda m: m, empty=""),
-         "Your ICP spans five markets, each with its own SERP and its own competitors.",
-         "ICP definition", BLUE),
-        ("Local rank checks", len(grid_rows), "market × query", grid_body,
-         ("Serper Maps is connected, so this costs about a cent per check."
-          if not grid_rows else "Where you appear in the local pack, per market."),
-         "Serper Maps", TEAL if grid_rows else AMBER),
+    mk_bars = _hbars([(m["market"][:12], m["impressions"]) for m in markets], BLUE) if markets else ""
+    mk_donut = _split_donut([(m["market"][:10], m["impressions"], c) for m, c in
+                             zip(markets, (BLUE, TEAL, VIOLET, AMBER, GREEN))],
+                            center=str(perf.get("total_impressions", 0))) if markets else ""
+    lang_bars = _hbars([(k.upper(), v) for k, v in (lang.get("languages") or [])], VIOLET)
+    code_bars = _hbars((hre.get("codes") or [])[:8], TEAL)
+
+    def _market_card(name):
+        m = next((x for x in markets if x["market"] == name), None)
+        if not m:
+            return (name, "—", "no data", "", "No Search Console data for this market.",
+                    "Search Console", AMBER, "")
+        lang_row = next((r for r in (lang.get("markets") or []) if r["market"] == name), {})
+        return (name, f"{m['impressions']:,}", f"impressions · {m['clicks']} clicks",
+                _donut(m.get("share_pct", 0), danger_low=False),
+                (f"{m.get('share_pct', 0)}% of your total impressions, average position "
+                 f"#{m.get('position', 0)}. "
+                 + (f"{lang_row.get('pages', 0)} pages in {lang_row.get('language', '')}."
+                    if lang_row else "")),
+                "Search Console", TEAL if m["impressions"] else AMBER, "")
+
+    return _head("📍", "GEO — Local & multi-market",
+                 "Your five target markets: where you show up, in which language, and "
+                 "whether the technical signals tell Google which page belongs where.") + _vizcards([
+        ("Market readiness", geo.get("score", 0), "of 100", _donut(geo.get("score", 0)),
+         "Language coverage, hreflang correctness and service-area pages, combined.",
+         "market audit", _pct_color(geo.get("score", 0)), ""),
+        ("Markets targeted", len(markets) or 5, "USA · UK · DE · CH · CA", mk_donut,
+         "Each market is a separate SERP with separate competitors.",
+         "ICP definition", BLUE, ""),
+        ("Impressions by market", f"{perf.get('total_impressions', 0):,}", "across your five",
+         mk_bars,
+         (f"Active in {len(perf.get('active') or [])}, silent in "
+          f"{len(perf.get('silent') or [])}." if markets else "No market data yet."),
+         "Search Console", BLUE, ""),
+        ("Clicks by market", perf.get("total_clicks", 0), "real visits", "",
+         ("Clicks follow rankings — with everything below position 40, near-zero is expected."),
+         "Search Console", GREEN if perf.get("total_clicks") else AMBER, ""),
+        ("Active markets", len(perf.get("active") or []), "showing impressions", "",
+         (", ".join(perf.get("active") or [])
+          or "No market shows impressions yet."),
+         "Search Console", GREEN if perf.get("active") else AMBER, ""),
+        ("Silent markets", len(perf.get("silent") or []), "no impressions at all", "",
+         ((", ".join(perf.get("silent") or []) + " — no page is competing there yet.")
+          if perf.get("silent") else "Every market shows impressions."),
+         "Search Console", PINK if perf.get("silent") else GREEN, ""),
+        _market_card("United States"), _market_card("United Kingdom"),
+        _market_card("Germany"), _market_card("Switzerland"), _market_card("Canada"),
+        ("hreflang coverage", f"{hre.get('pages_with_hreflang', 0)}/{hre.get('pages', 0)}",
+         "pages declaring alternates", _donut(hre.get("coverage_pct", 0)),
+         ("hreflang is how you tell Google which page serves which country. Without it, "
+          "your German and English pages compete with each other."),
+         "own crawler", _pct_color(hre.get("coverage_pct", 0)), ""),
+        ("hreflang errors", hre.get("issue_count", 0), "problems found", "",
+         ("A missing self-reference makes Google ignore the whole set — a very common and "
+          "completely silent failure." if hre.get("issue_count")
+          else "No hreflang errors."),
+         "own crawler", PINK if hre.get("issue_count") else GREEN,
+         _linkrows(hre.get("issues") or [], url_fn=lambda i: i["url"],
+                   right_fn=lambda i: i["issue"][:40], empty="Clean.")),
+        ("Declared locales", len(hre.get("codes") or []), "hreflang codes in use", code_bars,
+         "Which country/language pairs your pages claim to serve.",
+         "own crawler", TEAL, ""),
+        ("Missing locales", len(hre.get("missing_markets") or []), "target markets undeclared", "",
+         ((", ".join(hre.get("missing_markets") or []) + " are not declared anywhere.")
+          if hre.get("missing_markets") else "Every target market is declared."),
+         "computed", AMBER if hre.get("missing_markets") else GREEN, ""),
+        ("Language coverage", f"{len(lang.get('languages') or [])}", "languages published",
+         lang_bars,
+         ("Germany and Switzerland need German pages to compete. You write German — "
+          "that is the widest open door of the five markets."),
+         "own crawler", VIOLET, ""),
+        ("Pages per language", sum(v for _, v in (lang.get("languages") or [])),
+         "total", lang_bars,
+         "A market with zero pages in its language cannot rank there, full stop.",
+         "own crawler", BLUE, ""),
+        ("Uncovered markets", len(lang.get("uncovered") or []), "no page in their language", "",
+         ((", ".join(lang.get("uncovered") or []))
+          if lang.get("uncovered") else "Every market has content in its language."),
+         "computed", PINK if lang.get("uncovered") else GREEN, ""),
+        ("Service-area pages", f"{areas.get('covered', 0)}/5", "market landing pages",
+         _donut(100 * areas.get("covered", 0) / 5),
+         ("One page per market, in that market's language, is how you compete locally "
+          "without an office there."),
+         "own crawler", _pct_color(100 * areas.get("covered", 0) / 5),
+         _linkrows([m for m in (areas.get("markets") or []) if m["has_page"]],
+                   url_fn=lambda m: m["url"], label_fn=lambda m: m["market"],
+                   right_fn=lambda m: "has a page", empty="No market page found.")),
+        ("Missing market pages", len(areas.get("missing") or []), "to create", "",
+         ((", ".join(areas.get("missing") or []))
+          if areas.get("missing") else "All five markets have a page."),
+         "computed", AMBER if areas.get("missing") else GREEN, ""),
+        ("LocalBusiness schema", schema.get("localbusiness", 0), "pages marked up",
+         _donut(schema.get("coverage_pct", 0)),
+         ("LocalBusiness with areaServed is how you claim a service area without a "
+          "physical address in it."),
+         "own crawler", GREEN if schema.get("localbusiness") else AMBER, ""),
+        ("Organization schema", schema.get("organization", 0), "pages", "",
+         "The entity record that ties every market page back to one business.",
+         "own crawler", GREEN if schema.get("organization") else AMBER, ""),
+        ("Local pack grid", len(grid), "market × query checks", "",
+         ("Where you sit in the map pack, per market." if grid
+          else "Not run yet. Serper Maps is already connected — about one credit per cell."),
+         "Serper Maps", TEAL if grid else AMBER,
+         _rows(grid, left_fmt=lambda r: f"{r['market']} · {r['query'][:24]}",
+               right_fmt=lambda r: (f"#{r['position']}" if r.get("position")
+                                    else "not in top 50"),
+               empty="Run the local grid to fill this.")),
+        ("Local pack presence", sum(1 for r in grid if r.get("found")), "cells where you rank",
+         _donut(100 * sum(1 for r in grid if r.get("found")) / max(len(grid), 1)) if grid else "",
+         ("Local intent converts hardest and is the cheapest to win." if grid
+          else "Fills once the grid runs."),
+         "Serper Maps", GREEN if any(r.get("found") for r in grid) else AMBER, ""),
         ("Google Business Profile", "connected" if connected else "—", "reviews & posts", "",
          (gbp.get("reason") or
-          "GBP needs its own OAuth — the service account cannot act on a business profile. "
-          "Same wall as Google Ads; local rank tracking works without it."),
-         "GBP API" if connected else "not connected", GREEN if connected else AMBER),
+          "GBP needs its own OAuth — a service account cannot act on a business profile. "
+          "Same wall as Google Ads. Local rank tracking works without it."),
+         "GBP API" if connected else "not connected", GREEN if connected else AMBER, ""),
         ("Reviews", gbp.get("review_count", "—"), "total", "",
          ("Review count and recency are among the strongest local ranking factors."
           if connected else "Needs the Business Profile connection."),
-         "GBP API" if connected else "not connected", BLUE),
-        ("Average rating", gbp.get("rating", "—"), "stars", "",
-         ("Rating drives both ranking and click-through in the local pack."
-          if connected else "Needs the Business Profile connection."),
-         "GBP API" if connected else "not connected", BLUE),
+         "GBP API" if connected else "not connected", BLUE, ""),
+        ("Average rating", gbp.get("rating", "—"), "stars",
+         _donut(20 * float(gbp.get("rating", 0) or 0)) if connected else "",
+         ("Rating drives both local ranking and click-through." if connected
+          else "Needs the Business Profile connection."),
+         "GBP API" if connected else "not connected", BLUE, ""),
         ("Unanswered reviews", gbp.get("unanswered", "—"), "awaiting a reply", "",
-         ("Replying to every review is a confirmed local ranking signal — and it's free."
+         ("Replying to every review is a confirmed local ranking signal, and it is free."
           if connected else "Needs the Business Profile connection."),
-         "GBP API" if connected else "not connected", AMBER),
-        ("NAP consistency", "—", "name/address/phone across the web", "",
-         ("Your address is a Wyoming registered-agent address, so citation building matters "
-          "less than for a physical local business — but it must be consistent everywhere."),
-         "manual review", BLUE),
-        ("Local competitors", len(local.get("competitors") or []), "in the map pack",
-         _rows(local.get("competitors") or [],
-               left_fmt=lambda c: c.get("name", "")[:36],
-               right_fmt=lambda c: f"★{c.get('rating',0)} · {c.get('reviews',0)} reviews",
-               empty="Run a Maps scan to see who holds the local pack."),
-         "Maps results also feed your lead machine — the same scan does both jobs.",
-         "Serper Maps", VIOLET),
-        ("Market opportunity", len(markets), "ranked by gap", "",
-         ("Germany and Switzerland are underserved for German-language automation content — "
-          "and you write German. That's the widest open door of the five."),
-         "computed", GREEN),
-        ("Service-area pages", "—", "market-specific landing pages", "",
-         ("One page per market, in that market's language, is how you compete locally without "
-          "a physical office in each."),
-         "site structure", BLUE),
+         "GBP API" if connected else "not connected", AMBER, ""),
+        ("NAP consistency", "checked" if nap.get("declared") else "—",
+         "name / address / phone", "",
+         (nap.get("note") or "Set your business name, phone and address to check this."),
+         "own crawler", GREEN if nap.get("consistent") else AMBER, ""),
+        ("Local competitors", len(comps), "in the map pack", "",
+         ("Maps results feed your lead machine too — the same scan does both jobs."
+          if comps else "Run a Maps scan to see who holds the local pack."),
+         "Serper Maps", VIOLET,
+         _rows(comps, left_fmt=lambda c: c.get("name", "")[:34],
+               right_fmt=lambda c: f"★{c.get('rating', 0)} · {c.get('reviews', 0)} reviews",
+               empty="No local competitor scan yet.")),
+        ("Market opportunity", len(lang.get("uncovered") or []) + len(areas.get("missing") or []),
+         "gaps to close", "",
+         ("Germany and Switzerland are underserved for German-language automation content, "
+          "and you write German. That is the clearest opening of the five."),
+         "computed", GREEN, ""),
+        ("GEO fix queue", (hre.get("issue_count", 0) + len(areas.get("missing") or [])
+                           + len(lang.get("uncovered") or [])), "actions", "",
+         "hreflang errors, missing market pages and language gaps, in one list.",
+         "computed", AMBER, ""),
     ])
 
 
-# ======================================================================
-#  BOARD 12 — WORK ORDERS  (14 cards)
 # ======================================================================
 def board_work(ctx) -> str:
     H = _H()
@@ -1220,9 +1789,11 @@ _TAB_BOARDS = {
     "seocmd":    [("SEO Command", board_command)],
     "seotech":   [("Technical", board_technical), ("Indexing", board_indexing)],
     "seoonpage": [("On-Page", board_onpage), ("Internal Links", board_links)],
-    "seokw":     [("Keywords", board_keywords), ("Content", board_content),
-                  ("AEO", board_aeo)],
-    "seooff":    [("Off-Page", board_offpage), ("Local", board_local)],
+    "seokw":     [("Keywords", board_keywords), ("Content", board_content)],
+    "seoaeo":    [("AEO", board_aeo)],
+    "seogen":    [("GEO Generative", board_geo_generative)],
+    "seogeo":    [("GEO Local", board_local)],
+    "seooff":    [("Off-Page", board_offpage)],
     "seowork":   [("Work Orders", board_work)],
 }
 
@@ -1260,8 +1831,11 @@ TABS = [
     ("seocmd", "🧭", "SEO Command"),
     ("seotech", "🔧", "Technical & Indexing"),
     ("seoonpage", "📄", "On-Page & Links"),
-    ("seokw", "🔑", "Keywords, Content & AEO"),
-    ("seooff", "🌐", "Off-Page & Local"),
+    ("seokw", "🔑", "Keywords & Content"),
+    ("seoaeo", "🤖", "AEO — Answer Engines"),
+    ("seogen", "🌐", "GEO — Generative"),
+    ("seogeo", "📍", "GEO — Local & Markets"),
+    ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
 ]
 
@@ -1299,8 +1873,11 @@ def seo_section(ctx, legacy_html: str = "") -> str:
     counts = {"seocmd": CARD_COUNTS["command"],
               "seotech": CARD_COUNTS["technical"] + CARD_COUNTS["indexing"],
               "seoonpage": CARD_COUNTS["on_page"] + CARD_COUNTS["internal_links"],
-              "seokw": CARD_COUNTS["keywords"] + CARD_COUNTS["content"] + CARD_COUNTS["aeo"],
-              "seooff": CARD_COUNTS["off_page"] + CARD_COUNTS["local"],
+              "seokw": CARD_COUNTS["keywords"] + CARD_COUNTS["content"],
+              "seoaeo": CARD_COUNTS["aeo"],
+              "seogen": CARD_COUNTS["geo_generative"],
+              "seogeo": CARD_COUNTS["local"],
+              "seooff": CARD_COUNTS["off_page"],
               "seowork": CARD_COUNTS["work_orders"]}
     bar = "".join(
         f"<button class='stab{' on' if i == 0 else ''}' id='stab-{tid}' "
@@ -1336,9 +1913,9 @@ def seo_section(ctx, legacy_html: str = "") -> str:
             + divider + f"<div class='stabs'>{bar}</div>" + body)
 
 
-CARD_COUNTS = {"command": 12, "technical": 18, "indexing": 12, "on_page": 16,
+CARD_COUNTS = {"command": 13, "technical": 18, "indexing": 12, "on_page": 16,
                "keywords": 18, "content": 14, "internal_links": 12, "off_page": 20,
-               "aeo": 12, "local": 10, "work_orders": 14}
+               "aeo": 46, "geo_generative": 20, "local": 32, "work_orders": 14}
 TOTAL_CARDS = sum(CARD_COUNTS.values())
 
 
@@ -1397,13 +1974,77 @@ if __name__ == "__main__":
                                                  "userCanonical": "https://x.com/guide-a"}},
            "speed": [{"url": "https://x.com", "performance": 78, "lcp_ms": 2100, "cls": 0.02}],
            "aeo": {"score": 40, "mention_rate": 50.0, "prompts_tested": 2,
-                   "engines": {"claude": {"connected": True, "mentions": 1},
+                   "prompts_won": 1, "prompts_lost": 1, "engines_live": 1, "recommended": 1,
+                   "placement": {"first": 1, "middle": 0, "buried": 0},
+                   "engines": {"claude": {"connected": True, "mentions": 1, "rate": 50.0},
                                "google_ai": {"connected": True, "snippets": 0, "ranked": 1},
-                               "openai": {"connected": False}, "perplexity": {"connected": False}},
+                               "openai": {"connected": False, "mentions": 0, "rate": 0,
+                                          "reason": "OPENAI_API_KEY not set"},
+                               "perplexity": {"connected": False, "mentions": 0, "rate": 0,
+                                              "reason": "PERPLEXITY_API_KEY not set"},
+                               "gemini": {"connected": False, "mentions": 0, "rate": 0,
+                                          "reason": "GEMINI_API_KEY not set"}},
+                   "citations": {"total": 2, "unique_pages": 1,
+                                 "by_engine": {"claude": 2},
+                                 "top_pages": [("https://x.com/guide-a", 2)]},
+                   "results": [{"prompt": "best automation agency vs zapier",
+                                "claude": {"connected": True, "mentioned": True,
+                                           "rivals_mentioned": ["pricefy.io"],
+                                           "citations": ["https://x.com/guide-a"],
+                                           "quality": {"placement": "first", "recommended": True}}},
+                               {"prompt": "best n8n consultant",
+                                "claude": {"connected": True, "mentioned": False,
+                                           "rivals_mentioned": ["pricefy.io"], "citations": [],
+                                           "quality": {"placement": "absent"}}}],
                    "share_of_voice": {"_you": 1, "pricefy.io": 1},
                    "gaps": [{"prompt": "best automation agency", "rivals": ["pricefy.io"]}]},
            "quotable": {"pages": 2, "quotable": 1, "quotable_pct": 50.0, "faq_schema": 0,
                         "faq_pct": 0.0, "weakest": [{"url": "https://x.com", "question_headings": 1}]},
+           "aeo_history": [{"at": "2026-07-29T10:00:00", "score": 0, "mention_rate": 0.0,
+                            "prompts": 18, "citations": 0},
+                           {"at": "2026-07-30T10:00:00", "score": 40, "mention_rate": 50.0,
+                            "prompts": 18, "citations": 2}],
+           "crawler_access": {"checked": True, "robots_found": True, "allowed_count": 7,
+                              "blocked_count": 1, "bots": [
+                                  {"bot": "GPTBot", "vendor": "ChatGPT / OpenAI training",
+                                   "blocked": True, "why": "the '*' catch-all rule blocks the whole site (Disallow: /)"},
+                                  {"bot": "ClaudeBot", "vendor": "Claude / Anthropic",
+                                   "blocked": False, "why": "the '*' catch-all rule allows crawling"},
+                                  {"bot": "PerplexityBot", "vendor": "Perplexity",
+                                   "blocked": False, "why": "allows crawling"},
+                                  {"bot": "Google-Extended", "vendor": "Google Gemini + AI Overviews",
+                                   "blocked": False, "why": "allows crawling"}]},
+           "entity": {"schema_types": [("Article", 2), ("Organization", 1)],
+                      "organization_pages": 1, "person_pages": 0,
+                      "entity_links": ["linkedin.com"],
+                      "missing_entities": ["wikidata.org", "wikipedia.org", "crunchbase.com"],
+                      "score": 17, "pages": 2},
+           "geo": {"score": 42,
+                   "hreflang": {"pages": 2, "pages_with_hreflang": 1, "coverage_pct": 50.0,
+                                "codes": [("en-US", 1)], "issues": [
+                                    {"url": "https://x.com/a", "issue": "no self-referencing hreflang"}],
+                                "issue_count": 1, "missing_markets": ["de-DE", "de-CH", "en-GB"]},
+                   "language": {"pages": 2, "languages": [("en", 2)],
+                                "markets": [{"market": "United States", "language": "en",
+                                             "pages": 2, "covered": True, "share_pct": 100.0},
+                                            {"market": "Germany", "language": "de",
+                                             "pages": 0, "covered": False, "share_pct": 0.0}],
+                                "uncovered": ["Germany", "Switzerland"]},
+                   "performance": {"markets": [
+                       {"market": "United States", "impressions": 300, "clicks": 2,
+                        "position": 42.0, "ctr": 0.6, "share_pct": 100.0},
+                       {"market": "Germany", "impressions": 0, "clicks": 0,
+                        "position": 0, "ctr": 0, "share_pct": 0.0}],
+                       "total_impressions": 300, "total_clicks": 2,
+                       "active": ["United States"], "silent": ["Germany", "Switzerland"]},
+                   "service_areas": {"markets": [{"market": "Germany", "url": "", "has_page": False}],
+                                     "covered": 0, "missing": ["Germany", "Switzerland"]},
+                   "schema": {"pages": 2, "localbusiness": 0, "organization": 1,
+                              "has_local": False, "coverage_pct": 0.0}},
+           "local_grid": [{"market": "United States", "gl": "us", "query": "automation agency",
+                           "position": 0, "found": False, "features": [], "top3": []}],
+           "nap": {"declared": 1, "hits": {"name": 0, "phone": 0, "address": 0},
+                   "consistent": False, "note": "Wyoming registered-agent address."},
            "llms_txt": "# Anthropos",
            "offpage": {"connected": False, "reason": "DataForSEO not connected — set DATAFORSEO_LOGIN"},
            "prospects": [{"domain": "a.com", "status": "awaiting_approval", "subject": "Quick note",
@@ -1452,7 +2093,8 @@ if __name__ == "__main__":
     assert "ZeroDivisionError" in _safe_board("Boom", lambda c: 1 / 0, ctx)
 
     pages = seo_pages(ctx)
-    assert set(pages) == {"seocmd", "seotech", "seoonpage", "seokw", "seooff", "seowork"}, list(pages)
+    assert set(pages) == {t for t, _, _ in TABS}, list(pages)
+    assert len(TABS) == 9, len(TABS)
     html = "".join(pages.values())
     assert "failed to render" not in html, "no board may fail on real data"
 

@@ -1156,7 +1156,7 @@ _SEO_ACTIONS = {
     "crawl": "run_crawl", "inspect": "run_inspect", "speed": "run_speed",
     "indexnow": "run_indexnow", "ranks": "run_ranks", "aeo": "run_aeo",
     "offpage": "run_offpage", "prospecting": "run_prospecting",
-    "fixes": "run_fixes", "all": "run_all",
+    "fixes": "run_fixes", "all": "run_all", "geo": "run_geo",
 }
 
 
@@ -1576,6 +1576,28 @@ def build_app():
     @app.post("/aeo/probe")
     def aeo_probe():
         return api_seo("aeo")
+
+    @app.post("/geo/audit")
+    def geo_audit():
+        return api_seo("geo")
+
+    @app.get("/aeo/prompts")
+    def aeo_prompts_get():
+        import content_engine_aeo as AEO
+        return {"ok": True, "prompts": AEO.get_prompts(get_store())}
+
+    @app.post("/aeo/prompts")
+    async def aeo_prompts_set(request: Request):
+        import content_engine_aeo as AEO
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        raw = data.get("prompts") or []
+        if isinstance(raw, str):
+            raw = [p for p in raw.splitlines()]
+        n = AEO.set_prompts(get_store(), raw)
+        return {"ok": True, "saved": n}
 
     @app.post("/offpage/scan")
     def offpage_scan():
