@@ -131,25 +131,55 @@ def run_crawl(store, *, max_urls: int = MAX_CRAWL_URLS, delay: float = 0.2) -> d
             "striking": len(audit.get("striking") or [])}
 
 
-def run_inspect(store, *, limit: int = MAX_INSPECT) -> dict:
-    """E2. Google's own index verdict per URL. Free, 2,000/day."""
+def run_inspect(store, *, limit: int = MAX_INSPECT, refresh: bool = False,
+                save_every: int = 15) -> dict:
+    """E2. Google's own index verdict per URL. Free, 2,000/day.
+
+    RESUMABLE by design: one call per URL over ~180 URLs takes minutes, and a
+    container restart mid-run used to throw away everything. Now it
+      * skips URLs already inspected (pass refresh=True to re-check them), and
+      * persists every `save_every` URLs,
+    so an interrupted run picks up where it stopped instead of starting over.
+    """
     import content_engine_connectors as C
     g = C.Google()
     if not g.available():
         return {"connected": False, "reason": "Google service account not connected"}
     crawl = _get(store, K_CRAWL, {}) or {}
-    urls = [r["url"] for r in (crawl.get("urls") or [])
-            if r.get("status") == 200][:limit]
-    if not urls:
+    all_urls = [r["url"] for r in (crawl.get("urls") or []) if r.get("status") == 200]
+    if not all_urls:
         return {"connected": True, "inspected": 0, "reason": "run a crawl first"}
-    prev = _get(store, K_INSPECT, {}) or {}
-    fresh = g.inspect_batch(urls, limit=limit)
-    merged = {**prev, **fresh}
-    _set(store, K_INSPECT, merged)
+
+    known = dict(_get(store, K_INSPECT, {}) or {})
+    todo = all_urls if refresh else [u for u in all_urls if u not in known]
+    todo = todo[:limit]
+    if not todo:
+        indexed = sum(1 for r in known.values() if r.get("verdict") == "PASS")
+        return {"connected": True, "inspected": 0, "total_known": len(known),
+                "indexed": indexed, "remaining": 0,
+                "reason": "every crawled URL has already been inspected — "
+                          "pass refresh=True to re-check"}
+
+    done = 0
+    for u in todo:
+        try:
+            r = g.url_inspect(u)
+        except Exception as e:                 # one bad URL must not lose the batch
+            log.warning("inspect %s failed: %s", u, e)
+            continue
+        if r:
+            known[u] = r
+            done += 1
+        if done and done % save_every == 0:    # checkpoint — survives a kill
+            _set(store, K_INSPECT, dict(known))   # copy: the in-memory store
+                                                  # aliases whatever we hand it
+    _set(store, K_INSPECT, dict(known))
     _stamp(store, "inspect")
-    indexed = sum(1 for r in merged.values() if r.get("verdict") == "PASS")
-    return {"connected": True, "inspected": len(fresh), "total_known": len(merged),
-            "indexed": indexed}
+    indexed = sum(1 for r in known.values() if r.get("verdict") == "PASS")
+    remaining = len([u for u in all_urls if u not in known])
+    return {"connected": True, "inspected": done, "total_known": len(known),
+            "indexed": indexed, "not_indexed": len(known) - indexed,
+            "remaining": remaining, "crawled_total": len(all_urls)}
 
 
 def run_speed(store, *, limit: int = MAX_SPEED) -> dict:
@@ -413,6 +443,45 @@ if __name__ == "__main__":
     assert kws[0] == "ai automation law firm" and "n8n consultant" in kws, kws
     st.d["seo_keywords"] = ["manual one"]
     assert tracked_keywords(st) == ["manual one"], "a saved list must win"
+
+    # ---- run_inspect must be RESUMABLE (it kept getting killed mid-run) ----
+    class _FakeG:
+        def __init__(self, die_after=None):
+            self.calls, self.die_after = [], die_after
+        def available(self): return True
+        def url_inspect(self, u):
+            if self.die_after is not None and len(self.calls) >= self.die_after:
+                raise KeyboardInterrupt("container restarted")
+            self.calls.append(u)
+            return {"url": u, "verdict": "PASS" if u.endswith(("1", "2", "3")) else "NEUTRAL",
+                    "coverageState": "Submitted and indexed"}
+
+    st2 = S()
+    st2.d[K_CRAWL] = {"urls": [{"url": f"https://x.com/{i}", "status": 200} for i in range(20)]}
+    import content_engine_connectors as _C
+    _real_google = _C.Google
+    fake = _FakeG(die_after=7)
+    _C.Google = lambda: fake
+    try:
+        try:
+            run_inspect(st2, save_every=3)      # dies after 7 URLs
+        except KeyboardInterrupt:
+            pass
+        saved = st2.d.get(K_INSPECT, {})
+        assert len(saved) == 6, f"checkpoint should have kept 6, kept {len(saved)}"
+
+        fake2 = _FakeG()                         # resume: must SKIP the saved ones
+        _C.Google = lambda: fake2
+        out = run_inspect(st2)
+        assert len(fake2.calls) == 14, f"resumed run re-checked too much: {len(fake2.calls)}"
+        assert not set(fake2.calls) & set(saved), "resume must not re-inspect saved URLs"
+        assert out["total_known"] == 20 and out["remaining"] == 0, out
+        assert out["indexed"] + out["not_indexed"] == 20, out
+
+        out2 = run_inspect(st2)                  # nothing left to do
+        assert out2["inspected"] == 0 and "already been inspected" in out2["reason"], out2
+    finally:
+        _C.Google = _real_google
 
     # A broken engine must never take down the run.
     # NB: patch THIS module's globals, not `import content_engine_seo_ops` — run
