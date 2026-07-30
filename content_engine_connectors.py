@@ -551,6 +551,78 @@ class WordPress:
             log.error("WordPress publish failed: %s", e)
             return f"wp_error:{job.get('job_id')}"
 
+    # ---- E7/E8/E9: the WRITE side the SEO fixer needs -----------------
+    def find_by_url(self, url: str) -> dict:
+        """Resolve a public URL back to its WP post/page record so a fix can be
+        applied to the right object. Tries slug lookup on posts then pages."""
+        rq = _requests()
+        if not (rq and url):
+            return {}
+        from urllib.parse import urlparse
+        slug = [s for s in urlparse(url).path.split("/") if s]
+        if not slug:
+            return {}
+        slug = slug[-1]
+        for kind in ("posts", "pages"):
+            try:
+                r = rq.get(f"{self.base}/wp-json/wp/v2/{kind}",
+                           params={"slug": slug}, auth=self._auth(),
+                           headers={"User-Agent": _UA}, timeout=_HTTP_TIMEOUT)
+                if r.ok and r.json():
+                    j = r.json()[0]
+                    return {"id": j.get("id"), "kind": kind, "link": j.get("link", ""),
+                            "title": (j.get("title") or {}).get("rendered", ""),
+                            "content": (j.get("content") or {}).get("rendered", ""),
+                            "excerpt": (j.get("excerpt") or {}).get("rendered", "")}
+            except Exception as e:
+                log.debug("wp find_by_url %s/%s: %s", kind, slug, e)
+        return {}
+
+    def update_post(self, post_id: int, fields: dict, kind: str = "posts") -> str:
+        """Patch an existing post. Used by the SEO fixer for titles, excerpts
+        (meta description) and body edits. Returns 'updated' or an error tag."""
+        rq = _requests()
+        if not (rq and post_id and fields):
+            return "wp_update_skipped"
+        try:
+            r = rq.post(f"{self.base}/wp-json/wp/v2/{kind}/{post_id}",
+                        json=fields, auth=self._auth(),
+                        headers={"User-Agent": _UA}, timeout=_HTTP_TIMEOUT)
+            r.raise_for_status()
+            return "updated"
+        except Exception as e:
+            log.error("wp update_post %s failed: %s", post_id, e)
+            return f"wp_update_error:{e}"
+
+    def update_media_alt(self, media_id: int, alt: str) -> str:
+        rq = _requests()
+        if not (rq and media_id):
+            return "skipped"
+        try:
+            r = rq.post(f"{self.base}/wp-json/wp/v2/media/{media_id}",
+                        json={"alt_text": alt}, auth=self._auth(),
+                        headers={"User-Agent": _UA}, timeout=_HTTP_TIMEOUT)
+            return "updated" if r.ok else f"error:{r.status_code}"
+        except Exception as e:
+            return f"error:{e}"
+
+    def media_by_src(self, src_url: str) -> int:
+        """Find a media library item id from its public file URL (so alt text
+        can be written to the right attachment)."""
+        rq = _requests()
+        if not (rq and src_url):
+            return 0
+        slug = src_url.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        try:
+            r = rq.get(f"{self.base}/wp-json/wp/v2/media",
+                       params={"search": slug}, auth=self._auth(),
+                       headers={"User-Agent": _UA}, timeout=_HTTP_TIMEOUT)
+            if r.ok and r.json():
+                return r.json()[0].get("id", 0)
+        except Exception as e:
+            log.debug("wp media_by_src: %s", e)
+        return 0
+
 
 # ---------------------------------------------------------------------------
 # Q17 / Q18 — Email sender  (SEND_FN)  — CAN-SPAM aware
@@ -1334,6 +1406,53 @@ class Serper:
                         "category": p.get("type", "")})
         return out
 
+    # ---- E6: DAILY RANK TRACKING -------------------------------------
+    def rank(self, query: str, domain: str, gl: str = "us",
+             device: str = "desktop", num: int = 50) -> dict:
+        """Where THIS domain ranks for one query, today, in one market.
+
+        Search Console gives a 28-day AVERAGE, 2-3 days late. That is useless
+        for telling whether yesterday's fix worked. This is the live number."""
+        if not self.available():
+            return {}
+        body = {"q": query, "num": num, "gl": gl}
+        if device == "mobile":
+            body["device"] = "mobile"
+        j = self._post("search", body) or {}
+        _record_cost(0.001, "serper_rank")
+        record_api_spend("serper", 0.001)
+        target = (domain or "").lower().replace("www.", "")
+        position, url_found = 0, ""
+        for i, r in enumerate(j.get("organic", []) or [], start=1):
+            link = (r.get("link") or "").lower()
+            if target and target in link:
+                position, url_found = i, r.get("link", "")
+                break
+        features = []
+        for key, label in (("answerBox", "featured_snippet"), ("peopleAlsoAsk", "paa"),
+                           ("knowledgeGraph", "knowledge_panel"), ("places", "local_pack"),
+                           ("topAds", "ads"), ("ads", "ads")):
+            if j.get(key) and label not in features:
+                features.append(label)
+        owns_snippet = bool(target and target in
+                            str((j.get("answerBox") or {}).get("link", "")).lower())
+        return {"query": query, "domain": domain, "market": gl, "device": device,
+                "position": position, "url": url_found,
+                "found": bool(position), "features": features,
+                "owns_snippet": owns_snippet,
+                "paa": [x.get("question", "") for x in (j.get("peopleAlsoAsk") or [])][:6],
+                "top3": [(r.get("link") or "") for r in (j.get("organic") or [])[:3]]}
+
+    def rank_batch(self, queries: list, domain: str, markets=("us",),
+                   device: str = "desktop", limit: int = 100) -> list:
+        out = []
+        for q in (queries or [])[:limit]:
+            for gl in markets:
+                r = self.rank(q, domain, gl=gl, device=device)
+                if r:
+                    out.append(r)
+        return out
+
 
 class Google:
     """Read-only pulls from Google Search Console + GA4. Uses the SAME service
@@ -1470,6 +1589,274 @@ class Google:
         totals = eng[0] if eng else {}
         return {"daily": daily, "channels": channels, "pages": pages,
                 "countries": countries, "totals": totals}
+
+    # ---- SEO ENGINE FEEDS (E2 + cannibalization + decay) ----
+    def gsc_query_page(self, days: int = 28, limit: int = 500) -> list:
+        """query x page rows — the ONLY way to detect cannibalization (two of
+        your own pages fighting for one query). Free."""
+        auth = self._auth(self.GSC_SCOPE)
+        if not (auth and self.site):
+            return []
+        from datetime import date, timedelta
+        from urllib.parse import quote
+        body = {"startDate": (date.today() - timedelta(days=days)).isoformat(),
+                "endDate": date.today().isoformat(),
+                "dimensions": ["query", "page"], "rowLimit": limit}
+        j = _post_json(f"https://searchconsole.googleapis.com/webmasters/v3/sites/"
+                       f"{quote(self.site, safe='')}/searchAnalytics/query", body, headers=auth)
+        return [{"keys": r.get("keys", []), "clicks": r.get("clicks", 0),
+                 "impressions": r.get("impressions", 0),
+                 "ctr": round(r.get("ctr", 0) * 100, 2),
+                 "position": round(r.get("position", 0), 1)}
+                for r in (j or {}).get("rows", [])]
+
+    def gsc_range(self, dimension: str, start_days_ago: int, end_days_ago: int,
+                  limit: int = 100) -> list:
+        """Any past window — used to compare this 28d against the previous 28d
+        so content DECAY becomes visible."""
+        auth = self._auth(self.GSC_SCOPE)
+        if not (auth and self.site):
+            return []
+        from datetime import date, timedelta
+        from urllib.parse import quote
+        today = date.today()
+        body = {"startDate": (today - timedelta(days=start_days_ago)).isoformat(),
+                "endDate": (today - timedelta(days=end_days_ago)).isoformat(),
+                "dimensions": [dimension], "rowLimit": limit}
+        j = _post_json(f"https://searchconsole.googleapis.com/webmasters/v3/sites/"
+                       f"{quote(self.site, safe='')}/searchAnalytics/query", body, headers=auth)
+        return [{"key": r["keys"][0], "clicks": r.get("clicks", 0),
+                 "impressions": r.get("impressions", 0),
+                 "position": round(r.get("position", 0), 1)}
+                for r in (j or {}).get("rows", [])]
+
+    def url_inspect(self, url: str) -> dict:
+        """E2 — URL Inspection API. FREE, 2,000 calls/day. Tells you whether
+        Google actually indexed a page, which canonical it chose, when it last
+        crawled, and whether rich results are eligible. This is the single most
+        valuable unused asset the account already had."""
+        auth = self._auth(self.GSC_SCOPE)
+        if not (auth and self.site):
+            return {}
+        j = _post_json("https://searchconsole.googleapis.com/v1/urlInspection/index:inspect",
+                       {"inspectionUrl": url, "siteUrl": self.site}, headers=auth)
+        res = ((j or {}).get("inspectionResult") or {})
+        idx = res.get("indexStatusResult") or {}
+        return {
+            "url": url,
+            "verdict": idx.get("verdict", ""),
+            "coverageState": idx.get("coverageState", ""),
+            "robotsTxtState": idx.get("robotsTxtState", ""),
+            "indexingState": idx.get("indexingState", ""),
+            "lastCrawlTime": idx.get("lastCrawlTime", ""),
+            "pageFetchState": idx.get("pageFetchState", ""),
+            "googleCanonical": idx.get("googleCanonical", ""),
+            "userCanonical": idx.get("userCanonical", ""),
+            "mobileUsability": ((res.get("mobileUsabilityResult") or {}).get("verdict", "")),
+            "richResults": ((res.get("richResultsResult") or {}).get("verdict", "")),
+        }
+
+    def inspect_batch(self, urls: list, limit: int = 200) -> dict:
+        """Inspect many URLs, staying well under the free daily quota."""
+        out = {}
+        for u in (urls or [])[:limit]:
+            r = self.url_inspect(u)
+            if r:
+                out[u] = r
+        return out
+
+
+class PageSpeed:
+    """E3 — PageSpeed Insights API (Lighthouse lab + CrUX field data).
+    Works WITHOUT a key at a low rate limit; PAGESPEED_API_KEY raises it.
+    Always free."""
+
+    def __init__(self) -> None:
+        self.key = _env("PAGESPEED_API_KEY")
+
+    def available(self) -> bool:
+        return _requests() is not None
+
+    def check(self, url: str, strategy: str = "mobile") -> dict:
+        if not self.available():
+            return {}
+        params = {"url": url, "strategy": strategy,
+                  "category": ["performance", "seo", "accessibility"]}
+        if self.key:
+            params["key"] = self.key
+        j = _get_json("https://www.googleapis.com/pagespeedonline/v5/runPagespeed", params=params)
+        if not j:
+            return {}
+        lr = j.get("lighthouseResult") or {}
+        cats = lr.get("categories") or {}
+        audits = lr.get("audits") or {}
+
+        def _num(a):
+            return round((audits.get(a) or {}).get("numericValue", 0) or 0)
+
+        field = (j.get("loadingExperience") or {}).get("metrics") or {}
+
+        def _field(k):
+            return (field.get(k) or {}).get("percentile")
+
+        return {"url": url, "strategy": strategy,
+                "performance": round((cats.get("performance") or {}).get("score", 0) * 100),
+                "seo": round((cats.get("seo") or {}).get("score", 0) * 100),
+                "accessibility": round((cats.get("accessibility") or {}).get("score", 0) * 100),
+                "lcp_ms": _num("largest-contentful-paint"),
+                "cls": round((audits.get("cumulative-layout-shift") or {}).get("numericValue", 0) or 0, 3),
+                "tbt_ms": _num("total-blocking-time"),
+                "fcp_ms": _num("first-contentful-paint"),
+                "speed_index": _num("speed-index"),
+                "field_lcp": _field("LARGEST_CONTENTFUL_PAINT_MS"),
+                "field_inp": _field("INTERACTION_TO_NEXT_PAINT"),
+                "field_cls": _field("CUMULATIVE_LAYOUT_SHIFT_SCORE"),
+                "has_field_data": bool(field)}
+
+    def check_many(self, urls: list, strategy: str = "mobile", limit: int = 12) -> list:
+        return [r for r in (self.check(u, strategy) for u in (urls or [])[:limit]) if r]
+
+
+class IndexNow:
+    """E4 — instant index submission to Bing/Yandex/Seznam. Free, no account:
+    you host a key file at https://yoursite/<key>.txt containing the key.
+    Google ignores IndexNow, so we also ping the sitemap for Google."""
+
+    def __init__(self) -> None:
+        self.key = _env("INDEXNOW_KEY")
+        self.site = _env("WORDPRESS_URL") or _env("GSC_SITE_URL")
+
+    def available(self) -> bool:
+        return bool(self.key and self.site and _requests())
+
+    def key_file_url(self) -> str:
+        return f"{self.site.rstrip('/')}/{self.key}.txt" if self.key and self.site else ""
+
+    def submit(self, urls) -> str:
+        if isinstance(urls, str):
+            urls = [urls]
+        urls = [u for u in (urls or []) if u]
+        if not urls:
+            return "no_urls"
+        if not self.available():
+            return "indexnow_not_configured"
+        from urllib.parse import urlparse
+        host = urlparse(self.site).netloc
+        j = _post_json("https://api.indexnow.org/IndexNow",
+                       {"host": host, "key": self.key,
+                        "keyLocation": self.key_file_url(),
+                        "urlList": urls[:10000]},
+                       headers={"Content-Type": "application/json"})
+        return "submitted" if j is not None else "indexnow_error"
+
+    def ping_sitemap(self) -> str:
+        """Nudge the sitemap so Google re-reads it (best-effort, free)."""
+        rq = _requests()
+        if not (rq and self.site):
+            return "no_site"
+        try:
+            rq.get(f"{self.site.rstrip('/')}/wp-sitemap.xml",
+                   headers={"User-Agent": _UA}, timeout=_HTTP_TIMEOUT)
+            return "pinged"
+        except Exception as e:
+            return f"ping_failed:{e}"
+
+
+class DataForSEO:
+    """E11 — the ONE new paid vendor, and only for data Google refuses to give:
+    your backlink profile. ~$0.02-0.05 per request. Key-gated: every other SEO
+    card works without it.
+
+    Set DATAFORSEO_LOGIN + DATAFORSEO_PASSWORD in the dashboard Connect form."""
+
+    BASE = "https://api.dataforseo.com/v3"
+
+    def __init__(self) -> None:
+        self.login = _env("DATAFORSEO_LOGIN")
+        self.password = _env("DATAFORSEO_PASSWORD")
+
+    def available(self) -> bool:
+        return bool(self.login and self.password and _requests())
+
+    def _auth_header(self) -> dict:
+        import base64
+        tok = base64.b64encode(f"{self.login}:{self.password}".encode()).decode()
+        return {"Authorization": f"Basic {tok}", "Content-Type": "application/json"}
+
+    def _call(self, path: str, payload: list, cost: float = 0.03):
+        if not self.available():
+            return None
+        j = _post_json(f"{self.BASE}{path}", payload, headers=self._auth_header())
+        if j is not None:
+            _record_cost(cost, "dataforseo")
+            record_api_spend("dataforseo", cost)
+        try:
+            return (j or {}).get("tasks", [{}])[0].get("result", [])
+        except Exception:
+            return None
+
+    def backlink_summary(self, target: str) -> dict:
+        res = self._call("/backlinks/summary/live", [{"target": target, "internal_list_limit": 1}])
+        if not res:
+            return {}
+        r = res[0] if isinstance(res, list) else res
+        return {"target": target,
+                "backlinks": r.get("backlinks", 0),
+                "referring_domains": r.get("referring_domains", 0),
+                "referring_main_domains": r.get("referring_main_domains", 0),
+                "rank": r.get("rank", 0),
+                "dofollow": r.get("backlinks_dofollow", r.get("dofollow", 0)),
+                "broken_backlinks": r.get("broken_backlinks", 0),
+                "referring_ips": r.get("referring_ips", 0)}
+
+    def backlinks(self, target: str, limit: int = 100) -> list:
+        res = self._call("/backlinks/backlinks/live",
+                         [{"target": target, "limit": limit, "mode": "one_per_domain"}], 0.05)
+        items = (res[0].get("items") if res and isinstance(res, list) else None) or []
+        return [{"domain": i.get("domain_from", ""), "url_from": i.get("url_from", ""),
+                 "url_to": i.get("url_to", ""), "anchor": i.get("anchor", ""),
+                 "dofollow": i.get("dofollow", True),
+                 "rank": i.get("domain_from_rank", i.get("rank", 0)),
+                 "first_seen": i.get("first_seen", ""), "lost": bool(i.get("is_lost"))}
+                for i in items]
+
+    def referring_domains(self, target: str, limit: int = 100) -> list:
+        res = self._call("/backlinks/referring_domains/live",
+                         [{"target": target, "limit": limit}], 0.05)
+        items = (res[0].get("items") if res and isinstance(res, list) else None) or []
+        return [{"domain": i.get("domain", ""), "backlinks": i.get("backlinks", 0),
+                 "rank": i.get("rank", 0), "first_seen": i.get("first_seen", "")}
+                for i in items]
+
+
+class GoogleBusiness:
+    """E13 — Google Business Profile (reviews, posts, insights). Needs its own
+    OAuth (the service account cannot act on a business profile), so this stays
+    key-gated exactly like Google Ads. Local-pack RANK comes from Serper Maps
+    and works without this."""
+
+    def __init__(self) -> None:
+        self.token = _env("GBP_ACCESS_TOKEN")
+        self.account = _env("GBP_ACCOUNT_ID")
+        self.location = _env("GBP_LOCATION_ID")
+
+    def available(self) -> bool:
+        return bool(self.token and self.location and _requests())
+
+    def _h(self) -> dict:
+        return {"Authorization": f"Bearer {self.token}"}
+
+    def reviews(self, limit: int = 50) -> list:
+        if not self.available():
+            return []
+        j = _get_json(f"https://mybusiness.googleapis.com/v4/accounts/{self.account}"
+                      f"/locations/{self.location}/reviews",
+                      headers=self._h(), params={"pageSize": limit})
+        return [{"reviewer": (r.get("reviewer") or {}).get("displayName", ""),
+                 "rating": r.get("starRating", ""), "comment": r.get("comment", ""),
+                 "created": r.get("createTime", ""),
+                 "replied": bool(r.get("reviewReply"))}
+                for r in ((j or {}).get("reviews") or [])]
 
 
 def google_insights(force: bool = False) -> dict:
@@ -2412,6 +2799,14 @@ def status() -> dict:
         "ads_api": GoogleAds().available(),
         "calcom_bookings": CalCom().available(),
         "backlinks_data": bool(_env("BACKLINKS_JSON")),
+        # ---- SEO engine wires ----
+        "seo_crawler": True,                      # pure code, always on
+        "seo_index_inspect": Google().available(),  # free URL Inspection API
+        "seo_pagespeed": PageSpeed().available(),   # free, no key needed
+        "seo_indexnow": IndexNow().available(),
+        "seo_rank_tracker": Serper().available(),
+        "seo_backlinks": DataForSEO().available(),
+        "seo_gbp": GoogleBusiness().available(),
         "requests_installed": _requests() is not None,
     }
 

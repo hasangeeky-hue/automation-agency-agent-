@@ -73,6 +73,10 @@ ROUTES = {
     "reply_responder":    {"engine": CHEAP_MODEL, "fallback": FRONTIER_ALT},  # customer-facing
     "judge":              {"engine": CHEAP_MODEL, "fallback": CHEAP_ALT},  # S1 evaluator — cheap on purpose
     "content_planner":    {"engine": FRONTIER_ALT, "fallback": CHEAP_MODEL},  # proposes a plan you approve
+    # ---- SEO engine skills ----
+    "seo_fixer":          {"engine": CHEAP_MODEL, "fallback": CHEAP_ALT},  # rewrites titles/metas/alt — cheap on purpose
+    "link_pitch":         {"engine": CHEAP_MODEL, "fallback": CHEAP_ALT},  # link-building outreach copy
+    "seo_analyst":        {"engine": CHEAP_MODEL, "fallback": CHEAP_ALT},  # narrates the qualitative cards
     "orchestrator":       {"engine": "code"},
 }
 

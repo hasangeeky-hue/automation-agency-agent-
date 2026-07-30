@@ -121,6 +121,70 @@ def _exists(store, jid) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# SEO cadence. Each engine has its own natural rhythm — crawling daily is waste,
+# checking rankings weekly is too slow to tell you whether a fix worked.
+# Free engines (crawl / inspect / speed / indexnow / fixes) never touch budget.
+# ---------------------------------------------------------------------------
+SEO_CADENCE = {
+    "crawl":       {"every_days": 7, "cost": "free"},
+    "inspect":     {"every_days": 1, "cost": "free"},
+    "speed":       {"every_days": 7, "cost": "free"},
+    "indexnow":    {"every_days": 1, "cost": "free"},
+    "fixes":       {"every_days": 1, "cost": "cheap"},
+    "ranks":       {"every_days": 1, "cost": "cheap"},
+    "aeo":         {"every_days": 7, "cost": "cheap"},
+    "offpage":     {"every_days": 7, "cost": "paid"},
+    "prospecting": {"every_days": 7, "cost": "cheap"},
+}
+
+
+def _days_since(iso: str) -> float:
+    if not iso:
+        return 1e9
+    try:
+        from datetime import datetime, timezone
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - t).total_seconds() / 86400.0
+    except Exception:
+        return 1e9
+
+
+def seo_due(store) -> list:
+    """Which SEO engines are due right now, cheapest first."""
+    getset = getattr(store, "get_setting", None)
+    runs = {}
+    if callable(getset):
+        try:
+            runs = getset("seo_engine_runs", {}) or {}
+        except Exception:
+            runs = {}
+    order = {"free": 0, "cheap": 1, "paid": 2}
+    due = [name for name, cfg in SEO_CADENCE.items()
+           if _days_since(runs.get(name, "")) >= cfg["every_days"]]
+    return sorted(due, key=lambda n: (order[SEO_CADENCE[n]["cost"]], n))
+
+
+def run_seo_due(store, *, include_paid: bool = True) -> dict:
+    """Run only what's due. Safe to call hourly from n8n — it self-throttles."""
+    import content_engine_seo_ops as SEO
+    fns = {"crawl": SEO.run_crawl, "inspect": SEO.run_inspect, "speed": SEO.run_speed,
+           "indexnow": SEO.run_indexnow, "fixes": SEO.run_fixes, "ranks": SEO.run_ranks,
+           "aeo": SEO.run_aeo, "offpage": SEO.run_offpage,
+           "prospecting": SEO.run_prospecting}
+    out = {}
+    for name in seo_due(store):
+        if not include_paid and SEO_CADENCE[name]["cost"] == "paid":
+            continue
+        try:
+            out[name] = fns[name](store)
+        except Exception as e:
+            out[name] = {"error": f"{type(e).__name__}: {e}"}
+    return {"ran": list(out), "results": out}
+
+
 if __name__ == "__main__":
     os.environ.update({"SCHED_OUTREACH_PER_DAY": "1", "SCHED_BLOGS_PER_DAY": "2",
                        "SCHED_SOCIAL_PER_CHANNEL": "3",
@@ -136,5 +200,30 @@ if __name__ == "__main__":
     r2 = plan_today(store)
     assert r2["status"] == "already_planned", r2
     assert len(store.list_jobs()) == 18
+    # ---- SEO cadence: self-throttling, cheapest-first ----
+    class _S:
+        def __init__(self, runs): self._r = runs
+        def get_setting(self, k, d=None): return self._r if k == "seo_engine_runs" else d
+
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    fresh = now.isoformat()
+    yesterday = (now - timedelta(days=2)).isoformat()
+
+    due_all = seo_due(_S({}))
+    assert set(due_all) == set(SEO_CADENCE), due_all
+    assert due_all[0] in ("crawl", "indexnow", "inspect", "speed"), due_all
+    costs = [SEO_CADENCE[n]["cost"] for n in due_all]
+    assert costs == sorted(costs, key=lambda c: {"free": 0, "cheap": 1, "paid": 2}[c]), costs
+
+    # everything just ran -> nothing is due
+    assert seo_due(_S({n: fresh for n in SEO_CADENCE})) == [], "must self-throttle"
+
+    # daily engines come due again after 2 days; weekly ones don't
+    due2 = seo_due(_S({n: yesterday for n in SEO_CADENCE}))
+    assert "inspect" in due2 and "ranks" in due2, due2
+    assert "crawl" not in due2 and "aeo" not in due2, due2
+    assert _days_since("") > 1000 and _days_since("garbage") > 1000
+
     print("OK — scheduler: cold-email-first daily batch (1 outreach + 2 blogs + 15 social), "
-          "idempotent per day. No network.")
+          "idempotent per day; SEO cadence self-throttles cheapest-first. No network.")

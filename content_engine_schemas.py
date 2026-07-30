@@ -694,6 +694,70 @@ class Schema:
 # content_producer has two sub-calls; register both explicitly and alias the
 # ROUTES key "content_producer" to the copy schema (sub-call A).
 # ---------------------------------------------------------------------------
+# ===========================================================================
+# SEO ENGINE SKILLS.  NOTE: every object needs additionalProperties:false for
+# Anthropic structured outputs — including nested ones. Forgetting it on a
+# nested object has broken this pipeline twice (content_planner, media_chat).
+# ===========================================================================
+SEO_FIXER = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["value", "reason"],
+    "properties": {
+        "value": {"type": "string"},
+        "reason": {"type": "string"},
+        "keyword_used": {"type": "string"},
+    },
+}
+
+LINK_PITCH = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["subject", "body", "send_ok"],
+    "properties": {
+        "subject": {"type": "string"},
+        "body": {"type": "string"},
+        "angle": {"type": "string"},
+        "send_ok": {"type": "boolean"},
+    },
+}
+
+SEO_ANALYST = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["reads"],
+    "properties": {
+        "headline": {"type": "string"},
+        "reads": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["card", "read"],
+                "properties": {
+                    "card": {"type": "string"},
+                    "read": {"type": "string"},
+                    "action": {"type": "string"},
+                },
+            },
+        },
+        "top_moves": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["move"],
+                "properties": {
+                    "move": {"type": "string"},
+                    "why": {"type": "string"},
+                    "impact": {"type": "string", "enum": ["high", "medium", "low"]},
+                },
+            },
+        },
+    },
+}
+
+
 SCHEMAS = {
     "site_intelligence":       Schema("site_intelligence", SITE_INTELLIGENCE),
     "authority_backlinks":     Schema("authority_backlinks", SITE_INTELLIGENCE),  # reuses narrate
@@ -715,6 +779,9 @@ SCHEMAS = {
     "judge":                   Schema("judge", JUDGE),
     "content_planner":         Schema("content_planner", CONTENT_PLANNER),
     "reply_responder":         Schema("reply_responder", REPLY_RESPONDER),
+    "seo_fixer":               Schema("seo_fixer", SEO_FIXER),
+    "link_pitch":              Schema("link_pitch", LINK_PITCH),
+    "seo_analyst":             Schema("seo_analyst", SEO_ANALYST),
 }
 
 # Pure-code skills have no output schema:

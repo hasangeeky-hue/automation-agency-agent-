@@ -551,6 +551,49 @@ def _in_media_buyer(job: dict) -> dict:
     }
 
 
+def _in_seo_fixer(job: dict) -> dict:
+    """One page, one defect. Everything here was found by the crawler — the
+    model only rewrites the element it is handed."""
+    p = job.get("payload", {}) or {}
+    page = p.get("page", {}) or {}
+    return {
+        "fix_type": p.get("fix_type", "title"),
+        "url": p.get("url", "") or page.get("url", ""),
+        "current": p.get("current", ""),
+        "page_title": page.get("title", ""),
+        "h1": (page.get("h1") or [""])[0] if page.get("h1") else "",
+        "first_paragraph": (p.get("first_paragraph", "") or "")[:600],
+        "primary_keyword": p.get("primary_keyword", ""),
+        "queries": (p.get("queries") or [])[:5],
+        "brand": p.get("brand", "Anthropos"),
+        "image_context": p.get("image_context", ""),
+    }
+
+
+def _in_link_pitch(job: dict) -> dict:
+    p = job.get("payload", {}) or {}
+    pr = p.get("prospect", {}) or {}
+    return {
+        "prospect_site": pr.get("domain", ""),
+        "prospect_page_title": pr.get("title", ""),
+        "prospect_page_url": pr.get("url", ""),
+        "opportunity": pr.get("opportunity", "resource_page"),
+        "our_asset_url": p.get("asset_url", ""),
+        "our_asset_title": p.get("asset_title", ""),
+        "our_asset_value": p.get("asset_value", ""),
+        "sender_name": p.get("sender_name", ""),
+        "sender_company": p.get("sender_company", "Anthropos Automation"),
+        "evidence": (pr.get("evidence", "") or "")[:800],
+    }
+
+
+def _in_seo_analyst(job: dict) -> dict:
+    p = job.get("payload", {}) or {}
+    return {"board": p.get("board", ""), "metrics": p.get("metrics", {}) or {},
+            "findings": (p.get("findings") or [])[:20],
+            "context": p.get("context", "")}
+
+
 _MAPPERS = {
     # Pipeline A
     "site_intelligence": _in_site_intelligence,
@@ -570,6 +613,10 @@ _MAPPERS = {
     # Ads
     "ads_optimizer": _in_ads_optimizer,
     "media_buyer": _in_media_buyer,
+    # SEO engine
+    "seo_fixer": _in_seo_fixer,
+    "link_pitch": _in_link_pitch,
+    "seo_analyst": _in_seo_analyst,
 }
 
 

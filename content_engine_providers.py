@@ -104,6 +104,9 @@ _MAX_TOKENS = {
     "reply_responder": 500,  # one inbound reply per call
     "judge": 500,            # S1 evaluator — compact verdict only
     "content_planner": 2400,  # a batch of proposed pieces (segment+pillar+channel+day) to approve
+    "seo_fixer": 600,        # one page's title/meta/alt rewrite — compact by design
+    "link_pitch": 500,       # one link-building email
+    "seo_analyst": 900,      # the qualitative reads across the SEO boards
 }
 
 
@@ -503,7 +506,10 @@ if __name__ == "__main__":
         "site_intelligence": 500,
         "content_producer": 2600,          # payload.type == blog
         "content_producer_image": 300,
-        "lead_qualifier": max(200, 60 * 2 + 100),
+        # Mirrors _max_tokens_for(): 140 tokens/lead + 150, floor 400. (This
+        # assertion was left on the OLD 60/lead formula when the qualifier
+        # gained its business/pain/offer fields — stale test, not a bug.)
+        "lead_qualifier": max(400, 140 * 2 + 150),
         "qa_compliance": 600,
         "outreach_copy": 800,
     }

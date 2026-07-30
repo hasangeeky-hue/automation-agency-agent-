@@ -1149,6 +1149,59 @@ def _login_html(error: str = "") -> str:
     return D.login_html(error)
 
 
+# ---------------------------------------------------------------------------
+# SEO engine (E1-E14). HTTP-free so it stays unit-testable offline.
+# ---------------------------------------------------------------------------
+_SEO_ACTIONS = {
+    "crawl": "run_crawl", "inspect": "run_inspect", "speed": "run_speed",
+    "indexnow": "run_indexnow", "ranks": "run_ranks", "aeo": "run_aeo",
+    "offpage": "run_offpage", "prospecting": "run_prospecting",
+    "fixes": "run_fixes", "all": "run_all",
+}
+
+
+def api_seo(action: str) -> dict:
+    """Run one SEO engine (or the whole nightly sequence) and report honestly."""
+    fn_name = _SEO_ACTIONS.get(action)
+    if not fn_name:
+        return {"ok": False, "error": f"unknown SEO action '{action}'"}
+    try:
+        import content_engine_seo_ops as SEO
+        result = getattr(SEO, fn_name)(get_store())
+        return {"ok": True, "action": action, "result": result}
+    except Exception as e:
+        log.exception("seo action %s failed", action)
+        return {"ok": False, "action": action, "error": f"{type(e).__name__}: {e}"}
+
+
+def api_seo_workorders(status: str = "") -> dict:
+    try:
+        import content_engine_workorders as WO
+        orders = WO.load(get_store())
+        if status:
+            orders = [o for o in orders if o.get("status") == status]
+        return {"ok": True, "stats": WO.stats(orders), "orders": orders[:200]}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def api_seo_apply(order_id: str) -> dict:
+    """Approve and publish ONE drafted copy change (title/meta)."""
+    try:
+        import content_engine_workorders as WO
+        import content_engine_seo_fixer as FIX
+        store = get_store()
+        order = next((o for o in WO.load(store) if o.get("id") == order_id), None)
+        if not order:
+            return {"ok": False, "error": "work order not found"}
+        out = FIX.apply_proposal(order)
+        WO.mark(store, order_id, out["status"], out.get("result", ""))
+        return {"ok": out["status"] == "done", **out}
+    except Exception as e:
+        log.exception("apply fix failed")
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 def api_dashboard_html() -> str:
     """Gather live engine data and render the Business Control Center."""
     store = get_store()
@@ -1209,8 +1262,20 @@ def api_dashboard_html() -> str:
         reply_drafts = list(st.get_setting("reply_drafts", []) or []) if hasattr(st, "get_setting") else []
     except Exception:
         reply_drafts = []
+    # SEO engine context (11 boards). Read-only: assembled from what the SEO
+    # engines already persisted, so the dashboard never waits on a crawl.
+    try:
+        import content_engine_seo_ops as _SEO
+        seo_ctx = _SEO.build_ctx(
+            store, status=st, insights=_safe_google_insights(), meters=meters,
+            competitor_intel=(store.get_setting("competitor_intel", None)
+                              if hasattr(store, "get_setting") else None))
+    except Exception as e:
+        log.warning("seo context unavailable: %s", e)
+        seo_ctx = None
     import content_engine_dashboard as D
     return D.dashboard_html(
+        seo_ctx=seo_ctx,
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
@@ -1453,6 +1518,72 @@ def build_app():
         if isinstance(doms, str):
             doms = [d.strip() for d in doms.split(",") if d.strip()]
         return api_competitor_scan(domains=doms, limit=int(data.get("limit", 5) or 5))
+
+    # ---- SEO engine (E1-E14) -------------------------------------------
+    @app.post("/seo/crawl")
+    def seo_crawl():
+        return api_seo("crawl")
+
+    @app.post("/seo/inspect")
+    def seo_inspect():
+        return api_seo("inspect")
+
+    @app.post("/seo/speed")
+    def seo_speed():
+        return api_seo("speed")
+
+    @app.post("/seo/indexnow")
+    def seo_indexnow():
+        return api_seo("indexnow")
+
+    @app.post("/seo/ranks")
+    def seo_ranks():
+        return api_seo("ranks")
+
+    @app.post("/seo/fix-all")
+    def seo_fix_all():
+        return api_seo("fixes")
+
+    @app.post("/seo/run-all")
+    def seo_run_all():
+        return api_seo("all")
+
+    @app.post("/seo/due")
+    def seo_due_run():
+        """Run only the SEO engines that are due (self-throttling). Point an
+        hourly n8n cron here and the whole SEO loop runs itself."""
+        try:
+            import content_engine_scheduler as S
+            return {"ok": True, **S.run_seo_due(get_store())}
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+    @app.get("/seo/workorders")
+    def seo_workorders():
+        return api_seo_workorders()
+
+    @app.post("/seo/fix/{order_id}")
+    def seo_fix_one(order_id: str):
+        return api_seo_apply(order_id)
+
+    @app.get("/seo/llms.txt")
+    def seo_llms_txt():
+        from fastapi.responses import PlainTextResponse
+        store = get_store()
+        txt = store.get_setting("seo_llms_txt", "") if hasattr(store, "get_setting") else ""
+        return PlainTextResponse(txt or "# not generated yet — run an AEO probe")
+
+    @app.post("/aeo/probe")
+    def aeo_probe():
+        return api_seo("aeo")
+
+    @app.post("/offpage/scan")
+    def offpage_scan():
+        return api_seo("offpage")
+
+    @app.post("/offpage/prospect")
+    def offpage_prospect():
+        return api_seo("prospecting")
 
     @app.post("/plan/approve")
     def plan_approve():

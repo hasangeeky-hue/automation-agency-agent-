@@ -22,7 +22,9 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = "2026-07-29 · v16-r8 · Google-grade boards: full GSC+GA4 replication + 22 detailed competitor cards"
+BUILD_TAG = ("2026-07-30 · v17 · SEO engine: 14 automation engines + 11 new boards "
+             "(158 cards) — crawler, index inspector, work orders, fixer, rank tracker, "
+             "AEO probe, off-page prospecting")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2720,7 +2722,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    bookings=None, ads=None, needles=None, last_eval=None,
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
                    content_plan=None, web_tracking=None, reply_drafts=None,
-                   competitor_intel=None, google_insights=None):
+                   competitor_intel=None, google_insights=None, seo_ctx=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -3812,6 +3814,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     }
 
     # ---- nav + assembly ----
+    # ---- SEO engine boards (11 boards / 158 cards) — rendered in their own
+    # module so this file doesn't grow. A missing ctx must never break the page.
+    try:
+        import content_engine_seo_boards as _SB
+        _seo_pages = _SB.seo_pages(seo_ctx or {})
+    except Exception as _e:                       # degraded, never blank
+        _seo_pages = {k: ("<div class='card full'><p class='ct'>SEO boards unavailable</p>"
+                          f"<p class='cc'>{_esc(str(_e))}</p></div>")
+                      for k in ("seocmd", "seotech", "seoonpage", "seokw", "seooff", "seowork")}
+
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
         ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum in one view.", _mod_business(ctx)),
@@ -3830,6 +3842,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("email", "✉️", "Email & Outreach", "Email & Outreach", "Cold emails, replies and deliverability.", p_email),
         ("social", "📣", "Social Media", "Social Media", "Posting and engagement across channels.", p_social),
         ("seo", "🔎", "SEO / AEO / GEO", "SEO · AEO · GEO", "Search, AI-answer and geo visibility.", p_seo),
+        ("seocmd", "🧭", "SEO Command", "SEO Command", "Six scores, the three moves that matter, and what the machine already fixed.", _seo_pages.get("seocmd", "")),
+        ("seotech", "🔧", "SEO Technical", "SEO — Technical & Indexing", "Your own crawl of every URL, plus Google's index verdict per page.", _seo_pages.get("seotech", "")),
+        ("seoonpage", "📄", "SEO On-Page", "SEO — On-Page & Internal Links", "Titles, metas, headings, schema, alt text and how your pages link to each other.", _seo_pages.get("seoonpage", "")),
+        ("seokw", "🔑", "SEO Keywords", "SEO — Keywords, Content & AEO", "Striking distance, cannibalisation, decay, and whether AI answers name you.", _seo_pages.get("seokw", "")),
+        ("seooff", "🌐", "SEO Off-Page", "SEO — Off-Page & Local", "Backlinks, link prospecting and your five local markets.", _seo_pages.get("seooff", "")),
+        ("seowork", "🛠", "SEO Work Orders", "SEO — Automation & Work Orders", "Every finding as a tracked job: what ran, what applied itself, what needs you.", _seo_pages.get("seowork", "")),
         ("ads", "🎯", "Ads & Growth", "Ads & Growth", "Paid campaigns tuned with your SEO signals.", p_ads),
         ("media", "🛒", "Media Buying", "Media Buying", "AI-drafted Google Ads campaigns — read the reasoning, then approve.", p_media),
         ("budget", "💰", "Budget & Cost", "Budget & Cost", "Where the money goes, against your $200 cap.", p_budget),
@@ -3910,6 +3928,31 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/insights/refresh',{method:'POST'});var j=await r.json();"
               "if(j.ok){location.reload();}else{alert(j.error||'refresh failed');if(b){b.disabled=false;b.textContent='↻ Refresh Google data';}}}"
               "catch(e){alert('Failed: '+e);if(b){b.disabled=false;b.textContent='↻ Refresh Google data';}}}"
+              # ---- SEO engines: one helper drives every run button ----
+              "async function seoRun(url,label,confirmMsg){if(confirmMsg&&!confirm(confirmMsg))return;"
+              "var b=event&&event.target;var old=b?b.textContent:'';if(b){b.disabled=true;b.textContent=label;}"
+              "try{var r=await fetch(url,{method:'POST'});var j=await r.json();"
+              "if(j.ok!==false){location.reload();}else{alert('Failed: '+(j.error||''));if(b){b.disabled=false;b.textContent=old;}}}"
+              "catch(e){alert('Failed: '+e);if(b){b.disabled=false;b.textContent=old;}}}"
+              "function runCrawl(){seoRun('/seo/crawl','Crawling your site… ~2-4 min',"
+              "'Crawl every page of your site and audit it? This costs $0 in API — it is your own crawler. Takes 2-4 minutes.');}"
+              "function runInspect(){seoRun('/seo/inspect','Asking Google… ~2 min',"
+              "'Ask Google whether each page is indexed? Free (URL Inspection API, 2000/day).');}"
+              "function runSpeed(){seoRun('/seo/speed','Measuring speed… ~1 min','Run PageSpeed on one page per template? Free.');}"
+              "function runFixes(){seoRun('/seo/fix-all','Applying fixes…',"
+              "'Apply the safe automatic fixes now (schema, internal links, alt text)? Titles and copy will only be DRAFTED for your approval, never published.');}"
+              "function runRanks(){seoRun('/seo/ranks','Checking rankings… ~1 min',"
+              "'Check today rankings for your tracked keywords? Uses about 1 Serper credit per keyword.');}"
+              "function runAeo(){seoRun('/aeo/probe','Asking the AI engines… ~2 min',"
+              "'Ask AI engines the questions your buyers ask, and see if they name you? ~30 small Claude calls plus Serper credits.');}"
+              "function runOffpage(){seoRun('/offpage/scan','Pulling backlinks…','Pull your backlink profile? Requires DataForSEO.');}"
+              "function runProspect(){seoRun('/offpage/prospect','Finding link prospects… ~2 min',"
+              "'Find link prospects and draft pitches? NOTHING is sent — every pitch waits for your approval.');}"
+              "function runSeoAll(){seoRun('/seo/run-all','Running every SEO engine… ~5 min',"
+              "'Run the whole SEO sequence (crawl, index check, speed, fixes, rankings)? The free engines always run; paid ones only if their key is set.');}"
+              "async function applyFix(id){if(!confirm('Publish this rewrite to your website?'))return;"
+              "try{var r=await fetch('/seo/fix/'+id,{method:'POST'});var j=await r.json();"
+              "if(j.ok){location.reload();}else{alert('Failed: '+(j.error||''));}}catch(e){alert('Failed: '+e);}}"
               "async function scanCompetitors(){var d=(document.getElementById('compdoms')||{}).value||'';"
               "if(!confirm('Scan competitors now? '+(d?('Using: '+d):'The machine will auto-discover who ranks for your queries.')+' (~40 Serper credits + 1 small Claude call, ~60s)'))return;"
               "var b=event&&event.target;if(b){b.disabled=true;b.textContent='Scanning… ~60s';}"
