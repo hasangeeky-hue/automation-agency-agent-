@@ -22,9 +22,9 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v17 · SEO engine: 14 automation engines + 11 new boards "
-             "(158 cards) — crawler, index inspector, work orders, fixer, rank tracker, "
-             "AEO probe, off-page prospecting")
+BUILD_TAG = ("2026-07-30 · v17-r2 · SEO engine: 14 automation engines + 158 cards, "
+             "all inside the ONE SEO/AEO/GEO section as in-page tabs (no extra "
+             "sidebar items, no scroll wall)")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -3814,15 +3814,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     }
 
     # ---- nav + assembly ----
-    # ---- SEO engine boards (11 boards / 158 cards) — rendered in their own
-    # module so this file doesn't grow. A missing ctx must never break the page.
+    # ---- SEO engine boards (11 boards / 158 cards). They all live inside the
+    # ONE 'SEO / AEO / GEO' section as in-page tabs — no extra sidebar items,
+    # and no single endless scroll. Rendered in their own module so this file
+    # doesn't grow; a missing ctx must never break the page.
     try:
         import content_engine_seo_boards as _SB
-        _seo_pages = _SB.seo_pages(seo_ctx or {})
+        _seo_all = _SB.seo_section(seo_ctx or {}, legacy_html=p_seo)
     except Exception as _e:                       # degraded, never blank
-        _seo_pages = {k: ("<div class='card full'><p class='ct'>SEO boards unavailable</p>"
-                          f"<p class='cc'>{_esc(str(_e))}</p></div>")
-                      for k in ("seocmd", "seotech", "seoonpage", "seokw", "seooff", "seowork")}
+        _seo_all = (p_seo + "<div class='card full'><p class='ct'>SEO boards unavailable</p>"
+                    f"<p class='cc'>{_esc(str(_e))}</p></div>")
 
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
@@ -3841,13 +3842,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("leads", "🧲", "Lead Machine", "Lead Machine", "Finding, scoring and grouping your leads.", p_leads),
         ("email", "✉️", "Email & Outreach", "Email & Outreach", "Cold emails, replies and deliverability.", p_email),
         ("social", "📣", "Social Media", "Social Media", "Posting and engagement across channels.", p_social),
-        ("seo", "🔎", "SEO / AEO / GEO", "SEO · AEO · GEO", "Search, AI-answer and geo visibility.", p_seo),
-        ("seocmd", "🧭", "SEO Command", "SEO Command", "Six scores, the three moves that matter, and what the machine already fixed.", _seo_pages.get("seocmd", "")),
-        ("seotech", "🔧", "SEO Technical", "SEO — Technical & Indexing", "Your own crawl of every URL, plus Google's index verdict per page.", _seo_pages.get("seotech", "")),
-        ("seoonpage", "📄", "SEO On-Page", "SEO — On-Page & Internal Links", "Titles, metas, headings, schema, alt text and how your pages link to each other.", _seo_pages.get("seoonpage", "")),
-        ("seokw", "🔑", "SEO Keywords", "SEO — Keywords, Content & AEO", "Striking distance, cannibalisation, decay, and whether AI answers name you.", _seo_pages.get("seokw", "")),
-        ("seooff", "🌐", "SEO Off-Page", "SEO — Off-Page & Local", "Backlinks, link prospecting and your five local markets.", _seo_pages.get("seooff", "")),
-        ("seowork", "🛠", "SEO Work Orders", "SEO — Automation & Work Orders", "Every finding as a tracked job: what ran, what applied itself, what needs you.", _seo_pages.get("seowork", "")),
+        ("seo", "🔎", "SEO / AEO / GEO", "SEO · AEO · GEO",
+         "Search, AI-answer and geo visibility — every SEO board in one place.", _seo_all),
         ("ads", "🎯", "Ads & Growth", "Ads & Growth", "Paid campaigns tuned with your SEO signals.", p_ads),
         ("media", "🛒", "Media Buying", "Media Buying", "AI-drafted Google Ads campaigns — read the reasoning, then approve.", p_media),
         ("budget", "💰", "Budget & Cost", "Budget & Cost", "Where the money goes, against your $200 cap.", p_budget),
@@ -3928,6 +3924,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/insights/refresh',{method:'POST'});var j=await r.json();"
               "if(j.ok){location.reload();}else{alert(j.error||'refresh failed');if(b){b.disabled=false;b.textContent='↻ Refresh Google data';}}}"
               "catch(e){alert('Failed: '+e);if(b){b.disabled=false;b.textContent='↻ Refresh Google data';}}}"
+              # ---- SEO section: in-page tabs (one nav item holds every board) ----
+              "function seoTab(id){document.querySelectorAll('.spanel').forEach(p=>p.classList.remove('on'));"
+              "var p=document.getElementById('spanel-'+id);if(p)p.classList.add('on');"
+              "document.querySelectorAll('.stab').forEach(b=>b.classList.remove('on'));"
+              "var b=document.getElementById('stab-'+id);if(b)b.classList.add('on');"
+              "try{history.replaceState(null,'','#seo/'+id);}catch(e){}"
+              "var s=document.getElementById('sec-seo');if(s)s.scrollIntoView({block:'start'});}"
+              # deep link: #seo/seowork opens the SEO section on that tab
+              "window.addEventListener('DOMContentLoaded',function(){var h=location.hash||'';"
+              "if(h.indexOf('#seo/')===0){nav('seo');seoTab(h.slice(5));}});"
               # ---- SEO engines: one helper drives every run button ----
               "async function seoRun(url,label,confirmMsg){if(confirmMsg&&!confirm(confirmMsg))return;"
               "var b=event&&event.target;var old=b?b.textContent:'';if(b){b.disabled=true;b.textContent=label;}"

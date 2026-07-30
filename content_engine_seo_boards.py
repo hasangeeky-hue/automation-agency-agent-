@@ -1202,7 +1202,9 @@ def board_work(ctx) -> str:
 #  ASSEMBLY
 # ======================================================================
 def seo_pages(ctx) -> dict:
-    """-> {page_id: html}. The dashboard drops these straight into its PAGES."""
+    """-> {tab_id: html}. Kept as a dict so each board group can be rendered
+    independently (and unit-tested), but they all live inside ONE dashboard
+    section — see seo_section()."""
     return {
         "seocmd": board_command(ctx),
         "seotech": board_technical(ctx) + board_indexing(ctx),
@@ -1211,6 +1213,69 @@ def seo_pages(ctx) -> dict:
         "seooff": board_offpage(ctx) + board_local(ctx),
         "seowork": board_work(ctx),
     }
+
+
+# Tab order + labels for the single SEO section.
+TABS = [
+    ("seooverview", "📊", "Search & Analytics"),
+    ("seocmd", "🧭", "SEO Command"),
+    ("seotech", "🔧", "Technical & Indexing"),
+    ("seoonpage", "📄", "On-Page & Links"),
+    ("seokw", "🔑", "Keywords, Content & AEO"),
+    ("seooff", "🌐", "Off-Page & Local"),
+    ("seowork", "🛠", "Work Orders"),
+]
+
+_TAB_CSS = """<style>
+.stabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 4px;padding-bottom:10px;
+  border-bottom:1px solid #1B2640}
+.stab{background:#121A2E;border:1px solid #1B2640;color:#8FA0BF;border-radius:9px;
+  padding:8px 13px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;
+  display:flex;align-items:center;gap:6px;transition:all .15s}
+.stab:hover{border-color:#2FE3D2;color:#EDF1FB}
+.stab.on{background:linear-gradient(180deg,#18314f,#121A2E);border-color:#2FE3D2;color:#EDF1FB}
+.stab .n{background:#0A0E1A;border-radius:20px;padding:1px 7px;font-size:10.5px;color:#8FA0BF}
+.spanel{display:none}.spanel.on{display:block}
+@media(max-width:860px){.stabs{overflow-x:auto;flex-wrap:nowrap}.stab{white-space:nowrap}}
+</style>"""
+
+
+def seo_section(ctx, legacy_html: str = "") -> str:
+    """EVERY SEO card in ONE dashboard section.
+
+    All 158 cards live under the single 'SEO / AEO / GEO' nav item — no extra
+    sidebar entries. They're split across in-page tabs rather than one endless
+    scroll: same section, one click, no 300k-character wall.
+    """
+    H = _H()
+    panels = seo_pages(ctx)
+    panels["seooverview"] = legacy_html or ""
+    counts = {"seooverview": legacy_html.count("<div class='card'>") if legacy_html else 0,
+              "seocmd": CARD_COUNTS["command"],
+              "seotech": CARD_COUNTS["technical"] + CARD_COUNTS["indexing"],
+              "seoonpage": CARD_COUNTS["on_page"] + CARD_COUNTS["internal_links"],
+              "seokw": CARD_COUNTS["keywords"] + CARD_COUNTS["content"] + CARD_COUNTS["aeo"],
+              "seooff": CARD_COUNTS["off_page"] + CARD_COUNTS["local"],
+              "seowork": CARD_COUNTS["work_orders"]}
+    bar = "".join(
+        f"<button class='stab{' on' if i == 0 else ''}' id='stab-{tid}' "
+        f"onclick=\"seoTab('{tid}')\"><span>{icon}</span>{H._esc(label)}"
+        f"<span class='n'>{counts.get(tid, 0)}</span></button>"
+        for i, (tid, icon, label) in enumerate(TABS))
+    body = "".join(
+        f"<div class='spanel{' on' if i == 0 else ''}' id='spanel-{tid}'>{panels.get(tid, '')}</div>"
+        for i, (tid, _, _) in enumerate(TABS))
+    runbar = (
+        "<div class='ctrl' style='margin:10px 0 2px;flex-wrap:wrap'>"
+        "<button class='cbtn' onclick='runSeoAll()'>▶ Run every SEO engine</button>"
+        "<button class='cbtn' onclick='runCrawl()'>🕷 Crawl my site (free)</button>"
+        "<button class='cbtn' onclick='runInspect()'>📇 Ask Google what's indexed (free)</button>"
+        "<button class='cbtn' onclick='runFixes()'>🛠 Apply safe fixes</button>"
+        "<button class='cbtn' onclick='runRanks()'>📈 Check rankings</button>"
+        "<button class='cbtn' onclick='runAeo()'>🤖 Probe AI answers</button>"
+        "<button class='cbtn' onclick='runProspect()'>🌐 Find link prospects</button>"
+        "</div>")
+    return _TAB_CSS + runbar + f"<div class='stabs'>{bar}</div>" + body
 
 
 CARD_COUNTS = {"command": 12, "technical": 18, "indexing": 12, "on_page": 16,
@@ -1297,6 +1362,23 @@ if __name__ == "__main__":
     pages = seo_pages(ctx)
     assert set(pages) == {"seocmd", "seotech", "seoonpage", "seokw", "seooff", "seowork"}, list(pages)
     html = "".join(pages.values())
+
+    # ---- ONE section, in-page tabs (no extra sidebar items) ----
+    legacy = "<div class='card'>existing GSC/GA4/competitor boards</div>"
+    sec = seo_section(ctx, legacy_html=legacy)
+    assert legacy in sec, "the existing SEO content must stay, as the first tab"
+    for tid, _, _ in TABS:
+        assert f"id='stab-{tid}'" in sec, f"missing tab button {tid}"
+        assert f"id='spanel-{tid}'" in sec, f"missing tab panel {tid}"
+        assert f"seoTab('{tid}')" in sec, f"tab {tid} has no click handler"
+    assert sec.count("class='spanel on'") == 1, "exactly one tab may start open"
+    assert sec.count("class='stab on'") == 1, "exactly one tab may start active"
+    assert sec.index("stab-seooverview") < sec.index("stab-seocmd"), "overview must be first"
+    # every card still present, just tabbed
+    assert sec.count("<div class='card'>") == TOTAL_CARDS + 1, sec.count("<div class='card'>")
+    # the run bar must expose the free engines by name
+    for label in ("free", "Run every SEO engine", "Crawl my site"):
+        assert label in sec, f"run bar missing '{label}'"
 
     counted = html.count("<div class='card'>")
     assert counted == TOTAL_CARDS, f"expected {TOTAL_CARDS} cards, rendered {counted}"
