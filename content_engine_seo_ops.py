@@ -612,6 +612,8 @@ def build_risk_ctx(store, *, status=None, health=None, meters=None,
     RK.save_register(store, risks)
     hist = RK.record_snapshot(store, risks)
     nodes, edges = RK.channel_blast(status)
+    infra_hist = RK.record_infra_snapshot(
+        store, settings_bytes=(storage or {}).get("total_bytes", 0), jobs=len(jobs))
     rows, grid = RK.cohort_grid(agents)
     try:
         import content_engine_scheduler as SCH
@@ -632,6 +634,12 @@ def build_risk_ctx(store, *, status=None, health=None, meters=None,
         "cohort_rows": rows, "cohort_grid": grid,
         "infra": RK.infra(storage or {}, health or {}, _get(store, K_RUNS, {}) or {}),
         "continuity": RK.continuity(backup),
+        # the four signature charts the plan specified
+        "revenue_path": RK.revenue_path(jobs),
+        "run_series": RK.run_series(_get(store, K_RUNS, {}) or {}),
+        "infra_history": infra_hist,
+        "storage_forecast": RK.storage_forecast(infra_hist),
+        "backup_coverage": RK.backup_coverage(backup),
         "status": status, "agents": agents, "jobs": jobs,
         "health": health or {}, "needles": needles or {}, "last_eval": last_eval or {},
         "cost": {"month_spent": month_spent, "month_cap": month_cap,

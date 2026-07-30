@@ -39,6 +39,7 @@ log = logging.getLogger("risk")
 
 REGISTER_KEY = "risk_register"
 HISTORY_KEY = "risk_history"
+INFRA_HISTORY_KEY = "infra_history"
 MAX_HISTORY = 60
 
 # Likelihood x impact, both 1-3. score >= 6 is act-now.
@@ -509,6 +510,122 @@ def continuity(backup=None, engine_runs=None) -> dict:
                     "An untested backup is not a backup."),
             "rollback": ("Code rolls back with git revert; credentials live in "
                          "Postgres, so a revert cannot lose a key.")}
+
+
+def revenue_path(jobs=None, outcomes=None) -> list:
+    """R3 — the revenue path as sankey flows: where money actually comes from.
+
+    Reads the outreach and content jobs already in the store. Returns
+    [(source, target, value)] and an empty list when nothing has been recorded,
+    so the board can say why instead of drawing a fake funnel."""
+    jobs = _L(jobs)
+    sourced = contacted = replied = booked = 0
+    won = {}
+    for j in jobs:
+        d = _D(j)
+        pay = _D(d.get("payload"))
+        if d.get("type") == "outreach_campaign":
+            sourced += len(_L(pay.get("raw_leads")))
+            contacted += len(_L(pay.get("leads"))) if pay.get("send_ref") else 0
+            replied += len(_L(pay.get("replies")))
+            booked += len(_L(pay.get("bookings")))
+        out = _D(pay.get("outcome")) or _D(d.get("outcome"))
+        if out.get("revenue"):
+            won[out.get("client") or "unnamed"] = (won.get(out.get("client") or "unnamed", 0)
+                                                   + _f(out.get("revenue")))
+    for o in _L(outcomes):
+        d = _D(o)
+        if d.get("revenue"):
+            won[d.get("client") or "unnamed"] = (won.get(d.get("client") or "unnamed", 0)
+                                                 + _f(d.get("revenue")))
+    flows = []
+    if sourced:
+        flows.append(("Leads sourced", "Contacted", contacted or 0))
+        if sourced - contacted > 0:
+            flows.append(("Leads sourced", "Not contacted", sourced - contacted))
+    if contacted:
+        flows.append(("Contacted", "Replied", replied))
+        if contacted - replied > 0:
+            flows.append(("Contacted", "No reply", contacted - replied))
+    if replied:
+        flows.append(("Replied", "Booked", booked))
+    for client, rev in sorted(won.items(), key=lambda kv: -kv[1])[:4]:
+        flows.append(("Booked" if booked else "Won", client[:18], rev))
+    return [f for f in flows if f[2]]
+
+
+def run_series(engine_runs=None, days=14) -> list:
+    """I1/I4 — engine runs per day. The only availability signal that is real:
+    the worker either produced runs on a day or it did not."""
+    runs = _D(engine_runs)
+    per_day = {}
+    for _key, stamp in runs.items():
+        at = str(_D(stamp).get("at") or stamp if isinstance(stamp, str) else
+                 _D(stamp).get("at", ""))[:10]
+        if at:
+            per_day[at] = per_day.get(at, 0) + 1
+    if not per_day:
+        return []
+    keys = sorted(per_day)[-days:]
+    return [(k, per_day[k]) for k in keys]
+
+
+def record_infra_snapshot(store, settings_bytes=0, jobs=0):
+    """I3 — storage history, so growth can be projected instead of guessed."""
+    try:
+        hist = list(store.get_setting(INFRA_HISTORY_KEY, []) or [])
+    except Exception:
+        hist = []
+    today = _iso()[:10]
+    hist = [h for h in hist if str(_D(h).get("at", ""))[:10] != today]
+    hist.append({"at": _iso(), "bytes": _f(settings_bytes), "jobs": int(jobs or 0)})
+    hist = hist[-MAX_HISTORY:]
+    try:
+        store.set_setting(INFRA_HISTORY_KEY, hist)
+    except Exception as e:
+        log.warning("infra history save failed: %s", e)
+    return hist
+
+
+def storage_forecast(history, ahead=6) -> dict:
+    """Least-squares growth on what has actually been measured. Fewer than two
+    points means no trend line — stated, not invented."""
+    pts = [(i, _f(_D(h).get("bytes"))) for i, h in enumerate(_L(history))]
+    pts = [(i, v) for i, v in pts if v]
+    if len(pts) < 2:
+        return {"actual": [v for _i, v in pts], "forecast": [], "per_day": 0.0,
+                "note": ("Growth needs at least two daily snapshots. This fills in "
+                         "once the dashboard has been open on two different days.")}
+    n = len(pts)
+    mx = sum(i for i, _v in pts) / n
+    my = sum(v for _i, v in pts) / n
+    den = sum((i - mx) ** 2 for i, _v in pts) or 1
+    slope = sum((i - mx) * (v - my) for i, v in pts) / den
+    last_i = pts[-1][0]
+    actual = [v for _i, v in pts]
+    forecast = [max(0.0, my + slope * (last_i + k - mx)) for k in range(0, ahead + 1)]
+    return {"actual": actual, "forecast": forecast, "per_day": round(slope, 1),
+            "note": (f"Growing about {slope / 1024:.1f} KB per snapshot. "
+                     f"At this rate the settings blob reaches "
+                     f"{forecast[-1] / 1024:.0f} KB in {ahead} more snapshots.")}
+
+
+def backup_coverage(backup=None, days=7) -> tuple:
+    """I5 — what is protected, by day. Rows are the things Postgres holds; a
+    zero cell means that data had no backup that day. With nothing configured
+    every cell is zero, which is the honest picture."""
+    b = _D(backup)
+    rows = ["credentials", "jobs + history", "crawl + audit", "work orders",
+            "risk register"]
+    cols = [f"d-{d}" for d in range(days - 1, -1, -1)]
+    if not b.get("configured"):
+        return rows, cols, [[0 for _ in cols] for _ in rows]
+    last = str(b.get("last", ""))[:10]
+    tested = bool(b.get("restore_tested"))
+    grid = []
+    for _r in rows:
+        grid.append([2 if (last and tested) else 1 for _c in cols])
+    return rows, cols, grid
 
 
 # ---------------------------------------------------------------- self-check

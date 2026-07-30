@@ -56,6 +56,7 @@ def _ctx(ctx):
     ctx = ctx if isinstance(ctx, dict) else {}
     out = dict(ctx)
     for k in ("status", "concentration", "workforce", "capacity", "infra",
+              "storage_forecast",
               "continuity", "credentials", "health", "cost", "storage", "aeo",
               "geo", "needles", "last_eval"):
         out[k] = _D(out.get(k))
@@ -69,6 +70,29 @@ def _ctx(ctx):
 
 def _na(title, sub, insight, src="computed", accent=BLUE, links=""):
     return (title, "—", sub, "", insight, src, accent, links)
+
+
+def _fc(ctx):
+    """storage_forecast, coerced — a wrong shape must not crash the board."""
+    v = _D(ctx).get("storage_forecast")
+    return v if isinstance(v, dict) else {}
+
+
+def _cov(ctx):
+    """(rows, cols, grid) for the backup heatmap, always a usable triple."""
+    v = _D(ctx).get("backup_coverage")
+    if (isinstance(v, (list, tuple)) and len(v) == 3
+            and all(isinstance(x, (list, tuple)) for x in v)):
+        return list(v[0]), list(v[1]), [list(r) for r in v[2]]
+    return [], [], []
+
+
+def _cov_pct(ctx):
+    rows, cols, grid = _cov(ctx)
+    cells = [c for r in grid for c in r]
+    if not cells:
+        return 0
+    return round(100 * sum(1 for c in cells if c) / len(cells))
 
 
 def _sevcol(sev):
@@ -255,6 +279,18 @@ def board_revenue(ctx) -> str:
         ("Revenue recorded", f"€{c.get('total', 0):,.0f}", "all time", "",
          "The denominator for every efficiency number on the dashboard.",
          "job outcomes", GREEN if c.get("total") else AMBER, ""),
+        # the revenue PATH, not just the total: where money enters and where it
+        # leaks. A sankey because this is flow data, not part-of-whole.
+        ("Revenue path", (f"{len(_L(ctx.get('revenue_path')))} steps"
+                          if ctx.get("revenue_path") else "no path yet"),
+         "leads through to revenue",
+         _CH().sankey(_L(ctx.get("revenue_path"))) if ctx.get("revenue_path") else "",
+         ("Every drop between two bars is a leak worth more than the next "
+          "campaign." if ctx.get("revenue_path") else
+          "Nothing has moved through the funnel yet. This fills in from outreach "
+          "jobs once leads are sourced and sent — no extra data entry."),
+         "outreach jobs + outcomes",
+         BLUE if ctx.get("revenue_path") else AMBER, ""),
         ("Engine cost", f"€{cost.get('month_spent', 0):,.2f}", "this month",
          _score_gauge(cost.get("pct_of_cap", 0), 80),
          f"{cost.get('pct_of_cap', 0)}% of the €{cost.get('month_cap', 0):,.0f} cap.",
@@ -646,6 +682,20 @@ def board_compute(ctx) -> str:
                       for k, v in health.items() if isinstance(v, dict)][:9]),
          "Anthropic, Postgres and the connectors, checked without spending anything.",
          "GET /health", GREEN if inf.get("healthy") else AMBER, ""),
+        # availability as measured, not asserted: did the worker produce runs
+        # on each of the last 14 days?
+        ("Engine activity", (f"{sum(v for _d, v in _L(ctx.get('run_series')))} runs"
+                             if ctx.get("run_series") else "no runs recorded"),
+         "last 14 days",
+         _trend([("runs/day", [v for _d, v in _L(ctx.get("run_series"))], TEAL)])
+         if len(_L(ctx.get("run_series"))) > 1 else "",
+         ("A flat day means the worker produced nothing — that is what an "
+          "outage looks like here, and it is measured rather than assumed."
+          if ctx.get("run_series") else
+          "Uptime is not claimed until it is measured. This draws itself once "
+          "the worker has run on two different days."),
+         "engine run stamps",
+         GREEN if len(_L(ctx.get("run_series"))) > 1 else AMBER, ""),
         ("VPS sharing", 3, "businesses on one machine", "",
          inf.get("disk_note", ""),
          "infrastructure", AMBER, ""),
@@ -697,6 +747,19 @@ def board_storage(ctx) -> str:
          ("Trim the crawl or move it to its own table if this keeps climbing."
           if inf.get("growth_risk") else "Comfortable at the current size."),
          "computed", AMBER if inf.get("growth_risk") else GREEN, ""),
+        # measured growth PLUS a projection — a line with two series, because
+        # "how big is it" and "when does it hurt" are different questions.
+        ("Storage forecast",
+         (f"{_fc(ctx).get('per_day', 0) / 1024:+,.1f} KB" if _fc(ctx).get("forecast")
+          else "not enough history"),
+         "per snapshot",
+         _trend([("measured", _fc(ctx).get("actual") or [], TEAL),
+                 ("projected", _fc(ctx).get("forecast") or [], AMBER)])
+         if _fc(ctx).get("forecast") else "",
+         _fc(ctx).get("note", ""),
+         "infra history",
+         (AMBER if float(_fc(ctx).get("per_day")) > 0 else GREEN)
+         if _fc(ctx).get("forecast") else BLUE, ""),
     ]
     for label, note in [
         ("Database size", "the whole Postgres volume"),
@@ -711,7 +774,6 @@ def board_storage(ctx) -> str:
         ("Archive strategy", "cold storage for old jobs"),
         ("Volume backing", "where the Docker volume lives"),
         ("Disk quota", "the 100 GB shared with two other businesses"),
-        ("Storage forecast", "when it runs out at this rate"),
     ]:
         cards.append(_na(label, note,
                          "Read from Postgres and the Docker volume.",
@@ -755,6 +817,18 @@ def board_continuity(ctx) -> str:
         ("The fix", "nightly pg_dump", "cheapest large risk to remove", "",
          cont.get("fix", ""),
          "recommendation", PINK if not cont.get("configured") else GREEN, ""),
+        # what is protected, by day — a matrix, so a heatmap. Every cell cold
+        # means nothing was covered on that day, which is the current truth.
+        ("Backup coverage",
+         f"{_cov_pct(ctx)}%", "of data-days protected",
+         _heatmap(_cov(ctx)[0], _cov(ctx)[1], _cov(ctx)[2]),
+         ("Rows are what Postgres holds, columns are the last seven days. Every "
+          "cell is cold because no backup exists — seven days of every "
+          "credential, job and crawl with no copy anywhere."
+          if not cont.get("configured") else
+          "Warm cells are days a backup covered that data. A restore has "
+          "%s been rehearsed." % ("" if cont.get("restore_tested") else "not")),
+         "backup config", PINK if not cont.get("configured") else GREEN, ""),
     ]
     for label, note in [
         ("Backup frequency", "how often, if at all"),
