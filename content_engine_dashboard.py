@@ -22,7 +22,7 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v19-r2 · UX: 24/25 flaws closed — 4 groups + sub-nav, 235 addressable cards, hero, progressive disclosure, 11 chart types, bulk approve, mobile. "
+BUILD_TAG = ("2026-07-30 · v20 · Media Buying: 22 loops, 16 boards, 296 cards + the cross-channel interlock. 531 engine cards total. "
              "all inside the ONE SEO/AEO/GEO section as in-page tabs (no extra "
              "sidebar items, no scroll wall)")
 
@@ -2722,7 +2722,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    bookings=None, ads=None, needles=None, last_eval=None,
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
                    content_plan=None, web_tracking=None, reply_drafts=None,
-                   competitor_intel=None, google_insights=None, seo_ctx=None):
+                   competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -3825,6 +3825,14 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _seo_all = (p_seo + "<div class='card full'><p class='ct'>SEO boards unavailable</p>"
                     f"<p class='cc'>{_esc(str(_e))}</p></div>")
 
+    # ---- Media buying boards (16 boards / 296 cards), same card kit ----
+    try:
+        import content_engine_media_boards as _MB
+        _media_all = _MB.media_section(media_ctx or {})
+    except Exception as _e2:
+        _media_all = (p_media + "<div class='card full'><p class='ct'>Media boards unavailable</p>"
+                      f"<p class='cc'>{_esc(str(_e2))}</p></div>")
+
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
         ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum in one view.", _mod_business(ctx)),
@@ -3845,7 +3853,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("seo", "🔎", "SEO / AEO / GEO", "SEO · AEO · GEO",
          "Search, AI-answer and geo visibility — every SEO board in one place.", _seo_all),
         ("ads", "🎯", "Ads & Growth", "Ads & Growth", "Paid campaigns tuned with your SEO signals.", p_ads),
-        ("media", "🛒", "Media Buying", "Media Buying", "AI-drafted Google Ads campaigns — read the reasoning, then approve.", p_media),
+        ("media", "🛒", "Media Buying", "Media Buying · Google Ads",
+         "296 cards across 16 boards — what a senior media buyer reads before deciding.",
+         _media_all + p_media),
         ("budget", "💰", "Budget & Cost", "Budget & Cost", "Where the money goes, against your $200 cap.", p_budget),
         ("agents", "❤️", "Agents & Health", "Agents & Health", "Are the agents running, and is anything broken?", p_agents),
         ("google", "☁️", "Google Hub", "Google Hub", "Your Sheets, Drive and Gmail data hub.", p_google),
@@ -3974,6 +3984,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "function runAeo(){seoRun('/aeo/probe','Asking the AI engines… ~2 min',"
               "'Ask AI engines the questions your buyers ask, and see if they name you? ~30 small Claude calls plus Serper credits.');}"
               "function runOffpage(){seoRun('/offpage/scan','Pulling backlinks…','Pull your backlink profile? Requires DataForSEO.');}"
+              "function runAds(){seoRun('/ads/pull','Pulling Google Ads… ~1 min',"
+              "'Pull everything from Google Ads (campaigns, search terms, quality score, assets)? The API is free.');}"
+              "function runInterlock(){seoRun('/ads/interlock','Rebuilding cross-channel…',"
+              "'Rebuild the SEO/AEO/GEO/Ads interlock? Free — it runs on data you already have.');}"
+              "async function openEcon(){var d=prompt('Average deal value in EUR (e.g. 5000)');if(!d)return;"
+              "var m=prompt('Gross margin %, e.g. 60');if(!m)return;"
+              "var c=prompt('Consultation to client close rate %, e.g. 25');if(!c)return;"
+              "var l=prompt('Lead to consultation rate %, e.g. 40')||'0';"
+              "try{var r=await fetch('/ads/economics',{method:'POST',headers:{'Content-Type':'application/json'},"
+              "body:JSON.stringify({avg_deal_value:d,gross_margin_pct:m,consult_to_client_pct:c,lead_to_consult_pct:l})});"
+              "var j=await r.json();alert('Saved. Target CPA per lead: EUR '+((j.targets||{}).target_cpa_lead||'-'));location.reload();}"
+              "catch(e){alert('Failed: '+e);}}"
               "function runGeo(){seoRun('/geo/audit','Auditing your 5 markets… ~1 min',"
               "'Audit hreflang, language coverage and the local pack across your five markets? Uses a few Serper credits.');}"
               "function approveAll(kind){if(!confirm('Publish EVERY drafted '+kind+' rewrite to your website? Review a few first — this cannot be undone in bulk.'))return;"

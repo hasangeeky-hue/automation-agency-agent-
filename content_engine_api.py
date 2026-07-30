@@ -1157,6 +1157,7 @@ _SEO_ACTIONS = {
     "indexnow": "run_indexnow", "ranks": "run_ranks", "aeo": "run_aeo",
     "offpage": "run_offpage", "prospecting": "run_prospecting",
     "fixes": "run_fixes", "all": "run_all", "geo": "run_geo",
+    "ads": "run_ads", "interlock": "run_interlock",
 }
 
 
@@ -1308,9 +1309,17 @@ def api_dashboard_html() -> str:
     except Exception as e:
         log.warning("seo context unavailable: %s", e)
         seo_ctx = None
+    try:
+        import content_engine_seo_ops as _SEO2
+        media_ctx = _SEO2.build_media_ctx(
+            store, competitor_intel=(store.get_setting("competitor_intel", None)
+                                     if hasattr(store, "get_setting") else None))
+    except Exception as e:
+        log.warning("media context unavailable: %s", e)
+        media_ctx = None
     import content_engine_dashboard as D
     return D.dashboard_html(
-        seo_ctx=seo_ctx,
+        seo_ctx=seo_ctx, media_ctx=media_ctx,
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
@@ -1619,6 +1628,31 @@ def build_app():
     @app.post("/geo/audit")
     def geo_audit():
         return api_seo("geo")
+
+    # ---- Media buying ----
+    @app.post("/ads/pull")
+    def ads_pull():
+        return api_seo("ads")
+
+    @app.post("/ads/interlock")
+    def ads_interlock():
+        return api_seo("interlock")
+
+    @app.get("/ads/economics")
+    def ads_econ_get():
+        import content_engine_ads as A
+        econ = A.get_economics(get_store())
+        return {"ok": True, "economics": econ, "targets": A.targets(econ)}
+
+    @app.post("/ads/economics")
+    async def ads_econ_set(request: Request):
+        import content_engine_ads as A
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        econ = A.set_economics(get_store(), **data)
+        return {"ok": True, "economics": econ, "targets": A.targets(econ)}
 
     @app.get("/aeo/prompts")
     def aeo_prompts_get():

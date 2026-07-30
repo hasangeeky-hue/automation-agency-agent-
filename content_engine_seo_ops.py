@@ -37,6 +37,7 @@ K_RANKS, K_RUNS, K_QUOT = "seo_ranks", "seo_engine_runs", "seo_quotable"
 K_LLMS, K_KEYWORDS, K_INDEXNOW = "seo_llms_txt", "seo_keywords", "seo_indexnow"
 K_LOCAL = "seo_local"
 K_ACCESS, K_ENTITY, K_NAP = "aeo_crawler_access", "aeo_entity", "geo_nap"
+K_ADS, K_INTER = "ads_snapshot", "crosschannel"
 
 MAX_CRAWL_URLS = 300
 MAX_INSPECT = 180          # free quota is 2000/day; stay well under
@@ -402,6 +403,108 @@ def run_all(store, *, deep: bool = False) -> dict:
             log.warning("seo engine %s failed: %s", name, e)
             out[name] = {"error": f"{type(e).__name__}: {e}"}
     return out
+
+
+def run_ads(store) -> dict:
+    """M1-M8 — pull everything the media boards read. Free API; key-gated, so
+    an unconnected account returns stated reasons rather than zeros."""
+    import content_engine_ads as ADS
+    from datetime import date
+    snap = {"at": _now(),
+            "ads": ADS.account(), "terms": ADS.search_terms(), "kw": ADS.keywords(),
+            "assets": ADS.ad_assets(), "conv_actions": ADS.conversion_actions(),
+            "targeting": ADS.targeting(), "audiences": ADS.audiences(),
+            "ad_status": ADS.ad_status(), "changes": ADS.change_history(),
+            "recs": ADS.recommendations(), "segments": ADS.segments()}
+    camps = (snap["ads"] or {}).get("campaigns") or []
+    snap["pacing"] = ADS.pacing(camps, date.today().day)
+    snap["is_rows"] = [{"campaign": c.get("name", ""),
+                        **ADS.impression_share_verdict(c)} for c in camps]
+    snap["is_summary"] = {
+        "share": round(sum(c.get("is_share", 0) for c in camps) / max(len(camps), 1), 1),
+        "budget": round(sum(c.get("is_lost_budget", 0) for c in camps) / max(len(camps), 1), 1),
+        "rank": round(sum(c.get("is_lost_rank", 0) for c in camps) / max(len(camps), 1), 1)}
+    tgt = ADS.targets(ADS.get_economics(store))
+    snap["bid_advice"] = [{"campaign": c.get("name", ""),
+                           **ADS.bid_strategy_advice(c, tgt)} for c in camps]
+    seeds = [q["query"] for q in (_get(store, K_AUDIT, {}) or {}).get("striking", [])][:10]
+    if not seeds:
+        seeds = [r.get("key", "") for r in
+                 ((_get(store, "google_insights", {}) or {}).get("gsc") or {}).get("queries", [])][:10]
+    snap["kw_ideas"] = ADS.keyword_ideas([s for s in seeds if s])
+    _set(store, K_ADS, snap)
+    _stamp(store, "ads")
+    return {"connected": bool((snap["ads"] or {}).get("connected")),
+            "reason": (snap["ads"] or {}).get("reason", ""),
+            "campaigns": len(camps),
+            "wasted_spend": (snap["terms"] or {}).get("wasted_spend", 0)}
+
+
+def run_interlock(store) -> dict:
+    """L22 — the cross-channel wiring. Works WITHOUT Google Ads."""
+    import content_engine_crosschannel as CX
+    import content_engine_ads as ADS
+    snap = _get(store, K_ADS, {}) or {}
+    bookings = customers = 0
+    try:
+        import content_engine_connectors as C
+        bookings = int((C.CalCom().summary() or {}).get("booked", 0) or 0)
+    except Exception:
+        pass
+    try:
+        jobs = store.list_jobs() if hasattr(store, "list_jobs") else []
+        for j in jobs:
+            o = (j.get("payload", {}) or {}).get("outcome") or {}
+            customers += int(o.get("customers", 0) or 0)
+    except Exception:
+        pass
+    api_spend = 0.0
+    try:
+        api_spend = float(store.monthly_cost()) if hasattr(store, "monthly_cost") else 0.0
+    except Exception:
+        pass
+    out = CX.interlock(
+        store,
+        crawl=_get(store, K_CRAWL, {}) or {}, audit=_get(store, K_AUDIT, {}) or {},
+        gsc=((_get(store, "google_insights", {}) or {}).get("gsc") or {}),
+        aeo=_get(store, "aeo_visibility", {}) or {},
+        geo=_get(store, "geo_market_audit", {}) or {},
+        ads=snap.get("ads") or {}, search_terms=snap.get("terms") or {},
+        econ=ADS.get_economics(store), bookings=bookings, customers=customers,
+        api_spend=api_spend)
+    _stamp(store, "interlock")
+    return {"links_live": out.get("links_live", 0),
+            "cannibalised": (out.get("overlap") or {}).get("count", 0),
+            "gap_cover": len(out.get("gap_cover") or []),
+            "paid_only_markets": [m["market"] for m in (out.get("markets") or [])
+                                  if m.get("paid_is_only_lever")],
+            "cac": (out.get("cac") or {}).get("cac")}
+
+
+def build_media_ctx(store, *, competitor_intel=None) -> dict:
+    """Everything the 16 media boards read."""
+    import content_engine_ads as ADS
+    snap = _get(store, K_ADS, {}) or {}
+    inter = _get(store, K_INTER, {}) or {}
+    econ = ADS.get_economics(store)
+    ctx = dict(snap)
+    ctx.update({
+        "econ": econ, "targets": ADS.targets(econ), "interlock": inter,
+        "crawl": _get(store, K_CRAWL, {}) or {},
+        "geo": _get(store, "geo_market_audit", {}) or {},
+        "markets": inter.get("markets") or [],
+        "competitor_intel": competitor_intel or (_get(store, "competitor_intel", {}) or {}),
+        "orders": [], "funnel": [],
+    })
+    ctx.setdefault("ads", {"connected": False})
+    for k in ("terms", "kw", "assets", "conv_actions", "targeting", "audiences",
+              "ad_status", "changes", "recs", "kw_ideas"):
+        ctx.setdefault(k, {})
+    for k in ("pacing", "is_summary"):
+        ctx.setdefault(k, {})
+    for k in ("is_rows", "bid_advice"):
+        ctx.setdefault(k, [])
+    return ctx
 
 
 # ======================================================================
