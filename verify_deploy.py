@@ -25,11 +25,11 @@ CARD = re.compile(r"<div class='card (?:overflowcard )?sev-")
 SEC = re.compile(r"id='sec-([a-z0-9_]+)'")
 
 EXPECTED_SECTIONS = [
-    "mission", "business", "marketing", "sales", "customer", "ops", "finance",
-    "riskinfra", "exec", "content", "leads", "email", "social", "seo", "ads",
-    "media", "budget", "google", "appr", "learn", "system",
+    "mission", "bi", "ops", "riskinfra", "exec", "content", "leads", "email",
+    "social", "seo", "ads", "media", "google", "appr", "learn", "system",
 ]
-BIG_SECTIONS = {"seo": 235, "media": 296, "system": 214, "riskinfra": 208}
+BIG_SECTIONS = {"seo": 235, "media": 296, "system": 214, "riskinfra": 208,
+                "bi": 252}
 FELL_BACK = "boards failed to render"
 
 
@@ -41,6 +41,7 @@ def main() -> int:
     print("=" * 68)
     for mod in ("content_engine_dashboard", "content_engine_risk",
                 "content_engine_risk_boards", "content_engine_system_boards",
+                "content_engine_bi", "content_engine_bi_boards",
                 "content_engine_seo_boards", "content_engine_media_boards",
                 "content_engine_seo_ops", "content_engine_connectors",
                 "content_engine_charts"):
@@ -108,9 +109,10 @@ def main() -> int:
 
     print()
     print("=" * 68)
-    print("4. THE THREE MERGED-AWAY SECTIONS")
+    print("4. THE MERGED-AWAY SECTIONS")
     print("=" * 68)
-    for old in ("risk", "workforce", "infra", "agents", "map", "overview"):
+    for old in ("risk", "workforce", "infra", "agents", "map", "overview",
+                "business", "marketing", "sales", "customer", "finance", "budget"):
         gone = f"id='sec-{old}'" not in html
         aliased = f"{old}:'" in html
         print(f"   {old:<10} removed: {'yes' if gone else 'NO - still a page'}"
@@ -127,8 +129,8 @@ def main() -> int:
         print()
         print("Paste this whole output back and it says exactly what to fix.")
         return 1
-    print("HEALTHY - 21 sections, Risk & Infrastructure merged and full, "
-          "nothing fell back.")
+    print("HEALTHY - 16 sections, Business Intelligence (252) and Risk & "
+          "Infrastructure (208) both merged and full, nothing fell back.")
     print("If the browser still shows the old layout, it is a cached page: "
           "hard-reload with Ctrl+Shift+R.")
     return 0

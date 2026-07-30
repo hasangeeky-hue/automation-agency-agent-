@@ -28,6 +28,7 @@ Dev with zero API cost: USE_FIXTURES=1 (after RECORD_FIXTURES=1 capture).
 
 from __future__ import annotations
 
+import logging
 import hashlib
 import os
 from typing import Optional
@@ -507,6 +508,9 @@ def _brand_dict():
     g = getattr(store, "get_setting", lambda *a: None)
     return {"brand_name": g("brand_name") or "Anthropos Automation",
             "offer": g("brand_offer") or "AI & automation systems for small businesses"}
+
+
+log = logging.getLogger("content_engine.api")
 
 
 def _safe_google_insights(force: bool = False) -> dict:
@@ -1238,6 +1242,18 @@ def api_seo_apply(order_id: str) -> dict:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+def _bi_bookings():
+    """Cal.com bookings for the BI boards. Never raises — a booking wire that is
+    down must not take the dashboard with it."""
+    try:
+        import content_engine_connectors as CN
+        c = CN.CalCom()
+        return c.bookings() if c.available() else []
+    except Exception as e:
+        log.warning("cal.com bookings unavailable: %s", e)
+        return []
+
+
 def api_dashboard_html() -> str:
     """Gather live engine data and render the Business Control Center."""
     store = get_store()
@@ -1341,9 +1357,19 @@ def api_dashboard_html() -> str:
     except Exception as e:
         log.warning("risk context unavailable: %s", e)
         risk_ctx = None
+    try:
+        import content_engine_seo_ops as _SEO5
+        bi_ctx = _SEO5.build_bi_ctx(
+            store, insights=_safe_google_insights(), jobs=jobs,
+            agents=(system_ctx or {}).get("agents") if system_ctx else [],
+            meters=meters, month_spent=month_spent, month_cap=month_cap,
+            reply_drafts=reply_drafts, bookings=_bi_bookings())
+    except Exception as e:
+        log.warning("BI context unavailable: %s", e)
+        bi_ctx = None
     return D.dashboard_html(
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
-        risk_ctx=risk_ctx,
+        risk_ctx=risk_ctx, bi_ctx=bi_ctx,
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
@@ -1652,6 +1678,64 @@ def build_app():
     @app.post("/geo/audit")
     def geo_audit():
         return api_seo("geo")
+
+    @app.post("/bi/deal")
+    async def bi_deal(request: Request):
+        """Record a won deal. The input path revenue, customers and unit
+        economics never had — and it carries the client name that the Risk
+        board's concentration chart reads."""
+        import content_engine_bi as BI
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        r = BI.record_deal(get_store(), d.get("client"), d.get("value"),
+                           source=d.get("source", "other"), at=d.get("at"),
+                           margin_pct=d.get("margin_pct"),
+                           recurring=bool(d.get("recurring")),
+                           note=d.get("note", ""))
+        if r.get("ok"):
+            r["message"] = (f"{r['deal']['client']} · €{r['deal']['value']:,.0f}. "
+                            f"{r['total_deals']} deal(s) recorded.")
+        return r
+
+    @app.post("/bi/econ")
+    async def bi_econ(request: Request):
+        import content_engine_bi as BI
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        e = BI.set_econ(get_store(), avg_deal=d.get("avg_deal"),
+                        margin_pct=d.get("margin_pct"),
+                        consult_to_client_pct=d.get("consult_to_client_pct"))
+        return {"ok": True, "econ": e, "message": "Unit economics updated."}
+
+    @app.post("/bi/targets")
+    async def bi_targets(request: Request):
+        import content_engine_bi as BI
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        t = BI.set_targets(get_store(), **{k: d.get(k) for k in
+                                           ("revenue_month", "deals_month",
+                                            "leads_month", "bookings_month")})
+        return {"ok": True, "targets": t, "message": "Targets set."}
+
+    @app.post("/insights/refresh")
+    def insights_refresh():
+        """Re-pull GA4 + Search Console. Free — Google does not bill these."""
+        try:
+            import content_engine_connectors as CN
+            fresh = CN.google_insights(force=True) if hasattr(CN, "google_insights") \
+                else None
+            ga = ((fresh or {}).get("ga4") or {})
+            return {"ok": True,
+                    "message": f"{len((ga.get('daily') or []))} days of GA4, "
+                               f"{len((fresh or {}).get('gsc') or [])} GSC rows."}
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
     @app.post("/risk/refresh")
     def risk_refresh():

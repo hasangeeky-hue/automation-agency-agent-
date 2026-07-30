@@ -26,11 +26,13 @@ log = logging.getLogger("content_engine.dashboard")
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v22 · Risk & Infrastructure: Risk + AI Workforce + "
-             "Infrastructure merged into ONE section — 208 cards, 12 boards, 30 charts. "
-             "953 engine cards total: SEO/AEO/GEO 235, Media Buying 296, "
-             "System & Wiring 214, Risk & Infrastructure 208 — each one sidebar "
-             "entry with in-page tabs, no scroll wall")
+BUILD_TAG = ("2026-07-30 · v23 · Business Intelligence: Business + Marketing "
+             "+ Sales + Customer + Finance + Budget merged into ONE section "
+             "— 252 cards, 14 boards, 60 charts, and a way to record a won "
+             "deal so revenue, LTV and CAC compute without Stripe or a CRM. "
+             "1,205 engine cards: BI 252, SEO/AEO/GEO 235, Media Buying 296, "
+             "System & Wiring 214, Risk & Infrastructure 208 — 16 sidebar "
+             "entries, each with in-page tabs")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2780,7 +2782,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
                    content_plan=None, web_tracking=None, reply_drafts=None,
                    competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None,
-                   system_ctx=None, risk_ctx=None):
+                   system_ctx=None, risk_ctx=None, bi_ctx=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -3932,6 +3934,22 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                        f"{_esc(type(_e3).__name__)}: {_esc(str(_e3))[:300]}</p></div>"
                        + p_agents + p_map + overview)
 
+    # ---- Business Intelligence: ONE section replacing Business Performance,
+    # Marketing Intelligence, Sales Intelligence, Customer Intelligence, Finance
+    # and Budget & Cost — 41 cards that all read the same context dict.
+    try:
+        import content_engine_bi_boards as _BIB
+        _bi_all = _BIB.bi_section(bi_ctx or {})
+    except Exception as _e5:
+        log.exception("Business Intelligence boards failed to render - showing "
+                      "the old six modules instead")
+        _bi_all = ("<div class='card full' style='border-color:#F5788A'>"
+                   "<p class='ct'>Business Intelligence boards failed to render</p>"
+                   f"<p class='cc'>Showing the older modules below. Reason: "
+                   f"{_esc(type(_e5).__name__)}: {_esc(str(_e5))[:300]}</p></div>"
+                   + _mod_business(ctx) + _mod_marketing(ctx) + _mod_sales(ctx)
+                   + _mod_customer(ctx) + _mod_finance(ctx))
+
     # ---- Risk & Infrastructure: ONE section replacing Risk, AI Workforce and
     # Infrastructure, which held 13 cards between them and read the same three
     # numbers. No credential path is touched.
@@ -3951,12 +3969,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
 
     PAGES = [
         ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
-        ("business", "📈", "Business", "Business Performance", "Revenue, pipeline and momentum in one view.", _mod_business(ctx)),
-        ("marketing", "📣", "Marketing Int.", "Marketing Intelligence", "SEO · AEO · GEO · Ads — visibility to revenue.", _mod_marketing(ctx)),
-        ("sales", "💼", "Sales Int.", "Sales Intelligence", "Pipeline from stranger to won.", _mod_sales(ctx)),
-        ("customer", "🫂", "Customer Int.", "Customer Intelligence", "Who's booking, buying and staying.", _mod_customer(ctx)),
+        ("bi", "📊", "Business Intel", "Business Intelligence",
+         "Demand, pipeline, revenue and unit economics — merged. 252 cards "
+         "across 14 boards.", _bi_all),
         ("ops", "⚙️", "Operations", "Operations", "Throughput, schedule and the approval queue.", _mod_operations(ctx)),
-        ("finance", "💰", "Finance", "Finance", "Spend against the cap, and cost per outcome.", _mod_finance(ctx)),
         ("riskinfra", "🛡", "Risk & Infrastructure", "Risk & Infrastructure",
          "Risk, workforce and infrastructure — merged. 208 cards across 12 boards.",
          _risk_all),
@@ -3971,7 +3987,6 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("media", "🛒", "Media Buying", "Media Buying · Google Ads",
          "296 cards across 16 boards — what a senior media buyer reads before deciding.",
          _media_all + p_media),
-        ("budget", "💰", "Budget & Cost", "Budget & Cost", "Where the money goes, against your $200 cap.", p_budget),
         ("google", "☁️", "Google Hub", "Google Hub", "Your Sheets, Drive and Gmail data hub.", p_google),
         ("appr", "✅", "Approvals & Commands", "Approvals & Commands", "Approve work and command any agent.", p_appr),
         ("learn", "🧠", "Learning & Results", "Learning & Results", "What's working and how the engine improves.", p_learn),
@@ -4031,7 +4046,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  + pause_btn + auto_btn + "</div></details>")
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
-    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra'};"
+    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi'};"
               "function nav(id){id=NAVALIAS[id]||id;"
               "document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
               "var s=document.getElementById('sec-'+id);if(s)s.classList.add('on');"
@@ -4114,6 +4129,22 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "body:JSON.stringify({avg_deal_value:d,gross_margin_pct:m,consult_to_client_pct:c,lead_to_consult_pct:l})});"
               "var j=await r.json();alert('Saved. Target CPA per lead: EUR '+((j.targets||{}).target_cpa_lead||'-'));location.reload();}"
               "catch(e){alert('Failed: '+e);}}"
+              "function biDeal(){var c=prompt('Client name');if(!c)return;"
+              "var v=prompt('Deal value in euros (numbers only)');if(!v)return;"
+              "var s=prompt('Where did it come from? outreach / organic / ads / referral / direct','outreach')||'other';"
+              "var d=prompt('Date won (YYYY-MM-DD)',new Date().toISOString().slice(0,10))||'';"
+              "post('/bi/deal',{client:c,value:v,source:s,at:d});}"
+              "function biEcon(){var m=prompt('Gross margin % (e.g. 65)');"
+              "var a=prompt('Average deal value in euros');"
+              "var r=prompt('Of the consultations you hold, what % become clients?');"
+              "if(!m&&!a&&!r)return;post('/bi/econ',{margin_pct:m,avg_deal:a,consult_to_client_pct:r});}"
+              "function biTargets(){var r=prompt('Monthly revenue target in euros');"
+              "var d=prompt('Deals per month target');var l=prompt('Leads per month target');"
+              "if(!r&&!d&&!l)return;post('/bi/targets',{revenue_month:r,deals_month:d,leads_month:l});}"
+              "function post(u,b){fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},"
+              "body:JSON.stringify(b)}).then(function(r){return r.json();}).then(function(j){"
+              "alert(j.ok?('Saved. '+(j.message||'')):('Could not save: '+(j.error||'unknown')));"
+              "if(j.ok)location.reload();}).catch(function(e){alert('Failed: '+e);});}"
               "function runRisk(){seoRun('/risk/refresh','Recomputing the risk register…',"
               "'Recompute the risk register from current data? Free — it reads what is already stored.');}"
               "function runGeo(){seoRun('/geo/audit','Auditing your 5 markets… ~1 min',"
@@ -4279,18 +4310,28 @@ if __name__ == "__main__":
                  "nav('leads')", "24/7 competitor", "What it breaks", "Not connected",
                  # Risk & Infrastructure: the merged section and its four groups
                  "Risk &amp; Infrastructure", "WHAT COULD HURT", "WHO DOES THE WORK",
-                 "WILL IT KEEP RUNNING", "ARE WE COVERED"):
+                 "WILL IT KEEP RUNNING", "ARE WE COVERED",
+                 # Business Intelligence: the merged section and its four groups
+                 "IS DEMAND THERE", "IS IT BECOMING PIPELINE",
+                 "IS IT BECOMING MONEY", "DOES THE MATH WORK"):
         assert need in html, need
     import re as _re
     _ids = _re.findall(r"id='sec-([a-z0-9_]+)'", html)
-    assert _ids == ["mission", "business", "marketing", "sales", "customer", "ops",
-                    "finance", "riskinfra", "exec", "content", "leads", "email",
-                    "social", "seo", "ads", "media", "budget", "google", "appr",
-                    "learn", "system"], _ids
-    assert html.count("class='page") == 21, html.count("class='page")
+    assert _ids == ["mission", "bi", "ops", "riskinfra", "exec", "content",
+                    "leads", "email", "social", "seo", "ads", "media", "google",
+                    "appr", "learn", "system"], _ids
+    assert html.count("class='page") == 16, html.count("class='page")
+    # the six merged-away pages must not come back, and every old nav id must
+    # still land somewhere real
+    for _dead in ("sec-business", "sec-marketing", "sec-sales", "sec-customer",
+                  "sec-finance", "sec-budget"):
+        assert f"id='{_dead}'" not in html, f"{_dead} should be merged into sec-bi"
+    for _old in ("business", "marketing", "sales", "customer", "finance", "budget"):
+        assert f"{_old}:'bi'" in html, f"nav alias {_old} -> bi missing"
+    for _fn in ("biDeal()", "biEcon()", "biTargets()"):
+        assert _fn in html, f"{_fn} handler missing"
     assert "CEO Command Center" in html and "Executive briefing" in html
-    for _m in ("Business Performance", "Marketing Intelligence", "Sales Intelligence",
-               "Customer Intelligence", "AI Workforce", "Operations", "Finance",
+    for _m in ("Business Intelligence", "AI Workforce", "Operations",
                "Executive Intelligence", "AI Decision Engine"):
         assert _m in html, _m
     # the three merged-away sections must not come back as pages, and every old
@@ -4304,7 +4345,8 @@ if __name__ == "__main__":
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
-    print("OK — 21 pages. Risk + AI Workforce + Infrastructure now render as ONE "
-          "Risk & Infrastructure section (208 cards, 12 boards, 4 groups); the old "
-          "nav ids risk/workforce/infra alias to it. No page lost, no credential "
-          "path touched. No network.")
+    print("OK — 16 pages. Risk + AI Workforce + Infrastructure now render as ONE "
+          "Risk & Infrastructure section (208 cards) and six more render as ONE "
+          "Business Intelligence section (252 cards, 14 boards); the old nav ids "
+          "all alias to them. No page lost, no credential path touched. "
+          "No network.")

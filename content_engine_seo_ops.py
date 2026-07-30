@@ -586,6 +586,45 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
 
 
 
+def build_bi_ctx(store, *, insights=None, jobs=None, agents=None, meters=None,
+                 month_spent=0.0, month_cap=200.0, reply_drafts=None,
+                 bookings=None) -> dict:
+    """Everything the 14 Business Intelligence boards read.
+
+    Six sections used to share one context dict and render the same four numbers
+    six ways. This builds each loop once, from the source that actually owns it:
+    GA4/GSC for demand, outreach jobs for pipeline, Cal.com for consultations,
+    recorded deals for revenue, and the meters for cost."""
+    import content_engine_bi as BI
+    jobs = jobs if isinstance(jobs, list) else []
+    insights = insights if isinstance(insights, dict) else (
+        _get(store, "google_insights", {}) or {})
+    deals = BI.list_deals(store)
+    ec = BI.econ(store)
+    tg = BI.targets(store)
+    lg = BI.leadgen(jobs)
+    ou = BI.outreach(jobs, reply_drafts)
+    co = BI.consultations(bookings)
+    rev = BI.revenue(deals)
+    sp = BI.spend_view(meters, month_spent, month_cap, jobs)
+    return {
+        "demand": BI.demand(insights),
+        "markets": BI.markets(insights),
+        "channels": BI.channel_mix(insights),
+        "content": BI.content_attribution(insights, jobs),
+        "leadgen": lg, "outreach": ou, "consultations": co,
+        "funnel": BI.funnel(jobs, reply_drafts, bookings, deals),
+        "revenue": rev, "customers": BI.customers(deals),
+        "econ": ec, "targets": tg,
+        "unit": BI.unit_economics(deals, sp, ec, bookings, lg.get("found", 0)),
+        "spend": sp,
+        "cost": BI.cost_per_outcome(jobs, agents, deals, bookings,
+                                    lg.get("found", 0)),
+        "attainment": BI.attainment(tg, rev, lg, co),
+        "deals": deals,
+    }
+
+
 def build_risk_ctx(store, *, status=None, health=None, meters=None,
                    month_spent=0.0, month_cap=200.0, jobs=None, agents=None,
                    needles=None, last_eval=None, content_cost=0.0,
