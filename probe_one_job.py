@@ -54,9 +54,25 @@ def main() -> int:
         print("could not create the job:", r)
         return 1
 
+    store = API.get_store()
+
+    # tick() claims from the shared queue and honours the global pause switch,
+    # returning None in BOTH cases — so the first version of this probe stopped
+    # at 'created' having spent nothing and could not say which it was. Report
+    # the pause state, then advance THIS job directly: an isolated single-job
+    # test, with the engine left exactly as switched off as it was.
+    paused = False
+    try:
+        paused = bool(store.get_setting("paused", False))
+    except Exception:
+        pass
+    print(f"  engine paused: {paused}"
+          + ("  (advancing this one job anyway — the engine stays off)"
+             if paused else ""))
+
     seen, last = [], None
+    job = store.get(jid)
     for _ in range(40):
-        job = API.api_get_job(jid)
         st = job["status"]
         if st != last:
             steps = list((job.get("payload") or {}).keys())
@@ -66,7 +82,14 @@ def main() -> int:
         if st in ("AWAITING_APPROVAL", "failed", "revision_needed",
                   "halted_budget", "optimized"):
             break
-        if not API.api_tick().get("advanced"):
+        before = st
+        try:
+            orch.run_until_blocked(job, store)
+        except Exception as e:
+            print(f"  !! the step raised: {type(e).__name__}: {str(e)[:200]}")
+            break
+        if job["status"] == before:
+            print(f"  (no further progress from '{before}')")
             break
 
     job = API.api_get_job(jid)
@@ -99,6 +122,9 @@ def main() -> int:
 
     reason = job.get("halt_reason") or job.get("qa_verdict") or ""
     print(f"\n  It stopped at '{st}'.")
+    if st == "created" and not reason:
+        print("  Nothing ran and nothing raised. That is a WIRING problem, not "
+              "a model problem — check ANTHROPIC_API_KEY on the Connect board.")
     if reason:
         print(f"  Reason: {str(reason)[:400]}")
     if "Unterminated" in str(reason) or "JSONDecode" in str(reason):
