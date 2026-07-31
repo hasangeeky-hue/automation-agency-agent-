@@ -84,7 +84,7 @@ def _ctx(ctx):
     out = dict(ctx)
     for k in ("posts", "cadence", "creatives", "blog", "channels", "audience",
               "engagement", "paid", "traffic", "revenue", "budget", "hub",
-              "calendar"):
+              "calendar", "cost_series"):
         out[k] = _D(out.get(k))
     out["campaigns"] = _L(out.get("campaigns"))
     return out
@@ -498,8 +498,17 @@ def board_paid(ctx) -> str:
          "your campaigns", BLUE if pd_.get("planned_budget") else AMBER,
          "<button class='cta' onclick='sgaCampaign()'>Plan a paid campaign</button>"),
         ("Paid campaigns planned", _i(pd_.get("planned_count")), "with a budget",
-         "", "Each one becomes a utm_campaign when its posts go out.",
+         _split_donut([(_D(c).get("name", "")[:14], _f(_D(c).get("budget")), col)
+                       for c, col in zip(planned, (PINK, VIOLET, BLUE, AMBER, TEAL))]),
+         "Each one becomes a utm_campaign when its posts go out.",
          "your campaigns", BLUE, ""),
+        ("Ad platform readiness", len(_needs(pd_, "needs", PAID_SCOPE_ROWS)),
+         "platforms",
+         _statusgrid([(lbl, False, "no scope")
+                      for lbl, _sc in _needs(pd_, "needs", PAID_SCOPE_ROWS)]),
+         ("Red across the board is the honest picture: no ad platform reports "
+          "to this engine yet. The boards are built and waiting."),
+         "read scope", AMBER, ""),
         ("Cost per result", "—", "needs platform reporting", "",
          ("CPA, ROAS and cost per click all come from the ad platform's "
           "reporting API. None is connected."),
@@ -533,10 +542,6 @@ def board_paid(ctx) -> str:
           "Ads has its own 296-card section; this one is social only."),
          "navigation", VIOLET,
          "<button class='cta' onclick=\"nav('media')\">Open Media Buying</button>"),
-        ("Budget guardrail", "the engine cap", "applies to LLM spend only", "",
-         ("Ad spend happens on the platform, outside the engine, so the €200 cap "
-          "does not restrain it. Your planned budget is the only control here."),
-         "computed", AMBER, ""),
         ("Organic first", "recommended", "while spend is unmeasured", "",
          ("Paying to distribute content you cannot yet measure means buying "
           "reach you cannot evaluate. Organic posting and UTM-tracked traffic "
@@ -546,14 +551,14 @@ def board_paid(ctx) -> str:
          ("Spend, cost per result, paid/organic contribution and true ROI all "
           "become computable the moment one ad platform reports."),
          "read scope", BLUE, ""),
-        ("Attribution when it arrives", "UTM already in place", "no rework", "",
-         ("Paid social links will carry the same UTM scheme as organic, so paid "
-          "and organic will be comparable on day one."),
-         "post path", GREEN, ""),
         ("Planned is not spent", "an important difference", "on this board", "",
          ("Every paid figure here is your own plan. Nothing on this board is a "
           "measured euro until a platform reports one."),
          "principle", AMBER, ""),
+        ("Ad spend is not capped by the engine", "platform-billed", "outside it",
+         "", ("Ad platforms bill you directly, so the €200 engine cap cannot "
+              "restrain a campaign. Your platform budget is the only control."),
+         "judgement", AMBER, ""),
         ("Where the money is measured", "BI", "unit economics", "",
          "CAC and LTV:CAC live in Business Intelligence and read recorded deals.",
          "navigation", VIOLET,
@@ -646,19 +651,25 @@ def board_blog(ctx) -> str:
          ("Everything the engine published to the site." if b.get("has_data")
           else "Fills as the content agent publishes."),
          "published refs", GREEN if b.get("total") else AMBER, ""),
-        ("Production cost", _money(b.get("cost")), "all pieces", "",
-         "What the published library cost to generate.",
+        ("Production cost", _money(b.get("cost")), "all pieces",
+         _treemap([(_D(r).get("title", "")[:16] or "untitled", _f(_D(r).get("cost")))
+                   for r in recent[:8] if _f(_D(r).get("cost"))]),
+         "Size is what each piece cost to produce.",
          "job costs", BLUE, ""),
+        ("Daily output", len(_L(b.get("per_day"))), "publishing days",
+         _histogram([_i(v) for _d, v in _L(b.get("per_day"))]),
+         ("The distribution of pieces per day. Steady output beats a burst "
+          "followed by silence, for search and for social alike."),
+         "published refs", BLUE if b.get("per_day") else AMBER, ""),
         ("Cost per piece", _money(b.get("per_piece")), "each", "",
          "The unit cost of long-form content.",
          "computed", GREEN if b.get("per_piece") else AMBER, ""),
-        ("Publishing days", len(_L(b.get("per_day"))), "with a piece", "",
-         "Cadence matters more for search than volume in bursts.",
-         "computed", BLUE, ""),
-        ("Blog to social", "repurposed", "one piece, many posts", "",
-         ("Each blog is reshaped into channel-native posts rather than a link "
-          "dump — which is why the social library tracks formats."),
-         "engine", GREEN, ""),
+        ("Cost by piece", len(recent), "most recent",
+         _hbars([(_D(r).get("title", "")[:20] or "untitled", _f(_D(r).get("cost")))
+                 for r in recent[:8]]),
+         ("Ranked by what each one cost to produce. A piece far above the rest "
+          "usually means the agent retried."),
+         "job costs", BLUE if recent else AMBER, ""),
     ]
     cards += _slots(
         recent, 8,
@@ -674,13 +685,14 @@ def board_blog(ctx) -> str:
           "anyone found it."),
          "navigation", VIOLET,
          "<button class='cta' onclick=\"nav('seo')\">Open SEO/AEO/GEO</button>"),
-        ("Long-form vs social", "different jobs", "both needed", "",
-         ("Blogs earn search traffic that compounds; social earns attention that "
-          "decays. The engine does both from one produced piece."),
-         "judgement", VIOLET, ""),
         ("UTM on shared links", "on", "when posted to social", "",
          "A blog link shared to social carries the campaign and post tags.",
          "post path", GREEN, ""),
+        ("Long-form vs social", "different half-lives", "both needed", "",
+         ("A blog earns search traffic that compounds for years; a post earns "
+          "attention that decays in hours. The engine produces one piece and "
+          "serves both."),
+         "judgement", VIOLET, ""),
         ("German long-form", "none", "for DE + CH", "",
          "The widest content gap you have, and it affects social too.",
          "site audit", PINK, ""),
@@ -785,6 +797,18 @@ def board_audience(ctx) -> str:
          if au.get("measured") else "",
          str(au.get("note", "")),
          "read scope", GREEN if au.get("measured") else AMBER, ""),
+        ("Read scope per channel", len(_needs(au, "needs", READ_SCOPE_ROWS)),
+         "none connected",
+         _statusgrid([(lbl, False, "no read")
+                      for lbl, _sc in _needs(au, "needs", READ_SCOPE_ROWS)]),
+         ("The gap, drawn. Six channels can be posted to and none can be read "
+          "from. This grid turns green one platform at a time."),
+         "read scope", AMBER, ""),
+        ("Post vs read capability", 6, "channels",
+         _split_donut([("can post", 6, TEAL), ("can read", 0, PINK)]),
+         ("Every connector is write-only. That is the single fact behind every "
+          "blank card on this board."),
+         "connectors", AMBER, ""),
         ("Why this is empty", "post-only connectors", "by construction", "",
          ("Every social connector in this engine exposes post() and nothing "
           "else. There is no read path for followers, so this board shows "
@@ -812,14 +836,6 @@ def board_audience(ctx) -> str:
           "today and predict revenue."),
          "judgement", VIOLET,
          "<button class='cta' onclick=\"seoTab('sgatraffic')\">Open Social → Traffic</button>"),
-        ("Snapshots stored", _i(au.get("snapshots")), "audience readings", "",
-         "A snapshot is only ever written by a real platform read, so this can "
-         "never be faked.",
-         "read scope", BLUE, ""),
-        ("Growth rate", "—", "needs two snapshots", "",
-         "A growth line needs at least two real readings taken on different "
-         "days.",
-         "computed", AMBER, ""),
         ("What I will not do", "invent a number", "ever", "",
          ("The previous version of this section showed 'Follower growth' as a "
           "panel with no data behind it. An empty card that says why is more "
@@ -863,6 +879,18 @@ def board_engagement(ctx) -> str:
          _heatmap(_L(en.get("heat_rows")), _L(en.get("heat_cols")), _L(en.get("heat"))),
          str(en.get("note", "")),
          "read scope", GREEN if en.get("measured") else AMBER, ""),
+        ("Read scope per channel", len(_needs(en, "needs", READ_SCOPE_ROWS)),
+         "none connected",
+         _statusgrid([(lbl, False, "no read")
+                      for lbl, _sc in _needs(en, "needs", READ_SCOPE_ROWS)]),
+         "The gap, drawn. It turns green one platform at a time.",
+         "read scope", AMBER, ""),
+        ("The measure that does work", _i(tr.get("social_sessions")),
+         "sessions from social",
+         _donut(_f(tr.get("social_share"))),
+         ("Traffic is measured today, without any platform API. It is the "
+          "honest performance signal while engagement is unavailable."),
+         "GA4", GREEN if tr.get("social_sessions") else AMBER, ""),
         ("Best time to post", "—", "needs engagement data", "",
          ("This needs per-post engagement timestamps from each platform. The old "
           "card promised 'learns from your post performance' with no data "
@@ -879,9 +907,6 @@ def board_engagement(ctx) -> str:
                       f"Requires: {scope}.", "read scope", AMBER,
                       "<button class='cta' onclick=\"nav('system')\">Open System &amp; Wiring</button>"))
     cards += [
-        ("Engagement rate", "—", "interactions ÷ reach", "",
-         "Needs both halves, and neither is readable today.",
-         "read scope", AMBER, ""),
         ("Sessions per post", _n(tr.get("sessions_per_post")), "measured today",
          "", ("The engagement proxy that actually works right now, and the one "
               "that maps to revenue."),
@@ -900,9 +925,6 @@ def board_engagement(ctx) -> str:
         ("Comments are the real signal", "not likes", "for B2B", "",
          ("A comment costs the reader effort and starts a conversation you can "
           "answer. A like costs nothing and leads nowhere."),
-         "judgement", VIOLET, ""),
-        ("Shares beat both", "borrowed audience", "when measurable", "",
-         "A share puts you in front of a network you did not have to build.",
          "judgement", VIOLET, ""),
         ("What the old card claimed", "learns from your post performance",
          "with no data source", "",
@@ -1034,6 +1056,13 @@ def board_revenue(ctx) -> str:
          _donut(_f(rv.get("share_of_revenue"))),
          "Against every deal you have recorded.",
          "recorded deals", BLUE, ""),
+        ("Clients by source", len(_L(rv.get("matrix"))), "plotted",
+         _riskmatrix([(a, b, c) for a, b, c in _L(rv.get("matrix"))]),
+         ("Each recorded social deal placed by value and by how it arrived. "
+          "social_revenue() has always computed this; nothing drew it."
+          if rv.get("matrix") else
+          "Fills from the first deal you record with a social source."),
+         "recorded deals", BLUE if rv.get("matrix") else AMBER, ""),
         ("The full path", 3, "post → session → deal",
          _CH().sankey(_L(tr.get("flows"))),
          "Each step measured: delivered posts, GA4 sessions, recorded deals.",
@@ -1068,9 +1097,6 @@ def board_revenue(ctx) -> str:
         ("Sessions that produced it", _i(tr.get("social_sessions")), "social visits",
          "", "The traffic half of the equation.",
          "GA4", BLUE, ""),
-        ("Posts that produced it", _i(p.get("total")), "delivered", "",
-         "The effort half of the equation.",
-         "published refs", BLUE, ""),
     ]
     return _head("💶", "Social → revenue",
                  "Whether any of this produced money.") + _vizcards(cards[:16])
@@ -1119,6 +1145,13 @@ def board_budget(ctx) -> str:
          "computed", BLUE, ""),
     ]
     cards += [
+        ("Daily content spend", _money(_D(ctx.get("cost_series")).get("avg")),
+         "average per active day",
+         _CH().confband(_L(_D(ctx.get("cost_series")).get("values")), band=0.3)
+         if _D(ctx.get("cost_series")).get("ready") else "",
+         _D(ctx.get("cost_series")).get("note", ""),
+         "job costs",
+         GREEN if _D(ctx.get("cost_series")).get("ready") else AMBER, ""),
         ("Pacing", ("inside the cap" if _f(bg.get("pct_of_cap")) < 85
                     else "close to the cap"), "engine spend", "",
          "The engine halts new LLM steps at the cap rather than overspending.",
@@ -1148,10 +1181,6 @@ def board_budget(ctx) -> str:
          "The monthly and daily caps are set there.",
          "navigation", VIOLET,
          "<button class='cta' onclick=\"nav('system')\">Open System &amp; Wiring</button>"),
-        ("Spend discipline", "enforced", "not advisory", "",
-         "The cap is a hard stop on LLM work, which is why cost never surprises "
-         "you.",
-         "engine", GREEN, ""),
     ]
     return _head("💰", "Budget & pacing",
                  "What social costs you — paid, organic and engine.") + _vizcards(cards[:16])
@@ -1413,6 +1442,7 @@ if __name__ == "__main__":
                                         "source": "social"}], p, pd_),
         "budget": SGA.budget(camps, pd_, 41.7, 200.0, bl),
         "hub": SGA.google_hub(st, status, jobs, emails_sent=12),
+        "cost_series": SGA.cost_series(jobs),
     }
 
     for name, fn in [b for bs in _TAB_BOARDS.values() for b in bs]:

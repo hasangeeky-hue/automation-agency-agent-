@@ -601,7 +601,9 @@ def build_sga_ctx(store, *, jobs=None, status=None, insights=None, deals=None,
     p_ = SGA.posts(jobs)
     bl = SGA.blog_push(jobs)
     paid = SGA.paid_social(store, camps)
-    chans = sorted({c for x in camps for c in _L(_D(x).get("channels"))}) or None
+    chans = sorted({c for x in camps
+                    for c in (_D(x).get("channels") or [])
+                    if isinstance(c, str)}) or None
     return {
         "campaigns": camps,
         "calendar": SGA.calendar(camps),
@@ -617,6 +619,7 @@ def build_sga_ctx(store, *, jobs=None, status=None, insights=None, deals=None,
         "revenue": SGA.social_revenue(deals, p_, paid),
         "budget": SGA.budget(camps, paid, month_spent, month_cap, bl),
         "hub": SGA.google_hub(store, status, jobs, emails_sent=emails_sent),
+        "cost_series": SGA.cost_series(jobs),
     }
 
 

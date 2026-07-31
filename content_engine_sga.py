@@ -573,6 +573,30 @@ def budget(campaigns=None, paid=None, month_spent=0.0, month_cap=200.0,
 # ======================================================================
 #  ④ GOOGLE HUB — real counts, not estimates
 # ======================================================================
+def cost_series(jobs=None, days=14) -> dict:
+    """Daily content cost, so the spend band can show the SPREAD rather than a
+    single average. One expensive day hides inside a mean."""
+    per_day = {}
+    for j in _L(jobs):
+        d = _D(j)
+        at = _day(d.get("created_at"))
+        c = _f(d.get("cost_so_far_usd"))
+        if at and c:
+            per_day[at] = per_day.get(at, 0.0) + c
+    keys = sorted(per_day)[-days:]
+    vals = [round(per_day[k], 4) for k in keys]
+    avg = round(sum(vals) / len(vals), 4) if vals else None
+    return {"labels": keys, "values": vals, "avg": avg,
+            "peak": max(vals) if vals else None,
+            "ready": len(vals) > 1,
+            "note": ("Each point is one day's content spend; the band is the "
+                     "tolerance around the average. A point outside it is a day "
+                     "worth looking at."
+                     if len(vals) > 1 else
+                     "Needs at least two days with a recorded cost before a "
+                     "spread means anything.")}
+
+
 def google_hub(store=None, status=None, jobs=None, emails_sent=0,
                sheets_rows=None, drive_files=None) -> dict:
     """P23 — what the hub actually holds.
@@ -749,6 +773,14 @@ if __name__ == "__main__":
         google_hub(None, bad, None)
         calendar(bad if isinstance(bad, list) else None)
         list_campaigns(S())
+
+    cs = cost_series(jobs)
+    assert cs["ready"] is True and len(cs["values"]) == 2, cs   # 2 costed days
+    assert cost_series([])["ready"] is False
+    assert "at least two days" in cost_series([])["note"]
+    cs2 = cost_series([{"created_at": "2026-07-29T09:00:00Z", "cost_so_far_usd": 0.6},
+                       {"created_at": "2026-07-30T09:00:00Z", "cost_so_far_usd": 0.2}])
+    assert cs2["ready"] and cs2["peak"] == 0.6 and len(cs2["values"]) == 2
 
     print("sga self-check OK — UTM tagging never double-tags and keeps existing "
           "query strings, a *_not_configured ref counts as a FAILED post rather "
