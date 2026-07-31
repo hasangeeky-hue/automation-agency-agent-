@@ -1171,7 +1171,11 @@ def _outbox(jobs):
                     tsubj, traw = ed.get("subject") or "", ed.get("body")
                 else:
                     try:
-                        tsubj, traw = _C.outreach_touch(L, q, base_subj, oc.get("body", ""), step)
+                        # `oc` carries the AI-written body_2 / body_3. Without it
+                        # the preview fell back to the generic bumps while the
+                        # send used the real ones.
+                        tsubj, traw = _C.outreach_touch(L, q, base_subj,
+                                                        oc.get("body", ""), step, oc)
                     except Exception:
                         tsubj, traw = base_subj, oc.get("body", "")
                 thtml = None
@@ -1296,17 +1300,21 @@ def _outbox(jobs):
                 f"{tblocks}</div>")
         actions = (
             f"{sendbtn}{all3}"
-            + (f"<button class='cbtn' style='padding:3px 10px' onclick=\"editEmail({i})\">✏️ Edit next</button>"
+            + (f"<button class='cbtn' style='padding:3px 10px' onclick=\"editEmail({i})\">"
+               f"✏️ Edit email {nxt} of 3</button>"
                if status != "complete" else "")
             + (f"<button class='cbtn warn' style='padding:3px 10px' onclick=\"trashEmail('{_esc(jid)}','{_esc(email)}')\">🗑 Delete</button>")
             + (f"<div id='ed-{i}' style='display:none;margin-top:8px'>"
                f"<input id='eds-{i}' value='{_esc(subj)}' style='width:100%;margin-bottom:6px' placeholder='Subject'>"
                f"<textarea id='edb-{i}' style='width:100%;min-height:150px;font-family:inherit'>{_esc(raw)}</textarea>"
                "<div class='ctrl' style='margin-top:6px'>"
-               f"<button class='sbtn' onclick=\"saveEdit('{_esc(jid)}','{_esc(email)}',{i})\">💾 Save edit</button>"
+               f"<button class='sbtn' onclick=\"saveEdit('{_esc(jid)}','{_esc(email)}',{i},{nxt})\">"
+               f"💾 Save email {nxt}</button>"
                f"<button class='cbtn' onclick=\"editEmail({i})\">Cancel</button></div>"
-               "<div class='dim' style='margin-top:4px'>Edit the message only — the branded footer (name, address, "
-               "booking button, unsubscribe) is added automatically.</div></div>" if status != "complete" else ""))
+               f"<div class='dim' style='margin-top:4px'>You are editing <b>email {nxt} of 3</b> "
+               f"for this lead — the other two are unaffected. Edit the message only; the "
+               f"branded footer (name, address, booking button, unsubscribe) is added "
+               f"automatically.</div></div>" if status != "complete" else ""))
         rows += (f"<tr class='obxrow' data-pg='{pg}'{'' if pg == 0 else ' style=display:none'}><td>{chk}</td>"
                  f"<td><b>{_esc(L.get('name',''))}</b><div class='dim'>{_esc(L.get('company',''))}</div></td>"
                  f"<td class='mut'>{_esc(q.get('business') or q.get('category') or '—')}</td>"
@@ -1474,7 +1482,9 @@ def _followups_due(jobs):
                 continue
             q = qmap.get(e) or {}
             try:
-                subj, raw = _C.outreach_touch(L, q, (oc.get("subject_variants") or ["Follow-up"])[0], oc.get("body", ""), nxt)
+                subj, raw = _C.outreach_touch(
+                    L, q, (oc.get("subject_variants") or ["Follow-up"])[0],
+                    oc.get("body", ""), nxt, oc)
                 _pl, html = mailer.compose_outreach(raw, j)
             except Exception:
                 subj, html = "(follow-up)", ""
@@ -4251,10 +4261,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "alert(j.ok?'✓ Reply sent to the customer.':'Not sent: '+(j.ref||j.error||''));location.reload();}catch(e){alert('Failed: '+e);}}"
               "async function dismissReply(id){if(!confirm('Dismiss this reply (no answer)?'))return;"
               "try{await fetch('/reply/dismiss',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})});location.reload();}catch(e){alert('Failed: '+e);}}"
-              "async function saveEdit(job,email,i){var s=(document.getElementById('eds-'+i)||{}).value||'';var b=(document.getElementById('edb-'+i)||{}).value||'';"
+              "async function saveEdit(job,email,i,touch){var s=(document.getElementById('eds-'+i)||{}).value||'';var b=(document.getElementById('edb-'+i)||{}).value||'';"
               "if(b.trim().length<10){alert('The email body looks too short.');return;}"
-              "try{var r=await fetch('/outreach/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email,subject:s,body:b})});var j=await r.json();"
-              "if(j.ok){alert('✓ Saved your edit. It will preview and send exactly as you wrote it.');location.reload();}else{alert('Save failed: '+(j.error||''));}}catch(e){alert('Save failed: '+e);}}"
+              "try{var r=await fetch('/outreach/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email,subject:s,body:b,touch:(touch||1)})});var j=await r.json();"
+              "if(j.ok){alert('✓ Saved email '+(touch||1)+'. It will preview and send exactly as you wrote it.');location.reload();}else{alert('Save failed: '+(j.error||''));}}catch(e){alert('Save failed: '+e);}}"
               "async function sendOne(job,email){if(!confirm('Send this email to '+email+'?'))return;"
               "try{var r=await fetch('/outreach/send_one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:job,email:email})});var j=await r.json();"
               "alert(j.ok?('✓ Sent to '+email):('Not sent: '+(j.ref||j.error||'unknown')));location.reload();}catch(e){alert('Failed: '+e);}}"
