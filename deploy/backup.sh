@@ -53,11 +53,21 @@ if [ "$SIZE" -lt 2000 ]; then
     mv "$OUT" "${OUT}.SUSPECT"
     exit 1
 fi
-if ! zcat "$OUT" | grep -q "CREATE TABLE.*settings"; then
+# NOTE: deliberately `grep -c`, not `grep -q`. With `set -o pipefail`, `grep -q`
+# exits the moment it matches, zcat takes SIGPIPE (141), and the PIPELINE reports
+# failure — so a perfectly good dump gets condemned as missing its settings
+# table. grep -c reads the whole stream, so the exit code means what it says.
+TABLES=$(zcat "$OUT" | grep -c "^CREATE TABLE" || true)
+SETTINGS=$(zcat "$OUT" | grep -c "CREATE TABLE.*settings" || true)
+if [ "${SETTINGS:-0}" -lt 1 ]; then
     echo "!! the dump has no settings table — your credentials are NOT in it." >&2
+    echo "   (it does contain ${TABLES:-0} other tables)" >&2
     mv "$OUT" "${OUT}.SUSPECT"
     exit 1
 fi
+ROWCOPY=$(zcat "$OUT" | grep -c "^COPY public.settings" || true)
+echo "    contains ${TABLES} tables, settings included$([ "${ROWCOPY:-0}" -gt 0 ] \
+    && echo " with its rows" || echo " (SCHEMA ONLY — no rows!)")"
 
 echo "==> wrote $OUT  ($(numfmt --to=iec "$SIZE" 2>/dev/null || echo "$SIZE bytes"))"
 

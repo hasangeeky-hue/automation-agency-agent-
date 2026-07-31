@@ -91,7 +91,11 @@ SITE_INTELLIGENCE = {
         "health_score": {"type": "number"},
         "top_issues": {"type": "array", "maxItems": 5, "items": _SEVERITY_ISSUE},
         "quick_wins": {"type": "array", "maxItems": 3, "items": {"type": "string"}},
-        "content_opportunities": {"type": "array", "items": {"type": "string"}},
+        # Capped. Every other array here is bounded; this one was not, so the
+        # response length depended on how talkative the model felt — which is
+        # how it kept overrunning its token budget and truncating the JSON.
+        "content_opportunities": {"type": "array", "maxItems": 5,
+                                  "items": {"type": "string"}},
         "summary": {"type": "string"},
     },
     "additionalProperties": False,
@@ -106,15 +110,16 @@ COMPETITOR_INTEL = {
     "properties": {
         "competitors": {
             "type": "array",
+            "maxItems": 4,
             "items": {
                 "type": "object",
                 "required": ["name", "content_types", "topics_they_own",
                              "topics_they_miss", "weakness"],
                 "properties": {
                     "name": {"type": "string"},
-                    "content_types": {"type": "array", "items": {"type": "string"}},
-                    "topics_they_own": {"type": "array", "items": {"type": "string"}},
-                    "topics_they_miss": {"type": "array", "items": {"type": "string"}},
+                    "content_types": {"type": "array", "maxItems": 5, "items": {"type": "string"}},
+                    "topics_they_own": {"type": "array", "maxItems": 5, "items": {"type": "string"}},
+                    "topics_they_miss": {"type": "array", "maxItems": 5, "items": {"type": "string"}},
                     "weakness": {"type": "string"},
                 },
                 "additionalProperties": False,
@@ -157,6 +162,7 @@ CONTENT_STRATEGIST = {
         "week_of": {"type": "string"},
         "calendar": {
             "type": "array",
+            "maxItems": 7,
             "items": {
                 "type": "object",
                 "required": ["date", "type", "working_title", "primary_keyword",
@@ -243,6 +249,7 @@ SEO_OPTIMIZER = {
                 "readability_grade": {"type": "number"},
                 "internal_link_suggestions": {
                     "type": "array",
+                    "maxItems": 5,
                     "items": {
                         "type": "object",
                         "required": ["anchor", "target_hint", "placement"],
@@ -259,7 +266,7 @@ SEO_OPTIMIZER = {
             },
             "additionalProperties": False,
         },
-        "fixes": {"type": "array", "items": {"type": "string"}},
+        "fixes": {"type": "array", "maxItems": 8, "items": {"type": "string"}},
     },
     "additionalProperties": False,
 }
@@ -276,6 +283,7 @@ QA_COMPLIANCE = {
         "brand_voice_match": {"type": "boolean"},
         "issues": {
             "type": "array",
+            "maxItems": 6,
             "items": {
                 "type": "object",
                 "required": ["issue", "location", "severity", "fix"],
@@ -293,7 +301,7 @@ QA_COMPLIANCE = {
             "required": ["all_defensible", "flagged_claims"],
             "properties": {
                 "all_defensible": {"type": "boolean"},
-                "flagged_claims": {"type": "array", "items": {"type": "string"}},
+                "flagged_claims": {"type": "array", "maxItems": 5, "items": {"type": "string"}},
             },
             "additionalProperties": False,
         },
@@ -364,6 +372,7 @@ OPTIMIZER = {
         },
         "double_down": {
             "type": "array",
+            "maxItems": 4,
             "items": {
                 "type": "object",
                 "required": ["what", "reason"],
@@ -374,6 +383,7 @@ OPTIMIZER = {
         },
         "reduce_or_cut": {
             "type": "array",
+            "maxItems": 4,
             "items": {
                 "type": "object",
                 "required": ["what", "reason"],
@@ -388,9 +398,9 @@ OPTIMIZER = {
                          "winning_email_subject_style", "platform_focus"],
             "properties": {
                 "content_mix": {"type": "string"},
-                "topic_priorities": {"type": "array", "items": {"type": "string"}},
+                "topic_priorities": {"type": "array", "maxItems": 5, "items": {"type": "string"}},
                 "winning_email_subject_style": {"type": "string"},
-                "platform_focus": {"type": "array", "items": {"type": "string"}},
+                "platform_focus": {"type": "array", "maxItems": 4, "items": {"type": "string"}},
             },
             "additionalProperties": False,
         },
@@ -407,6 +417,7 @@ SEGMENTER = {
     "properties": {
         "segments": {
             "type": "array",
+            "maxItems": 6,
             "items": {
                 "type": "object",
                 "required": ["bucket_id", "label", "one_line_profile",
@@ -485,7 +496,7 @@ OUTREACH_COPY = {
         "subject_2_de": {"type": "string"},
         "subject_3_de": {"type": "string"},
         "cta": {"type": "string"},
-        "personalization_used": {"type": "array", "items": {"type": "string"}},
+        "personalization_used": {"type": "array", "maxItems": 5, "items": {"type": "string"}},
     },
     "additionalProperties": False,
 }
@@ -664,7 +675,9 @@ JUDGE = {
     "properties": {
         "score": {"type": "number"},
         "verdict": {"type": "string", "enum": ["pass", "revise", "block"]},
-        "issues": {"type": "array", "items": {"type": "string"}},
+        # capped: judge has a 500-token budget and an unbounded issue list
+        # is how a response overruns it and truncates into invalid JSON
+        "issues": {"type": "array", "maxItems": 6, "items": {"type": "string"}},
         "suggestion": {"type": "string"},
     },
     "additionalProperties": False,
@@ -748,6 +761,7 @@ SEO_ANALYST = {
         "headline": {"type": "string"},
         "reads": {
             "type": "array",
+            "maxItems": 8,
             "items": {
                 "type": "object",
                 "additionalProperties": False,
@@ -761,6 +775,7 @@ SEO_ANALYST = {
         },
         "top_moves": {
             "type": "array",
+            "maxItems": 5,
             "items": {
                 "type": "object",
                 "additionalProperties": False,

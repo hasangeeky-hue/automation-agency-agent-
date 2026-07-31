@@ -88,8 +88,8 @@ _CACHE_READ_MULT = 0.10    # cache read discount
 # dynamic and handled in _max_tokens_for().
 # ---------------------------------------------------------------------------
 _MAX_TOKENS = {
-    "site_intelligence": 500,
-    "authority_backlinks": 500,
+    "site_intelligence": 1400,   # 5 issues x 4 prose fields + wins
+    "authority_backlinks": 1400,  # shares the same narrate shape
     "competitor_intel": 800,
     "content_strategist": 900,
     "content_producer_image": 300,
@@ -390,6 +390,23 @@ def set_web_research_cost_sink(fn):
     _WEB_RESEARCH_COST_SINK = fn
 
 
+class OutputTruncated(RuntimeError):
+    """The model hit its token ceiling before it finished the JSON.
+
+    Raised INSTEAD of letting json.loads fail, because the JSONDecodeError says
+    'Unterminated string at char 2293' and this says which skill ran out of
+    room, what its budget was, and what to change."""
+
+
+def _truncated(stop_reason: str, spec: "PromptSpec", chars: int) -> None:
+    if str(stop_reason) in ("max_tokens", "length"):
+        raise OutputTruncated(
+            f"{spec.skill_name} ran out of room: it hit its {spec.max_tokens}-token "
+            f"ceiling after {chars} characters, so the JSON was cut off mid-value. "
+            f"Raise _MAX_TOKENS['{spec.skill_name}'] in content_engine_providers.py, "
+            f"or cap the unbounded arrays in its schema.")
+
+
 def anthropic_call(model: str, spec: PromptSpec) -> SkillResult:
     client = _get_anthropic()
     kwargs = dict(
@@ -406,7 +423,14 @@ def anthropic_call(model: str, spec: PromptSpec) -> SkillResult:
     resp = client.messages.create(**kwargs)
 
     text = next((b.text for b in resp.content if b.type == "text"), "")
-    data = json.loads(text)  # output_config guarantees valid JSON in that block
+    # A structured-output schema guarantees the SHAPE, not that the model was
+    # given room to finish. When max_tokens cuts the response mid-string the
+    # JSON is invalid no matter what the schema said, and json.loads raises an
+    # opaque "Unterminated string at char 2293" that names neither the skill nor
+    # the cause. Fifteen content jobs died on exactly that, all at step one,
+    # for days. Say what actually happened instead.
+    _truncated(getattr(resp, "stop_reason", ""), spec, len(text))
+    data = json.loads(text)
 
     u = resp.usage
     usage = {
@@ -462,7 +486,10 @@ def openai_call(model: str, spec: PromptSpec) -> SkillResult:
         }
     resp = client.chat.completions.create(**kwargs)
 
-    data = json.loads(resp.choices[0].message.content)
+    _ch = resp.choices[0]
+    _content = _ch.message.content or ""
+    _truncated(getattr(_ch, "finish_reason", ""), spec, len(_content))
+    data = json.loads(_content)
     u = resp.usage
     usage = {
         "input_tokens": getattr(u, "prompt_tokens", 0),
@@ -503,7 +530,7 @@ if __name__ == "__main__":
         "payload": {"type": "blog", "leads": [{"id": "1"}, {"id": "2"}]},
     }
     checks = {
-        "site_intelligence": 500,
+        "site_intelligence": 1400,
         "content_producer": 2600,          # payload.type == blog
         "content_producer_image": 300,
         # Mirrors _max_tokens_for(): 140 tokens/lead + 150, floor 400. (This
@@ -526,5 +553,49 @@ if __name__ == "__main__":
                          {"input_tokens": 200, "output_tokens": 500,
                           "cache_read_input_tokens": 4000})
     assert c > 0, "cost should be > 0"
+
+    # ---- truncation must be NAMED, not left to json.loads ------------------
+    class _Spec:
+        skill_name, max_tokens = "site_intelligence", 1400
+    for reason in ("max_tokens", "length"):
+        try:
+            _truncated(reason, _Spec(), 2293)
+            raise AssertionError(f"{reason} must raise OutputTruncated")
+        except OutputTruncated as e:
+            assert "ran out of room" in str(e) and "site_intelligence" in str(e)
+            assert "1400" in str(e), "the error must name the budget to change"
+    _truncated("end_turn", _Spec(), 900)      # a normal finish must NOT raise
+
+    # ---- an unbounded array on a tight budget is how the JSON gets cut off.
+    # site_intelligence had a 500-token ceiling and an uncapped
+    # content_opportunities array; fifteen content jobs died at step one on
+    # "Unterminated string at char 2293". Any skill whose schema can grow
+    # without limit needs room to finish, so tight budget + unbounded array is
+    # now a build failure rather than something discovered in production.
+    import content_engine_schemas as _SC
+    TIGHT = 1000
+    risky = []
+    for _name, _obj in _SC.SCHEMAS.items():
+        _sch = getattr(_obj, "schema", _obj)
+        if not isinstance(_sch, dict):
+            continue
+        budget = _MAX_TOKENS.get(_name)
+        if budget is None or budget > TIGHT:
+            continue                      # dynamic, or roomy enough
+        stack = [_sch.get("properties", {})]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                if node.get("type") == "array" and "maxItems" not in node:
+                    risky.append((_name, budget))
+                    break
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+    assert not risky, (
+        "these skills can emit an unbounded array on a budget too small to "
+        f"finish it, which truncates the JSON mid-value: {sorted(set(risky))}")
+
     print(f"OK — build_prompt + routing + cost verified for {len(checks)} skills "
-          f"(sample cost check ${c}).")
+          f"(sample cost check ${c}); truncation is named, and no tight-budget "
+          f"skill can emit an unbounded array.")
