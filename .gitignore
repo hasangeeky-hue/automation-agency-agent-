@@ -15,8 +15,18 @@ venv/
 # Secrets & local state — NEVER commit (the .env.example IS committed)
 deploy/.env
 .env
-*.sql
 fixtures/
+
+# DATABASE DUMPS. A pg_dump of this engine contains every credential in
+# PLAINTEXT — all 91 settings rows, the leads, the deals. `*.sql` alone did not
+# cover `engine-*.sql.gz`, and a dump copied into this directory would have been
+# committed by `git add -A` and pushed to GitHub.
+*.sql
+*.sql.gz
+*.dump
+*.sql.gz.SUSPECT
+engine-*.gz
+content-engine-backups/
 
 # OS / editor
 .DS_Store

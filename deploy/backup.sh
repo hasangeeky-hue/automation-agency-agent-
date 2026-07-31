@@ -34,6 +34,17 @@ dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"    # dumps contain every credential in plaintext
 
+# A dump holds every credential in PLAINTEXT. Inside a git working tree it is one
+# `git add -A` away from being pushed to a public remote, so refuse outright
+# rather than rely on .gitignore being right.
+if git -C "$BACKUP_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "!! ${BACKUP_DIR} is inside a git repository." >&2
+    echo "   A dump contains every API key in plaintext; one 'git add -A' would" >&2
+    echo "   push them to the remote. Choose a directory outside the repo:" >&2
+    echo "     BACKUP_DIR=/opt/content-engine-backups $0 ${*:-}" >&2
+    exit 1
+fi
+
 echo "==> dumping ${DB_NAME} ..."
 # --clean --if-exists so the dump can be restored over an existing database.
 if ! dc exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" --clean --if-exists \
