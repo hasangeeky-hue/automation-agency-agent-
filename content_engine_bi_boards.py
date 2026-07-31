@@ -1569,9 +1569,9 @@ def bi_section(ctx) -> str:
               "<button class='cbtn' onclick=\"act('/insights/refresh')\">🔄 Refresh GA4 + Search Console</button>"
               "</div>")
     return (_TAB_CSS
-            + "<div class='sgrprail'>" + grouprail + "</div>"
+            + "<div class='sgroups'>" + grouprail + "</div>"
             + runbar
-            + "<div class='stabbar'>" + bar + "</div>"
+            + "<div class='stabs'>" + bar + "</div>"
             + "<div class='spanels'>" + body + "</div>")
 
 

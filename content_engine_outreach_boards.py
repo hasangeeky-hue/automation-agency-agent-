@@ -1393,9 +1393,9 @@ def outreach_section(ctx) -> str:
               "<button class='cbtn' onclick='trackToggle()'>👁 Toggle open tracking</button>"
               "</div>")
     return (_TAB_CSS
-            + "<div class='sgrprail'>" + grouprail + "</div>"
+            + "<div class='sgroups'>" + grouprail + "</div>"
             + runbar
-            + "<div class='stabbar'>" + bar + "</div>"
+            + "<div class='stabs'>" + bar + "</div>"
             + "<div class='spanels'>" + body + "</div>")
 
 

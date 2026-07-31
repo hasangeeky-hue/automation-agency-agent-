@@ -60,7 +60,18 @@ h1{font-size:15.5px;margin:0;font-weight:700}.brand small{display:block;color:va
 .page{display:none}.page.on{display:block}
 .ph{margin:0 0 4px;font-size:18px;font-weight:750;letter-spacing:-.01em}
 .psub{color:var(--mut);font-size:12.5px;margin:0 0 16px}
-.grid{display:grid;gap:12px}.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}.g4{grid-template-columns:repeat(4,1fr)}
+.grid{display:grid;gap:12px}
+/* Cards lay out ACROSS, not down. The old rule was a fixed 3 columns that a
+   max-width:860px query flattened to a single column - so on any window under
+   860px (which is most of them, and every embedded browser pane) all 2,255
+   cards stacked one per row and every board read as an endless vertical list.
+   These widths are content-driven: 2 across from 560px, 3 from 1080px, and a
+   single column only on a real phone. */
+.g2,.g3,.g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(min-width:1080px){.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .g4{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:1440px){.g4{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:559px){.g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}}
 .card{background:var(--s1);border:1px solid var(--line);border-radius:13px;padding:15px 16px}
 .full{grid-column:1/-1}
 .ct{font-size:13.5px;font-weight:700;margin:0}
@@ -108,7 +119,15 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .cform input{background:#0a0f1b;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:8px 10px;font:inherit;font-size:12px}
 .cform input:focus{outline:none;border-color:var(--teal)}
 .cform .sbtn{align-self:flex-start;margin-top:3px}
-@media(max-width:860px){.shell{flex-direction:column}.side{width:auto;flex-direction:row;overflow-x:auto;position:static;max-height:none}.navb{white-space:nowrap}.navb .bd{display:none}.g2,.g3,.g4{grid-template-columns:1fr}}
+/* The sidebar turns into a horizontal strip on a narrow window. It carried
+   overflow-x:auto but no min-width:0, and a flex item defaults to min-width:auto
+   - so it refused to shrink below its content, grew to 1263px inside a 768px
+   shell and dragged the WHOLE PAGE into sideways scrolling. min-width:0 is what
+   makes its own overflow-x:auto actually engage. The grid columns are no longer
+   touched here; they are set once, above, and stay horizontal. */
+@media(max-width:860px){.shell{flex-direction:column;min-width:0}
+  .side{width:auto;min-width:0;max-width:100%;flex-direction:row;overflow-x:auto;position:static;max-height:none}
+  .navb{white-space:nowrap;flex:0 0 auto}.navb .bd{display:none}}
 .bpwrap{display:flex;gap:4px;align-items:stretch;overflow-x:auto;padding:8px 0 4px}
 .bpcol{flex:1 1 0;min-width:196px;display:flex;flex-direction:column;gap:8px}
 .bpcl{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);font-weight:700;padding:0 2px 3px;display:flex;align-items:center;gap:6px}
@@ -4660,6 +4679,41 @@ if __name__ == "__main__":
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
+    # ---- every class the page uses must actually be STYLED.
+    # Five merged sections shipped `stabbar` and `sgrprail`, which no stylesheet
+    # ever defined. An unstyled div is display:block, so both navigation rails
+    # stacked one button per row and every one of those sections read as an
+    # endless vertical list before you reached a single card. A class name with
+    # no rule behind it fails silently — nothing errors, it just looks wrong.
+    import re as _re2
+    # The board kit ships its own <style> block, so BOTH stylesheets count.
+    _allcss = CSS
+    try:
+        import content_engine_seo_boards as _SB2
+        _allcss += _SB2._TAB_CSS
+    except Exception as _ce:
+        raise AssertionError(f"cannot read the board stylesheet: {_ce}")
+    _styled = set(_re2.findall(r"[.#]([A-Za-z][\w-]*)", _allcss))
+    _used = set()
+    for _attr in _re2.findall(r"class='([^']+)'", html):
+        _used.update(_attr.split())
+    _LAYOUT = {c for c in _used
+               if c.startswith(("s", "g", "c", "n", "b", "m", "p", "t", "w", "f"))}
+    # Verified inert: each of these either carries its own inline styles or is a
+    # default state that deliberately inherits (.sev-ok / .sev-info keep the
+    # normal card border; only critical and warn recolour it).
+    _INERT = {"mlog", "sev-ok", "sev-info", "spanels", "subsec"}
+    _unstyled = sorted(c for c in _LAYOUT if c not in _styled and c not in _INERT)
+    assert not _unstyled, (
+        "these classes are used in the markup but no CSS rule defines them, so "
+        f"they render as unstyled blocks: {_unstyled}")
+    # the rails that actually carry the sub-section buttons must be horizontal
+    for _rail in ("stabs", "sgroups"):
+        assert f"class='{_rail}'" in html, f"{_rail} rail missing from the page"
+        assert f".{_rail}{{display:flex" in _allcss, f".{_rail} must lay out as a flex row"
+    assert html.count("class='stabs'") >= 9, (
+        "every section with sub-boards needs the styled horizontal tab rail; "
+        f"found {html.count(chr(39).join(['class=', 'stabs', '']))}")
     print("OK — 9 pages. Risk + AI Workforce + Infrastructure now render as ONE "
           "Risk & Infrastructure section (208 cards) and six more render as ONE "
           "Business Intelligence section (268 cards, 15 boards, Executive "
