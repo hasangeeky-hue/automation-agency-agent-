@@ -4163,6 +4163,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "body:JSON.stringify({avg_deal_value:d,gross_margin_pct:m,consult_to_client_pct:c,lead_to_consult_pct:l})});"
               "var j=await r.json();alert('Saved. Target CPA per lead: EUR '+((j.targets||{}).target_cpa_lead||'-'));location.reload();}"
               "catch(e){alert('Failed: '+e);}}"
+              "function sysTab(id){seoTab(id);}"
+              "function runSeoDue(){seoRun('/seo/due','Running what is due…',"
+              "'Run every SEO engine that is due right now? Free engines run "
+              "immediately; paid ones respect your cap.');}"
               "function leadEdit(job,email){"
               "var f=['name','title','company','linkedin','phone','country','website'];"
               "var b={job_id:job,email:email},any=false;"
@@ -4170,7 +4174,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "if(v){b[f[i]]=v;any=true;}}"
               "if(!any){alert('Nothing changed.');return;}post('/leads/edit',b);}"
               "function leadDelete(job,email){"
-              "if(!confirm('Remove '+email+'?\n\nThe lead leaves the sendable list and the "
+              "if(!confirm('Remove '+email+'?\\n\\nThe lead leaves the sendable list and the "
               "address is suppressed, so it can never be emailed. The record is kept.'))return;"
               "post('/leads/delete',{job_id:job,email:email});}"
               "function trackToggle(){"
@@ -4368,6 +4372,34 @@ if __name__ == "__main__":
                  "IS DEMAND THERE", "IS IT BECOMING PIPELINE",
                  "IS IT BECOMING MONEY", "DOES THE MATH WORK"):
         assert need in html, need
+    # ---- the inline JS must PARSE. A single bad string literal takes down
+    # every handler on the page: nav() stops working, the sections stop
+    # opening and the dashboard reads as completely static. The block is one
+    # concatenated line, so a raw newline in it means a Python escape leaked
+    # into a JS string.
+    import re as _re
+    _js = max(_re.findall(r"<script[^>]*>(.*?)</script>", html, _re.S), key=len)
+    for _bad, _name in ((chr(10), "newline"), (chr(13), "carriage return")):
+        if _bad in _js:
+            _at = _js.index(_bad)
+            raise AssertionError(
+                f"raw {_name} inside the inline JS at offset {_at} - this is a "
+                f"SyntaxError and blanks the whole dashboard. Near: "
+                f"...{_js[max(0, _at - 90):_at + 40]!r}")
+    for _ch, _cl in (("{", "}"), ("(", ")"), ("[", "]")):
+        assert _js.count(_ch) == _js.count(_cl), (
+            f"unbalanced {_ch}{_cl} in the inline JS: "
+            f"{_js.count(_ch)} vs {_js.count(_cl)}")
+    # every handler an onclick names must actually exist
+    _JS_KEYWORDS = {"if", "for", "while", "return", "switch", "catch",
+                    "typeof", "new", "delete", "void", "function"}
+    _called = set(_re.findall(r"onclick=[\"']?([A-Za-z_]\w*)\(", html))
+    _defined = set(_re.findall(r"function\s+([A-Za-z_]\w*)\s*\(", _js))
+    _missing = sorted(c for c in _called
+                      if c not in _defined and c not in _JS_KEYWORDS
+                      and c not in ("window", "location", "alert", "confirm"))
+    assert not _missing, f"onclick calls a function nothing defines: {_missing}"
+
     import re as _re
     _ids = _re.findall(r"id='sec-([a-z0-9_]+)'", html)
     assert _ids == ["mission", "bi", "ops", "riskinfra", "content",
