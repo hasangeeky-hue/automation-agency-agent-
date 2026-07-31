@@ -129,6 +129,22 @@ chk(props and props[0].get("requires_approval") is True,
 chk(props and "1 sessions" in props[0].get("why", ""),
     "it states the number it was judged on", props[0].get("why", "")[:60] if props else "")
 
+print("\n== 3b. The proposal is VISIBLE, not just stored ==")
+# It reached Postgres and the /proposal endpoint but no board rendered it. A
+# proposal the approval queue does not show is not in the approval queue.
+import content_engine_cockpit as CK
+import content_engine_cockpit_boards as CKB
+
+pv = CK.proposals(st3)
+chk(pv["count"] == 1, "the cockpit context carries it", str(pv["count"]))
+page = CKB.cockpit_pages({"proposals": pv})["ckcontent"]
+chk("Rewrite proposals" in page, "the approval board shows the count")
+chk("measured poor" in page or "measured-poor" in page,
+    "it is labelled as measured, so it cannot be read as a guess")
+chk("proposal(" in page, "it carries a button a person can actually press")
+chk(bool(props) and props[0]["job_id"] in page,
+    "the specific piece is named on the board")
+
 print("\n== 4. Outreach closes on data the engine already had ==")
 import content_engine_outreach as OUT
 

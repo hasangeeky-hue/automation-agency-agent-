@@ -368,6 +368,30 @@ def _approval_board(kind, label, icon, count, live_key, blurb):
              "Declining with a reason is how the engine learns your taste.",
              "job queue", BLUE, ""),
         ]
+        # A measured-poor piece earns a PROPOSAL, and it belongs HERE — in the
+        # queue where you already decide things — not only in the database.
+        if kind == "content":
+            pr = _D(ctx.get("proposals"))
+            cards.append(
+                ("Rewrite proposals", _i(pr.get("count")), "measured poor",
+                 "", str(pr.get("note", "")), "measured outcome",
+                 AMBER if _i(pr.get("count")) else GREEN, ""))
+            cards += _slots(
+                _L(pr.get("rows")), 4,
+                lambda i, r: (
+                    _s(_D(r).get("title"))[:30] or "Untitled",
+                    f"{_i(_D(_D(r).get('measured')).get('sessions'))} sessions",
+                    _s(_D(_D(r).get("measured")).get("period")), "",
+                    f"{_s(_D(r).get('why'))} {_s(_D(r).get('suggested_focus'))}",
+                    "measured outcome", AMBER,
+                    f"<button class='cta' onclick=\"proposal('"
+                    f"{_s(_D(r).get('job_id'))}',true)\">Queue a rewrite</button>"
+                    f"<button class='cta' onclick=\"proposal('"
+                    f"{_s(_D(r).get('job_id'))}',false)\">Leave it</button>"),
+                "Proposal slot", "none waiting",
+                ("A piece appears here only after GA4 reported on it and the "
+                 "numbers came back under the floor."),
+                "measured outcome", GREEN)
         extra = {
             "content": [
                 ("See it before approving", "six previews", "per platform", "",

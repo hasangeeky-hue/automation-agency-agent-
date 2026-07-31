@@ -4369,6 +4369,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "function runSeoDue(){seoRun('/seo/due','Running what is due…',"
               "'Run every SEO engine that is due right now? Free engines run "
               "immediately; paid ones respect your cap.');}"
+              # A rewrite PROPOSAL: accept queues a rewrite, decline records
+              # why. Either way a person decided it, which is the point.
+              "async function proposal(id,ok){"
+              "var n='';"
+              "if(!ok){n=prompt('Why are you leaving it? (recorded so the engine learns)')||'';}"
+              "else if(!confirm('Queue a rewrite of this piece?'))return;"
+              "try{var r=await fetch('/proposal',{method:'POST',headers:{'Content-Type':'application/json'},"
+              "body:JSON.stringify({job_id:id,accept:ok,note:n})});"
+              "var x=await r.json();alert(x.ok?x.message:('Not saved: '+(x.error||'')));"
+              "if(x.ok)location.reload();}catch(e){alert('Failed: '+e);}}"
               "async function setBudget(){"
               "var m=prompt('Monthly cap in euros (leave blank to keep)');"
               "var d=prompt('Daily cap in euros (blank to keep)');"

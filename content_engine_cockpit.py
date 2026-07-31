@@ -320,6 +320,30 @@ def loop_closure(status=None, store=None) -> dict:
     }
 
 
+def proposals(store=None) -> dict:
+    """Rewrite proposals waiting for a person.
+
+    A measured-poor piece earns one of these. It was reaching Postgres and the
+    /proposal endpoint but no board rendered it — a proposal the approval queue
+    does not show is not in the approval queue."""
+    rows = []
+    if store is not None:
+        try:
+            import content_engine_orchestrator as ORCH
+            rows = ORCH.rewrite_proposals(store)
+        except Exception as e:
+            log.warning("could not read rewrite proposals: %s", e)
+    return {
+        "rows": rows, "count": len(rows),
+        "note": (f"{len(rows)} measured-poor piece(s) are waiting for your "
+                 f"decision. Each was judged on real numbers — an unmeasured "
+                 f"piece never appears here."
+                 if rows else
+                 "Nothing has measured poorly. A piece only appears here once "
+                 "GA4 has actually reported on it."),
+    }
+
+
 def signal_router(seo=None, content=None, outreach=None, bi=None, sga=None,
                   media=None, risk=None, system=None) -> dict:
     """Which system is feeding the cockpit, what it emits, and where the
