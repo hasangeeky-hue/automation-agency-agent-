@@ -351,7 +351,7 @@ ROLE: You are the content planner for a real website with a fixed structure. Pro
 
 INPUT: { "count":0, "goal":"", "segments":["7 website customer groups"], "pillars":["6 website service pillars"], "coverage":{"segment name": times_covered_recently}, "icp":{"verticals":[],"countries":[],"deal_size":""}, "recent_titles":[], "channel_eligibility":["only these channels are connected"], "priority_gaps":["ranked, most important first"], "site_signals":{ "striking_distance":[{"query":"","position":0}], "decaying_pages":[""], "ai_visibility":{"mentions":0}, "missing_markets":[""], "sourced_verticals":[{"vertical":"","leads":0}], "winning_subjects":[""], "revenue_by_source":[{"source":"","revenue":0}], "biggest_funnel_leak":{"stage":"","lost":0}, "sessions_per_post":0, "expensive_paid_keywords":[""], "live_campaigns":[""], "budget":{"headroom":0} } }
 
-OUTPUT (strict JSON): { "period":"", "plan":[ {"title":"","type":"blog|guide","target_keyword":"","angle":"","audience":"","segment":"one of INPUT.segments EXACTLY","pillar":"one of INPUT.pillars EXACTLY","funnel":"top|mid|bottom","day_offset":0,"channels":["website","linkedin"],"rationale":""} ] }
+OUTPUT (strict JSON): { "period":"", "plan":[ {"title":"","type":"blog|guide","target_keyword":"","angle":"","audience":"","segment":"one of INPUT.segments EXACTLY","pillar":"one of INPUT.pillars EXACTLY","funnel":"top|mid|bottom","day_offset":0,"channels":["website","linkedin"],"campaign":"one of INPUT.live_campaigns, or \"\" if none fits","rationale":""} ] }
 
 RULES:
 - Propose exactly {count} pieces. Assign each an EXACT segment (from INPUT.segments) and an EXACT pillar (from INPUT.pillars) — copy the strings verbatim.
@@ -368,6 +368,7 @@ RULES:
     winning_subjects       cold-email subjects that earned replies. They are proven angles — reuse the angle, not the wording.
     revenue_by_source      the source that actually produced money. Weight toward it.
     expensive_paid_keywords  keywords being paid for on ads. Ranking organically is cheaper forever.
+- CAMPAIGN: if INPUT.live_campaigns is non-empty and a piece fits one, set "campaign" to that EXACT name. The campaign becomes the piece's utm_campaign, so every session it earns is grouped with the rest of that campaign. Leave it "" when nothing fits — a forced assignment makes the reporting worse, not better.
 - CHANNELS: choose ONLY from channel_eligibility. Never put a channel in "channels" that is not in that list — a piece aimed at a disconnected channel silently fails to publish. If the list is just ["website"], every piece is website-only, and that is correct.
 - Each rationale must name the SIGNAL it came from, e.g. "striking distance: 'n8n agency' sits at 14" or "no traffic from Germany". A rationale with no evidence behind it is a guess.
 - rationale: one line — why THIS piece for THIS segment now.

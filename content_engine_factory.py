@@ -680,6 +680,91 @@ def throughput(jobs=None, days=14) -> dict:
             "has_data": bool(cj)}
 
 
+def post_publish(jobs=None) -> dict:
+    """C26 — did the piece ACTUALLY land?
+
+    A job reaching "published" only means the publish step ran. Each channel
+    returns a ref, and a ref like "instagram_not_configured:job1" means nothing
+    was posted. Counting that as published is how a piece can look green on the
+    pipeline and be absent from the internet."""
+    landed, failed, rows = 0, 0, []
+    for j in _L(jobs):
+        d = _D(j)
+        if d.get("type") != "content_piece":
+            continue
+        refs = _D(_D(d.get("payload")).get("published_refs"))
+        if not refs:
+            continue
+        for ch, ref in refs.items():
+            r = _s(ref)
+            ok = bool(r) and not any(m in r for m in
+                                     ("_not_configured", "unknown", "send_error",
+                                      "blocked", "held_", "failed"))
+            rows.append({"job": _s(d.get("job_id")), "channel": _s(ch).lower(),
+                         "ref": r[:40], "landed": ok,
+                         "why": "" if ok else
+                         ("the channel has no credentials" if "_not_configured" in r
+                          else "the publish call returned an error")})
+            landed += 1 if ok else 0
+            failed += 0 if ok else 1
+    by_channel = {}
+    for r in rows:
+        b = by_channel.setdefault(r["channel"], {"landed": 0, "failed": 0})
+        b["landed" if r["landed"] else "failed"] += 1
+    return {"rows": rows[:20], "landed": landed, "failed": failed,
+            "attempted": landed + failed,
+            "rate": _pct(landed, landed + failed),
+            "by_channel": [(c, v["landed"], v["failed"])
+                           for c, v in sorted(by_channel.items(),
+                                              key=lambda kv: -kv[1]["failed"])],
+            "waterfall": [("attempted", landed + failed), ("landed", landed)],
+            "has_data": bool(rows),
+            "note": ("Every publish attempt returns a ref. A ref carrying "
+                     "_not_configured means the channel had no credentials and "
+                     "nothing was posted — the piece is marked published and is "
+                     "not on the internet."
+                     if failed else
+                     "Every publish attempt returned a real reference."
+                     if rows else
+                     "Nothing has been published yet.")}
+
+
+def campaigns_assigned(jobs=None, plan=None, campaigns=None) -> dict:
+    """C10 — is each piece attached to a campaign?
+
+    The boards described a piece inheriting a campaign's UTM. The planner's
+    schema had no campaign field, so nothing ever carried one and every post
+    was tagged utm_campaign=organic."""
+    live = [_s(_D(c).get("name")) for c in _L(campaigns)]
+    items = _L(_D(plan).get("items"))
+    planned_with = sum(1 for it in items if _s(_D(it).get("campaign")))
+    jobs_with, jobs_total = 0, 0
+    for j in _L(jobs):
+        d = _D(j)
+        if d.get("type") != "content_piece":
+            continue
+        jobs_total += 1
+        if _s(_D(_D(d.get("payload")).get("config")).get("campaign")):
+            jobs_with += 1
+    return {"live_campaigns": live, "live_count": len(live),
+            "planned_items": len(items), "planned_assigned": planned_with,
+            "jobs_total": jobs_total, "jobs_assigned": jobs_with,
+            "plan_coverage": _pct(planned_with, len(items)),
+            "job_coverage": _pct(jobs_with, jobs_total),
+            "rows": [(_s(_D(it).get("title"))[:26],
+                      _s(_D(it).get("campaign")) or "unassigned")
+                     for it in items[:8]],
+            "has_campaigns": bool(live),
+            "note": ("Assigned pieces inherit the campaign as utm_campaign, so "
+                     "GA4 groups every session from that campaign together."
+                     if planned_with else
+                     "No planned piece carries a campaign, so every post is "
+                     "tagged utm_campaign=organic. That is honest but it means "
+                     "pieces cannot be compared campaign against campaign."
+                     if live else
+                     "No live campaign to assign to. Plan one in SGA first.")}
+
+
 # ---------------------------------------------------------------- self-check
 if __name__ == "__main__":
     PIECE = {
@@ -811,6 +896,31 @@ if __name__ == "__main__":
         routing(bad_v if isinstance(bad_v, list) else None, bad_v)
         repurposing(bad_v if isinstance(bad_v, dict) else None, None)
         throughput(bad_v if isinstance(bad_v, list) else None)
+
+    # C26 — a not_configured ref is NOT a publish
+    pp = post_publish([
+        {"job_id": "a", "type": "content_piece",
+         "payload": {"published_refs": {"wordpress": "post_9",
+                                        "instagram": "instagram_not_configured:a"}}}])
+    assert pp["attempted"] == 2 and pp["landed"] == 1 and pp["failed"] == 1
+    assert pp["rate"] == 50.0 and "not on the internet" in pp["note"]
+    assert any(not r["landed"] and "no credentials" in r["why"] for r in pp["rows"])
+    assert post_publish([])["has_data"] is False
+
+    # C10 — campaign assignment
+    ca = campaigns_assigned(
+        jobs=[{"job_id": "c", "type": "content_piece",
+               "payload": {"config": {"campaign": "q3-launch"}}}],
+        plan={"items": [{"title": "A", "campaign": "q3-launch"},
+                        {"title": "B"}]},
+        campaigns=[{"name": "Q3 Launch"}])
+    assert ca["planned_assigned"] == 1 and ca["plan_coverage"] == 50.0
+    assert ca["jobs_assigned"] == 1 and ca["live_count"] == 1
+    none = campaigns_assigned(plan={"items": [{"title": "A"}]},
+                              campaigns=[{"name": "Q3"}])
+    assert none["planned_assigned"] == 0
+    assert "utm_campaign=organic" in none["note"]
+    assert "Plan one in SGA first" in campaigns_assigned()["note"]
 
     print("factory self-check OK — six platform previews render from ONE piece "
           "with real truncation points, Instagram and YouTube report BLOCKED "

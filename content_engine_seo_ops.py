@@ -586,6 +586,14 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
 
 
 
+def _campaign_list(store):
+    try:
+        import content_engine_sga as SGA
+        return SGA.list_campaigns(store)
+    except Exception:
+        return []
+
+
 def build_factory_ctx(store, *, jobs=None, status=None, ci=None, piece=None,
                       content_plan=None, seo=None, bi=None, outreach=None,
                       sga=None, media=None, risk=None, image_key=None) -> dict:
@@ -622,6 +630,9 @@ def build_factory_ctx(store, *, jobs=None, status=None, ci=None, piece=None,
         "repurposing": F.repurposing(pc, chans),
         "throughput": F.throughput(jobs),
         "plan": _D(content_plan),
+        "post_publish": F.post_publish(jobs),
+        "campaigns": F.campaigns_assigned(
+            jobs, content_plan, _campaign_list(store)),
     }
 
 

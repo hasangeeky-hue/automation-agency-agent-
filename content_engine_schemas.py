@@ -633,8 +633,12 @@ CONTENT_PLANNER = {
             "type": "array",
             "items": {
                 "type": "object",
+                # `campaign` is optional: a piece may be standalone. When
+                # present it becomes utm_campaign, so GA4 can group a campaign's
+                # sessions. Nothing carried one before this existed.
                 "required": ["title", "segment", "pillar"],
                 "properties": {
+                    "campaign": {"type": "string"},
                     "title": {"type": "string"},
                     "type": {"type": "string"},
                     "target_keyword": {"type": "string"},

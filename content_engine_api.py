@@ -577,6 +577,20 @@ def api_source_maps_leads(vertical: str, city: str, count: int = 20) -> dict:
             "next": "The qualifier picks it up on the next engine step (▶ Run one step or START)."}
 
 
+def _live_campaign_names(store):
+    """Campaigns running today, so a planned piece can be attached to one and
+    inherit its utm_campaign."""
+    try:
+        import content_engine_sga as SGA
+        from datetime import date
+        today = date.today().isoformat()
+        return [c["name"] for c in SGA.list_campaigns(store)
+                if (c.get("start") or "") <= today
+                and (not c.get("end") or c["end"] >= today)][:8]
+    except Exception:
+        return []
+
+
 def _safe(fn):
     """Call a context builder; a failure must never stop planning."""
     try:
@@ -635,7 +649,8 @@ def api_plan_content(count=8):
                "coverage": coverage, "recent_titles": recent[-30:],
                "site_signals": brief.get("signals", {}),
                "priority_gaps": [g.get("why") for g in brief.get("gaps", [])[:5]],
-               "channel_eligibility": eligible}
+               "channel_eligibility": eligible,
+               "live_campaigns": _live_campaign_names(store)}
     try:
         from content_engine_providers import build_prompt, call_provider
         mdl = (orch.ROUTES.get("content_planner", {}) or {}).get("engine") or orch.FRONTIER_ALT

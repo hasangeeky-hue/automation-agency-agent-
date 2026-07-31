@@ -81,7 +81,8 @@ def _ctx(ctx):
     ctx = ctx if isinstance(ctx, dict) else {}
     out = dict(ctx)
     for k in ("brief", "previews", "images", "ci", "pipeline", "routing",
-              "repurposing", "throughput", "eligibility", "plan", "piece"):
+              "repurposing", "throughput", "eligibility", "plan", "piece",
+              "post_publish", "campaigns"):
         out[k] = _D(out.get(k))
     return out
 
@@ -562,21 +563,26 @@ def board_plan(ctx) -> str:
          "The planner spreads across your seven website segments, prioritising "
          "the ones covered least recently.",
          "content plan", BLUE, ""),
-        ("Pillar balance",
-         len({_D(it).get("pillar") for it in items if _D(it).get("pillar")}),
-         "service pillars", "",
-         "Rotating pillars stops the site becoming one-note.",
-         "content plan", BLUE, ""),
-        ("Funnel spread",
-         len({_D(it).get("funnel") for it in items if _D(it).get("funnel")}),
-         "stages covered", "",
-         "Top, mid and bottom of funnel do different jobs.",
-         "content plan", BLUE, ""),
         ("Every card previews", "yes", "before you approve", "",
          ("The old calendar showed a title, a channel badge and a stage. You "
           "could not see what it would look like anywhere."),
          "the fix", GREEN,
          "<button class='cta' onclick=\"seoTab('cfpvweb')\">See a preview</button>"),
+        ("Assigned to a campaign",
+         _i(_D(ctx.get("campaigns")).get("planned_assigned")),
+         f"of {_i(_D(ctx.get('campaigns')).get('planned_items'))} planned",
+         _score_gauge(_f(_D(ctx.get("campaigns")).get("plan_coverage")), 80),
+         str(_D(ctx.get("campaigns")).get("note", "")),
+         "your campaigns",
+         GREEN if _D(ctx.get("campaigns")).get("planned_assigned") else AMBER, ""),
+        ("Live campaigns to join",
+         _i(_D(ctx.get("campaigns")).get("live_count")), "running now",
+         _statusgrid([(c[:16], True, "") for c in
+                      _L(_D(ctx.get("campaigns")).get("live_campaigns"))]),
+         ("The planner is handed these names and attaches a piece to one when "
+          "it fits. The campaign becomes the piece's utm_campaign."),
+         "SGA", BLUE if _D(ctx.get("campaigns")).get("live_count") else AMBER,
+         "<button class='cta' onclick=\"nav('sga')\">Plan a campaign</button>"),
         ("Capped by budget", _money(br.get("budget_headroom")), "headroom", "",
          "A week is never planned that the budget cannot write.",
          "strategy brief", BLUE, ""),
@@ -829,19 +835,26 @@ def board_pipeline(ctx) -> str:
                                 if stages else "—"), "biggest queue", "",
          "The stage holding the most pieces is where to look first.",
          "computed", AMBER, ""),
+        ("Actually landed", _i(_D(ctx.get("post_publish")).get("landed")),
+         f"of {_i(_D(ctx.get('post_publish')).get('attempted'))} publish attempts",
+         _waterfall(_L(_D(ctx.get("post_publish")).get("waterfall"))),
+         str(_D(ctx.get("post_publish")).get("note", "")),
+         "published refs",
+         PINK if _D(ctx.get("post_publish")).get("failed") else GREEN, ""),
+        ("Publish failures", _i(_D(ctx.get("post_publish")).get("failed")),
+         "marked published, never posted",
+         _hbars([(c, f) for c, _l, f in
+                 _L(_D(ctx.get("post_publish")).get("by_channel")) if f]),
+         ("A piece can sit green on this pipeline and be absent from the "
+          "internet. This is the check that catches it."),
+         "published refs",
+         PINK if _D(ctx.get("post_publish")).get("failed") else GREEN, ""),
         ("Retries", "counted as cost", "not as output", "",
          "A retried piece costs twice and publishes once.",
          "job costs", AMBER, ""),
         ("Every stage is automated", "except one", "your approval", "",
          "Research, writing, SEO and repurposing all run without you.",
          "engine", GREEN, ""),
-        ("Nothing skips the gate", "by design", "no auto-publish", "",
-         ("There is no setting that publishes without you. That is deliberate "
-          "for a business whose name is on every piece."),
-         "engine", GREEN, ""),
-        ("Stalled pieces cost nothing", "while waiting", "only while working", "",
-         "A piece sitting in approval consumes no budget.",
-         "job costs", BLUE, ""),
         ("Where to unblock", "Approvals", "review and release", "",
          "Most stalls are waiting on a human, not a machine.",
          "navigation", VIOLET,
@@ -1292,6 +1305,8 @@ if __name__ == "__main__":
         "pipeline": F.pipeline(jobs), "routing": F.routing(jobs, el),
         "repurposing": F.repurposing(PIECE, ["website", "linkedin", "instagram"]),
         "throughput": F.throughput(jobs), "piece": PIECE,
+        "post_publish": F.post_publish(jobs),
+        "campaigns": F.campaigns_assigned(jobs, {"items": []}, []),
         "plan": {"items": [{"title": "Clinic no-shows", "day_offset": 1,
                             "type": "blog", "segment": "Medical Professionals",
                             "pillar": "Never Lose a Lead",
@@ -1336,6 +1351,10 @@ if __name__ == "__main__":
     assert "site_signals" in pages["cfbrief"], "say what changed"
     assert "dead wire" in pages["cfroute"] or "no live wire" in pages["cfroute"]
     assert "reporting gap, not a brand gap" in pages["cfci"]
+    # the two loops I listed in the plan and had not built
+    assert "Actually landed" in pages["cfpipe"], "C26 post-publish verification"
+    assert "absent from the internet" in pages["cfpipe"]
+    assert "Assigned to a campaign" in pages["cfplan"], "C10 campaign assignment"
 
     empty = factory_pages({})
     ehtml = "".join(empty.values())
