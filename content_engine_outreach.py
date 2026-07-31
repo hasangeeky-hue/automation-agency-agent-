@@ -734,6 +734,92 @@ def sends_cohort(jobs=None, days=7) -> tuple:
     return rows, cols, grid
 
 
+LEAD_COLUMNS = ("name", "title", "company", "email", "linkedin", "phone",
+                "country", "vertical", "source", "collected_at")
+
+
+def lead_rows(jobs=None, limit=400) -> list:
+    """Every lead with every field the table shows, newest first. Each row
+    carries its job id so Edit and Delete know what to act on."""
+    out = []
+    for j in _out_jobs(jobs):
+        d = _D(j)
+        p = _D(d.get("payload"))
+        qmap = {_s(r.get("id")).lower(): _D(r)
+                for r in _L(_D(p.get("lead_qualifier")).get("results"))}
+        sent = _D(p.get("sent_to"))
+        sent_at = _D(p.get("sent_at"))
+        removed = {_s(_D(r).get("email")).lower() for r in _L(p.get("leads_removed"))}
+        for L in _L(p.get("leads")) or _L(p.get("raw_leads")):
+            L = _D(L)
+            e = _s(L.get("email")).lower()
+            q = qmap.get(e, {})
+            times = _L(sent_at.get(e))
+            out.append({
+                "job": _s(d.get("job_id")),
+                "email": e,
+                "name": _s(L.get("name")),
+                "title": _s(L.get("title")),
+                "company": _s(L.get("company")),
+                "linkedin": _s(L.get("linkedin")),
+                "phone": _s(L.get("phone")),
+                "country": _s(L.get("country")),
+                "vertical": _s(L.get("vertical") or q.get("category")),
+                "source": _s(L.get("source")) or "unattributed",
+                "website": _s(L.get("website") or L.get("domain")),
+                "collected_at": _s(L.get("collected_at")),
+                "fit": q.get("fit_score"),
+                "priority": _s(q.get("priority")),
+                "pain": _s(q.get("pain_point")),
+                "offer": _s(q.get("offer")),
+                "touches": len(times),
+                "last_sent": _s(times[-1])[:16].replace("T", " ") if times else "",
+                "removed": e in removed,
+                "status": ("removed" if e in removed else
+                           "emailed" if _L(sent.get(e)) else "not contacted"),
+            })
+    out.sort(key=lambda r: r.get("collected_at") or "", reverse=True)
+    return out[:limit]
+
+
+def leads_per_day(jobs=None, days=14) -> dict:
+    """L1 — leads collected per DAY, from each lead's own collected_at.
+
+    The old chart bucketed by campaign created_at, so one batch of sixty leads
+    appeared as a single sixty-lead day and every other day read zero. Leads
+    with no timestamp are counted separately rather than dropped onto today."""
+    per_day, undated = {}, 0
+    for r in lead_rows(jobs, limit=100000):
+        at = _day(r.get("collected_at"))
+        if at:
+            per_day[at] = per_day.get(at, 0) + 1
+        else:
+            undated += 1
+    keys = sorted(per_day)[-days:]
+    vals = [per_day[k] for k in keys]
+    return {"per_day": [(k, per_day[k]) for k in keys], "series": vals,
+            "labels": keys, "undated": undated,
+            "total": sum(per_day.values()),
+            "busiest": max(vals) if vals else 0,
+            "avg": round(sum(vals) / len(vals), 1) if vals else 0,
+            "days_active": len(keys),
+            "has_data": bool(vals),
+            "note": ("" if not undated else
+                     f"{undated} leads were sourced before a per-lead timestamp "
+                     f"existed. They are counted in the total but cannot be "
+                     f"placed on a day, so they are excluded from the chart "
+                     f"rather than guessed onto today.")}
+
+
+def lead_field_coverage(jobs=None) -> list:
+    """How many leads actually carry each column — so an empty table column is
+    visibly a sourcing gap rather than a rendering bug."""
+    rows = lead_rows(jobs, limit=100000)
+    n = len(rows) or 1
+    return [(c, sum(1 for r in rows if _s(r.get(c))), round(
+        100 * sum(1 for r in rows if _s(r.get(c))) / n)) for c in LEAD_COLUMNS]
+
+
 # ---------------------------------------------------------------- self-check
 if __name__ == "__main__":
     class S:
@@ -897,6 +983,23 @@ if __name__ == "__main__":
     sr, scol, sg = sends_cohort(jobs)
     assert sr == ["touch 1", "touch 2", "touch 3"] and len(scol) == 7
     assert sum(sum(r) for r in sg) >= 0
+
+    lr = lead_rows(jobs)
+    assert lr and lr[0]["email"], lr[:1]
+    assert set(LEAD_COLUMNS) <= set(lr[0]), "every column must be present on a row"
+    assert {r["source"] for r in lr} == {"maps", "prospeo"},         "each lead keeps the source it was actually stamped with"
+    lpd = leads_per_day(jobs)
+    assert lpd["undated"] == len(lr), "leads with no stamp must be counted, not placed"
+    assert lpd["series"] == [] and "cannot be placed on a day" in lpd["note"]
+    dated = [{"job_id": "o9", "type": "outreach_campaign",
+              "payload": {"leads": [{"email": "a@x.com", "collected_at": "2026-07-30T09:00:00+00:00"},
+                                    {"email": "b@x.com", "collected_at": "2026-07-30T11:00:00+00:00"},
+                                    {"email": "c@x.com", "collected_at": "2026-07-29T09:00:00+00:00"}]}}]
+    lpd2 = leads_per_day(dated)
+    assert lpd2["total"] == 3 and lpd2["busiest"] == 2, lpd2
+    assert lpd2["days_active"] == 2, lpd2
+    cov = lead_field_coverage(jobs)
+    assert any(c == "linkedin" for c, _n2, _p in cov), "coverage must list linkedin"
 
     print("outreach self-check OK — leads carry a real source (unattributed "
           "stays unattributed), verification counted rather than a literal 100, "

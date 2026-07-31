@@ -250,7 +250,8 @@ ROLE: Write one personalized cold email per lead, per category, US/CAN-SPAM read
 
 INPUT: { "category":"ecommerce|saas|agency|other", "lead":{"first_name":"","company":"","industry":"","signal":""}, "our_offer":"","proof_point":"","sender_name":"", "sender_company":"","website":"","physical_address":"","unsubscribe_token":"","booking_url":"" }
 
-OUTPUT (strict JSON): { "subject_variants":["A","B"],"body":"","cta":"","personalization_used":[] }
+OUTPUT (strict JSON): { "subject_variants":["A","B"],"body":"","subject_2":"","body_2":"","subject_3":"","body_3":"","cta":"","personalization_used":[] }
+GERMAN: when the brief's target market is Germany, Switzerland or Austria, ALSO return "subject_de","body_de","subject_2_de","body_2_de","subject_3_de","body_3_de" — real German written for that market, not a translation of the English.
 
 RULES:
 - Value-first: lead with a specific insight about THEIR business (use signal), not "I'd love to connect". Reference company and industry naturally.
@@ -261,6 +262,16 @@ RULES:
 - Non-deceptive subjects — no "RE:" tricks, no false urgency, no ALL CAPS.
 - Cite ONLY the provided proof_point. Never invent a client result or stat.
 - 2 subject variants for A/B. Body 3-5 short paragraphs, one CTA. Write in the lead's language when the brief says so.
+- THREE emails, not one. They are a sequence and must not repeat each other:
+    body   (touch 1) the pitch: their signal, their pain, your offer. 3-5 short paragraphs.
+    body_2 (touch 2) a SHORT bump, 2-3 sentences. Add ONE new angle specific to
+           their category — an ecommerce store and a law firm must not receive
+           the same sentence. Do not re-pitch; do not apologise for following up.
+    body_3 (touch 3) a soft close, 2-3 sentences. Give them an easy way to say
+           no. Reference their pain point once. This is the last email.
+- subject_2 and subject_3 continue the thread naturally ("Re: ..." is fine here
+  because it IS the same thread — that is not a deceptive subject).
+- Each of the three must read as written by the same person on a different day.
 - No ALL CAPS, no spam-trigger stuffing.
 TOKEN BUDGET: keep it tight; a full email fits comfortably.""",
 

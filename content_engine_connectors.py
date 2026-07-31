@@ -812,6 +812,29 @@ def _html_escape(s: str) -> str:
 _LOGO_DEFAULT = "https://anthropos-automation.com/wp-content/uploads/2026/07/cropped-anthropos-logo-mark-transparent-1024-270x270.png"
 
 
+DE_NAMES = ("germany", "switzerland", "austria", "deutschland", "schweiz",
+            "oesterreich", "österreich", "suisse")
+DE_CODES = ("de", "ch", "at", "deu", "che", "aut", "german")
+
+
+def lead_language(lead: dict) -> str:
+    """'de' for a German-speaking lead, else 'en'.
+
+    Country CODES are matched as whole words, never as substrings. Matching
+    "at" anywhere in the text classified "United States" as German, because
+    st-AT-es contains it; "de" would have caught Sweden and Denmark too."""
+    lead = lead or {}
+    blob = " ".join(str(lead.get(k) or "") for k in
+                    ("country", "market", "address", "location", "lang",
+                     "language")).strip().lower()
+    if not blob:
+        return "en"
+    if any(n in blob for n in DE_NAMES):        # full names: substring is safe
+        return "de"
+    words = {w.strip(" ,.;:()[]-/") for w in blob.replace(",", " ").split()}
+    return "de" if (words & set(DE_CODES)) else "en"
+
+
 def personalize_outreach(lead: dict, qual: dict, subject: str, body: str):
     """Build ONE customer's email from the campaign template + their qualifier
     profile (business/pain/offer). Deterministic — the mailbox shows exactly what
@@ -823,18 +846,29 @@ def personalize_outreach(lead: dict, qual: dict, subject: str, body: str):
     biz = qual.get("business") or ""
     pain = (qual.get("pain_point") or "").rstrip(".")
     offer = (qual.get("offer") or "").rstrip(".")
-    lines = [f"Hi {name},", ""]
+    # The scaffolding around the written body has to be in the SAME language
+    # as the body. A German lead used to get a German body wrapped in an
+    # English greeting and an English pain sentence.
+    de = lead_language(lead) == "de"
+    lines = [f"Hallo {name}," if de else f"Hi {name},", ""]
     if pain and offer:
-        lines.append(f"Running {('a ' + biz) if biz else 'a business like yours'}, "
-                     f"you likely deal with {pain}.")
+        if de:
+            lines.append(
+                (f"Als {biz} kennen Sie vermutlich {pain}." if biz else
+                 f"In einem Unternehmen wie Ihrem kennen Sie vermutlich {pain}."))
+        else:
+            lines.append(f"Running {('a ' + biz) if biz else 'a business like yours'}, "
+                         f"you likely deal with {pain}.")
         lines.append(f"{offer}.")
         lines.append("")
     b = (body or "").strip()
-    for g in ("Hi there,", "Hi there", "Hello there,", "Hello,", "Hi,"):
+    for g in ("Hi there,", "Hi there", "Hello there,", "Hello,", "Hi,",
+              "Hallo,", "Guten Tag,", "Sehr geehrte Damen und Herren,"):
         if b.startswith(g):
             b = b[len(g):].lstrip()
             break
-    b = b.replace("{{name}}", name).replace("{{company}}", company)
+    b = (b.replace("{{name}}", name).replace("{{first_name}}", name)
+          .replace("{{company}}", company))
     lines.append(b)
     subj = (subject or "Quick idea for {{company}}").replace("{{company}}", company or "your team")
     return subj, "\n".join(lines).strip()
@@ -913,26 +947,83 @@ def sequence_schedule(sent_at, gap_days: int = SEQUENCE_GAP_DAYS):
     return out
 
 
-def outreach_touch(lead: dict, qual: dict, subject: str, body: str, touch: int):
-    """The email for step 1/2/3 of the follow-up sequence. Touch 1 is the full
-    personalized pitch; touch 2 is a short bump; touch 3 is a final soft close.
-    Each is different so the customer never gets the same email twice."""
-    subj1, body1 = personalize_outreach(lead, qual, subject, body)
+def outreach_touch(lead: dict, qual: dict, subject: str, body: str, touch: int,
+                   copy: dict = None):
+    """The email for step 1/2/3 of the sequence.
+
+    All three bodies are now written by the copy agent per campaign persona and
+    personalized per lead here, in the lead's own language. `copy` is the whole
+    outreach_copy block; when it carries body_2 / body_3 those are used.
+
+    The hardcoded bumps below are a FALLBACK ONLY, for campaigns written before
+    the writer produced three bodies. They are the same sentence for every
+    vertical and every country, which is exactly why they are no longer the
+    primary path — but an empty follow-up would be worse than a generic one."""
+    copy = copy if isinstance(copy, dict) else {}
+    lang = lead_language(lead)
+    sfx = "_de" if lang == "de" else ""
+
+    def _pick(base, n):
+        """The AI body for touch n in the lead's language, or '' if unwritten."""
+        keys = ([f"{base}_{n}{sfx}", f"{base}_{n}"] if n > 1
+                else [f"{base}{sfx}", base])
+        for k in keys:
+            v = str(copy.get(k) or "").strip()
+            if v:
+                return v
+        return ""
+
     if touch <= 1:
-        return subj1, body1
-    name = ((lead.get("name") or "there").split(" ") or ["there"])[0]
+        b = _pick("body", 1) or body
+        sj = (str(copy.get("subject" + sfx) or "").strip() if sfx else "") or subject
+        return personalize_outreach(lead, qual, sj, b)
+
+    written = _pick("body", touch)
+    if written:
+        wsubj = (str(copy.get(f"subject_{touch}{sfx}") or "").strip()
+                 or str(copy.get(f"subject_{touch}") or "").strip())
+        # A bump is 2-3 sentences. Running it through the full personalizer
+        # prepended the touch-1 pitch ("Running a business like yours, you
+        # likely deal with...") to every follow-up, so touch 2 arrived
+        # LONGER than touch 1 and repeated it. Substitute tokens only.
+        _name = ((lead or {}).get("name") or "there").split(" ")[0]
+        _company = (lead or {}).get("company") or ""
+        bod = (written.replace("{{name}}", _name)
+                      .replace("{{first_name}}", _name)
+                      .replace("{{company}}", _company)).strip()
+        subj1 = (wsubj or subject or "").replace("{{company}}",
+                                                 _company or "your team")
+        rsubj = subj1 if subj1.lower().startswith(("re:", "aw:")) else \
+            ("Aw: " if lang == "de" else "Re: ") + subj1
+        return rsubj, bod
+
+    # ---- fallback: pre-existing campaigns with no written follow-ups --------
+    subj1, _body1 = personalize_outreach(lead, qual, subject, body)
+    name = ((lead.get("name") or ("Sie" if lang == "de" else "there")).split(" ")
+            or ["there"])[0]
     qual = qual or {}
     offer = (qual.get("offer") or "AI automation that saves hours each week").rstrip(".")
     pain = (qual.get("pain_point") or "").rstrip(".")
-    rsubj = subj1 if subj1.lower().startswith("re:") else "Re: " + subj1
+    rsubj = subj1 if subj1.lower().startswith(("re:", "aw:")) else \
+        ("Aw: " if lang == "de" else "Re: ") + subj1
     if touch == 2:
-        body2 = (f"Hi {name},\n\nJust floating this back to the top of your inbox in case it slipped by.\n\n"
-                 f"{offer}. Worth a quick 15-minute call to see if it's a fit for you?")
-        return rsubj, body2
-    body3 = (f"Hi {name},\n\nLast note from me, I promise, I know inboxes are relentless.\n\n"
-             + (f"If {pain} isn't a priority right now, no worries at all. " if pain else "")
-             + "If it ever is, the link below is the fastest way to grab a time.")
-    return rsubj, body3
+        if lang == "de":
+            return rsubj, (f"Hallo {name},\n\nich schiebe das kurz noch einmal nach "
+                           f"oben, falls es untergegangen ist.\n\n{offer}. "
+                           f"Lohnt sich ein kurzes Gespräch von 15 Minuten?")
+        return rsubj, (f"Hi {name},\n\nJust floating this back to the top of your "
+                       f"inbox in case it slipped by.\n\n{offer}. Worth a quick "
+                       f"15-minute call to see if it's a fit for you?")
+    if lang == "de":
+        return rsubj, (f"Hallo {name},\n\nletzte Nachricht von mir, versprochen.\n\n"
+                       + (f"Falls {pain} gerade keine Priorität ist, ist das völlig "
+                          f"in Ordnung. " if pain else "")
+                       + "Falls doch, ist der Link unten der schnellste Weg zu einem Termin.")
+    return rsubj, (f"Hi {name},\n\nLast note from me, I promise, I know inboxes are "
+                   f"relentless.\n\n"
+                   + (f"If {pain} isn't a priority right now, no worries at all. "
+                      if pain else "")
+                   + "If it ever is, the link below is the fastest way to grab a time.")
 
 
 def _outreach_emails(body: str, *, lang, sender, title, company, website, phone,
@@ -1446,6 +1537,13 @@ class LinkedIn:
             "company": c.get("name", ""),
             "title": p.get("current_job_title", ""),
             "domain": domain,
+            # Prospeo is a LinkedIn provider and returns the profile URL. It was
+            # being read and thrown away, so the leads table could never show it.
+            "linkedin": (p.get("linkedin_url") or p.get("linkedin")
+                         or p.get("profile_url") or ""),
+            "phone": p.get("phone") or c.get("phone") or "",
+            "country": c.get("country") or p.get("country") or "",
+            "website": c.get("website", ""),
             "signal": "prospeo",
             "source": "linkedin",
         }
@@ -1479,9 +1577,27 @@ def maps_leads(query: str, limit: int = 20) -> list:
             "address": addr,
             "country": country,
             "vertical": p.get("category", ""),
+            "website": website,
+            "linkedin": p.get("linkedin") or "",
+            "rating": p.get("rating", ""),
+            "reviews": p.get("reviews", ""),
             "signal": f"maps ★{p.get('rating', 0)} ({p.get('reviews', 0)} reviews)",
             "source": "maps",
         })
+    return out
+
+
+def _stamp_collected(leads):
+    """Date AND time each lead entered the pipeline. Campaigns had a created_at;
+    individual leads had nothing, so "leads per day" was really "campaigns per
+    day" — a batch of sixty all landed on one date."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    out = []
+    for L in leads or []:
+        if isinstance(L, dict):
+            L.setdefault("collected_at", now)
+        out.append(L)
     return out
 
 
@@ -1505,8 +1621,9 @@ def source_leads(job: dict) -> list:
     # spend); otherwise scrape maps now. Maps campaigns do NOT mix in LinkedIn.
     if (cfg.get("lead_source") or "").lower() == "maps":
         if leads:
-            return leads
-        return maps_leads(cfg.get("maps_query", ""), int(cfg.get("lead_limit", 20)))
+            return _stamp_collected(leads)
+        return _stamp_collected(
+            maps_leads(cfg.get("maps_query", ""), int(cfg.get("lead_limit", 20))))
 
     li = LinkedIn()
     if li.available():
@@ -1532,8 +1649,9 @@ def source_leads(job: dict) -> list:
             if m:
                 domain = m.group(1).replace("www.", "")
             leads.append({"company": hit.get("title", ""), "domain": domain,
+                          "website": hit.get("url", ""),
                           "signal": hit.get("snippet", "")[:120], "source": "web"})
-    return leads
+    return _stamp_collected(leads)
 
 
 # ---------------------------------------------------------------------------
@@ -3111,8 +3229,12 @@ if __name__ == "__main__":
                                        "config": {}}}
     # every lead now carries where it came from, so the dashboard can stop
     # assigning all of them to one provider
+    # every lead now carries where it came from AND when it was collected, so
+    # "leads per day" is per LEAD rather than per campaign
     _sl = source_leads(job)
-    assert _sl == [{"email": "x@y.com", "source": "imported"}], _sl
+    assert len(_sl) == 1 and _sl[0]["email"] == "x@y.com"
+    assert _sl[0]["source"] == "imported", _sl
+    assert len(_sl[0].get("collected_at", "")) >= 19, _sl
 
     # 6) With creds present (mock env), wire_all installs the real hooks.
     os.environ.update({

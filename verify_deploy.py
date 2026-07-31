@@ -29,7 +29,7 @@ EXPECTED_SECTIONS = [
     "social", "seo", "ads", "media", "google", "appr", "learn", "system",
 ]
 BIG_SECTIONS = {"seo": 235, "media": 296, "system": 214, "riskinfra": 208,
-                "bi": 268, "outreach": 224}
+                "bi": 268, "outreach": 240}
 FELL_BACK = "boards failed to render"
 
 
@@ -132,7 +132,7 @@ def main() -> int:
         print("Paste this whole output back and it says exactly what to fix.")
         return 1
     print("HEALTHY - 14 sections. Business Intelligence 268, Leads & Outreach "
-          "224, Risk & Infrastructure 208 - all merged and full, nothing fell "
+          "240, Risk & Infrastructure 208 - all merged and full, nothing fell "
           "back.")
     print("If the browser still shows the old layout, it is a cached page: "
           "hard-reload with Ctrl+Shift+R.")

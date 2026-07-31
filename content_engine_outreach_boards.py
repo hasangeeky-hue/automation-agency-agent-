@@ -33,6 +33,7 @@ from content_engine_seo_boards import (
 )
 
 BOARD_CTA.update({
+    "Lead Manager": ("Source local leads", "seoTab('olaunch')"),
     "Launch Pad": ("Send today's batch", "act('/outreach/send_all')"),
     "Lead Sourcing": ("Source local leads", "seoTab('olaunch')"),
     "Lead Quality": ("Open Approvals", "nav('appr')"),
@@ -85,7 +86,8 @@ def _ctx(ctx):
     out = dict(ctx)
     for k in ("sourcing", "quality", "icp", "territories", "sends", "sequence",
               "routing", "deliverability", "replies", "bookings", "attribution",
-              "costs", "tracking", "sourcing_mom", "campaign_costs", "live"):
+              "costs", "tracking", "sourcing_mom", "campaign_costs",
+              "leads_per_day", "live"):
         out[k] = _D(out.get(k))
     return out
 
@@ -1160,12 +1162,147 @@ def board_costs(ctx) -> str:
                  "cost.") + _vizcards(cards[:12])
 
 
+def _lead_manager_table(rows) -> str:
+    """The table the old sections never had: LinkedIn, phone, country, source
+    and the collection date AND time, with an Edit and a Delete on every row."""
+    H = _H()
+    rows = _L(rows)
+    if not rows:
+        return ("<div class='card full' style='margin-top:12px'>"
+                "<p class='ct'>🗂 Lead manager</p><p class='cc'>No leads yet. "
+                "Source a batch from the Launch Pad and every one of them "
+                "appears here with its own row, editable and removable.</p></div>")
+    head = ("<tr><th>Lead</th><th>Company</th><th>LinkedIn</th><th>Phone</th>"
+            "<th>Country</th><th>Source</th><th>Collected</th><th>Fit</th>"
+            "<th>Status</th><th>Manage</th></tr>")
+    body = []
+    for r in rows[:200]:
+        r = _D(r)
+        e = H._esc(str(r.get("email", "")))
+        li = str(r.get("linkedin") or "")
+        li_html = (f"<a href='{H._esc(li)}' target='_blank' rel='noopener' "
+                   f"style='color:#4C8DFF'>profile</a>" if li.startswith("http")
+                   else "<span class='dim'>—</span>")
+        col = str(r.get("collected_at") or "")
+        col_html = (f"{H._esc(col[:10])}<div class='dim'>{H._esc(col[11:16])}</div>"
+                    if col else "<span class='dim'>not stamped</span>")
+        fit = r.get("fit")
+        st = str(r.get("status") or "")
+        scol = {"emailed": "#3FD98B", "removed": "#F5788A"}.get(st, "#8E9BBE")
+        body.append(
+            f"<tr><td><b>{H._esc(str(r.get('name') or '—'))}</b>"
+            f"<div class='dim'>{H._esc(str(r.get('title') or ''))}</div>"
+            f"<div class='dim'>{e}</div></td>"
+            f"<td>{H._esc(str(r.get('company') or '—'))}"
+            f"<div class='dim'>{H._esc(str(r.get('vertical') or ''))}</div></td>"
+            f"<td>{li_html}</td>"
+            f"<td class='mut'>{H._esc(str(r.get('phone') or '—'))}</td>"
+            f"<td class='mut'>{H._esc(str(r.get('country') or '—'))}</td>"
+            f"<td class='mut'>{H._esc(str(r.get('source') or '—'))}</td>"
+            f"<td class='mut'>{col_html}</td>"
+            f"<td class='tnum'>{'—' if fit in (None, '') else H._esc(str(fit))}</td>"
+            f"<td><span style='color:{scol};font-weight:600'>● {H._esc(st)}</span>"
+            f"<div class='dim'>{r.get('touches', 0)} sent</div></td>"
+            f"<td><button class='sbtn' onclick=\"leadEdit('{H._esc(str(r.get('job')))}','{e}')\">Edit</button>"
+            f"<button class='sbtn' style='background:transparent;border:1px solid #F5788A;color:#F5788A;margin-left:4px' "
+            f"onclick=\"leadDelete('{H._esc(str(r.get('job')))}','{e}')\">Delete</button></td></tr>")
+    return ("<div class='card full' style='margin-top:12px'>"
+            f"<p class='ct'>🗂 Lead manager — {len(rows)} leads</p>"
+            "<p class='cc'>Every lead with the fields the old table never showed: "
+            "LinkedIn, phone, country, source and the exact date and time it was "
+            "collected. <b>Edit</b> fixes a wrong detail; <b>Delete</b> removes the "
+            "lead and suppresses the address so it can never be emailed.</p>"
+            f"<div class='tbwrap'><table><thead>{head}</thead><tbody>"
+            + "".join(body) + "</tbody></table></div></div>")
+
+
+# ======================================================================
+#  (14) LEAD MANAGER  (16)
+# ======================================================================
+def board_manager(ctx) -> str:
+    ctx = _ctx(ctx)
+    rows = _L(ctx.get("lead_rows"))
+    lpd = _D(ctx.get("leads_per_day"))
+    cov = _L(ctx.get("field_coverage"))
+    sc = ctx["sourcing"]
+    covd = {c: (n, p) for c, n, p in cov} if cov else {}
+    cards = [
+        ("Leads collected per day", _i(lpd.get("total")), "with a timestamp",
+         _trend([("leads/day", _L(lpd.get("series")), TEAL)]),
+         (("Counted from each lead's own collected_at. The old chart bucketed by "
+           "CAMPAIGN date, so a batch of sixty showed as one sixty-lead day and "
+           "every other day read zero. " + str(lpd.get("note", ""))).strip()),
+         "per-lead timestamp", GREEN if lpd.get("has_data") else AMBER, ""),
+        ("Busiest day", _i(lpd.get("busiest")), "leads in one day",
+         _histogram([_i(v) for v in _L(lpd.get("series"))]),
+         "What a good sourcing day looks like.",
+         "per-lead timestamp", BLUE, ""),
+        ("Daily average", _n(lpd.get("avg")), "leads per active day", "",
+         f"Across {_i(lpd.get('days_active'))} days that produced any lead.",
+         "computed", BLUE, ""),
+        ("Not timestamped", _i(lpd.get("undated")), "sourced before the stamp",
+         "", ("Counted in the total but left off the chart — putting them on "
+              "today would invent a sourcing day that never happened."),
+         "computed", AMBER if lpd.get("undated") else GREEN, ""),
+        ("Leads on file", len(rows), "in the manager below", "",
+         "Every lead across every campaign, newest first.",
+         "lead records", GREEN if rows else AMBER, ""),
+        ("Field coverage", len(cov), "columns measured",
+         _hbars([(c, p) for c, _n2, p in cov]),
+         ("How many leads actually carry each field. An empty column here is a "
+          "sourcing gap, not a broken table."),
+         "lead records", BLUE if cov else AMBER, ""),
+    ]
+    for col, label, why in (
+            ("linkedin", "LinkedIn profiles",
+             "Prospeo returns the profile URL. It was being read and thrown "
+             "away, so this column could never fill. New leads carry it."),
+            ("phone", "Phone numbers",
+             "Google Maps leads carry a phone; Prospeo ones usually do not."),
+            ("country", "Country recorded",
+             "Without it a lead cannot be counted toward any target market."),
+            ("collected_at", "Timestamped",
+             "Date and time the lead entered the pipeline."),
+            ("vertical", "Vertical recorded",
+             "Needed to score a lead against your ICP."),
+            ("company", "Company recorded",
+             "The single most-used field in a personalized opener.")):
+        n, pc = covd.get(col, (0, 0))
+        cards.append((label, n, f"{pc}% of leads",
+                      _donut(pc), why, "lead records",
+                      GREEN if pc >= 80 else AMBER if pc >= 30 else PINK, ""))
+    cards += [
+        ("Edit a lead", "per row", "fix a wrong detail", "",
+         ("There was no way to correct a lead anywhere in the engine. A blank "
+          "box leaves the existing value alone rather than wiping it."),
+         "/leads/edit", GREEN, ""),
+        ("Delete a lead", "per row", "removes and suppresses", "",
+         ("Soft delete: the lead leaves the sendable list and the address is "
+          "suppressed so it can never be emailed, but the record is kept — a "
+          "lead you paid to source is still evidence about your sourcing."),
+         "/leads/delete", GREEN, ""),
+        ("Sources represented", len(_L(sc.get("by_source"))), "distinct",
+         _hbars([(s2[:18], v) for s2, v in _L(sc.get("by_source"))[:6]]),
+         "Every row shows which provider found that lead.",
+         "lead source stamp", BLUE, ""),
+        ("Where to act", "the table below", "edit, delete, open LinkedIn", "",
+         "The manager is under this board.",
+         "navigation", VIOLET, ""),
+    ]
+    return (_head("🗂", "Lead manager",
+                  "Every lead, every detail, editable — and how many arrive "
+                  "each day.")
+            + _vizcards(cards[:16]) + _lead_manager_table(rows))
+
+
+
 # ======================================================================
 #  SECTION
 # ======================================================================
 TABS = [
     ("olaunch", "🚀", "Launch Pad"),
     ("osourcing", "🧲", "Lead Sourcing"),
+    ("omanager", "🗂", "Lead Manager"),
     ("oquality", "🔬", "Lead Quality"),
     ("oicp", "🎯", "ICP & Scoring"),
     ("oterr", "🌍", "Territories"),
@@ -1181,7 +1318,7 @@ TABS = [
 
 GROUPS = [
     ("ofind", "① FIND THEM", "Who are we writing to?",
-     ["olaunch", "osourcing", "oquality", "oicp", "oterr"]),
+     ["olaunch", "osourcing", "omanager", "oquality", "oicp", "oterr"]),
     ("osend", "② SEND IT", "What goes out, and safely?",
      ["ooutbox", "osequence", "orouting", "odeliver"]),
     ("oback", "③ WHAT CAME BACK", "Did anyone answer?",
@@ -1193,6 +1330,7 @@ GROUPS = [
 _TAB_BOARDS = {
     "olaunch": [("Launch Pad", board_launch)],
     "osourcing": [("Lead Sourcing", board_sourcing)],
+    "omanager": [("Lead Manager", board_manager)],
     "oquality": [("Lead Quality", board_quality)],
     "oicp": [("ICP & Scoring", board_icp)],
     "oterr": [("Territories", board_territories)],
@@ -1206,7 +1344,7 @@ _TAB_BOARDS = {
     "ocost": [("Cost per Outcome", board_costs)],
 }
 
-_TAB_COUNTS = {"olaunch": 16, "osourcing": 20, "oquality": 18, "oicp": 18,
+_TAB_COUNTS = {"olaunch": 16, "osourcing": 20, "omanager": 16, "oquality": 18, "oicp": 18,
                "oterr": 18, "ooutbox": 18, "osequence": 18, "orouting": 16,
                "odeliver": 20, "oreplies": 18, "obookings": 16, "oattrib": 16,
                "ocost": 12}
@@ -1334,6 +1472,9 @@ if __name__ == "__main__":
              "b@x.com": {"reason": "unsubscribe", "at": "2026-07-29"}}),
         "campaign_costs": O.campaign_costs(jobs),
         "sends_cohort": O.sends_cohort(jobs),
+        "lead_rows": O.lead_rows(jobs),
+        "leads_per_day": O.leads_per_day(jobs),
+        "field_coverage": O.lead_field_coverage(jobs),
         "live": {"outbox": "<div id='LIVE-OUTBOX'>outbox</div>",
                  "replies": "<div id='LIVE-REPLIES'>replies</div>",
                  "leads_table": "<div id='LIVE-LEADS'>leads</div>",
@@ -1375,6 +1516,14 @@ if __name__ == "__main__":
     assert "assumed every outreach email" in pages["orouting"], \
         "say plainly that the alias was previously assumed"
     assert "a literal" in pages["oquality"], "call out the 100% donut"
+
+    # the lead manager: the columns the old table never had, and real buttons
+    for col in ("LinkedIn", "Phone", "Country", "Source", "Collected"):
+        assert col in pages["omanager"], f"{col} column missing"
+    assert "leadEdit(" in pages["omanager"] and "leadDelete(" in pages["omanager"], \
+        "every row needs an Edit and a Delete"
+    assert "CAMPAIGN date" in pages["omanager"], \
+        "say why leads-per-day used to be wrong"
 
     # tracking states both costs
     assert "Apple Mail" in pages["odeliver"], "the open-tracking caveat"

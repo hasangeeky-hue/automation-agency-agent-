@@ -465,11 +465,25 @@ LEAD_QUALIFIER = {
 # ---------------------------------------------------------------------------
 OUTREACH_COPY = {
     "type": "object",
-    "required": ["subject_variants", "body", "cta", "personalization_used"],
+    # body_2 / body_3 are REQUIRED: the follow-ups used to be two hardcoded
+    # English sentences shared by every lead in every vertical. The _de fields
+    # are optional and only produced when the campaign targets a German market.
+    "required": ["subject_variants", "body", "body_2", "body_3",
+                 "subject_2", "subject_3", "cta", "personalization_used"],
     "properties": {
         "subject_variants": {"type": "array", "minItems": 2, "maxItems": 2,
                              "items": {"type": "string"}},
         "body": {"type": "string"},
+        "body_2": {"type": "string"},
+        "body_3": {"type": "string"},
+        "subject_2": {"type": "string"},
+        "subject_3": {"type": "string"},
+        "body_de": {"type": "string"},
+        "body_2_de": {"type": "string"},
+        "body_3_de": {"type": "string"},
+        "subject_de": {"type": "string"},
+        "subject_2_de": {"type": "string"},
+        "subject_3_de": {"type": "string"},
         "cta": {"type": "string"},
         "personalization_used": {"type": "array", "items": {"type": "string"}},
     },

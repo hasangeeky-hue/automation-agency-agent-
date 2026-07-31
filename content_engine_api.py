@@ -29,6 +29,7 @@ Dev with zero API cost: USE_FIXTURES=1 (after RECORD_FIXTURES=1 capture).
 from __future__ import annotations
 
 import base64
+import datetime as _dt
 import logging
 import hashlib
 import os
@@ -681,11 +682,16 @@ def _outreach_email_for(job, email, touch=1):
     import content_engine_connectors as C
     oc = p.get("outreach_copy", {}) or {}
     base_subj = (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0]
-    if touch <= 1:
-        edit = (p.get("email_edits", {}) or {}).get(email.lower())
-        if edit and edit.get("body"):
-            return (lead, q, edit.get("subject") or "", edit.get("body") or "")
-    return (lead, q) + C.outreach_touch(lead, q, base_subj, oc.get("body", ""), touch)
+    # An edit can now be saved against ANY touch. Edits used to be keyed by
+    # email alone and only consulted for touch 1, so emails 2 and 3 could be
+    # read in the outbox but never changed.
+    edits = p.get("email_edits", {}) or {}
+    edit = edits.get(f"{email.lower()}|{int(touch)}") or (
+        edits.get(email.lower()) if int(touch) <= 1 else None)
+    if edit and edit.get("body"):
+        return (lead, q, edit.get("subject") or "", edit.get("body") or "")
+    return (lead, q) + C.outreach_touch(lead, q, base_subj, oc.get("body", ""),
+                                        touch, oc)
 
 
 def _outreach_alias(mailer=None):
@@ -733,7 +739,7 @@ def _append_ref(p, email, ref, subject=None, step=None, alias=None,
                         email, e)
 
 
-def api_outreach_edit(job_id, email, subject, body):
+def api_outreach_edit(job_id, email, subject, body, touch=1):
     """Save the founder's manual edit of one email (fix the agent's text). The
     edited version is what previews AND what sends."""
     store = get_store()
@@ -745,12 +751,13 @@ def api_outreach_edit(job_id, email, subject, body):
     if not email:
         return {"ok": False, "error": "no recipient"}
     p = job.setdefault("payload", {})
-    p.setdefault("email_edits", {})[email] = {"subject": subject or "", "body": body or ""}
+    p.setdefault("email_edits", {})[f"{email}|{int(touch or 1)}"] = {
+        "subject": subject or "", "body": body or ""}
     try:
         store.save(job)
     except Exception:
         pass
-    return {"ok": True, "email": email}
+    return {"ok": True, "email": email, "touch": int(touch or 1)}
 
 
 def api_outreach_send_one(job_id, email, touch=None):
@@ -1272,6 +1279,81 @@ def api_seo_apply(order_id: str) -> dict:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+EDITABLE_LEAD_FIELDS = ("name", "title", "company", "linkedin", "phone",
+                        "country", "website", "vertical", "email")
+
+
+def api_lead_edit(job_id, email, fields):
+    """Update one lead in place. Only the listed fields, and only ones actually
+    sent — a blank box must not wipe a value that is already there."""
+    store = get_store()
+    email = (email or "").strip().lower()
+    if not email:
+        return {"ok": False, "error": "no lead selected"}
+    try:
+        job = store.get(job_id)
+    except Exception:
+        return {"ok": False, "error": "campaign not found"}
+    p = job.setdefault("payload", {})
+    changed = {}
+    for bucket in ("leads", "raw_leads"):
+        for L in (p.get(bucket) or []):
+            if not isinstance(L, dict):
+                continue
+            if (L.get("email") or "").strip().lower() != email:
+                continue
+            for k in EDITABLE_LEAD_FIELDS:
+                v = (fields or {}).get(k)
+                if v is None or str(v).strip() == "":
+                    continue                       # blank = leave alone
+                L[k] = str(v).strip()[:200]
+                changed[k] = L[k]
+            L["edited_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat(
+                timespec="seconds")
+    if not changed:
+        return {"ok": False, "error": "nothing to change"}
+    try:
+        store.save(job)
+    except Exception as e:
+        return {"ok": False, "error": f"could not save: {e}"}
+    return {"ok": True, "email": email, "changed": sorted(changed),
+            "message": f"{email}: updated {', '.join(sorted(changed))}."}
+
+
+def api_lead_delete(job_id, email, reason="removed by hand"):
+    """Soft-remove a lead. It leaves the sendable list and is suppressed, so it
+    can never be emailed again — but the record is kept, because a deleted lead
+    you paid to source is still evidence about your sourcing."""
+    store = get_store()
+    email = (email or "").strip().lower()
+    if not email:
+        return {"ok": False, "error": "no lead selected"}
+    try:
+        job = store.get(job_id)
+    except Exception:
+        return {"ok": False, "error": "campaign not found"}
+    p = job.setdefault("payload", {})
+    before = len(p.get("leads") or [])
+    p["leads"] = [L for L in (p.get("leads") or [])
+                  if (L or {}).get("email", "").strip().lower() != email]
+    removed = p.setdefault("leads_removed", [])
+    if email not in [str(x.get("email", "")) for x in removed if isinstance(x, dict)]:
+        removed.append({"email": email, "reason": str(reason)[:120],
+                        "at": _dt.datetime.now(_dt.timezone.utc).isoformat(
+                            timespec="seconds")})
+    try:
+        import content_engine_connectors as C
+        C.suppress_email(email, "removed_by_hand")
+    except Exception as e:
+        log.warning("could not suppress removed lead %s: %s", email, e)
+    try:
+        store.save(job)
+    except Exception as e:
+        return {"ok": False, "error": f"could not save: {e}"}
+    return {"ok": True, "email": email, "removed": before - len(p["leads"]),
+            "message": f"{email} removed and suppressed — it will not be emailed."}
+
+
 def _bi_bookings():
     """Cal.com bookings for the BI boards. Never raises — a booking wire that is
     down must not take the dashboard with it."""
@@ -1680,6 +1762,30 @@ def build_app():
                             if r["enabled"] else
                             "Tracking off — nothing is added to your emails.")}
 
+    @app.post("/leads/edit")
+    async def leads_edit(request: Request):
+        """Correct one lead's details. There was no way to fix a wrong name,
+        a missing LinkedIn or a bad company anywhere in the engine."""
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        return api_lead_edit(d.get("job_id", ""), d.get("email", ""),
+                             {k: d.get(k) for k in
+                              ("name", "title", "company", "linkedin", "phone",
+                               "country", "website", "vertical", "email")})
+
+    @app.post("/leads/delete")
+    async def leads_delete(request: Request):
+        """Remove a lead from a campaign. Soft — it goes to a removed list and
+        is never emailed again, rather than being erased."""
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        return api_lead_delete(d.get("job_id", ""), d.get("email", ""),
+                               d.get("reason", "removed by hand"))
+
     @app.post("/leads/maps")
     async def leads_maps(request: Request):
         try:
@@ -1958,7 +2064,8 @@ def build_app():
         except Exception:
             data = {}
         return api_outreach_edit(data.get("job_id"), data.get("email", ""),
-                                 data.get("subject", ""), data.get("body", ""))
+                                 data.get("subject", ""), data.get("body", ""),
+                                 touch=data.get("touch", 1))
 
     @app.post("/outreach/send_one")
     async def outreach_send_one(request: Request):

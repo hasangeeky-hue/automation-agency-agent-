@@ -26,13 +26,12 @@ log = logging.getLogger("content_engine.dashboard")
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-30 · v25 · Leads & Outreach: Lead Machine + Email & "
-             "Outreach merged into ONE section — 224 cards, 13 boards, the "
-             "launch pad carried over intact, five fabricated numbers "
-             "deleted, and open/click tracking with a switch. 1,445 engine "
-             "cards: BI 268, Media Buying 296, SEO/AEO/GEO 235, Leads & "
-             "Outreach 224, System & Wiring 214, Risk & Infrastructure 208 "
-             "— 14 sidebar entries, each with in-page tabs")
+BUILD_TAG = ("2026-07-31 · v26 · Three AI-written emails per persona in the "
+             "lead's language, a Lead Manager with LinkedIn, phone, country, "
+             "source and collection time, per-lead Edit and Delete, all three "
+             "emails editable, and leads-per-day counted per lead. Leads & "
+             "Outreach 240 cards / 14 boards. 1,461 engine cards across 14 "
+             "sidebar entries, each with in-page tabs")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -4003,8 +4002,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          _risk_all),
         ("content", "📝", "Content Factory", "Content Factory", "Everything about creating & publishing content.", p_content),
         ("outreach", "📮", "Leads & Outreach", "Leads & Outreach",
-         "Find them, write to them, track what came back. 224 cards "
-         "across 13 boards.", _outreach_all),
+         "Find them, write to them, track what came back. 240 cards "
+         "across 14 boards.", _outreach_all),
         ("social", "📣", "Social Media", "Social Media", "Posting and engagement across channels.", p_social),
         ("seo", "🔎", "SEO / AEO / GEO", "SEO · AEO · GEO",
          "Search, AI-answer and geo visibility — every SEO board in one place.", _seo_all),
@@ -4154,6 +4153,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "body:JSON.stringify({avg_deal_value:d,gross_margin_pct:m,consult_to_client_pct:c,lead_to_consult_pct:l})});"
               "var j=await r.json();alert('Saved. Target CPA per lead: EUR '+((j.targets||{}).target_cpa_lead||'-'));location.reload();}"
               "catch(e){alert('Failed: '+e);}}"
+              "function leadEdit(job,email){"
+              "var f=['name','title','company','linkedin','phone','country','website'];"
+              "var b={job_id:job,email:email},any=false;"
+              "for(var i=0;i<f.length;i++){var v=prompt('New '+f[i]+' (leave blank to keep as is)');"
+              "if(v){b[f[i]]=v;any=true;}}"
+              "if(!any){alert('Nothing changed.');return;}post('/leads/edit',b);}"
+              "function leadDelete(job,email){"
+              "if(!confirm('Remove '+email+'?\n\nThe lead leaves the sendable list and the "
+              "address is suppressed, so it can never be emailed. The record is kept.'))return;"
+              "post('/leads/delete',{job_id:job,email:email});}"
               "function trackToggle(){"
               "if(!confirm('Toggle open/click tracking for every future send?\\n\\n"
               "ON adds a 1x1 pixel and rewrites links in the HTML part. In Germany "
@@ -4392,7 +4401,7 @@ if __name__ == "__main__":
           "Risk & Infrastructure section (208 cards) and six more render as ONE "
           "Business Intelligence section (268 cards, 15 boards, Executive "
           "Intelligence included), and Lead Machine + Email & Outreach render "
-          "as ONE Leads & Outreach section (224 cards, 13 boards, every send "
+          "as ONE Leads & Outreach section (240 cards, 14 boards, every send "
           "endpoint intact); the old nav ids "
           "all alias to them. No page lost, no credential path touched. "
           "No network.")

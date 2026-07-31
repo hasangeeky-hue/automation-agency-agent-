@@ -623,6 +623,9 @@ def build_outreach_ctx(store, *, jobs=None, reply_drafts=None, bookings=None,
         "suppression_heat": O.suppression_heat(meta),
         "campaign_costs": O.campaign_costs(jobs),
         "sends_cohort": O.sends_cohort(jobs),
+        "lead_rows": O.lead_rows(jobs),
+        "leads_per_day": O.leads_per_day(jobs),
+        "field_coverage": O.lead_field_coverage(jobs),
         "live": live if isinstance(live, dict) else {},
     }
 
