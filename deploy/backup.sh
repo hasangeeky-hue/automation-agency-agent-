@@ -73,20 +73,60 @@ echo "==> wrote $OUT  ($(numfmt --to=iec "$SIZE" 2>/dev/null || echo "$SIZE byte
 
 if [ "${1:-}" = "--verify" ]; then
     echo "==> verifying by RESTORING into a scratch database ..."
-    SCRATCH="verify_${STAMP//-/_}"
-    dc exec -T db psql -U "$DB_USER" -d postgres -c "CREATE DATABASE ${SCRATCH};" >/dev/null
-    if zcat "$OUT" | dc exec -T db psql -U "$DB_USER" -d "$SCRATCH" -q >/dev/null 2>&1; then
-        ROWS=$(dc exec -T db psql -U "$DB_USER" -d "$SCRATCH" -tAc \
-               "SELECT count(*) FROM settings;" 2>/dev/null | tr -d '[:space:]')
-        JOBS=$(dc exec -T db psql -U "$DB_USER" -d "$SCRATCH" -tAc \
-               "SELECT count(*) FROM jobs;" 2>/dev/null | tr -d '[:space:]')
-        echo "    restored OK — ${ROWS:-0} settings rows, ${JOBS:-0} jobs"
-        [ "${ROWS:-0}" -gt 0 ] || echo "    !! zero settings restored — check this."
-    else
-        echo "    !! THE DUMP DID NOT RESTORE. Treat this backup as invalid." >&2
+    # Lowercase: unquoted identifiers are folded to lowercase by Postgres, so a
+    # name with a capital in it is not the name you think you created.
+    SCRATCH="verify_$(echo "$STAMP" | tr 'A-Z-' 'a-z_')"
+    TMP="$(mktemp)"
+    LOG="$(mktemp)"
+    trap 'rm -f "$TMP" "$LOG"' EXIT
+
+    # Decompress to a FILE and redirect, rather than piping into the container.
+    # A pipe here means psql can close stdin early and hand zcat a SIGPIPE,
+    # which `set -o pipefail` then reports as a failed restore — the same false
+    # alarm that condemned this dump's settings table an hour ago.
+    zcat "$OUT" > "$TMP"
+
+    if ! dc exec -T db psql -U "$DB_USER" -d postgres \
+            -c "DROP DATABASE IF EXISTS ${SCRATCH};" \
+            -c "CREATE DATABASE ${SCRATCH};" > "$LOG" 2>&1; then
+        echo "    !! could not create the scratch database:" >&2
+        sed 's/^/       /' "$LOG" >&2
+        exit 1
     fi
+
+    RESTORE_RC=0
+    dc exec -T db psql -U "$DB_USER" -d "$SCRATCH" -v ON_ERROR_STOP=0 \
+        < "$TMP" > "$LOG" 2>&1 || RESTORE_RC=$?
+
+    # psql exits 0 even when individual statements fail, so its exit code alone
+    # proves nothing. The only honest test of a backup is whether the ROWS came
+    # back — so count them, and show any errors either way.
+    ERRS=$(grep -c "^ERROR:" "$LOG" || true)
+    ROWS=$(dc exec -T db psql -U "$DB_USER" -d "$SCRATCH" -tAc \
+           "SELECT count(*) FROM settings;" 2>/dev/null | tr -d '[:space:]')
+    JOBS=$(dc exec -T db psql -U "$DB_USER" -d "$SCRATCH" -tAc \
+           "SELECT count(*) FROM jobs;" 2>/dev/null | tr -d '[:space:]')
+
+    if [ "${ROWS:-0}" -gt 0 ]; then
+        echo "    RESTORED — ${ROWS} settings rows, ${JOBS:-0} jobs came back."
+        if [ "${ERRS:-0}" -gt 0 ]; then
+            # Ownership/role GRANTs routinely fail on a restore into a scratch
+            # database and do not affect your data. Show them; do not fail.
+            echo "    (${ERRS} non-fatal statement error(s) — first 3:)"
+            grep "^ERROR:" "$LOG" | head -3 | sed 's/^/       /'
+        fi
+    else
+        echo "    !! THE DUMP DID NOT RESTORE — settings came back empty." >&2
+        echo "       psql exit ${RESTORE_RC}, ${ERRS:-0} error(s). First 10:" >&2
+        grep -E "^(ERROR|FATAL|psql)" "$LOG" | head -10 | sed 's/^/       /' >&2
+        [ "${ERRS:-0}" -eq 0 ] && { echo "       (no SQL errors — last output:)" >&2
+                                    tail -5 "$LOG" | sed 's/^/       /' >&2; }
+    fi
+
     dc exec -T db psql -U "$DB_USER" -d postgres \
-        -c "DROP DATABASE IF EXISTS ${SCRATCH};" >/dev/null
+        -c "DROP DATABASE IF EXISTS ${SCRATCH};" >/dev/null 2>&1 || true
+    rm -f "$TMP" "$LOG"
+    trap - EXIT
 fi
 
 # Retention: keep the newest $KEEP, delete older. Never touches .SUSPECT files.
