@@ -41,7 +41,22 @@ def main() -> int:
     n_db = sum(1 for v in state.values() if v == "db")
     n_env = sum(1 for v in state.values() if v == "env")
 
+    # The image bakes the source in (COPY *.py). `git pull` updates the HOST;
+    # the running container keeps whatever it was built with. Print the build so
+    # a stale container is obvious instead of looking like an unchanged result.
     print("=" * 66)
+    print("0. WHICH BUILD IS ANSWERING")
+    print("=" * 66)
+    try:
+        import content_engine_dashboard as D
+        print(f"   {str(D.BUILD_TAG)[:120]}")
+        print("   If this is not the build you just pulled, the container was "
+              "not rebuilt:")
+        print("     docker compose -f deploy/docker-compose.yml up -d --build")
+    except Exception as e:
+        print("   could not read the build tag:", e)
+
+    print("\n" + "=" * 66)
     print("1. CREDENTIALS  (presence only - no value is ever printed)")
     print("=" * 66)
     print(f"   in Postgres (set from the browser) : {n_db}")
