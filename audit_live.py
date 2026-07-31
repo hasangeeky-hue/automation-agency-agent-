@@ -92,8 +92,51 @@ def main() -> int:
               f"{measured_on_zeros}")
         if measured_on_zeros:
             print("   ^ every one of these wrote a playbook entry derived from zeros.")
+
+        # ---- WHY did they fail? A 60%-failure engine is not a wiring problem
+        # and no amount of dashboard tells you which step died. This does.
+        dead = [j for j in jobs
+                if j.get("status") in ("failed", "revision_needed", "halted_budget")]
+        if dead:
+            print(f"\n   {len(dead)} jobs never produced anything. WHY:")
+            buckets = {}
+            for j in dead:
+                why = str(j.get("halt_reason")
+                          or j.get("qa_verdict")
+                          or j.get("status") or "?")
+                # Group by the shape of the error, not its unique details, so
+                # 15 instances of one bug read as one bug.
+                key = why.split(":")[0].strip()[:70] or why[:70]
+                buckets.setdefault(key, []).append(j)
+            for key, js in sorted(buckets.items(), key=lambda t: -len(t[1])):
+                print(f"\n     {len(js):>3} x  {key}")
+                ex = js[0]
+                # the LAST step that ran is the one that died
+                steps = list((ex.get("payload", {}) or {}).keys())
+                print(f"          last step reached : "
+                      f"{steps[-1] if steps else '(nothing ran)'}")
+                print(f"          job type          : {ex.get('type', '?')}")
+                print(f"          example job_id    : {ex.get('job_id', '?')}")
+                full = str(ex.get("halt_reason") or ex.get("qa_verdict") or "")
+                if full and full[:70] != key:
+                    print(f"          full reason       : {full[:200]}")
     except Exception as e:
         print("   could not read jobs:", e)
+
+    # ---- jobs already in a measurement window keep the window they were
+    # stamped with. Changing the default does not retro-stamp them.
+    try:
+        waiting = [j for j in jobs if j.get("measure_at")
+                   and j.get("status") in ("published", "sent")]
+        if waiting:
+            print(f"\n   {len(waiting)} job(s) are inside a measurement window:")
+            for j in waiting:
+                print(f"     {j.get('job_id', '?')[:26]:<26} "
+                      f"{j.get('status', ''):<10} opens {str(j.get('measure_at'))[:16]}")
+            print("   (these keep the window stamped when they published — the "
+                  "new 21-day default applies to pieces published from now on)")
+    except Exception:
+        pass
 
     print("\n" + "=" * 66)
     print("4. WHAT THE LOOP NEEDS  (the Tier-1 checks, on live data)")
