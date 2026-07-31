@@ -336,6 +336,110 @@ _FIELD_HINT = {
     "CALCOM_API_KEY": "Cal.com API key (cal_live_…)",
 }
 
+# Keys that /connect has always accepted but that no wire's `fix` string ever
+# rendered a box for — so they were allow-listed and unreachable at the same
+# time. Grouped by what each one unlocks, and rendered by _extra_keys_card()
+# through the SAME saveConnect() form and the SAME /connect endpoint. No new
+# route, no new vendor, no change to how any credential is stored or read.
+EXTRA_KEY_GROUPS = [
+    ("🤖 AI answer engines", "openai",
+     "You are measured against ChatGPT, Perplexity and Gemini. Only Claude is "
+     "wired, so AI visibility is being judged on one engine out of four.",
+     [("OPENAI_API_KEY", "OpenAI API key (sk-…)"),
+      ("PERPLEXITY_API_KEY", "Perplexity API key (pplx-…)"),
+      ("GEMINI_API_KEY", "Google Gemini API key"),
+      ("OPENAI_AEO_MODEL", "OpenAI model (blank = default)"),
+      ("PERPLEXITY_MODEL", "Perplexity model (blank = default)"),
+      ("GEMINI_MODEL", "Gemini model (blank = default)")]),
+    ("✉️ Email identity", "email",
+     "Every cold email currently goes out carrying defaults where your branding "
+     "should be — company name, logo, booking link and signature.",
+     [("EMAIL_COMPANY", "Company name on the signature"),
+      ("EMAIL_FROM_NAME", "Sender name recipients see"),
+      ("EMAIL_SENDER_TITLE", "Your title (Founder)"),
+      ("EMAIL_WEBSITE", "Website shown in the footer"),
+      ("EMAIL_PHONE", "Phone number in the signature"),
+      ("EMAIL_ADDRESS", "Postal address (required by law in DE)"),
+      ("EMAIL_LOGO_URL", "Logo image URL (https://…)"),
+      ("EMAIL_BRAND_COLOR", "Brand colour (#RRGGBB)"),
+      ("EMAIL_BOOKING_URL", "Booking link (Cal.com)"),
+      ("EMAIL_UNSUBSCRIBE_URL", "Unsubscribe link"),
+      ("EMAIL_MANAGE_URL", "Manage-preferences link"),
+      ("EMAIL_HTML", "Send HTML email? 1 or 0")]),
+    ("📮 Mail transport", "mail",
+     "Only needed if your mail host is not on standard ports. Blank means the "
+     "usual defaults, which is right for Google Workspace.",
+     [("SMTP_PORT", "SMTP port (587)"),
+      ("SMTP_FROM", "Send-from address if different"),
+      ("SMTP_STARTTLS", "STARTTLS on? 1 or 0"),
+      ("IMAP_PORT", "IMAP port (993)"),
+      ("IMAP_FOLDER", "Folder to read (INBOX)")]),
+    ("💬 Reply agent", "reply",
+     "What the reply agent is ALLOWED to say. Leaving these blank is why replies "
+     "read generic — it has no offer and no context to work from.",
+     [("REPLY_OUR_OFFER", "What you actually sell, in one line"),
+      ("REPLY_SENDER_NAME", "Name replies are signed with"),
+      ("REPLY_CONTEXT", "Anything the agent must know or never claim"),
+      ("REPLY_AUTO_SEND", "Auto-send replies? Leave 0 — you approve each one")]),
+    ("📝 WordPress", "wp",
+     "Only needed for a non-standard WordPress setup.",
+     [("WORDPRESS_USER", "WordPress username"),
+      ("WP_STATUS", "publish or draft")]),
+    ("⚙️ Advanced", "adv",
+     "Overrides and pins. Every one is optional — blank uses the default.",
+     [("CI_JSON", "Brand CI as JSON (or use the CI upload)"),
+      ("IMAGE_API_URL", "Image endpoint override"),
+      ("LINKEDIN_API_KEY", "LinkedIn data provider key"),
+      ("LINKEDIN_PROVIDER_URL", "LinkedIn provider endpoint"),
+      ("GOOGLE_ADS_API_VERSION", "Google Ads API version (v17)"),
+      ("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "Manager account ID, if you use one"),
+      ("GOOGLE_ADS_OFFLINE_ACTION", "Offline conversion action name")]),
+]
+
+
+def _extra_keys_card(saved_keys=None) -> str:
+    """The 36 keys that /connect accepts but no form ever showed a box for.
+
+    A key the endpoint allows and the browser cannot reach is the same as a key
+    you do not have. This renders them grouped by what they unlock, through the
+    existing saveConnect() → /connect path — the allow-list is unchanged."""
+    saved = set(saved_keys or ())
+    n_total = sum(len(f) for _t, _s, _w, f in EXTRA_KEY_GROUPS)
+    n_saved = sum(1 for _t, _s, _w, f in EXTRA_KEY_GROUPS
+                  for k, _h in f if k in saved)
+    forms = []
+    for title, slug, why, fields in EXTRA_KEY_GROUPS:
+        boxes = ""
+        for k, hint in fields:
+            secret = any(x in k for x in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
+            mark = " ✅" if k in saved else ""
+            typ = "password" if secret else "text"
+            pre = "🔑 " if secret else ""
+            ph = ("saved — type to replace" if k in saved
+                  else pre + hint)
+            boxes += (f"<input name='{_esc(k)}' type='{typ}' "
+                      f"placeholder='{_esc(ph)}' title='{_esc(k)}{mark}'>")
+        done = sum(1 for k, _h in fields if k in saved)
+        pill = (f"<span class='pill p-live'>{done}/{len(fields)} saved</span>"
+                if done else
+                f"<span class='pill p-need'>{len(fields)} to add</span>")
+        forms.append(
+            f"<form class='cform' onsubmit='return saveConnect(this)'>"
+            f"<div class='cflab'>{_esc(title)} {pill}</div>"
+            f"<div class='dim' style='margin:-3px 0 5px;line-height:1.45'>"
+            f"{_esc(why)}</div>{boxes}"
+            f"<button class='sbtn' type='submit'>Save · live in ~15s</button>"
+            f"</form>")
+    return ("<div class='card full' style='margin-top:12px' id='extrakeys'>"
+            "<p class='ct'>🔑 Extra keys — everything else your machine can use</p>"
+            f"<p class='cc'>{n_saved} of {n_total} set. These were accepted by "
+            "/connect all along but no form showed a box for them, so they could "
+            "only be added by editing .env and rebuilding. Same endpoint, same "
+            "allow-list, same settings store — blank fields are ignored, so you "
+            "can save one group at a time. <b>None of these is a SaaS tool</b> — "
+            "they are the platforms' own APIs.</p>"
+            "<div class='cgrid'>" + "".join(forms) + "</div></div>")
+
 
 # ---------------------------------------------------------------------------
 # data shaping
@@ -2808,7 +2912,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None,
                    system_ctx=None, risk_ctx=None, bi_ctx=None,
                    outreach_ctx=None, sga_ctx=None, factory_ctx=None,
-                   cockpit_ctx=None):
+                   cockpit_ctx=None, saved_keys=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -3664,7 +3768,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
             f"<button class='sbtn' type='submit'>Connect · turns green in ~15s</button></form>")
     connect_card = ("<div class='card full' style='margin-top:12px'><p class='ct'>🔌 Connect your wires — paste keys, click Connect</p>"
                     "<p class='cc'>No SSH, no rebuild. Saved instantly; the wire turns green above within ~15 seconds. What each one needs (and unlocks) is in the table above.</p>"
-                    "<div class='cgrid'>" + "".join(conn_rows) + "</div></div>")
+                    "<div class='cgrid'>" + "".join(conn_rows) + "</div></div>"
+                    + _extra_keys_card(saved_keys))
     _wired = round(live_conn / total_conn * 100) if total_conn else 0
     m_map = _master("🗺️", "Wiring — at a glance", "How much of your machine is connected.",
         [("Wires live", f"{live_conn}/{total_conn}", "#3FD98B"),
@@ -4232,6 +4337,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "var j=await r.json();alert('Saved. Target CPA per lead: EUR '+((j.targets||{}).target_cpa_lead||'-'));location.reload();}"
               "catch(e){alert('Failed: '+e);}}"
               "function sysTab(id){seoTab(id);}"
+              # Cockpit -> the actual box you type the key into. Naming a form
+              # without landing on it is how the Keys board pointed at a page
+              # that had no field for any of the 36 keys.
+              "function goKeys(){nav('system');sysTab('sysconnect');"
+              "setTimeout(function(){var e=document.getElementById('extrakeys');"
+              "if(e)e.scrollIntoView({block:'start',behavior:'smooth'});},120);}"
               "function runSeoDue(){seoRun('/seo/due','Running what is due…',"
               "'Run every SEO engine that is due right now? Free engines run "
               "immediately; paid ones respect your cap.');}"

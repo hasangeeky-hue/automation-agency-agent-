@@ -1589,7 +1589,21 @@ def api_dashboard_html() -> str:
     except Exception as e:
         log.warning("AI Cockpit context unavailable: %s", e)
         cockpit_ctx = None
+    # Which of the extra keys already have a value, so the form can say "saved"
+    # instead of showing an empty box for something that is set. Presence only —
+    # no value is ever read back out to the browser.
+    saved_keys = set()
+    try:
+        _get = getattr(store, "get_setting", None)
+        if callable(_get):
+            for _t, _s, _w, _fields in D.EXTRA_KEY_GROUPS:
+                for _k, _h in _fields:
+                    if str(_get(_k, "") or "").strip():
+                        saved_keys.add(_k)
+    except Exception as e:
+        log.warning("could not read which extra keys are set: %s", e)
     return D.dashboard_html(
+        saved_keys=saved_keys,
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
         risk_ctx=risk_ctx, bi_ctx=bi_ctx, outreach_ctx=outreach_ctx,
         sga_ctx=sga_ctx, factory_ctx=factory_ctx, cockpit_ctx=cockpit_ctx,

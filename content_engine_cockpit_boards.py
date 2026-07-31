@@ -612,18 +612,22 @@ def board_keys(ctx) -> str:
          _score_gauge(_f(c.get("wire_pct")), 80),
          ("Each dead wire is a capability the engine cannot use."),
          "wire status", _pct_color(100 - _f(c.get("wire_pct")), 40), ""),
-        ("Keys not yet enterable", _i(c.get("missing_total")), "in the browser",
+        ("Extra keys you can now enter", _i(c.get("missing_total")),
+         "in the browser",
          _hbars([(k[:20], len(v)) for k, v in groups]),
-         str(c.get("note", "")),
-         "connect form", AMBER if c.get("missing_total") else GREEN, ""),
+         ("These were on the /connect allow-list all along but no form ever "
+          "showed a box for them, so they could only be set by editing .env and "
+          "rebuilding. There is a field for every one of them now."),
+         "connect form", BLUE, "<button class='cta' onclick=\"goKeys()\">"
+         "Open the form</button>"),
     ]
     cards += _slots(
         groups, 6,
         lambda i, g: (f"{_s(g[0])[:24]}", len(_L(g[1])), "keys",
                       "", (f"{', '.join(_L(g[1])[:5])}"
                            + (" …" if len(_L(g[1])) > 5 else "")),
-                      "connect form", AMBER,
-                      "<button class='cta' onclick=\"nav('system')\">Add them</button>"),
+                      "connect form", BLUE,
+                      "<button class='cta' onclick=\"goKeys()\">Add them</button>"),
         "Key group", "all covered",
         "Every key in this group can already be entered in the browser.",
         "connect form", GREEN)
@@ -645,15 +649,17 @@ def board_keys(ctx) -> str:
               "Claude is wired, so AI visibility is being judged on one engine "
               "out of four."),
          "judgement", AMBER,
-         "<button class='cta' onclick=\"nav('system')\">Add a key</button>"),
+         "<button class='cta' onclick=\"goKeys()\">Add a key</button>"),
         ("Second: your email identity", "logo, booking link, company", "", "",
          ("Every cold email currently carries defaults where your branding "
           "should be."),
-         "judgement", AMBER, ""),
-        ("Where to enter them", "System & Wiring", "connect form", "",
-         "One form, grouped by what it unlocks.",
+         "judgement", AMBER,
+         "<button class='cta' onclick=\"goKeys()\">Set my branding</button>"),
+        ("Where to enter them", "one grouped form", "System &amp; Wiring", "",
+         ("Six groups, one per thing they unlock. Blank fields are ignored, so "
+          "you can save one group at a time."),
          "navigation", VIOLET,
-         "<button class='cta' onclick=\"nav('system')\">Open System &amp; Wiring</button>"),
+         "<button class='cta' onclick=\"goKeys()\">Open the form</button>"),
         ("What SaaS would cost", "hundreds a month", "for less control", "",
          ("An equivalent stack of SEO, outreach, social and BI tools runs into "
           "hundreds a month and still cannot see across itself."),
