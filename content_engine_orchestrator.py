@@ -83,9 +83,90 @@ ROUTES = {
 # Budget caps (SECTION 5 #10). Tune per client tier. The monthly cap is the
 # founder's hard ceiling ("$200/month, all activity included") — the engine
 # pauses new LLM steps once it is reached rather than overspending.
+# These stay as the ENV-level defaults. The live values are read through
+# budget_caps() on every check so a change in the dashboard takes effect on the
+# worker's next loop without a restart — the same settings-first path every
+# credential uses.
 PER_JOB_BUDGET_USD = float(os.getenv("PER_JOB_BUDGET_USD", "0.50"))
 PER_DAY_BUDGET_USD = float(os.getenv("PER_DAY_BUDGET_USD", "50.00"))
 PER_MONTH_BUDGET_USD = float(os.getenv("PER_MONTH_BUDGET_USD", "200.00"))
+BUDGET_KEY = "engine_budget_caps"
+BUDGET_LOG_KEY = "engine_budget_log"
+
+
+def budget_caps(store=None) -> dict:
+    """The caps in force RIGHT NOW: settings first, env second, default last.
+
+    Never raises. If the store is unreachable the env values still apply, so a
+    database blip can never remove the ceiling."""
+    caps = {"per_job": PER_JOB_BUDGET_USD,
+            "per_day": PER_DAY_BUDGET_USD,
+            "per_month": PER_MONTH_BUDGET_USD}
+    try:
+        st = store or (_STORE_GET() if callable(globals().get("_STORE_GET")) else None)
+        saved = st.get_setting(BUDGET_KEY, None) if st is not None else None
+        if isinstance(saved, dict):
+            for k in caps:
+                v = saved.get(k)
+                if v not in (None, "") and float(v) > 0:
+                    caps[k] = float(v)
+    except Exception:
+        pass
+    return caps
+
+
+def set_budget_caps(store, per_job=None, per_day=None, per_month=None,
+                    spent_this_month=0.0, note="") -> dict:
+    """Save new caps. A cap below what is already spent this month is REFUSED —
+    it would halt the engine the moment it took effect, with no warning."""
+    from datetime import datetime, timezone
+    cur = budget_caps(store)
+    want = dict(cur)
+    for key, val in (("per_job", per_job), ("per_day", per_day),
+                     ("per_month", per_month)):
+        if val in (None, ""):
+            continue
+        try:
+            f = float(val)
+        except Exception:
+            return {"ok": False, "error": f"{key} must be a number"}
+        if f <= 0:
+            return {"ok": False, "error": f"{key} must be greater than zero"}
+        want[key] = f
+    spent = float(spent_this_month or 0.0)
+    if want["per_month"] < spent:
+        return {"ok": False,
+                "error": (f"Refused: a monthly cap of EUR {want['per_month']:,.2f} "
+                          f"is below the EUR {spent:,.2f} already spent this "
+                          f"month. Saving it would halt the engine immediately. "
+                          f"The lowest safe value is EUR {spent:,.2f}."),
+                "floor": round(spent, 2), "current": cur}
+    if want["per_day"] > want["per_month"]:
+        return {"ok": False,
+                "error": ("The daily cap cannot exceed the monthly cap.")}
+    if want["per_job"] > want["per_day"]:
+        return {"ok": False,
+                "error": ("A single job cannot be allowed more than a whole day.")}
+    try:
+        store.set_setting(BUDGET_KEY, want)
+        log = list(store.get_setting(BUDGET_LOG_KEY, []) or [])
+        log.append({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "from": cur, "to": want, "note": str(note or "")[:120]})
+        store.set_setting(BUDGET_LOG_KEY, log[-60:])
+    except Exception as e:
+        return {"ok": False, "error": f"could not save: {e}"}
+    return {"ok": True, "caps": want, "previous": cur,
+            "message": (f"Caps saved. Monthly EUR {want['per_month']:,.0f}, "
+                        f"daily EUR {want['per_day']:,.0f}, per job EUR "
+                        f"{want['per_job']:,.2f}. Live on the worker's next loop "
+                        f"— no restart.")}
+
+
+def budget_log(store) -> list:
+    try:
+        return list(store.get_setting(BUDGET_LOG_KEY, []) or [])[::-1]
+    except Exception:
+        return []
 
 # How long a published piece / sent campaign collects real traffic BEFORE the
 # measurement gate opens automatically. This makes "wait N days" a real elapsed
@@ -304,13 +385,14 @@ from content_engine_code_skills import CODE_HANDLERS  # noqa: E402
 # Budget helpers
 # ---------------------------------------------------------------------------
 def over_budget(job: dict, store: JobStore) -> Optional[str]:
-    if job.get("cost_so_far_usd", 0.0) >= PER_JOB_BUDGET_USD:
-        return f"per-job cap ${PER_JOB_BUDGET_USD} reached"
-    if store.daily_cost() >= PER_DAY_BUDGET_USD:
-        return f"per-day cap ${PER_DAY_BUDGET_USD} reached"
+    _caps = budget_caps(store)
+    if job.get("cost_so_far_usd", 0.0) >= _caps["per_job"]:
+        return f"per-job cap ${_caps['per_job']} reached"
+    if store.daily_cost() >= _caps["per_day"]:
+        return f"per-day cap ${_caps['per_day']} reached"
     monthly = getattr(store, "monthly_cost", None)
-    if callable(monthly) and monthly() >= PER_MONTH_BUDGET_USD:
-        return f"per-month cap ${PER_MONTH_BUDGET_USD} reached"
+    if callable(monthly) and monthly() >= _caps["per_month"]:
+        return f"per-month cap ${_caps['per_month']} reached"
     return None
 
 

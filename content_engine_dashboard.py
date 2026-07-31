@@ -26,12 +26,13 @@ log = logging.getLogger("content_engine.dashboard")
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-31 · v28 · Content Factory rebuilt as the heart: 278 "
-             "cards, 16 boards, SIX platform preview screens (96 cards), and "
-             "the planner now reads every other system instead of an empty "
-             "dict. 1,989 engine cards across 12 sidebar entries: Media Buying "
-             "296, Content Factory 278, BI 268, SGA 250, Leads & Outreach 240, "
-             "SEO/AEO/GEO 235, System & Wiring 214, Risk & Infrastructure 208")
+BUILD_TAG = ("2026-07-31 · v29 · AI COCKPIT — the brain. Command Center + "
+             "Operations + Approvals + Learning merged into ONE section: 268 "
+             "cards, 15 boards, every system's signal turned into a decision "
+             "with the button that acts on it. Budget caps are now settable "
+             "in the browser with a hard floor. 2,255 engine cards across 9 "
+             "sidebar entries: Media 296, Content 278, BI 268, Cockpit 268, "
+             "SGA 250, Outreach 240, SEO 235, System 230, Risk 208")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2806,7 +2807,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    content_plan=None, web_tracking=None, reply_drafts=None,
                    competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None,
                    system_ctx=None, risk_ctx=None, bi_ctx=None,
-                   outreach_ctx=None, sga_ctx=None, factory_ctx=None):
+                   outreach_ctx=None, sga_ctx=None, factory_ctx=None,
+                   cockpit_ctx=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -3958,6 +3960,26 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                        f"{_esc(type(_e3).__name__)}: {_esc(str(_e3))[:300]}</p></div>"
                        + p_agents + p_map + overview)
 
+    # ---- AI Cockpit: ONE section replacing Command Center, Operations,
+    # Approvals and Learning — 35 cards, 4 charts, and the decision engine
+    # rendered twice. The live approval queue is passed through unchanged.
+    try:
+        import content_engine_cockpit_boards as _CKB
+        _ck = dict(cockpit_ctx or {})
+        _ck["live"] = {"approvals": p_appr,
+                       "followups": _followups_due(jobs),
+                       "plan": _content_calendar(content_jobs, content_plan)}
+        _cockpit_all = _CKB.cockpit_section(_ck)
+    except Exception as _e9:
+        log.exception("AI Cockpit boards failed to render - showing the old "
+                      "four modules instead")
+        _cockpit_all = ("<div class='card full' style='border-color:#F5788A'>"
+                        "<p class='ct'>AI Cockpit boards failed to render</p>"
+                        f"<p class='cc'>Showing the older modules below, so the "
+                        f"approval queue still works. Reason: "
+                        f"{_esc(type(_e9).__name__)}: {_esc(str(_e9))[:300]}</p></div>"
+                        + p_mission + p_ops + p_appr + p_learn)
+
     # ---- Content Factory: the heart. 13 cards with no preview, a planner
     # handed an empty dict, and images that never reached social. Rebuilt as 16
     # boards with SIX platform preview screens.
@@ -4047,11 +4069,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                      + _mod_risk(ctx) + _mod_workforce(ctx) + _mod_infra(ctx))
 
     PAGES = [
-        ("mission", "🎯", "Command Center", "CEO Command Center", "Your business, diagnosed and decided — evidence → recommendation → action.", p_mission),
+        ("cockpit", "🧠", "AI Cockpit", "AI Cockpit",
+         "The brain. Every system's signal becomes a decision you can act "
+         "on. 268 cards across 15 boards.", _cockpit_all),
         ("bi", "📊", "Business Intel", "Business Intelligence",
          "Demand, pipeline, revenue and unit economics — merged. 252 cards "
          "across 14 boards.", _bi_all),
-        ("ops", "⚙️", "Operations", "Operations", "Throughput, schedule and the approval queue.", _mod_operations(ctx)),
         ("riskinfra", "🛡", "Risk & Infrastructure", "Risk & Infrastructure",
          "Risk, workforce and infrastructure — merged. 208 cards across 12 boards.",
          _risk_all),
@@ -4069,8 +4092,6 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("media", "🛒", "Media Buying", "Media Buying · Google Ads",
          "296 cards across 16 boards — what a senior media buyer reads before deciding.",
          _media_all + p_media),
-        ("appr", "✅", "Approvals & Commands", "Approvals & Commands", "Approve work and command any agent.", p_appr),
-        ("learn", "🧠", "Learning & Results", "Learning & Results", "What's working and how the engine improves.", p_learn),
         ("system", "🩺", "System & Wiring", "System & Wiring",
          "Agents, health, wiring and machines — merged. 214 cards across 12 boards.",
          _system_all),
@@ -4127,7 +4148,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  + pause_btn + auto_btn + "</div></details>")
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
-    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi',leads:'outreach',email:'outreach',social:'sga',google:'sga',ads:'sga'};"
+    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi',leads:'outreach',email:'outreach',social:'sga',google:'sga',ads:'sga',mission:'cockpit',ops:'cockpit',appr:'cockpit',learn:'cockpit'};"
               "function nav(id){id=NAVALIAS[id]||id;"
               "document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
               "var s=document.getElementById('sec-'+id);if(s)s.classList.add('on');"
@@ -4214,6 +4235,20 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "function runSeoDue(){seoRun('/seo/due','Running what is due…',"
               "'Run every SEO engine that is due right now? Free engines run "
               "immediately; paid ones respect your cap.');}"
+              "async function setBudget(){"
+              "var m=prompt('Monthly cap in euros (leave blank to keep)');"
+              "var d=prompt('Daily cap in euros (blank to keep)');"
+              "var j=prompt('Per-job cap in euros (blank to keep)');"
+              "if(!m&&!d&&!j)return;"
+              "try{var r=await fetch('/budget',{method:'POST',headers:{'Content-Type':'application/json'},"
+              "body:JSON.stringify({per_month:m,per_day:d,per_job:j,note:'set from the cockpit'})});"
+              "var x=await r.json();alert(x.ok?x.message:('Not saved: '+(x.error||'')));"
+              "if(x.ok)location.reload();}catch(e){alert('Failed: '+e);}}"
+              "function startExperiment(){"
+              "var h=prompt('Hypothesis — what do you believe will happen?');if(!h)return;"
+              "var m=prompt('Which ONE metric will tell you?');if(!m)return;"
+              "var d=prompt('Review in how many days?','14')||'14';"
+              "post('/experiment',{hypothesis:h,metric:m,review_days:d});}"
               "function planContent(){"
               "if(!confirm('Plan a week of content?\\n\\nThe planner reads striking-distance "
               "queries, AI-visibility gaps, missing markets, which vertical replies, what "
@@ -4471,10 +4506,12 @@ if __name__ == "__main__":
 
     import re as _re
     _ids = _re.findall(r"id='sec-([a-z0-9_]+)'", html)
-    assert _ids == ["mission", "bi", "ops", "riskinfra", "content",
-                    "outreach", "sga", "seo", "media",
-                    "appr", "learn", "system"], _ids
-    assert html.count("class='page") == 12, html.count("class='page")
+    assert _ids == ["cockpit", "bi", "riskinfra", "content",
+                    "outreach", "sga", "seo", "media", "system"], _ids
+    assert html.count("class='page") == 9, html.count("class='page")
+    for _old in ("mission", "ops", "appr", "learn"):
+        assert f"{_old}:'cockpit'" in html, f"nav alias {_old} -> cockpit missing"
+    assert "setBudget()" in html, "the budget control must be reachable"
     # the launch pad must survive the merge: every endpoint still reachable
     for _ep in ("/outreach/send_all", "/outreach/send_one", "/outreach/send_batch",
                 "/outreach/edit", "/outreach/trash", "/replies/refresh",
@@ -4485,7 +4522,7 @@ if __name__ == "__main__":
     for _dead in ("sec-business", "sec-marketing", "sec-sales", "sec-customer",
                   "sec-finance", "sec-budget", "sec-exec",
                   "sec-leads", "sec-email", "sec-social", "sec-google",
-                  "sec-ads"):
+                  "sec-ads", "sec-mission", "sec-ops", "sec-appr", "sec-learn"):
         assert f"id='{_dead}'" not in html, f"{_dead} should be merged into sec-bi"
     for _old in ("business", "marketing", "sales", "customer", "finance",
                  "budget", "exec"):
@@ -4496,9 +4533,10 @@ if __name__ == "__main__":
         assert f"{_old}:'sga'" in html, f"nav alias {_old} -> sga missing"
     for _fn in ("biDeal()", "biEcon()", "biTargets()"):
         assert _fn in html, f"{_fn} handler missing"
-    assert "CEO Command Center" in html and "Executive briefing" in html
-    for _m in ("Business Intelligence", "AI Workforce", "Operations",
-               "Executive brief", "AI Decision Engine"):
+    assert "AI Cockpit" in html, "the cockpit page must exist"
+    for _g in ("DECIDE", "APPROVE", "CONTROL", "RUN &amp; LEARN"):
+        assert _g in html, f"cockpit group {_g} missing"
+    for _m in ("Business Intelligence", "AI Workforce", "Executive brief"):
         assert _m in html, _m
     # the three merged-away sections must not come back as pages, and every old
     # nav id must still land somewhere real
@@ -4511,7 +4549,7 @@ if __name__ == "__main__":
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
-    print("OK — 12 pages. Risk + AI Workforce + Infrastructure now render as ONE "
+    print("OK — 9 pages. Risk + AI Workforce + Infrastructure now render as ONE "
           "Risk & Infrastructure section (208 cards) and six more render as ONE "
           "Business Intelligence section (268 cards, 15 boards, Executive "
           "Intelligence included), and Lead Machine + Email & Outreach render "

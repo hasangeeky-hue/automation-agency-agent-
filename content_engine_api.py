@@ -1442,8 +1442,9 @@ def api_dashboard_html() -> str:
         health = run_health()
     except Exception as e:  # never let a health hiccup 500 the dashboard
         health = {"healthy": False, "anthropic": {"status": "fail", "detail": str(e)}}
-    month_cap = getattr(orch, "PER_MONTH_BUDGET_USD", 200.0)
-    day_cap = getattr(orch, "PER_DAY_BUDGET_USD", 50.0)
+    _caps = orch.budget_caps(store) if hasattr(orch, "budget_caps") else {}
+    month_cap = _caps.get("per_month", getattr(orch, "PER_MONTH_BUDGET_USD", 200.0))
+    day_cap = _caps.get("per_day", getattr(orch, "PER_DAY_BUDGET_USD", 50.0))
     month_spent = store.monthly_cost() if hasattr(store, "monthly_cost") else         sum(float(j.get("cost_so_far_usd", 0)) for j in jobs)
     day_spent = store.daily_cost() if hasattr(store, "daily_cost") else 0.0
     settings = _settings()
@@ -1577,10 +1578,21 @@ def api_dashboard_html() -> str:
     except Exception as e:
         log.warning("Content Factory context unavailable: %s", e)
         factory_ctx = None
+    try:
+        import content_engine_seo_ops as _SEO9
+        cockpit_ctx = _SEO9.build_cockpit_ctx(
+            store, jobs=jobs, status=st, health=health,
+            content_plan=content_plan, seo=seo_ctx, bi=bi_ctx,
+            outreach=outreach_ctx, sga=sga_ctx, media=media_ctx,
+            risk=risk_ctx, system=system_ctx,
+            month_spent=month_spent, day_spent=day_spent)
+    except Exception as e:
+        log.warning("AI Cockpit context unavailable: %s", e)
+        cockpit_ctx = None
     return D.dashboard_html(
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
         risk_ctx=risk_ctx, bi_ctx=bi_ctx, outreach_ctx=outreach_ctx,
-        sga_ctx=sga_ctx, factory_ctx=factory_ctx,
+        sga_ctx=sga_ctx, factory_ctx=factory_ctx, cockpit_ctx=cockpit_ctx,
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
@@ -1851,6 +1863,42 @@ def build_app():
                             "added to the HTML part of every send."
                             if r["enabled"] else
                             "Tracking off — nothing is added to your emails.")}
+
+    @app.post("/experiment")
+    async def start_experiment(request: Request):
+        """A stated hypothesis with one metric and a review date."""
+        import content_engine_cockpit as CK
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        r = CK.start_experiment(get_store(), d.get("hypothesis"),
+                                d.get("metric"), d.get("review_days", 14),
+                                d.get("note", ""))
+        if r.get("ok"):
+            r["message"] = f"Experiment saved. {r.get('message', '')}"
+        return r
+
+    @app.post("/budget")
+    async def set_budget(request: Request):
+        """Change the spend caps from the browser. Settings-first, so the worker
+        picks it up on its next loop with no restart."""
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        store = get_store()
+        spent = 0.0
+        try:
+            m = getattr(store, "monthly_cost", None)
+            spent = float(m() if callable(m) else 0.0)
+        except Exception:
+            pass
+        return orch.set_budget_caps(store, per_job=d.get("per_job"),
+                                    per_day=d.get("per_day"),
+                                    per_month=d.get("per_month"),
+                                    spent_this_month=spent,
+                                    note=d.get("note", ""))
 
     @app.post("/content/test-image")
     def content_test_image():

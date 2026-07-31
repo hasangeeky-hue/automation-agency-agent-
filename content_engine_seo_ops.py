@@ -594,6 +594,76 @@ def _campaign_list(store):
         return []
 
 
+MISSING_KEY_GROUPS = {
+    "AI answer engines": ["OPENAI_API_KEY", "PERPLEXITY_API_KEY",
+                          "GEMINI_API_KEY", "OPENAI_AEO_MODEL",
+                          "PERPLEXITY_MODEL", "GEMINI_MODEL"],
+    "Email identity": ["EMAIL_COMPANY", "EMAIL_FROM_NAME", "EMAIL_SENDER_TITLE",
+                       "EMAIL_WEBSITE", "EMAIL_PHONE", "EMAIL_ADDRESS",
+                       "EMAIL_LOGO_URL", "EMAIL_BRAND_COLOR",
+                       "EMAIL_BOOKING_URL", "EMAIL_UNSUBSCRIBE_URL",
+                       "EMAIL_MANAGE_URL", "EMAIL_HTML"],
+    "Mail transport": ["SMTP_PORT", "SMTP_FROM", "SMTP_STARTTLS",
+                       "IMAP_PORT", "IMAP_FOLDER"],
+    "Reply agent": ["REPLY_OUR_OFFER", "REPLY_SENDER_NAME", "REPLY_CONTEXT",
+                    "REPLY_AUTO_SEND"],
+    "WordPress": ["WORDPRESS_USER", "WP_STATUS"],
+    "Advanced": ["CI_JSON", "IMAGE_API_URL", "LINKEDIN_API_KEY",
+                 "LINKEDIN_PROVIDER_URL", "GOOGLE_ADS_API_VERSION",
+                 "GOOGLE_ADS_LOGIN_CUSTOMER_ID", "GOOGLE_ADS_OFFLINE_ACTION"],
+}
+
+
+def build_cockpit_ctx(store, *, jobs=None, status=None, health=None,
+                      content_plan=None, seo=None, bi=None, outreach=None,
+                      sga=None, media=None, risk=None, system=None,
+                      live=None, month_spent=0.0, day_spent=0.0) -> dict:
+    """Everything the 15 AI Cockpit boards read.
+
+    This is the only context that reads ALL the others — it turns each system's
+    signal into a decision. It computes nothing new; it routes."""
+    import content_engine_cockpit as CK
+    import content_engine_orchestrator as ORCH
+    jobs = jobs if isinstance(jobs, list) else []
+    caps = ORCH.budget_caps(store) if hasattr(ORCH, "budget_caps") else {}
+    playbook = {}
+    try:
+        import content_engine_learning as LRN
+        _client = (_get(store, "brand_name", "") or
+                   _D(_get(store, "brand_ci_json", {})).get("brand_name") or
+                   "Anthropos")
+        playbook = LRN.get_playbook(_client) or {}
+    except Exception as e:
+        log.warning("playbook unavailable: %s", e)
+    deals = []
+    try:
+        import content_engine_bi as BI
+        deals = BI.list_deals(store)
+    except Exception:
+        pass
+    return {
+        "decisions": CK.decisions(seo=seo, content=None, outreach=outreach,
+                                  bi=bi, sga=sga, media=media, risk=risk,
+                                  system=system, jobs=jobs),
+        "router": CK.signal_router(seo=seo, content=None, outreach=outreach,
+                                   bi=bi, sga=sga, media=media, risk=risk,
+                                   system=system),
+        "approvals": CK.approvals(jobs, content_plan),
+        "turnaround": CK.turnaround(jobs),
+        "budget": CK.budget_view(caps, spent_month=month_spent,
+                                 spent_day=day_spent,
+                                 log=ORCH.budget_log(store)
+                                 if hasattr(ORCH, "budget_log") else []),
+        "autonomy": CK.autonomy(caps),
+        "capability": CK.capability(status, MISSING_KEY_GROUPS),
+        "engine": CK.engine_state(health, jobs, caps, month_spent),
+        "playbook": CK.playbook_view(playbook, deals),
+        "experiments": CK.experiments(store),
+        "log": CK.decision_log(store),
+        "live": live if isinstance(live, dict) else {},
+    }
+
+
 def build_factory_ctx(store, *, jobs=None, status=None, ci=None, piece=None,
                       content_plan=None, seo=None, bi=None, outreach=None,
                       sga=None, media=None, risk=None, image_key=None) -> dict:

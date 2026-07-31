@@ -797,6 +797,100 @@ def board_deploy(ctx) -> str:
 # ======================================================================
 #  ASSEMBLY
 # ======================================================================
+LOOP_SYSTEMS = [
+    ("bi", "Business Intelligence", 268, "revenue, funnel, unit economics"),
+    ("content", "Content Factory", 278, "plan, make, preview, ship"),
+    ("outreach", "Leads & Outreach", 240, "source, send, reply, book"),
+    ("seo", "SEO / AEO / GEO", 235, "rank, answer, localise"),
+    ("sga", "Social, Growth & Ads", 250, "post, distribute, attribute"),
+    ("media", "Media Buying", 296, "bid, spend, convert"),
+    ("riskinfra", "Risk & Infrastructure", 208, "risk, capacity, continuity"),
+    ("system", "System & Wiring", 230, "wires, health, cost"),
+    ("cockpit", "AI Cockpit", 268, "decide, approve, control, learn"),
+]
+PRODUCTION_LINE = [
+    ("plan", "strategy brief reads 8 systems"),
+    ("write", "the content agent drafts"),
+    ("image", "an on-brand hero is generated"),
+    ("preview", "six platform screens"),
+    ("approve", "you decide"),
+    ("publish", "to the channels that are live"),
+    ("verify", "did it actually land?"),
+    ("measure", "GA4, GSC, replies, deals"),
+    ("learn", "the playbook records it"),
+]
+
+
+def board_loopmap(ctx) -> str:
+    """The wiring, drawn. Nine sections, what each emits, and the line a piece
+    of content travels from a signal to a recorded outcome."""
+    ctx = _ctx(ctx)
+    st = _D(ctx.get("status"))
+    live = sum(1 for v in st.values() if v)
+    nodes = [(k, lbl[:13], True) for k, lbl, _n, _e in LOOP_SYSTEMS]
+    edges = [(k, "cockpit") for k, lbl, _n, _e in LOOP_SYSTEMS if k != "cockpit"]
+    flows = ([(lbl[:12], "cockpit", 1) for _k, lbl, _n, _e in LOOP_SYSTEMS
+              if lbl != "AI Cockpit"]
+             + [("cockpit", "decision", 8), ("decision", "action", 8),
+                ("action", "outcome", 8), ("outcome", "playbook", 8)])
+    lanes = [("① make", [("🧭", "plan", "8 signals", "code"),
+                          ("✍️", "write", "", "agent"),
+                          ("🎨", "image", "€0.04", "agent")]),
+             ("② ship", [("👁", "preview", "6 screens", "code"),
+                          ("✅", "approve", "you", "human"),
+                          ("🚀", "publish", "", "code")]),
+             ("③ learn", [("🔍", "verify", "did it land?", "gate"),
+                           ("📈", "measure", "GA4/GSC", "code"),
+                           ("📚", "learn", "playbook", "agent")])]
+    total_cards = sum(n for _k, _l, n, _e in LOOP_SYSTEMS)
+    cards = [
+        ("The engine, as a graph", len(LOOP_SYSTEMS), "sections",
+         _CH().digraph(nodes, edges),
+         ("Every section emits a signal into the cockpit, which turns it into a "
+          "decision. Before the cockpit existed, these all computed and nothing "
+          "closed the circle."),
+         "loop map", GREEN, ""),
+        ("Signal to outcome", 5, "stages",
+         _CH().sankey(flows),
+         ("signal → cockpit → decision → action → outcome → playbook. That is "
+          "the whole loop in one line."),
+         "loop map", GREEN, ""),
+        ("The production line", len(PRODUCTION_LINE), "steps",
+         _CH().n8n_flow(lanes),
+         ("What a single piece of content travels through, from a measured gap "
+          "to a recorded outcome."),
+         "loop map", BLUE, ""),
+        ("Total engine cards", f"{total_cards:,}", "across 9 sections",
+         _hbars([(lbl[:18], n) for _k, lbl, n, _e in LOOP_SYSTEMS]),
+         "Each section owns its own loops and is read by the cockpit.",
+         "computed", BLUE, ""),
+        ("Wires live", live, f"of {len(st)}",
+         _score_gauge(round(100 * live / max(len(st), 1)), 80),
+         "A loop with a dead wire emits nothing — check here first.",
+         "wire status", _pct_color(100 - 100 * live / max(len(st), 1), 40), ""),
+    ]
+    for key, label, n, emits in LOOP_SYSTEMS:
+        cards.append((label[:24], n, "cards",
+                      _donut(round(100 * n / max(total_cards, 1))),
+                      f"Owns: {emits}. Feeds the cockpit's decision queue.",
+                      "loop map", BLUE,
+                      f"<button class='cta' onclick=\"nav('{key}')\">Open</button>"))
+    cards += [
+        ("Where a loop can break", "a dead wire", "most often", "",
+         ("A section with no credentials emits nothing, so its decisions never "
+          "appear. That looks like silence, not failure."),
+         "judgement", AMBER, ""),
+        ("Nothing is computed twice", "by design", "one owner each", "",
+         ("A signal is computed in the section that owns it and read everywhere "
+          "else. That is why merging removed 17 sections without losing data."),
+         "principle", GREEN, ""),
+    ]
+    return _head("🔄", "Loop map",
+                 "How the whole engine wires together — sections, signals and "
+                 "the line a piece travels.") + _vizcards(cards[:16])
+
+
+
 TABS = [
     ("syscmd", "🩺", "Health Command"),
     ("sysjobs", "📦", "Jobs"),
@@ -810,13 +904,14 @@ TABS = [
     ("sysdrift", "📉", "Drift"),
     ("sysflow", "🔀", "Data Flow"),
     ("sysdeploy", "🚀", "Deploy"),
+    ("sysloopmap", "🔄", "Loop Map"),
 ]
 
 GROUPS = [
     ("sysrun", "① IS IT RUNNING", "Is the engine working?",
      ["syscmd", "sysjobs", "sysfail", "sysagents"]),
     ("syswired", "② IS IT WIRED", "Is everything connected?",
-     ["syswires", "sysconnect", "sysdeps", "sysflow"]),
+     ["syswires", "sysconnect", "sysdeps", "sysflow", "sysloopmap"]),
     ("syscost_g", "③ IS IT COSTING", "What does it cost?", ["syscost"]),
     ("sysdrift_g", "④ IS IT DRIFTING", "Is it still good?",
      ["sysfresh", "sysdrift", "sysdeploy"]),
@@ -835,16 +930,17 @@ _TAB_BOARDS = {
     "sysdeps": [("Dependencies", board_deps)],
     "sysdrift": [("Drift", board_drift)],
     "sysdeploy": [("Deploy", board_deploy)],
+    "sysloopmap": [("Loop Map", board_loopmap)],
 }
 
 CARD_COUNTS = {"command": 14, "wires": 24, "connect": 26, "agents": 22, "jobs": 20,
                "failures": 18, "cost": 18, "freshness": 16, "flow": 16, "deps": 14,
-               "drift": 14, "deploy": 12}
+               "drift": 14, "deploy": 12, "loopmap": 16}
 TOTAL_CARDS = sum(CARD_COUNTS.values())
 
 _TAB_COUNTS = {"syscmd": 14, "syswires": 24, "sysconnect": 26, "sysagents": 22,
                "sysjobs": 20, "sysfail": 18, "syscost": 18, "sysfresh": 16,
-               "sysflow": 16, "sysdeps": 14, "sysdrift": 14, "sysdeploy": 12}
+               "sysflow": 16, "sysdeps": 14, "sysdrift": 14, "sysdeploy": 12, "sysloopmap": 16}
 
 
 def _safe_board(name, fn, ctx) -> str:
@@ -1018,6 +1114,6 @@ if __name__ == "__main__":
     assert sorted(grouped) == sorted(t for t, _, _ in TABS), "every tab in one group"
     assert sec.count("class='spanel on'") == 1 and sec.count("class='stab on'") == 1
     assert "overflowcard" in sec and "Show all" in sec
-    print(f"system_boards self-check OK — 12 boards, {counted} cards, "
+    print(f"system_boards self-check OK — {len(_TAB_BOARDS)} boards, {counted} cards, "
           f"{len(set(ids))} unique ids, {html.count('<svg')} charts; connect forms, "
           f"wiring diagrams and agent list all preserved")
