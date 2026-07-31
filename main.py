@@ -75,6 +75,15 @@ def run(store) -> None:
                 pass
         try:
             orch.auto_approve_stale(store)   # autonomy: release stale gates if ON
+            # THE CADENCE. Until now this loop only advanced jobs that already
+            # existed — nothing ever created them, and the 12-engine SEO cadence
+            # in SEO_CADENCE never fired because nothing called it. One due task
+            # per loop, never while paused, never sends anything.
+            try:
+                import content_engine_scheduler as _sched
+                _sched.run_due_work(store)
+            except Exception:
+                log.exception("cadence failed; continuing")
             status = orch.tick(store)        # claim + advance one job, or None
         except Exception:                    # never let one bad job kill the worker
             log.exception("tick failed; continuing")

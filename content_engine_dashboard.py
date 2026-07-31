@@ -26,7 +26,7 @@ log = logging.getLogger("content_engine.dashboard")
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-31 · v30 · THE RETURN ARROW — the engine can now find "
+BUILD_TAG = ("2026-07-31 · v31 · THE CADENCE — the worker now queues the daily batch, runs the SEO engines when they are due, and drafts replies, without ever being able to publish or send. START is SUPERVISED: it no longer grants autonomy as a side effect, so nothing auto-publishes after 24h unless you deliberately choose it. Previously: THE RETURN ARROW — the engine can now find "
              "out what happened. Real GA4 numbers for the exact page that was "
              "published (including conversions, which were structurally zero "
              "before), real opens and clicks per campaign, content measured at "
@@ -4264,12 +4264,23 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # ONE start / ONE stop for the whole system. Granular controls tucked away.
     if autopilot_on:
         master_switch = ("<button class='cbtn warn' style='font-size:15px;font-weight:700;padding:11px 24px' "
-                         "onclick=\"if(confirm('Stop the whole system? Nothing new will publish or send until you start it again.'))act('/system/stop')\">■ STOP the whole system</button>"
-                         "<span class='pill p-live' style='align-self:center'><span class='d' style='background:#3FD98B'></span>running</span>")
+                         "onclick=\"if(confirm('Stop the machine? Nothing new is queued, run, published or drafted until you start it again.'))act('/system/stop')\">■ STOP the whole system</button>"
+                         "<span class='pill p-live' style='align-self:center'><span class='d' style='background:#3FD98B'></span>running</span>"
+                         + ("<span class='pill p-need' style='align-self:center;border-color:#FF6B93;color:#FF6B93'>"
+                            "<span class='d' style='background:#FF6B93'></span>AUTONOMOUS — publishes without you</span>"
+                            if autonomy else
+                            "<span class='dim' style='align-self:center;font-size:11.5px'>"
+                            "supervised · every publish waits for you</span>"))
     else:
+        # SUPERVISED start. This button used to grant autonomy as a side effect,
+        # which meant anything left unreviewed for 24h published itself. It now
+        # says exactly what it does, and autonomy is a separate deliberate act.
         master_switch = ("<button class='cbtn on' style='font-size:15px;font-weight:700;padding:11px 24px' "
-                         "onclick=\"if(confirm('Start the whole system? It publishes content live and sends capped cold emails, and re-plans daily.'))act('/system/start')\">▶ START the whole system</button>"
-                         "<span class='pill p-need' style='align-self:center'><span class='d' style='background:#F5B14C'></span>stopped</span>")
+                         "onclick=\"if(confirm('Start the machine?\n\nIt will queue work daily, run the SEO engines on their cadence, and draft replies.\n\nEVERY piece still waits for your approval — nothing publishes or sends until you say so.'))"
+                         "act('/system/start')\">▶ START — supervised</button>"
+                         "<span class='pill p-need' style='align-self:center'><span class='d' style='background:#F5B14C'></span>stopped</span>"
+                         "<span class='dim' style='align-self:center;font-size:11.5px'>"
+                         "Queues and drafts. Publishes nothing without you.</span>")
     ctrl_html = ("<div class='ctrl'>" + master_switch + "</div>"
                  "<details style='margin-top:8px'><summary class='dim' style='cursor:pointer'>Advanced controls</summary>"
                  "<div class='ctrl' style='margin-top:6px'><button class='cbtn' onclick=\"act('/tick')\">▶ Run one step</button>"

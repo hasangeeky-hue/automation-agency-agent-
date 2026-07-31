@@ -945,26 +945,57 @@ def api_save_ci(text, drive_folder=None, inspiration=None):
     return {"ok": True, "saved": True, "chars": len(text or "")}
 
 
-def api_autopilot(on=True):
-    """1-click autonomous on-brand publishing. ON: autonomy + publish-live + queue
-    today's work (QA + judge still gate quality, so 'auto' is never 'unchecked').
-    OFF: stop everything."""
+def api_start(autonomous: bool = False):
+    """Switch the machine on.
+
+    SUPERVISED (the default, and what the START button now calls): unpause, turn
+    the cadence on so work is queued and the SEO engines run, and publish
+    APPROVED pieces. Autonomy is explicitly set OFF — every piece waits for you.
+
+    AUTONOMOUS (a separate, deliberate choice): additionally releases anything
+    that has sat at the gate longer than AUTONOMY_GRACE_HOURS and publishes it
+    without you.
+
+    These used to be the same button. Pressing START set autonomy=True, and the
+    worker's auto_approve_stale() then published anything you had not reviewed
+    within 24 hours — which is not what "keep every publish behind approval"
+    means. Splitting them is the whole point of this function."""
     store = get_store()
     if not hasattr(store, "set_setting"):
         return {"error": "store cannot save settings"}
-    if on:
-        store.set_setting("autonomy", True)
-        store.set_setting("paused", False)
-        store.set_setting("WP_STATUS", "publish")   # approved+QA-passed pieces go live
-        try:
-            import content_engine_scheduler as scheduler
-            planned = scheduler.plan_today(store, force=True)
-        except Exception as e:
-            planned = {"error": str(e)[:120]}
-        return {"ok": True, "autopilot": "on", "planned": planned}
+    store.set_setting("paused", False)
+    store.set_setting("cadence_on", True)
+    store.set_setting("WP_STATUS", "publish")   # APPROVED + QA-passed pieces go live
+    store.set_setting("autonomy", bool(autonomous))
+    try:
+        import content_engine_scheduler as scheduler
+        planned = scheduler.plan_today(store, force=True)
+    except Exception as e:
+        planned = {"error": str(e)[:120]}
+    return {"ok": True, "running": True,
+            "mode": "autonomous" if autonomous else "supervised",
+            "planned": planned,
+            "message": ("Running. Every piece waits for your approval."
+                        if not autonomous else
+                        "Running AUTONOMOUSLY — anything you do not review "
+                        f"within {orch.AUTONOMY_GRACE_HOURS:.0f}h publishes itself.")}
+
+
+def api_stop():
+    """Stop everything: pause, cadence off, autonomy off."""
+    store = get_store()
+    if not hasattr(store, "set_setting"):
+        return {"error": "store cannot save settings"}
     store.set_setting("paused", True)
+    store.set_setting("cadence_on", False)
     store.set_setting("autonomy", False)
-    return {"ok": True, "autopilot": "off"}
+    return {"ok": True, "running": False, "message": "Stopped."}
+
+
+def api_autopilot(on=True):
+    """Backwards-compatible shim. Kept because /autopilot/run is a documented
+    endpoint, but it no longer grants autonomy — supervised is the default now."""
+    return api_start(autonomous=False) if on else api_stop()
 
 
 def api_run_evals():
@@ -2316,12 +2347,14 @@ def build_app():
             return {"ok": False, "error": str(e)[:200]}
 
     @app.post("/system/start")
-    def system_start():
-        return api_autopilot(True)   # THE one start: unpause + autonomy + publish + queue
+    def system_start(autonomous: bool = False):
+        """Supervised by default. `?autonomous=true` is the deliberate opt-in
+        to publishing without you after the grace period."""
+        return api_start(autonomous=autonomous)
 
     @app.post("/system/stop")
     def system_stop():
-        return api_autopilot(False)  # THE one stop: pause + autonomy off
+        return api_stop()
 
     @app.post("/selftest")
     def selftest():

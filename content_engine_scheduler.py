@@ -19,10 +19,13 @@ Cold-email jobs are created before content jobs on purpose.
 
 from __future__ import annotations
 
+import logging
 import os
-from datetime import date
+from datetime import date, datetime, timezone
 
 import content_engine_orchestrator as orch
+
+log = logging.getLogger("content_engine.scheduler")
 
 
 def _int(env, default):
@@ -187,6 +190,158 @@ def run_seo_due(store, *, include_paid: bool = True) -> dict:
         except Exception as e:
             out[name] = {"error": f"{type(e).__name__}: {e}"}
     return {"ran": list(out), "results": out}
+
+
+
+# ===========================================================================
+#  THE CADENCE — the half of the scheduler that nothing was calling.
+#
+#  SEO_CADENCE above has said "crawl every 7 days, ranks every 1 day" since it
+#  was written, and plan_today() has been able to queue a day's work all along.
+#  Neither ever fired on its own: main.py called orch.tick() and nothing else,
+#  and run_seo_due() was reachable only by manually POSTing /seo/due. The engine
+#  could do the work; nobody ever told it when.
+#
+#  run_due_work() is that missing caller. The worker invokes it every loop; it
+#  does AT MOST ONE due task per call and returns immediately otherwise, so it
+#  costs nothing when there is nothing to do.
+# ===========================================================================
+CADENCE_KEY = "engine_cadence_last"
+
+# seconds between attempts. Deliberately conservative: the SEO engines
+# self-throttle by their own per-day cadence, so checking hourly is plenty.
+CADENCE = {
+    "plan": 3600,      # queue today's work (plan_today is idempotent per day)
+    "seo": 3600,       # run whichever SEO engines are due
+    "replies": 900,    # DRAFT answers to inbound replies — never sends
+}
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def cadence_state(store) -> dict:
+    try:
+        return dict(store.get_setting(CADENCE_KEY, {}) or {})
+    except Exception:
+        return {}
+
+
+def _due(state: dict, task: str, now: datetime) -> bool:
+    last = state.get(task)
+    if not last:
+        return True
+    try:
+        return (now - datetime.fromisoformat(last)).total_seconds() >= CADENCE[task]
+    except Exception:
+        return True
+
+
+def _stamp(store, state: dict, task: str, now: datetime) -> None:
+    state[task] = now.isoformat()
+    try:
+        store.set_setting(CADENCE_KEY, state)
+    except Exception as e:
+        log.warning("could not record the cadence stamp for %s: %s", task, e)
+
+
+def run_due_work(store, now=None) -> dict:
+    """Fire whatever is due. Called by the worker on every loop.
+
+    Rules this must never break:
+      * PAUSED means paused. Nothing here runs while the engine is stopped.
+      * It NEVER sends. Replies are drafted for the approval queue; the reply
+        agent's own auto-send flag is explicitly forced off here regardless of
+        how it is configured, because "the scheduler started sending email on a
+        timer" is the one outcome that must be impossible.
+      * It never raises. A failing task is logged and stamped so a broken engine
+        cannot spin the worker.
+      * One task per call, so a slow task cannot starve job processing.
+    """
+    now = now or _now()
+    getset = getattr(store, "get_setting", None)
+    if not callable(getset):
+        return {"skipped": "store cannot read settings"}
+    if getset("paused", False):
+        return {"skipped": "paused"}
+    if not getset("cadence_on", False):
+        # Off until you switch the machine on. A fresh deploy does not start
+        # queueing work by itself.
+        return {"skipped": "cadence off"}
+
+    state = cadence_state(store)
+
+    if _due(state, "plan", now):
+        _stamp(store, state, "plan", now)
+        try:
+            r = plan_today(store)
+            if r.get("created"):
+                log.info("cadence: queued %s job(s) for %s", r["created"], r.get("day"))
+            return {"ran": "plan", "result": r}
+        except Exception as e:
+            log.exception("cadence: plan_today failed")
+            return {"ran": "plan", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "seo", now):
+        _stamp(store, state, "seo", now)
+        try:
+            # Paid engines only when the cap allows it. A cadence that quietly
+            # spends is a cadence you would have to watch.
+            caps = orch.budget_caps(store)
+            spent = 0.0
+            try:
+                m = getattr(store, "monthly_cost", None)
+                spent = float(m() if callable(m) else 0.0)
+            except Exception:
+                pass
+            headroom = float(caps.get("per_month", 0)) - spent
+            include_paid = headroom > float(caps.get("per_month", 0)) * 0.25
+            r = run_seo_due(store, include_paid=include_paid)
+            if r.get("ran"):
+                log.info("cadence: ran SEO engines %s (paid=%s)", r["ran"], include_paid)
+            return {"ran": "seo", "paid_allowed": include_paid, "result": r}
+        except Exception as e:
+            log.exception("cadence: run_seo_due failed")
+            return {"ran": "seo", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "replies", now):
+        _stamp(store, state, "replies", now)
+        try:
+            import content_engine_reply_agent as reply_agent
+            # auto_send=False is passed EXPLICITLY. Without it the agent reads
+            # REPLY_AUTO_SEND from the environment, and a stray "1" there would
+            # turn a scheduled draft into a scheduled send.
+            r = reply_agent.answer_replies(limit=20, auto_send=False, dry_run=False)
+            n = len(r.get("drafts", []) or []) if isinstance(r, dict) else 0
+            if n:
+                log.info("cadence: drafted %s repl(ies) for your approval", n)
+            return {"ran": "replies", "result": r}
+        except Exception as e:
+            log.exception("cadence: answer_replies failed")
+            return {"ran": "replies", "error": f"{type(e).__name__}: {e}"}
+
+    return {"ran": None}
+
+
+def cadence_view(store) -> dict:
+    """What the cadence will do next, for the dashboard."""
+    now = _now()
+    state = cadence_state(store)
+    try:
+        on = bool(store.get_setting("cadence_on", False))
+        paused = bool(store.get_setting("paused", False))
+    except Exception:
+        on = paused = False
+    rows = []
+    for task, secs in CADENCE.items():
+        last = state.get(task)
+        due = _due(state, task, now)
+        rows.append({"task": task, "every_mins": round(secs / 60),
+                     "last": str(last or "")[:16], "due_now": due})
+    return {"on": on, "paused": paused, "rows": rows,
+            "note": ("The cadence is running." if on and not paused else
+                     "The cadence is OFF — nothing is queued automatically." )}
 
 
 if __name__ == "__main__":

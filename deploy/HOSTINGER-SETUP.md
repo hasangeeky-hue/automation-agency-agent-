@@ -21,7 +21,12 @@ Be clear on the honest state of the build:
 | **Anthropic (Claude) API** — console.anthropic.com -> API key | Every LLM agent (the brain). Fallback is also Claude. | usage-based | **credentials only (wired)** |
 | **Hostinger VPS** | Runs everything | you have it | done |
 | **Postgres** | Job blackboard + learning store | free (Docker on the VPS) | wired |
-| **n8n** | Orchestration + human-gate + cron | free (self-hosted) | wired |
+| **n8n** | Optional external orchestration | free (self-hosted) | NOT required |
+
+> The engine's own worker now runs its cadence: it queues the daily batch, runs the
+> SEO engines when they are due, and drafts replies for your approval. n8n is not
+> needed for any of that. (This row used to read "cron — wired"; there was no cron
+> anywhere in the deployment and nothing ever called the scheduler.)
 
 > With just the Anthropic key you can already run the API and "taste" each
 > agent in isolation. Everything below makes the pipeline pull REAL data.
