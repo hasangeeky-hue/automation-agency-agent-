@@ -586,6 +586,40 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
 
 
 
+def build_sga_ctx(store, *, jobs=None, status=None, insights=None, deals=None,
+                  month_spent=0.0, month_cap=200.0, emails_sent=0,
+                  target_per_channel=1) -> dict:
+    """Everything the 14 SGA boards read.
+
+    Scope is SOCIAL — paid and unpaid — plus the Google data hub. Google Ads
+    keeps its own Media Buying section and nothing here reads it."""
+    import content_engine_sga as SGA
+    jobs = jobs if isinstance(jobs, list) else []
+    insights = insights if isinstance(insights, dict) else (
+        _get(store, "google_insights", {}) or {})
+    camps = SGA.list_campaigns(store)
+    p_ = SGA.posts(jobs)
+    bl = SGA.blog_push(jobs)
+    paid = SGA.paid_social(store, camps)
+    chans = sorted({c for x in camps for c in _L(_D(x).get("channels"))}) or None
+    return {
+        "campaigns": camps,
+        "calendar": SGA.calendar(camps),
+        "posts": p_,
+        "cadence": SGA.cadence(p_, target_per_channel, chans),
+        "creatives": SGA.creatives(jobs),
+        "blog": bl,
+        "channels": SGA.channel_health(status, p_),
+        "audience": SGA.audience(store, status),
+        "engagement": SGA.engagement(store),
+        "paid": paid,
+        "traffic": SGA.social_traffic(insights, p_, camps),
+        "revenue": SGA.social_revenue(deals, p_, paid),
+        "budget": SGA.budget(camps, paid, month_spent, month_cap, bl),
+        "hub": SGA.google_hub(store, status, jobs, emails_sent=emails_sent),
+    }
+
+
 def build_outreach_ctx(store, *, jobs=None, reply_drafts=None, bookings=None,
                        deals=None, live=None) -> dict:
     """Everything the 13 Leads & Outreach boards read.

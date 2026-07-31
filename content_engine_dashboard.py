@@ -26,12 +26,12 @@ log = logging.getLogger("content_engine.dashboard")
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-31 · v26 · Three AI-written emails per persona in the "
-             "lead's language, a Lead Manager with LinkedIn, phone, country, "
-             "source and collection time, per-lead Edit and Delete, all three "
-             "emails editable, and leads-per-day counted per lead. Leads & "
-             "Outreach 240 cards / 14 boards. 1,461 engine cards across 14 "
-             "sidebar entries, each with in-page tabs")
+BUILD_TAG = ("2026-07-31 · v27 · SGA: Social Media + Google Hub + Ads & "
+             "Growth merged into ONE section — 250 cards, 14 boards, and UTM "
+             "tagging on every posted link so GA4 can credit an individual "
+             "post. 1,711 engine cards across 12 sidebar entries: BI 268, "
+             "Media Buying 296, SGA 250, Leads & Outreach 240, SEO/AEO/GEO "
+             "235, System & Wiring 214, Risk & Infrastructure 208")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -2792,7 +2792,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    content_plan=None, web_tracking=None, reply_drafts=None,
                    competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None,
                    system_ctx=None, risk_ctx=None, bi_ctx=None,
-                   outreach_ctx=None):
+                   outreach_ctx=None, sga_ctx=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -3944,6 +3944,22 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                        f"{_esc(type(_e3).__name__)}: {_esc(str(_e3))[:300]}</p></div>"
                        + p_agents + p_map + overview)
 
+    # ---- SGA: ONE section replacing Social Media, Google Hub and Ads &
+    # Growth — 27 cards between them, ZERO charts, and 19 panels that were
+    # literally _empty(). Scope is social (paid + unpaid) plus the Google data
+    # hub; Google Ads keeps its own Media Buying section.
+    try:
+        import content_engine_sga_boards as _SGAB
+        _sga_all = _SGAB.sga_section(sga_ctx or {})
+    except Exception as _e7:
+        log.exception("SGA boards failed to render - showing the old three "
+                      "modules instead")
+        _sga_all = ("<div class='card full' style='border-color:#F5788A'>"
+                    "<p class='ct'>SGA boards failed to render</p>"
+                    f"<p class='cc'>Showing the older modules below. Reason: "
+                    f"{_esc(type(_e7).__name__)}: {_esc(str(_e7))[:300]}</p></div>"
+                    + p_social + p_google + p_ads)
+
     # ---- Leads & Outreach: ONE section replacing Lead Machine and Email &
     # Outreach. Unlike the other merges these two carry a working launch pad —
     # the outbox, the replies inbox, the leads table and the Maps form are
@@ -4014,14 +4030,14 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("outreach", "📮", "Leads & Outreach", "Leads & Outreach",
          "Find them, write to them, track what came back. 240 cards "
          "across 14 boards.", _outreach_all),
-        ("social", "📣", "Social Media", "Social Media", "Posting and engagement across channels.", p_social),
+        ("sga", "🚀", "SGA", "SGA — Social, Growth & Ads",
+         "Paid and unpaid social, campaign planning, content push and "
+         "your Google hub. 250 cards across 14 boards.", _sga_all),
         ("seo", "🔎", "SEO / AEO / GEO", "SEO · AEO · GEO",
          "Search, AI-answer and geo visibility — every SEO board in one place.", _seo_all),
-        ("ads", "🎯", "Ads & Growth", "Ads & Growth", "Paid campaigns tuned with your SEO signals.", p_ads),
         ("media", "🛒", "Media Buying", "Media Buying · Google Ads",
          "296 cards across 16 boards — what a senior media buyer reads before deciding.",
          _media_all + p_media),
-        ("google", "☁️", "Google Hub", "Google Hub", "Your Sheets, Drive and Gmail data hub.", p_google),
         ("appr", "✅", "Approvals & Commands", "Approvals & Commands", "Approve work and command any agent.", p_appr),
         ("learn", "🧠", "Learning & Results", "Learning & Results", "What's working and how the engine improves.", p_learn),
         ("system", "🩺", "System & Wiring", "System & Wiring",
@@ -4080,7 +4096,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  + pause_btn + auto_btn + "</div></details>")
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
-    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi',leads:'outreach',email:'outreach'};"
+    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi',leads:'outreach',email:'outreach',social:'sga',google:'sga',ads:'sga'};"
               "function nav(id){id=NAVALIAS[id]||id;"
               "document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
               "var s=document.getElementById('sec-'+id);if(s)s.classList.add('on');"
@@ -4167,6 +4183,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "function runSeoDue(){seoRun('/seo/due','Running what is due…',"
               "'Run every SEO engine that is due right now? Free engines run "
               "immediately; paid ones respect your cap.');}"
+              "function sgaCampaign(){var n=prompt('Campaign name');if(!n)return;"
+              "var o=prompt('Objective: awareness / leads / bookings','leads')||'awareness';"
+              "var c=prompt('Channels, comma separated: linkedin,facebook,instagram,youtube,twitter,tiktok','linkedin')||'linkedin';"
+              "var s=prompt('Start date (YYYY-MM-DD)',new Date().toISOString().slice(0,10))||'';"
+              "var e=prompt('End date (YYYY-MM-DD, blank = open)')||'';"
+              "var b=prompt('Paid budget in euros (0 = organic only)','0')||'0';"
+              "post('/sga/campaign',{name:n,objective:o,channels:c.split(',').map(function(x){return x.trim();}),"
+              "start:s,end:e,budget:b,paid:(parseFloat(b)>0)});}"
+              "function sgaCampaignDelete(id){if(!confirm('Remove this campaign? Posts already made keep their tag.'))return;"
+              "post('/sga/campaign/delete',{id:id});}"
               "function leadEdit(job,email){"
               "var f=['name','title','company','linkedin','phone','country','website'];"
               "var b={job_id:job,email:email},any=false;"
@@ -4403,9 +4429,9 @@ if __name__ == "__main__":
     import re as _re
     _ids = _re.findall(r"id='sec-([a-z0-9_]+)'", html)
     assert _ids == ["mission", "bi", "ops", "riskinfra", "content",
-                    "outreach", "social", "seo", "ads", "media", "google",
+                    "outreach", "sga", "seo", "media",
                     "appr", "learn", "system"], _ids
-    assert html.count("class='page") == 14, html.count("class='page")
+    assert html.count("class='page") == 12, html.count("class='page")
     # the launch pad must survive the merge: every endpoint still reachable
     for _ep in ("/outreach/send_all", "/outreach/send_one", "/outreach/send_batch",
                 "/outreach/edit", "/outreach/trash", "/replies/refresh",
@@ -4415,13 +4441,16 @@ if __name__ == "__main__":
     # still land somewhere real
     for _dead in ("sec-business", "sec-marketing", "sec-sales", "sec-customer",
                   "sec-finance", "sec-budget", "sec-exec",
-                  "sec-leads", "sec-email"):
+                  "sec-leads", "sec-email", "sec-social", "sec-google",
+                  "sec-ads"):
         assert f"id='{_dead}'" not in html, f"{_dead} should be merged into sec-bi"
     for _old in ("business", "marketing", "sales", "customer", "finance",
                  "budget", "exec"):
         assert f"{_old}:'bi'" in html, f"nav alias {_old} -> bi missing"
     for _old in ("leads", "email"):
         assert f"{_old}:'outreach'" in html, f"nav alias {_old} -> outreach missing"
+    for _old in ("social", "google", "ads"):
+        assert f"{_old}:'sga'" in html, f"nav alias {_old} -> sga missing"
     for _fn in ("biDeal()", "biEcon()", "biTargets()"):
         assert _fn in html, f"{_fn} handler missing"
     assert "CEO Command Center" in html and "Executive briefing" in html
@@ -4439,7 +4468,7 @@ if __name__ == "__main__":
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
     assert "Sign in" in login_html()
-    print("OK — 14 pages. Risk + AI Workforce + Infrastructure now render as ONE "
+    print("OK — 12 pages. Risk + AI Workforce + Infrastructure now render as ONE "
           "Risk & Infrastructure section (208 cards) and six more render as ONE "
           "Business Intelligence section (268 cards, 15 boards, Executive "
           "Intelligence included), and Lead Machine + Email & Outreach render "

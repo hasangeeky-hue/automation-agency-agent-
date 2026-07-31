@@ -2523,6 +2523,21 @@ def post_social(job: dict, piece: dict, channel: str) -> str:
     human) when its credentials are absent, so the pipeline never crashes."""
     ch = (channel or "").lower()
     jid = job.get("job_id")
+    # UTM-tag every link in the post BEFORE it goes out. Without this a social
+    # visit lands in GA4 as undifferentiated "Social" and no individual post can
+    # ever be credited with a session or a booking. Wrapped so a tagging failure
+    # can never stop a post.
+    try:
+        import content_engine_sga as _SGA
+        _cfg = (job.get("payload", {}) or {}).get("config", {}) or {}
+        _camp = _cfg.get("campaign") or _cfg.get("business_goal") or "organic"
+        piece = dict(piece or {})
+        for _k in ("linkedin_post", "body", "text", "caption", "summary"):
+            if piece.get(_k):
+                piece[_k] = _SGA.tag_links(piece[_k], ch, _camp, jid)
+    except Exception as e:
+        log.warning("UTM tagging skipped for %s on %s (post unaffected): %s",
+                    jid, ch, e)
     if ch == "linkedin":
         p = LinkedInPoster()
         # use the founder-approved LinkedIn post if present, else repurpose the blog

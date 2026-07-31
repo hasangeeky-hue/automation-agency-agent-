@@ -1354,6 +1354,15 @@ def api_lead_delete(job_id, email, reason="removed by hand"):
             "message": f"{email} removed and suppressed — it will not be emailed."}
 
 
+def _sga_emails_sent(jobs):
+    """Emails the engine actually sent, from the send stamps."""
+    try:
+        return sum(len(v) for j in (jobs or [])
+                   for v in ((j.get("payload", {}) or {}).get("sent_at", {}) or {}).values())
+    except Exception:
+        return 0
+
+
 def _bi_bookings():
     """Cal.com bookings for the BI boards. Never raises — a booking wire that is
     down must not take the dashboard with it."""
@@ -1488,9 +1497,20 @@ def api_dashboard_html() -> str:
     except Exception as e:
         log.warning("outreach context unavailable: %s", e)
         outreach_ctx = None
+    try:
+        import content_engine_seo_ops as _SEO7
+        import content_engine_bi as _BI7
+        sga_ctx = _SEO7.build_sga_ctx(
+            store, jobs=jobs, status=st, insights=_safe_google_insights(),
+            deals=_BI7.list_deals(store), month_spent=month_spent,
+            month_cap=month_cap, emails_sent=_sga_emails_sent(jobs))
+    except Exception as e:
+        log.warning("SGA context unavailable: %s", e)
+        sga_ctx = None
     return D.dashboard_html(
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
         risk_ctx=risk_ctx, bi_ctx=bi_ctx, outreach_ctx=outreach_ctx,
+        sga_ctx=sga_ctx,
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
@@ -1761,6 +1781,36 @@ def build_app():
                             "added to the HTML part of every send."
                             if r["enabled"] else
                             "Tracking off — nothing is added to your emails.")}
+
+    @app.post("/sga/campaign")
+    async def sga_campaign(request: Request):
+        """Save a social campaign. It becomes the utm_campaign on every post
+        made while it runs, and the budget line on the paid boards."""
+        import content_engine_sga as SGA
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        r = SGA.save_campaign(get_store(), d.get("name"),
+                              objective=d.get("objective", "awareness"),
+                              channels=d.get("channels"), start=d.get("start"),
+                              end=d.get("end"), budget=d.get("budget", 0),
+                              paid=bool(d.get("paid")), note=d.get("note", ""))
+        if r.get("ok"):
+            c = r["campaign"]
+            r["message"] = (f"{c['name']} saved — utm_campaign={c['id']} on every "
+                            f"post while it runs.")
+        return r
+
+    @app.post("/sga/campaign/delete")
+    async def sga_campaign_delete(request: Request):
+        import content_engine_sga as SGA
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        ok = SGA.delete_campaign(get_store(), d.get("id"))
+        return {"ok": ok, "message": "Campaign removed." if ok else "Not found."}
 
     @app.post("/leads/edit")
     async def leads_edit(request: Request):
