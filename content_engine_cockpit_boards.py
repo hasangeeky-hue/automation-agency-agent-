@@ -676,6 +676,22 @@ def board_keys(ctx) -> str:
 # ======================================================================
 #  (10) LOOP HEALTH  (20)
 # ======================================================================
+def _LC(ctx):
+    """Loop closure, computed. Cached on the ctx so a board that reads it four
+    times does not recompute it four times."""
+    c = ctx.get("_closure")
+    if c is None:
+        try:
+            import content_engine_cockpit as CK
+            c = CK.loop_closure((ctx.get("capability") or {}).get("status")
+                                or ctx.get("status"))
+        except Exception as e:
+            c = {"rows": [], "closed": 0, "total": 0, "open": 0, "pct": 0.0,
+                 "note": f"loop closure could not be computed: {e}"}
+        ctx["_closure"] = c
+    return c
+
+
 def board_loops(ctx) -> str:
     ctx = _ctx(ctx)
     r, d = ctx["router"], ctx["decisions"]
@@ -694,6 +710,15 @@ def board_loops(ctx) -> str:
          ("A loop is closed when a signal produces a decision and the outcome "
           "returns to the playbook. Before the cockpit, none of them closed."),
          "signal router", GREEN if r.get("closed") else AMBER, ""),
+        # COMPUTED, not asserted. A loop is closed only when its outcome can
+        # physically come back — which depends on a live wire, not a diagram.
+        ("Outcomes that can return", f"{_i(_LC(ctx).get('closed'))}/"
+         f"{_i(_LC(ctx).get('total'))}", "loops able to measure",
+         _score_gauge(_f(_LC(ctx).get("pct")), 80),
+         str(_LC(ctx).get("note", "")),
+         "computed from live wires",
+         GREEN if not _i(_LC(ctx).get("open")) else AMBER,
+         "<button class='cta' onclick=\"nav('system')\">See the loop map</button>"),
         ("Decisions produced", _i(d.get("count")), "from these loops", "",
          "The output of the whole system, in one number.",
          "decision queue", BLUE, ""),
@@ -745,7 +770,7 @@ def board_loops(ctx) -> str:
     ]
     return _head("🔄", "Loop health",
                  "Which loops are closed, which are open, and what closes "
-                 "them.") + _vizcards(cards[:20])
+                 "them.") + _vizcards(cards[:21])
 
 
 # ======================================================================
@@ -1168,7 +1193,7 @@ _TAB_BOARDS = {
 
 _TAB_COUNTS = {"ckcmd": 16, "ckdecide": 20, "ckrouter": 18, "ckcontent": 20,
                "ckoutreach": 18, "ckplan": 16, "ckbudget": 20, "ckauto": 18,
-               "ckkeys": 16, "ckloops": 20, "ckjobs": 18, "ckengine": 16,
+               "ckkeys": 16, "ckloops": 21, "ckjobs": 18, "ckengine": 16,
                "ckplaybook": 18, "ckworks": 18, "ckexp": 16}
 TOTAL_CARDS = sum(_TAB_COUNTS.values())
 

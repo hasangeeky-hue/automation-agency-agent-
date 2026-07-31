@@ -432,22 +432,36 @@ def _in_qa_compliance(job: dict) -> dict:
 
 def _in_analytics_funnel(job: dict) -> dict:
     a = job.get("payload", {}).get("analytics", {}) or {}
-    return {
+    # The old default here was {"sessions": 0, "conv_rate": 0} — which turned
+    # "nobody ever collected this" into "it got no traffic" the moment it
+    # reached the model. Carry the measured state instead; the orchestrator
+    # normally skips this step entirely when nothing was measured.
+    out = {
         "period": a.get("period", ""),
-        "metrics": a.get("metrics", {"sessions": 0, "conv_rate": 0, "top_pages": []}),
-        "funnel_stages": a.get("funnel_stages", []),
-        "vs_previous": a.get("vs_previous",
-                             {"sessions_change_pct": 0, "conv_change_pct": 0}),
+        "metrics": a.get("metrics") or {},
+        "funnel_stages": a.get("funnel_stages") or [],
+        "vs_previous": a.get("vs_previous") or {},
     }
+    if not a.get("measured"):
+        out["measured"] = False
+        out["unavailable"] = a.get("unavailable") or "no outcome was collected"
+    elif a.get("zero_is_real"):
+        out["note"] = ("These zeros are real — the source answered and reported "
+                       "nothing, which is different from a missing measurement.")
+    return out
 
 
 def _in_optimizer(job: dict) -> dict:
     p = job.get("payload", {}).get("performance", {}) or {}
-    return {
+    out = {
         "content_performance": p.get("content_performance", []),
         "outreach_performance": p.get("outreach_performance", []),
         "period": p.get("period", ""),
     }
+    if not p.get("measured"):
+        out["measured"] = False
+        out["unavailable"] = p.get("unavailable") or "nothing was measured"
+    return out
 
 
 # ---------------------------------------------------------------------------

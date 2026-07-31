@@ -245,6 +245,81 @@ def decisions(seo=None, content=None, outreach=None, bi=None, sga=None,
                      "either very good or nothing is running.")}
 
 
+# Every loop, and the ONE condition that decides whether its outcome can come
+# back. This is computed from live wire status, never drawn as closed — the
+# Loop Map used to render nine closed circles while seven of them were cut.
+LOOP_CLOSURE = [
+    ("content", "Content: plan → publish → measure", "google_gsc_ga4",
+     "GA4 returns sessions and conversions for the exact page that was published.",
+     "Without GA4 a published piece never reports back, so the playbook cannot "
+     "learn which pieces worked."),
+    ("outreach", "Outreach: send → open → reply", "email_send",
+     "Opens and clicks come from the engine's own pixel; replies come from IMAP.",
+     "Sending without tracking means delivery is the only thing ever known."),
+    ("seo", "SEO: crawl → fix → rank", "seo_rank_tracker",
+     "Rank tracking shows whether a fix moved anything.",
+     "Fixes ship and nothing observes whether they helped."),
+    ("aeo", "AEO: ask the AI engines", "claude_api",
+     "Each answer engine is asked directly whether it mentions you.",
+     "You are measured against ChatGPT, Perplexity and Gemini; only the wired "
+     "engines can answer."),
+    ("bi", "Money: work → deal → revenue", None,
+     "You record deals by hand, which is why this one closes.",
+     ""),
+    ("approvals", "Approvals: propose → you decide → log", None,
+     "Every decision is logged, so the playbook learns from what was DONE.",
+     ""),
+    ("budget", "Budget: spend → cap → halt", None,
+     "Caps are read live on every enforcement check.",
+     ""),
+    ("sga", "Social: post → session → attribution", "google_gsc_ga4",
+     "GA4 attributes sessions back to the channel that sent them.",
+     "Posts go out and nothing says which channel earned the visit."),
+    ("media", "Paid: bid → spend → CPA", "ads_api",
+     "The Ads API returns spend and conversions per campaign.",
+     "Spend leaves and nothing reports what it bought."),
+]
+
+
+def loop_closure(status=None, store=None) -> dict:
+    """Which loops actually close RIGHT NOW.
+
+    A loop is closed only when its outcome can physically come back. Three close
+    without any credential because a human is inside them; the rest depend on a
+    wire, and a dead wire means an open loop no matter how many cards describe
+    it."""
+    st = status if isinstance(status, dict) else {}
+    rows, closed = [], 0
+    for key, label, wire, how, breaks in LOOP_CLOSURE:
+        if wire is None:
+            ok, why = True, how
+        else:
+            ok = bool(st.get(wire))
+            why = how if ok else breaks
+        # Outreach needs the tracking switch as well as a mail wire.
+        if key == "outreach" and ok and store is not None:
+            try:
+                import content_engine_outreach as OUT
+                if not OUT.tracking_enabled(store):
+                    ok = False
+                    why = ("Open and click tracking is switched off, so delivery "
+                           "is the only thing this loop can ever report.")
+            except Exception:
+                pass
+        closed += 1 if ok else 0
+        rows.append({"key": key, "label": label, "closed": ok,
+                     "needs": wire or "a person", "why": why,
+                     "human": wire is None})
+    total = len(rows)
+    return {
+        "rows": rows, "closed": closed, "total": total, "open": total - closed,
+        "pct": round(100.0 * closed / total, 1) if total else 0.0,
+        "note": (f"{closed} of {total} loops can return an outcome today. "
+                 f"An open loop still produces work — it just never finds out "
+                 f"whether the work was any good."),
+    }
+
+
 def signal_router(seo=None, content=None, outreach=None, bi=None, sga=None,
                   media=None, risk=None, system=None) -> dict:
     """Which system is feeding the cockpit, what it emits, and where the
@@ -426,6 +501,9 @@ def capability(status=None, missing_keys=None) -> dict:
     groups = _D(missing_keys)
     total_missing = sum(len(_L(v)) for v in groups.values())
     return {"wires_live": live, "wires_total": len(st),
+            # the raw map, so loop closure can be computed from the SAME status
+            # the wire counts came from rather than a second, drifting copy
+            "status": st,
             "wire_pct": _pct(live, len(st)),
             "groups": [(k, _L(v)) for k, v in groups.items() if _L(v)],
             "missing_total": total_missing,

@@ -1827,12 +1827,71 @@ class Google:
         if not j:
             return {}
         rows = j.get("rows", [])
+        # metricValues[1] is `conversions`. It was REQUESTED above and then never
+        # read, so conv_rate was structurally 0 even with GA4 fully live and
+        # green — every conversion card in the engine was dead on arrival.
         top_pages = [{"page": r["dimensionValues"][0]["value"],
-                      "sessions": int(r["metricValues"][0]["value"])}
+                      "sessions": _int(r["metricValues"][0]["value"]),
+                      "conversions": _int(r["metricValues"][1]["value"])
+                      if len(r.get("metricValues", [])) > 1 else 0}
                      for r in rows]
         total_sessions = sum(p["sessions"] for p in top_pages)
-        return {"period": f"last {days}d", "metrics": {
-            "sessions": total_sessions, "top_pages": top_pages}}
+        total_conv = sum(p["conversions"] for p in top_pages)
+        return {"period": f"last {days}d", "source": "ga4", "metrics": {
+            "sessions": total_sessions, "conversions": total_conv,
+            "conv_rate": round(100.0 * total_conv / total_sessions, 2)
+            if total_sessions else 0.0,
+            "top_pages": top_pages}}
+
+    def ga4_page(self, path: str, days: int = 21) -> dict:
+        """Metrics for ONE page, not the property's top ten.
+
+        ga4_summary() returns the top 10 pages site-wide. A newly published
+        piece is never in the top 10, so measuring it through that call reports
+        absence as zero traffic. This asks GA4 about that exact path."""
+        if not (self.available() and self.ga4_property and str(path or "").strip()):
+            return {}
+        p = str(path).strip()
+        if p.startswith("http"):                     # published_ref is a full URL
+            try:
+                from urllib.parse import urlparse
+                p = urlparse(p).path or "/"
+            except Exception:
+                pass
+        if not p.startswith("/"):
+            p = "/" + p
+        body = {
+            "dateRanges": [{"startDate": f"{days}daysAgo", "endDate": "today"}],
+            "dimensions": [{"name": "pagePath"}],
+            "metrics": [{"name": "sessions"}, {"name": "conversions"},
+                        {"name": "engagementRate"}],
+            "dimensionFilter": {"filter": {
+                "fieldName": "pagePath",
+                "stringFilter": {"matchType": "EXACT", "value": p}}},
+            "limit": 1,
+        }
+        url = (f"https://analyticsdata.googleapis.com/v1beta/"
+               f"properties/{self.ga4_property}:runReport")
+        j = _post_json(url, body, headers=self._auth(self.GA4_SCOPE))
+        if not j:
+            return {}
+        rows = j.get("rows", [])
+        if not rows:
+            # GA4 answered and this page has no rows. That is a REAL zero — the
+            # page exists and nobody visited it — and is different from GA4 not
+            # answering at all. The caller must be able to tell them apart.
+            return {"period": f"last {days}d", "source": "ga4", "page": p,
+                    "metrics": {"sessions": 0, "conversions": 0,
+                                "conv_rate": 0.0, "engagement_rate": 0.0},
+                    "no_rows": True}
+        mv = rows[0].get("metricValues", [])
+        sess = _int(mv[0]["value"]) if len(mv) > 0 else 0
+        conv = _int(mv[1]["value"]) if len(mv) > 1 else 0
+        eng = _flt(mv[2]["value"]) if len(mv) > 2 else 0.0
+        return {"period": f"last {days}d", "source": "ga4", "page": p,
+                "metrics": {"sessions": sess, "conversions": conv,
+                            "conv_rate": round(100.0 * conv / sess, 2) if sess else 0.0,
+                            "engagement_rate": round(100.0 * eng, 2)}}
 
 
     # ---- FULL replication (the 'google-grade dashboard' feed) ----
@@ -2668,10 +2727,40 @@ def collect_competitors(urls_or_names: list) -> list:
     return out
 
 
-def collect_analytics() -> dict:
-    """payload['analytics'] for analytics_funnel (from GA4)."""
+def _int(v, d=0) -> int:
+    """GA4 returns every metric as a string. Never raise on a surprise value."""
+    try:
+        return int(float(v))
+    except Exception:
+        return d
+
+
+def _flt(v, d=0.0) -> float:
+    try:
+        return float(v)
+    except Exception:
+        return d
+
+
+def collect_analytics(days: int = 21) -> dict:
+    """payload['analytics'] for analytics_funnel (from GA4), site-wide."""
     g = Google()
-    return g.ga4_summary() if g.available() else {}
+    return g.ga4_summary(days=days) if g.available() else {}
+
+
+def collect_page_analytics(url_or_path: str, days: int = 21) -> dict:
+    """payload['analytics'] for ONE published piece.
+
+    Returns {} when GA4 cannot answer at all — the caller MUST treat that as
+    'not measured', never as zero traffic."""
+    g = Google()
+    if not g.available():
+        return {}
+    try:
+        return g.ga4_page(url_or_path, days=days)
+    except Exception as e:
+        log.warning("GA4 page query failed for %s: %s", url_or_path, e)
+        return {}
 
 
 def collect_ads() -> dict:

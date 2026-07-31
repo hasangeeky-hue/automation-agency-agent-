@@ -26,13 +26,17 @@ log = logging.getLogger("content_engine.dashboard")
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-31 · v29 · AI COCKPIT — the brain. Command Center + "
-             "Operations + Approvals + Learning merged into ONE section: 268 "
-             "cards, 15 boards, every system's signal turned into a decision "
-             "with the button that acts on it. Budget caps are now settable "
-             "in the browser with a hard floor. 2,255 engine cards across 9 "
-             "sidebar entries: Media 296, Content 278, BI 268, Cockpit 268, "
-             "SGA 250, Outreach 240, SEO 235, System 230, Risk 208")
+BUILD_TAG = ("2026-07-31 · v30 · THE RETURN ARROW — the engine can now find "
+             "out what happened. Real GA4 numbers for the exact page that was "
+             "published (including conversions, which were structurally zero "
+             "before), real opens and clicks per campaign, content measured at "
+             "21 days and outreach at 7. An outcome that cannot be measured "
+             "states WHY, skips the model, and teaches the playbook nothing. A "
+             "measured-poor piece earns a proposal that still waits for you. "
+             "Loop closure is computed from live wires, not drawn. 2,284 "
+             "engine cards across 9 sidebar entries: Media 296, Content 278, "
+             "Cockpit 269, BI 268, SGA 250, System 240, Outreach 240, SEO 235, "
+             "Risk 208")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;

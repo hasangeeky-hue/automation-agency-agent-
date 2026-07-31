@@ -28,6 +28,7 @@ job["payload"] through; fill them per skill when you wire real data sources.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from datetime import date, datetime, timezone, timedelta
@@ -37,6 +38,8 @@ from content_engine_providers import build_prompt, call_provider
 from content_engine_schemas import SCHEMAS
 from content_engine_prep import prepare_input
 from content_engine_learning import record_cycle
+
+log = logging.getLogger("content_engine")
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +175,19 @@ def budget_log(store) -> list:
 # measurement gate opens automatically. This makes "wait N days" a real elapsed
 # time, independent of how often the cron/worker ticks.
 MEASURE_AFTER_DAYS = float(os.getenv("MEASURE_AFTER_DAYS", "7"))
+# ...but a page and an email do not answer on the same schedule. An email is
+# opened within days; a page has to be indexed and start ranking before its
+# numbers mean anything, so measuring content at 7 days mostly measures how
+# fast Google crawled. Per-pipeline, still env-overridable.
+MEASURE_AFTER_DAYS_CONTENT = float(
+    os.getenv("MEASURE_AFTER_DAYS_CONTENT", "21"))
+MEASURE_AFTER_DAYS_OUTREACH = float(
+    os.getenv("MEASURE_AFTER_DAYS_OUTREACH", str(MEASURE_AFTER_DAYS)))
+
+
+def measure_days_for(job: dict) -> float:
+    return (MEASURE_AFTER_DAYS_OUTREACH if job.get("type") == "outreach_campaign"
+            else MEASURE_AFTER_DAYS_CONTENT)
 
 # Injectable clock so tests are deterministic.
 _CLOCK: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
@@ -350,7 +366,99 @@ def _maybe_stamp_measure(job: dict) -> None:
     step = flow_for(job).get(job.get("status"))
     if (step and step.kind == "wait" and step.time_gate
             and not job.get("measure_at")):
-        job["measure_at"] = (_now() + timedelta(days=MEASURE_AFTER_DAYS)).isoformat()
+        job["measure_at"] = (
+            _now() + timedelta(days=measure_days_for(job))).isoformat()
+
+
+PROPOSALS_KEY = "engine_rewrite_proposals"
+MAX_PROPOSALS = 200
+
+
+def _queue_proposal(store, proposal: dict) -> None:
+    """Put a proposal in front of a person. It is a card, not an action — the
+    engine has no path from here to spending or publishing without approval."""
+    try:
+        cur = list(store.get_setting(PROPOSALS_KEY, []) or [])
+    except Exception:
+        return
+    jid = str(proposal.get("job_id", ""))
+    if any(str(p.get("job_id", "")) == jid for p in cur if isinstance(p, dict)):
+        return                                   # one proposal per piece, ever
+    proposal["at"] = _now().isoformat()
+    proposal["status"] = "pending"
+    cur.append(proposal)
+    try:
+        store.set_setting(PROPOSALS_KEY, cur[-MAX_PROPOSALS:])
+    except Exception:
+        log.warning("could not persist the rewrite proposal for %s", jid)
+
+
+def rewrite_proposals(store) -> list:
+    """Pending proposals, newest first — read by the cockpit approval queue."""
+    try:
+        rows = list(store.get_setting(PROPOSALS_KEY, []) or [])
+    except Exception:
+        return []
+    return [p for p in rows[::-1]
+            if isinstance(p, dict) and p.get("status") == "pending"]
+
+
+def resolve_proposal(store, job_id: str, accept: bool, note: str = "") -> dict:
+    """A person accepted or declined. Either way it leaves the queue and the
+    decision is recorded — declining with a reason is how the engine learns."""
+    try:
+        rows = list(store.get_setting(PROPOSALS_KEY, []) or [])
+    except Exception:
+        return {"ok": False, "error": "proposals are unreadable"}
+    hit = None
+    for p in rows:
+        if isinstance(p, dict) and str(p.get("job_id", "")) == str(job_id) \
+                and p.get("status") == "pending":
+            p["status"] = "accepted" if accept else "declined"
+            p["resolved_at"] = _now().isoformat()
+            p["note"] = str(note or "")[:400]
+            hit = p
+            break
+    if not hit:
+        return {"ok": False, "error": "no pending proposal for that piece"}
+    try:
+        store.set_setting(PROPOSALS_KEY, rows)
+    except Exception:
+        return {"ok": False, "error": "could not save"}
+    return {"ok": True, "message": ("Queued for rewrite." if accept
+                                    else "Declined — recorded."), "proposal": hit}
+
+
+def _collect_for(job: dict, skill: str, store=None) -> str:
+    """Fetch the real-world outcome a reasoning step needs, just before it runs.
+
+    Returns "" when the step may proceed, or a plain-English REASON when there
+    is nothing real to reason about — in which case the caller skips the model
+    instead of paying it to describe zeros.
+
+    Only two skills consume outcomes; everything else passes straight through.
+    Never raises: a collection failure degrades to 'unmeasured, because X',
+    never to a crashed tick."""
+    if skill not in ("analytics_funnel", "optimizer"):
+        return ""
+    try:
+        import content_engine_collect as COL
+    except Exception as e:                                    # pragma: no cover
+        return f"the collector module is unavailable: {e}"
+    payload = job.setdefault("payload", {})
+    try:
+        if skill == "analytics_funnel":
+            a = COL.analytics_for(job, store)
+            payload["analytics"] = a
+            return "" if COL.is_measured(a) else str(
+                a.get("unavailable") or "this outcome could not be measured")
+        p = COL.performance_for(job, store)
+        payload["performance"] = p
+        return "" if p.get("measured") else str(
+            p.get("unavailable") or "there is no measured performance to optimise")
+    except Exception as e:                                    # pragma: no cover
+        log.exception("collector failed for %s/%s", job.get("job_id"), skill)
+        return f"collection failed ({type(e).__name__}): {str(e)[:160]}"
 
 
 def is_runnable(job: dict) -> bool:
@@ -509,8 +617,32 @@ def advance(job: dict, store: JobStore) -> str:
         elif step.kind == "learn":
             # THE LEARNING EDGE (10 -> 4): fold the Optimizer's output into the
             # client's durable playbook so the next cycle is smarter.
-            record_cycle(job.get("client_id", ""),
-                         job["payload"].get("optimizer", {}))
+            #
+            # ...but ONLY if something was actually measured. Folding an
+            # unmeasured cycle in would teach the playbook that whatever we
+            # happened to do produced nothing, and every later decision would
+            # inherit that. Silence is not evidence.
+            _opt = job["payload"].get("optimizer", {}) or {}
+            if job.get("unmeasured_reason") or _opt.get("measured") is False:
+                job["learned_nothing"] = job.get("unmeasured_reason") or \
+                    "nothing was measured for this cycle"
+                log.info("job %s reached learn with nothing measured: %s",
+                         job.get("job_id"), job["learned_nothing"])
+            else:
+                record_cycle(job.get("client_id", ""), _opt)
+                # A MEASURED-poor piece earns a proposal in the approval queue.
+                # Deliberately a proposal and not a rewrite: rewriting spends
+                # money and republishes to a live site, and both stay behind the
+                # human gate.
+                try:
+                    import content_engine_collect as _COL
+                    prop = _COL.rewrite_proposal(job)
+                    if prop and store is not None:
+                        _queue_proposal(store, prop)
+                        job["rewrite_proposed"] = True
+                except Exception:
+                    log.exception("could not queue a rewrite proposal for %s",
+                                  job.get("job_id"))
             _maybe_spawn_next_cycle(job, store)
             job["status"] = step.next_status
 
@@ -521,20 +653,35 @@ def advance(job: dict, store: JobStore) -> str:
             job["status"] = step.next_status
 
         elif step.kind == "llm":
-            reason = over_budget(job, store)      # orchestrator-level gate
-            if reason:
-                raise BudgetExceeded(f"{job['job_id']}: {reason}")
-            data, cost = _LLM_HOOK(job, step.skill, store)
-            log_cost(job, ROUTES[step.skill]["engine"], cost, store)
-            job["payload"][step.skill] = data
-            if step.verdict_routed:                # qa_compliance
-                if data.get("verdict") == "pass":
-                    job["status"] = step.next_status          # -> AWAITING_APPROVAL
-                else:
-                    job["status"] = "revision_needed"          # halt, needs a human/rewrite
-                    job["qa_verdict"] = data.get("verdict")
-            else:
+            # THE RETURN ARROW. Before a step that reasons about outcomes, go
+            # and fetch the outcomes. Without this, analytics_funnel received
+            # {sessions: 0, conv_rate: 0} for every piece ever published and the
+            # playbook recorded conclusions drawn from those zeros.
+            skip = _collect_for(job, step.skill, store)
+            if skip:
+                # Nothing to reason about, and reasoning costs money. Record why,
+                # skip the model, advance. An unmeasured job is NOT a failed one
+                # and must not be marked as one.
+                job["payload"][step.skill] = {"measured": False,
+                                              "unavailable": skip}
+                job["unmeasured_reason"] = skip
+                _stamp_run(job, step.skill, "skipped-unmeasured")
                 job["status"] = step.next_status
+            else:
+                reason = over_budget(job, store)      # orchestrator-level gate
+                if reason:
+                    raise BudgetExceeded(f"{job['job_id']}: {reason}")
+                data, cost = _LLM_HOOK(job, step.skill, store)
+                log_cost(job, ROUTES[step.skill]["engine"], cost, store)
+                job["payload"][step.skill] = data
+                if step.verdict_routed:                # qa_compliance
+                    if data.get("verdict") == "pass":
+                        job["status"] = step.next_status      # -> AWAITING_APPROVAL
+                    else:
+                        job["status"] = "revision_needed"     # halt, needs a human
+                        job["qa_verdict"] = data.get("verdict")
+                else:
+                    job["status"] = step.next_status
         else:
             raise SkillFailed(f"unknown step kind '{step.kind}'")
 
@@ -763,12 +910,51 @@ if __name__ == "__main__":
     assert status == "published", f"expected published, got {status}"
     assert job4.get("measure_at"), "measure_at was not stamped on publish"
     assert not is_runnable(job4), "should be blocked until the window elapses"
+    # A page and an email do not answer on the same schedule: content waits 21
+    # days so the measurement reflects ranking rather than crawl speed.
+    _days = measure_days_for(job4)
+    assert _days == MEASURE_AFTER_DAYS_CONTENT == 21.0, _days
+    assert measure_days_for({"type": "outreach_campaign"}) ==         MEASURE_AFTER_DAYS_OUTREACH, "outreach must keep the short window"
     set_clock(lambda: base + timedelta(days=float(MEASURE_AFTER_DAYS) + 1))
+    assert not is_runnable(job4), "8 days must NOT open a 21-day content window"
+    set_clock(lambda: base + timedelta(days=_days + 1))
     assert is_runnable(job4), "window elapsed -> job should be runnable"
     status = run_until_blocked(job4, store4)
     assert status == "optimized", f"expected optimized after window, got {status}"
+
+    # ---- THE RETURN ARROW: an unmeasurable outcome must report WHY and must
+    # NOT be handed to the model as zeros, must NOT be recorded as a failure,
+    # and must NOT teach the playbook anything.
+    assert job4.get("unmeasured_reason"), (
+        "GA4 is not connected in a test env, so this job MUST carry a stated "
+        "reason rather than silently measuring zero")
+    _an = job4["payload"].get("analytics", {})
+    assert _an.get("measured") is False and _an.get("metrics") == {}, (
+        f"an unmeasured job must carry NO numbers, got {_an}")
+    assert job4.get("learned_nothing"), (
+        "an unmeasured cycle must not be folded into the playbook")
+    assert job4["status"] == "optimized", "unmeasured is not failed"
     set_clock(lambda: datetime.now(timezone.utc))  # restore clock
 
+    # 5) A MEASURED-poor piece earns a PROPOSAL that still waits for a person.
+    import content_engine_collect as _COL
+    store5 = InMemoryJobStore()
+    _poor = {"job_id": "quiet", "type": "content_piece", "payload": {
+        "content_producer": {"title": "A quiet piece"},
+        "analytics": {"measured": True, "period": "last 21d", "page": "/quiet",
+                      "metrics": {"sessions": 2, "conv_rate": 0.0}}}}
+    _queue_proposal(store5, _COL.rewrite_proposal(_poor))
+    _q = rewrite_proposals(store5)
+    assert len(_q) == 1 and _q[0]["requires_approval"] is True, _q
+    _queue_proposal(store5, _COL.rewrite_proposal(_poor))
+    assert len(rewrite_proposals(store5)) == 1, "one proposal per piece, ever"
+    assert resolve_proposal(store5, "quiet", False, "wrong keyword")["ok"]
+    assert rewrite_proposals(store5) == [], "resolved proposals leave the queue"
+    assert resolve_proposal(store5, "quiet", True)["ok"] is False, "no double-resolve"
+
     _LLM_HOOK = run_llm_skill  # restore
-    print("OK — orchestrator verified: human gate, completion, QA-block routing, "
-          "budget halt, and time-based measurement gate. (LLM stubbed; no API.)")
+    print("OK — orchestrator verified: human gate, completion, QA-block "
+          "routing, budget halt, per-pipeline measurement windows, and THE "
+          "RETURN ARROW: an unmeasurable outcome states why, skips the "
+          "model, is not a failure, and teaches the playbook nothing. "
+          "(LLM stubbed; no API.)")

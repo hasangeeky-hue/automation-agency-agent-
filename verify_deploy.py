@@ -29,7 +29,7 @@ EXPECTED_SECTIONS = [
     "seo", "media", "system",
 ]
 BIG_SECTIONS = {"seo": 235, "media": 296, "riskinfra": 208,
-                "bi": 268, "outreach": 240, "sga": 250, "content": 278, "cockpit": 268, "system": 230}
+                "bi": 268, "outreach": 240, "sga": 250, "content": 278, "cockpit": 269, "system": 240}
 FELL_BACK = "boards failed to render"
 
 
@@ -46,6 +46,7 @@ def main() -> int:
                 "content_engine_sga", "content_engine_sga_boards",
                 "content_engine_factory", "content_engine_factory_boards",
                 "content_engine_cockpit", "content_engine_cockpit_boards",
+                "content_engine_collect",
                 "content_engine_seo_boards", "content_engine_media_boards",
                 "content_engine_seo_ops", "content_engine_connectors",
                 "content_engine_charts"):

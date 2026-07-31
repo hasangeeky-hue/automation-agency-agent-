@@ -200,6 +200,14 @@ def api_get_job(job_id: str) -> dict:
             "approved": job.get("approved", False),
             "ready_to_measure": job.get("ready_to_measure", False),
             "cost_so_far_usd": job.get("cost_so_far_usd", 0.0),
+            # Why a job produced no learning. Without these the dashboard can
+            # only show that a job finished, not that it finished having
+            # measured nothing — which is the difference between a piece that
+            # failed and a piece nobody ever looked at.
+            "unmeasured_reason": job.get("unmeasured_reason", ""),
+            "learned_nothing": job.get("learned_nothing", ""),
+            "rewrite_proposed": job.get("rewrite_proposed", False),
+            "measure_at": job.get("measure_at", ""),
             "payload": job.get("payload", {})}
 
 
@@ -1878,6 +1886,18 @@ def build_app():
                             if r["enabled"] else
                             "Tracking off — nothing is added to your emails.")}
 
+    @app.post("/proposal")
+    async def resolve_rewrite_proposal(request: Request):
+        """Accept or decline a rewrite PROPOSAL. A measured-poor piece earns a
+        card in the queue, never an automatic rewrite — rewriting spends money
+        and republishes to a live site, and both stay behind this gate."""
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        return orch.resolve_proposal(get_store(), d.get("job_id", ""),
+                                     bool(d.get("accept")), d.get("note", ""))
+
     @app.post("/experiment")
     async def start_experiment(request: Request):
         """A stated hypothesis with one metric and a review date."""
@@ -2430,9 +2450,50 @@ if __name__ == "__main__":
             break
     assert api_get_job("api_job")["status"] == "optimized"
 
-    # learning closed the loop: the Optimizer's content_mix is now in the playbook
+    # ---- THE RETURN ARROW ------------------------------------------------
+    # This assertion used to require that the playbook learned from this cycle.
+    # It always passed, and it was encoding the bug: GA4 is not connected in a
+    # test environment, so NOTHING was measured, yet the Optimizer's canned
+    # content_mix was folded into the playbook anyway. That is exactly how the
+    # engine came to hold conclusions drawn from zeros.
+    #
+    # An unmeasured cycle must now teach the playbook nothing.
     from content_engine_learning import get_playbook
-    assert get_playbook("Acme")["content_mix"] == "60% how-to", "loop did not learn"
+    _j = api_get_job("api_job")
+    assert _j.get("unmeasured_reason"), (
+        "no GA4 in a test env -> the job MUST carry a stated reason")
+    assert _j.get("learned_nothing"), "an unmeasured cycle must teach nothing"
+    assert get_playbook("Acme").get("content_mix") != "60% how-to", (
+        "the playbook learned from a cycle in which nothing was measured")
+
+    # ...and a MEASURED cycle must still learn. Same pipeline, GA4 answering.
+    import content_engine_collect as _COL
+    _real = _COL._content_analytics
+    _COL._content_analytics = lambda j, st=None: {
+        "measured": True, "source": "ga4", "period": "last 21d", "page": "/m",
+        "metrics": {"sessions": 500, "conversions": 20, "conv_rate": 4.0,
+                    "engagement_rate": 70.0, "top_pages": []},
+        "funnel_stages": [], "vs_previous": {}}
+    try:
+        api_create_job("content_piece", {"brand_name": "Acme"},
+                       {"config": {"produce_index": 0}, "audit": {},
+                        "competitors": []}, job_id="api_job_m")
+        for _ in range(20):
+            if not api_tick()["advanced"]:
+                break
+        api_approve("api_job_m")
+        for _ in range(6):
+            if not api_tick()["advanced"]:
+                break
+        api_ready_to_measure("api_job_m")
+        for _ in range(6):
+            if not api_tick()["advanced"]:
+                break
+        assert api_get_job("api_job_m")["status"] == "optimized"
+        assert not api_get_job("api_job_m").get("learned_nothing"),             "a measured cycle must NOT be marked as having learned nothing"
+        assert get_playbook("Acme")["content_mix"] == "60% how-to",             "a MEASURED cycle must still close the learning loop"
+    finally:
+        _COL._content_analytics = _real
 
     orch._LLM_HOOK = orch.run_llm_skill
     print("OK — REST API core verified: health, skills, create/tick/approve/"

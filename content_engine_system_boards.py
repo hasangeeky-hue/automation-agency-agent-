@@ -821,6 +821,17 @@ PRODUCTION_LINE = [
 ]
 
 
+def _loop_closure(status) -> dict:
+    """Never fabricate closure. If the cockpit module cannot be read, say so
+    rather than drawing every loop as healthy."""
+    try:
+        import content_engine_cockpit as CK
+        return CK.loop_closure(status)
+    except Exception as e:
+        return {"rows": [], "closed": 0, "total": 0, "open": 0, "pct": 0.0,
+                "note": f"loop closure could not be computed: {e}"}
+
+
 def board_loopmap(ctx) -> str:
     """The wiring, drawn. Nine sections, what each emits, and the line a piece
     of content travels from a signal to a recorded outcome."""
@@ -869,6 +880,25 @@ def board_loopmap(ctx) -> str:
          "A loop with a dead wire emits nothing — check here first.",
          "wire status", _pct_color(100 - 100 * live / max(len(st), 1), 40), ""),
     ]
+    # ---- COMPUTED closure. This board used to draw nine closed circles while
+    # seven of them were cut: a loop is closed only when its outcome can
+    # physically come back, which depends on a live wire, not on a diagram.
+    lc = _loop_closure(st)
+    cards.append(
+        ("Loops that actually close", f"{lc['closed']}/{lc['total']}",
+         "can return an outcome",
+         _score_gauge(lc["pct"], 80),
+         lc["note"], "computed from live wires",
+         GREEN if lc["open"] == 0 else (AMBER if lc["closed"] >= lc["open"] else PINK),
+         ""))
+    for r in lc["rows"]:
+        cards.append((
+            r["label"][:30], "closed" if r["closed"] else "open",
+            "human in the loop" if r["human"] else f"needs {r['needs']}", "",
+            r["why"], "loop closure",
+            GREEN if r["closed"] else AMBER,
+            "" if r["closed"] or r["human"] else
+            "<button class='cta' onclick=\"sysTab('sysconnect')\">Connect it</button>"))
     for key, label, n, emits in LOOP_SYSTEMS:
         cards.append((label[:24], n, "cards",
                       _donut(round(100 * n / max(total_cards, 1))),
@@ -886,8 +916,8 @@ def board_loopmap(ctx) -> str:
          "principle", GREEN, ""),
     ]
     return _head("🔄", "Loop map",
-                 "How the whole engine wires together — sections, signals and "
-                 "the line a piece travels.") + _vizcards(cards[:16])
+                 "How the whole engine wires together — and which of its loops "
+                 "can actually return an outcome today.") + _vizcards(cards[:26])
 
 
 
@@ -935,12 +965,12 @@ _TAB_BOARDS = {
 
 CARD_COUNTS = {"command": 14, "wires": 24, "connect": 26, "agents": 22, "jobs": 20,
                "failures": 18, "cost": 18, "freshness": 16, "flow": 16, "deps": 14,
-               "drift": 14, "deploy": 12, "loopmap": 16}
+               "drift": 14, "deploy": 12, "loopmap": 26}
 TOTAL_CARDS = sum(CARD_COUNTS.values())
 
 _TAB_COUNTS = {"syscmd": 14, "syswires": 24, "sysconnect": 26, "sysagents": 22,
                "sysjobs": 20, "sysfail": 18, "syscost": 18, "sysfresh": 16,
-               "sysflow": 16, "sysdeps": 14, "sysdrift": 14, "sysdeploy": 12, "sysloopmap": 16}
+               "sysflow": 16, "sysdeps": 14, "sysdrift": 14, "sysdeploy": 12, "sysloopmap": 26}
 
 
 def _safe_board(name, fn, ctx) -> str:
