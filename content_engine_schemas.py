@@ -593,19 +593,20 @@ MEDIA_BUYER = {
         "objective": {"type": "string"},
         "daily_budget": {"type": "number"},
         "monthly_budget": {"type": "number"},
-        "locations": {"type": "array", "items": {"type": "string"}},
-        "languages": {"type": "array", "items": {"type": "string"}},
+        "locations": {"type": "array", "maxItems": 5, "items": {"type": "string"}},
+        "languages": {"type": "array", "maxItems": 3, "items": {"type": "string"}},
         "ad_groups": {
             "type": "array",
+            "maxItems": 6,
             "items": {
                 "type": "object",
                 "required": ["theme", "keywords", "headlines", "descriptions"],
                 "properties": {
                     "theme": {"type": "string"},
-                    "keywords": {"type": "array", "items": {"type": "string"}},
-                    "negative_keywords": {"type": "array", "items": {"type": "string"}},
-                    "headlines": {"type": "array", "items": {"type": "string"}},
-                    "descriptions": {"type": "array", "items": {"type": "string"}},
+                    "keywords": {"type": "array", "maxItems": 15, "items": {"type": "string"}},
+                    "negative_keywords": {"type": "array", "maxItems": 12, "items": {"type": "string"}},
+                    "headlines": {"type": "array", "maxItems": 15, "items": {"type": "string"}},
+                    "descriptions": {"type": "array", "maxItems": 4, "items": {"type": "string"}},
                     "creative_id": {"type": "string"},
                 },
                 "additionalProperties": False,
@@ -616,7 +617,7 @@ MEDIA_BUYER = {
         "estimated_leads_range": {"type": "string"},
         "rationale": {"type": "string"},
         "risks": {"type": "string"},
-        "human_should_check": {"type": "array", "items": {"type": "string"}},
+        "human_should_check": {"type": "array", "maxItems": 5, "items": {"type": "string"}},
     },
     "additionalProperties": False,
 }
@@ -642,6 +643,7 @@ CONTENT_PLANNER = {
         "period": {"type": "string"},
         "plan": {
             "type": "array",
+            "maxItems": 10,
             "items": {
                 "type": "object",
                 # `campaign` is optional: a piece may be standalone. When
@@ -659,7 +661,7 @@ CONTENT_PLANNER = {
                     "pillar": {"type": "string"},
                     "funnel": {"type": "string"},
                     "day_offset": {"type": "integer"},
-                    "channels": {"type": "array", "items": {"type": "string"}},
+                    "channels": {"type": "array", "maxItems": 4, "items": {"type": "string"}},
                     "rationale": {"type": "string"},
                 },
                 "additionalProperties": False,

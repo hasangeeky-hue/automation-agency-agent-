@@ -90,24 +90,64 @@ _CACHE_READ_MULT = 0.10    # cache read discount
 _MAX_TOKENS = {
     "site_intelligence": 1400,   # 5 issues x 4 prose fields + wins
     "authority_backlinks": 1400,  # shares the same narrate shape
-    "competitor_intel": 800,
-    "content_strategist": 900,
+    "competitor_intel": 2800,
+    "content_strategist": 1450,
     "content_producer_image": 300,
-    "seo_optimizer": 500,
-    "qa_compliance": 600,
+    "seo_optimizer": 1000,
+    "qa_compliance": 1000,
     "analytics_funnel": 400,
-    "optimizer": 700,
-    "segmenter": 400,
+    "optimizer": 1350,
+    "segmenter": 900,
     "outreach_copy": 800,   # per lead; room for a full email (incl. German)
-    "media_buyer": 4000,    # a full campaign (ad groups + kw + headlines) must not truncate
-    "media_chat": 4000,     # discuss + return the FULL revised campaign (same size)
+    "media_buyer": 10500,    # a full campaign (ad groups + kw + headlines) must not truncate
+    "media_chat": 10550,     # discuss + return the FULL revised campaign (same size)
     "reply_responder": 500,  # one inbound reply per call
     "judge": 500,            # S1 evaluator — compact verdict only
-    "content_planner": 2400,  # a batch of proposed pieces (segment+pillar+channel+day) to approve
+    "content_planner": 5150,  # a batch of proposed pieces (segment+pillar+channel+day) to approve
     "seo_fixer": 600,        # one page's title/meta/alt rewrite — compact by design
     "link_pitch": 500,       # one link-building email
-    "seo_analyst": 900,      # the qualitative reads across the SEO boards
+    "seo_analyst": 1350,      # the qualitative reads across the SEO boards
 }
+
+
+def schema_token_estimate(schema: dict) -> int:
+    """Worst-case output tokens this schema can produce.
+
+    Sizing a budget by eye is how site_intelligence shipped with 500 tokens for
+    an 805-token schema, and content_strategist with 900 for 1233 — each one
+    discovered by a real job dying mid-pipeline, at real cost. This computes it
+    from the schema instead: every array multiplied by its maxItems, every
+    string charged at a prose-length allowance.
+
+    Deliberately pessimistic. max_tokens is a CEILING, not a reservation — you
+    are billed for tokens generated, not tokens permitted — so headroom is
+    close to free and truncation is not."""
+    STRING_CHARS = 90        # a prose field: a rationale, a fix, a summary
+    UNBOUNDED_ITEMS = 10     # only reachable if a cap was missed
+
+    def walk(node) -> int:
+        if not isinstance(node, dict):
+            return 0
+        if "enum" in node:
+            return max((len(str(x)) for x in node["enum"]), default=8) + 3
+        t = node.get("type")
+        if t == "string":
+            return STRING_CHARS
+        if t in ("number", "integer"):
+            return 8
+        if t == "boolean":
+            return 5
+        if t == "array":
+            n = node.get("maxItems", UNBOUNDED_ITEMS)
+            return 2 + n * (walk(node.get("items", {})) + 2)
+        if t == "object" or "properties" in node:
+            total = 2
+            for key, val in (node.get("properties") or {}).items():
+                total += len(key) + 4 + walk(val)
+            return total
+        return 20
+
+    return round(walk(schema) / 3.2)   # JSON is punctuation-dense
 
 
 def _max_tokens_for(skill_name: str, payload: dict) -> int:
@@ -537,7 +577,7 @@ if __name__ == "__main__":
         # assertion was left on the OLD 60/lead formula when the qualifier
         # gained its business/pain/offer fields — stale test, not a bug.)
         "lead_qualifier": max(400, 140 * 2 + 150),
-        "qa_compliance": 600,
+        "qa_compliance": 1000,
         "outreach_copy": 800,
     }
     for skill, expected in checks.items():
@@ -566,36 +606,46 @@ if __name__ == "__main__":
             assert "1400" in str(e), "the error must name the budget to change"
     _truncated("end_turn", _Spec(), 900)      # a normal finish must NOT raise
 
-    # ---- an unbounded array on a tight budget is how the JSON gets cut off.
-    # site_intelligence had a 500-token ceiling and an uncapped
-    # content_opportunities array; fifteen content jobs died at step one on
-    # "Unterminated string at char 2293". Any skill whose schema can grow
-    # without limit needs room to finish, so tight budget + unbounded array is
-    # now a build failure rather than something discovered in production.
+    # ---- EVERY budget must cover what its schema can emit --------------
+    # This was discovered one dead job at a time, at real cost: site_intelligence
+    # died at 500 tokens against an 805-token schema, and once that was fixed
+    # content_strategist died at 900 against 1233. Both were sized by eye. The
+    # schema already states exactly how much output it permits, so the budget is
+    # now checked against it instead of guessed.
+    #
+    # max_tokens is a CEILING, not a reservation — billing is per token
+    # GENERATED — so headroom costs nothing and truncation costs a whole job.
     import content_engine_schemas as _SC
-    TIGHT = 1000
-    risky = []
+    undersized, unbounded = [], []
     for _name, _obj in _SC.SCHEMAS.items():
         _sch = getattr(_obj, "schema", _obj)
         if not isinstance(_sch, dict):
             continue
-        budget = _MAX_TOKENS.get(_name)
-        if budget is None or budget > TIGHT:
-            continue                      # dynamic, or roomy enough
-        stack = [_sch.get("properties", {})]
-        while stack:
-            node = stack.pop()
-            if isinstance(node, dict):
-                if node.get("type") == "array" and "maxItems" not in node:
-                    risky.append((_name, budget))
+        _budget = _MAX_TOKENS.get(_name)
+        if _budget is None:
+            continue                       # computed per job in _max_tokens_for
+        _need = schema_token_estimate(_sch)
+        if _need > _budget:
+            undersized.append((_name, _budget, _need))
+        _stack = [_sch.get("properties", {})]
+        while _stack:
+            _node = _stack.pop()
+            if isinstance(_node, dict):
+                if _node.get("type") == "array" and "maxItems" not in _node:
+                    unbounded.append(_name)
                     break
-                stack.extend(node.values())
-            elif isinstance(node, list):
-                stack.extend(node)
-    assert not risky, (
-        "these skills can emit an unbounded array on a budget too small to "
-        f"finish it, which truncates the JSON mid-value: {sorted(set(risky))}")
+                _stack.extend(_node.values())
+            elif isinstance(_node, list):
+                _stack.extend(_node)
+    assert not undersized, (
+        "these token budgets are smaller than the output their own schema "
+        "permits, so a full response truncates into invalid JSON "
+        f"(skill, budget, needs): {sorted(undersized)}")
+    assert not unbounded, (
+        "these schemas contain an array with no maxItems, so their output "
+        f"length is unbounded and no budget can be proven sufficient: "
+        f"{sorted(set(unbounded))}")
 
     print(f"OK — build_prompt + routing + cost verified for {len(checks)} skills "
-          f"(sample cost check ${c}); truncation is named, and no tight-budget "
-          f"skill can emit an unbounded array.")
+          f"(sample cost check ${c}); truncation is named, every array is "
+          f"bounded, and all {len(_MAX_TOKENS)} budgets cover their schema.")
