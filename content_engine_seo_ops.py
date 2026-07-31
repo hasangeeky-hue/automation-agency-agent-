@@ -586,6 +586,45 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
 
 
 
+def build_factory_ctx(store, *, jobs=None, status=None, ci=None, piece=None,
+                      content_plan=None, seo=None, bi=None, outreach=None,
+                      sga=None, media=None, risk=None, image_key=None) -> dict:
+    """Everything the 16 Content Factory boards read, including the six
+    platform previews and the strategy brief that ends the planner's blindness."""
+    import content_engine_factory as F
+    jobs = jobs if isinstance(jobs, list) else []
+    brief = F.strategy_brief(store, seo=seo, bi=bi, outreach=outreach, sga=sga,
+                             media=media, risk=risk, status=status)
+    el = brief.get("eligibility") or F.channel_eligibility(status)
+    # the piece to preview: the newest one awaiting approval, else the newest
+    pc = piece
+    if pc is None:
+        cands = [j for j in jobs if _D(j).get("type") == "content_piece"]
+        awaiting = [j for j in cands
+                    if _D(j).get("status") == "AWAITING_APPROVAL"] or cands
+        awaiting.sort(key=lambda j: _D(j).get("created_at") or "", reverse=True)
+        pc = _D(_D(_D(awaiting[0]).get("payload")).get("content_producer")) \
+            if awaiting else {}
+    chans = []
+    for j in jobs:
+        cfg = _D(_D(j).get("payload")).get("config") or {}
+        chans += [str(c).lower() for c in (_D(cfg).get("deploy_channels") or [])]
+    chans = sorted(set(chans)) or ["website"]
+    kw = _D(pc).get("target_keyword") or ""
+    return {
+        "brief": brief, "eligibility": el, "piece": pc,
+        "previews": F.previews(pc, chans, keyword=kw),
+        "images": F.image_status(status, image_key=image_key),
+        "image_need": F.image_needed(_D(pc).get("type", "blog"), chans),
+        "ci": F.ci_compliance(pc, ci),
+        "pipeline": F.pipeline(jobs),
+        "routing": F.routing(jobs, el),
+        "repurposing": F.repurposing(pc, chans),
+        "throughput": F.throughput(jobs),
+        "plan": _D(content_plan),
+    }
+
+
 def build_sga_ctx(store, *, jobs=None, status=None, insights=None, deals=None,
                   month_spent=0.0, month_cap=200.0, emails_sent=0,
                   target_per_channel=1) -> dict:

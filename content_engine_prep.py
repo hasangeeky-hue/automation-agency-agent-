@@ -319,7 +319,16 @@ def _ensure_hero_image(job: dict) -> None:
     piece = p.get("content_producer") or {}
     if not piece or piece.get("image_url"):
         return
-    if _chosen_row(job).get("type", "blog") not in ("blog", "guide"):
+    # A social piece never got a visual, and Instagram REJECTS a post without
+    # one (instagram_needs_image_url). That is why Instagram could never work.
+    # Generate for every type that publishes a visual, and always when a
+    # channel in this job hard-requires one.
+    _type = _chosen_row(job).get("type", "blog")
+    _chans = [str(c).lower() for c in
+              ((p.get("config") or {}).get("deploy_channels") or [])]
+    _needs = bool({"instagram", "ig", "youtube", "facebook", "meta"} & set(_chans))
+    if _type not in ("blog", "guide", "social", "post", "article", "case_study") \
+            and not _needs:
         return
     title = piece.get("title") or _chosen_row(job).get("working_title", "")
     try:

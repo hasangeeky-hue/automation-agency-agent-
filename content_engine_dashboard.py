@@ -26,12 +26,12 @@ log = logging.getLogger("content_engine.dashboard")
 # Bumped on every deploy so the running build is VISIBLE on the page — no more
 # guessing from terminal hashes. If the badge in the top bar doesn't match this,
 # the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-31 · v27 · SGA: Social Media + Google Hub + Ads & "
-             "Growth merged into ONE section — 250 cards, 14 boards, and UTM "
-             "tagging on every posted link so GA4 can credit an individual "
-             "post. 1,711 engine cards across 12 sidebar entries: BI 268, "
-             "Media Buying 296, SGA 250, Leads & Outreach 240, SEO/AEO/GEO "
-             "235, System & Wiring 214, Risk & Infrastructure 208")
+BUILD_TAG = ("2026-07-31 · v28 · Content Factory rebuilt as the heart: 278 "
+             "cards, 16 boards, SIX platform preview screens (96 cards), and "
+             "the planner now reads every other system instead of an empty "
+             "dict. 1,989 engine cards across 12 sidebar entries: Media Buying "
+             "296, Content Factory 278, BI 268, SGA 250, Leads & Outreach 240, "
+             "SEO/AEO/GEO 235, System & Wiring 214, Risk & Infrastructure 208")
 
 CSS = """
 :root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
@@ -1776,8 +1776,22 @@ def _content_calendar(content_jobs, content_plan):
             c = str(c).lower()
             if c in ("website", "web", "blog", "wordpress"):
                 out += "<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 7px'>🌐 Website</span> "
-            elif c == "linkedin":
-                out += "<span class='pill' style='background:rgba(10,102,194,.16);color:#4C9AFF;padding:1px 7px'>in LinkedIn</span> "
+            else:
+                # Instagram, Facebook, YouTube, X and TikTok rendered NOTHING —
+                # a piece planned for Instagram showed a title with no channel.
+                _CH_PILL = {
+                    "linkedin": ("in LinkedIn", "10,102,194", "#4C9AFF"),
+                    "instagram": ("◎ Instagram", "225,48,108", "#F5788A"),
+                    "facebook": ("f Facebook", "24,119,242", "#4C8DFF"),
+                    "meta": ("f Facebook", "24,119,242", "#4C8DFF"),
+                    "youtube": ("▶ YouTube", "255,0,0", "#F5788A"),
+                    "twitter": ("𝕏 X", "120,120,140", "#C7D0E8"),
+                    "x": ("𝕏 X", "120,120,140", "#C7D0E8"),
+                    "tiktok": ("♪ TikTok", "0,242,234", "#2FE3D2"),
+                }
+                lbl, rgb, col = _CH_PILL.get(c, (c.title(), "139,124,255", "#8B7CFF"))
+                out += (f"<span class='pill' style='background:rgba({rgb},.16);"
+                        f"color:{col};padding:1px 7px'>{_esc(lbl)}</span> ")
         return out
 
     by_day = {}   # iso date -> list of (title, channels, stage_label, is_plan)
@@ -2792,7 +2806,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    content_plan=None, web_tracking=None, reply_drafts=None,
                    competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None,
                    system_ctx=None, risk_ctx=None, bi_ctx=None,
-                   outreach_ctx=None, sga_ctx=None):
+                   outreach_ctx=None, sga_ctx=None, factory_ctx=None):
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -3944,6 +3958,21 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                        f"{_esc(type(_e3).__name__)}: {_esc(str(_e3))[:300]}</p></div>"
                        + p_agents + p_map + overview)
 
+    # ---- Content Factory: the heart. 13 cards with no preview, a planner
+    # handed an empty dict, and images that never reached social. Rebuilt as 16
+    # boards with SIX platform preview screens.
+    try:
+        import content_engine_factory_boards as _CFB
+        _factory_all = _CFB.factory_section(factory_ctx or {})
+    except Exception as _e8:
+        log.exception("Content Factory boards failed to render - showing the "
+                      "old module instead")
+        _factory_all = ("<div class='card full' style='border-color:#F5788A'>"
+                        "<p class='ct'>Content Factory boards failed to render</p>"
+                        f"<p class='cc'>Showing the older module below. Reason: "
+                        f"{_esc(type(_e8).__name__)}: {_esc(str(_e8))[:300]}</p></div>"
+                        + p_content)
+
     # ---- SGA: ONE section replacing Social Media, Google Hub and Ads &
     # Growth — 27 cards between them, ZERO charts, and 19 panels that were
     # literally _empty(). Scope is social (paid + unpaid) plus the Google data
@@ -4026,7 +4055,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("riskinfra", "🛡", "Risk & Infrastructure", "Risk & Infrastructure",
          "Risk, workforce and infrastructure — merged. 208 cards across 12 boards.",
          _risk_all),
-        ("content", "📝", "Content Factory", "Content Factory", "Everything about creating & publishing content.", p_content),
+        ("content", "🏭", "Content Factory", "Content Factory",
+         "Plan it, see it on every platform, make it, ship it. 278 cards "
+         "across 16 boards including six live previews.", _factory_all),
         ("outreach", "📮", "Leads & Outreach", "Leads & Outreach",
          "Find them, write to them, track what came back. 240 cards "
          "across 14 boards.", _outreach_all),
@@ -4183,6 +4214,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "function runSeoDue(){seoRun('/seo/due','Running what is due…',"
               "'Run every SEO engine that is due right now? Free engines run "
               "immediately; paid ones respect your cap.');}"
+              "function planContent(){"
+              "if(!confirm('Plan a week of content?\\n\\nThe planner reads striking-distance "
+              "queries, AI-visibility gaps, missing markets, which vertical replies, what "
+              "produced revenue and which channels are live. It costs one LLM call and "
+              "writes nothing until you approve.'))return;"
+              "seoRun('/plan/content','Planning from every system… ~30s');}"
+              "async function testImage(){if(!confirm('Generate one real image? Costs about "
+              "EUR 0.04 and shows whether the key works and whether the style fits your "
+              "brand.'))return;"
+              "try{var r=await fetch('/content/test-image',{method:'POST'});var j=await r.json();"
+              "if(j.ok){if(confirm('Image generated. Open it?'))window.open(j.url,'_blank');}"
+              "else{alert('Failed: '+(j.error||''));}}catch(e){alert('Failed: '+e);}}"
               "function sgaCampaign(){var n=prompt('Campaign name');if(!n)return;"
               "var o=prompt('Objective: awareness / leads / bookings','leads')||'awareness';"
               "var c=prompt('Channels, comma separated: linkedin,facebook,instagram,youtube,twitter,tiktok','linkedin')||'linkedin';"

@@ -577,6 +577,15 @@ def api_source_maps_leads(vertical: str, city: str, count: int = 20) -> dict:
             "next": "The qualifier picks it up on the next engine step (▶ Run one step or START)."}
 
 
+def _safe(fn):
+    """Call a context builder; a failure must never stop planning."""
+    try:
+        return fn() or {}
+    except Exception as e:
+        log.warning("planner signal source failed: %s", e)
+        return {}
+
+
 def api_plan_content(count=8):
     """Ask the planner to propose a batch of on-brand pieces for you to approve.
     Stores the plan as 'pending' — no jobs are created until you approve it."""
@@ -600,9 +609,33 @@ def api_plan_content(count=8):
                                      "content creators", "marketing managers"],
                        "countries": ["USA", "UK", "Germany", "Switzerland", "Canada"],
                        "deal_size": "$2,000-$10,000"}
+    # site_signals was {} — the planner could only balance its own taxonomy
+    # against its own past titles. Every system in this engine already computes
+    # what a strategist would ask for; hand it over as evidence.
+    brief, eligible = {}, ["website"]
+    try:
+        import content_engine_factory as _F
+        import content_engine_seo_ops as _SO
+        _jobs = store.list_jobs() if hasattr(store, "list_jobs") else []
+        _st = _connectors_status()
+        brief = _F.strategy_brief(
+            store,
+            seo=_safe(lambda: _SO.build_ctx(store)),
+            bi=_safe(lambda: _SO.build_bi_ctx(store, jobs=_jobs, status=_st)),
+            outreach=_safe(lambda: _SO.build_outreach_ctx(store, jobs=_jobs)),
+            sga=_safe(lambda: _SO.build_sga_ctx(store, jobs=_jobs, status=_st)),
+            media=_safe(lambda: _SO.build_media_ctx(store)),
+            risk=_safe(lambda: _SO.build_risk_ctx(store, status=_st, jobs=_jobs)),
+            status=_st)
+        eligible = brief.get("eligibility", {}).get("eligible") or ["website"]
+    except Exception as e:
+        log.warning("strategy brief unavailable, planning without it: %s", e)
     payload = {"count": int(count), "goal": "authority + leads", "icp": icp,
-               "segments": TAX.SEGMENT_NAMES, "pillars": TAX.PILLAR_NAMES, "coverage": coverage,
-               "recent_titles": recent[-30:], "site_signals": {}}
+               "segments": TAX.SEGMENT_NAMES, "pillars": TAX.PILLAR_NAMES,
+               "coverage": coverage, "recent_titles": recent[-30:],
+               "site_signals": brief.get("signals", {}),
+               "priority_gaps": [g.get("why") for g in brief.get("gaps", [])[:5]],
+               "channel_eligibility": eligible}
     try:
         from content_engine_providers import build_prompt, call_provider
         mdl = (orch.ROUTES.get("content_planner", {}) or {}).get("engine") or orch.FRONTIER_ALT
@@ -1354,6 +1387,16 @@ def api_lead_delete(job_id, email, reason="removed by hand"):
             "message": f"{email} removed and suppressed — it will not be emailed."}
 
 
+def _safe_image_key():
+    """The image key, read the same settings-first way everything else is, so
+    the board can tell you whether it is an OpenAI key or an Anthropic one."""
+    try:
+        import content_engine_connectors as C
+        return C._env("IMAGE_API_KEY") or ""
+    except Exception:
+        return ""
+
+
 def _sga_emails_sent(jobs):
     """Emails the engine actually sent, from the send stamps."""
     try:
@@ -1507,10 +1550,22 @@ def api_dashboard_html() -> str:
     except Exception as e:
         log.warning("SGA context unavailable: %s", e)
         sga_ctx = None
+    try:
+        import content_engine_seo_ops as _SEO8
+        import content_engine_brand as _BR8
+        factory_ctx = _SEO8.build_factory_ctx(
+            store, jobs=jobs, status=st,
+            ci=(_BR8.get_ci() if hasattr(_BR8, "get_ci") else {}),
+            content_plan=content_plan, seo=seo_ctx, bi=bi_ctx,
+            outreach=outreach_ctx, sga=sga_ctx, media=media_ctx, risk=risk_ctx,
+            image_key=_safe_image_key())
+    except Exception as e:
+        log.warning("Content Factory context unavailable: %s", e)
+        factory_ctx = None
     return D.dashboard_html(
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
         risk_ctx=risk_ctx, bi_ctx=bi_ctx, outreach_ctx=outreach_ctx,
-        sga_ctx=sga_ctx,
+        sga_ctx=sga_ctx, factory_ctx=factory_ctx,
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
@@ -1781,6 +1836,28 @@ def build_app():
                             "added to the HTML part of every send."
                             if r["enabled"] else
                             "Tracking off — nothing is added to your emails.")}
+
+    @app.post("/content/test-image")
+    def content_test_image():
+        """Generate ONE real image so you can see whether the key works and
+        whether the style matches your brand. Costs about EUR 0.04."""
+        try:
+            import content_engine_connectors as C
+            import content_engine_site_taxonomy as TAX
+            import content_engine_brand as B
+            ci = B.get_ci_block() if hasattr(B, "get_ci_block") else ""
+            url = C.generate_image(TAX.image_prompt(
+                "AI automation for a Munich clinic", ci))
+            if url:
+                return {"ok": True, "url": url,
+                        "message": "Image generated and hosted. Open the URL to "
+                                   "see whether the style matches your brand."}
+            return {"ok": False,
+                    "error": ("No image came back. Check IMAGE_API_KEY is an "
+                              "OpenAI key - Anthropic has no image API, so a "
+                              "Claude key cannot work here.")}
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
     @app.post("/sga/campaign")
     async def sga_campaign(request: Request):
