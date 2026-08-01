@@ -1,0 +1,179 @@
+"""WHAT IS ACTUALLY STOPPING THE MACHINE — every loop, every gap, one list.
+
+    docker compose -f deploy/docker-compose.yml exec api python audit_gaps.py
+
+"Nothing works" and "the cards are empty" are symptoms with different causes,
+and until they are separated you cannot fix either. This walks every loop the
+engine owns and reports, for each one, the ONE thing standing in its way:
+
+    BLOCKED   a credential is missing, so the loop cannot run at all
+    STARVED   it runs, but nothing has fed it yet, so its cards are honestly empty
+    BROKEN    it ran and failed - with the reason
+    RUNNING   it is working
+
+A card showing zero is not the same as a card that is broken. This says which.
+Reads live state only; invents nothing.
+"""
+import sys
+from collections import Counter
+
+BLOCKED, STARVED, BROKEN, RUNNING = "BLOCKED", "STARVED", "BROKEN", "RUNNING"
+
+
+def main() -> int:
+    import content_engine_api as API
+    import content_engine_connectors as C
+    import content_engine_dashboard as D
+
+    store = API.get_store()
+    get = getattr(store, "get_setting", lambda *a: None)
+    try:
+        status = C.status()
+    except Exception as e:
+        print("cannot read connector status:", e)
+        return 1
+    jobs = store.list_jobs() if hasattr(store, "list_jobs") else []
+    by_status = Counter(j.get("status", "?") for j in jobs)
+    fails = Counter()
+    for j in jobs:
+        if j.get("status") in ("failed", "revision_needed", "halted_budget"):
+            r = str(j.get("halt_reason") or j.get("qa_verdict") or j["status"])
+            fails[r.split(":")[0].strip()[:60]] += 1
+
+    def wire(k):
+        return bool(status.get(k))
+
+    def deals():
+        try:
+            import content_engine_bi as BI
+            return len(BI.list_deals(store) or [])
+        except Exception:
+            return 0
+
+    published = by_status.get("published", 0) + by_status.get("optimized", 0)
+    sent = by_status.get("sent", 0)
+    measured = sum(by_status.get(s, 0) for s in ("measured", "tracked", "learned", "optimized"))
+
+    # (loop, the wire it needs, what it needs fed, live count, the fix)
+    LOOPS = [
+        ("Content: plan -> write -> approve -> publish",
+         ["claude_api", "wordpress_publish"], "approved pieces", published,
+         "approve a piece in AI Cockpit -> Approvals"),
+        ("Content measurement: published -> GA4 -> playbook",
+         ["google_gsc_ga4"], "published pieces past their window", measured,
+         "wait for a measurement window to open"),
+        ("Outreach: source -> qualify -> send",
+         ["email_send", "web_search"], "approved campaigns", sent,
+         "approve a campaign in AI Cockpit -> Approvals - Outreach"),
+        ("Outreach measurement: opens, clicks, replies",
+         ["email_reply_inbound"], "sent campaigns with tracking on", sent,
+         "turn tracking on in Leads & Outreach"),
+        ("SEO: crawl -> fix -> rank",
+         ["seo_crawler", "seo_rank_tracker"], "SEO runs", 0,
+         "the cadence runs these hourly once the engine is started"),
+        ("AEO: are the AI engines quoting you",
+         ["claude_api"], "answer engines connected", 0,
+         "add OPENAI_API_KEY / PERPLEXITY_API_KEY / GEMINI_API_KEY"),
+        ("Social distribution",
+         ["social_linkedin"], "published social posts", 0,
+         "connect the channels you actually want to post to"),
+        ("Paid: bid -> spend -> CPA",
+         ["ads_api"], "live campaigns", 0, "campaigns must be approved to spend"),
+        ("Money: work -> deal -> revenue",
+         [], "recorded deals", deals(),
+         "record your first deal in Business Intelligence"),
+        ("Bookings",
+         ["calcom_bookings"], "booked consultations", 0, "connect Cal.com"),
+    ]
+
+    print("=" * 68)
+    print("WHY EACH LOOP IS OR IS NOT PRODUCING")
+    print("=" * 68)
+    tally = Counter()
+    for name, wires, feeds, n, fix in LOOPS:
+        missing = [w for w in wires if not wire(w)]
+        if missing:
+            state, why = BLOCKED, f"needs {', '.join(missing)}"
+        elif n:
+            state, why = RUNNING, f"{n} {feeds}"
+        else:
+            state, why = STARVED, f"no {feeds} yet"
+        tally[state] += 1
+        print(f"  {state:<8} {name}")
+        print(f"           {why}")
+        if state != RUNNING:
+            print(f"           -> {fix}")
+    print()
+    print("  " + " · ".join(f"{k} {v}" for k, v in tally.most_common()))
+
+    print()
+    print("=" * 68)
+    print("JOBS THAT FAILED, BY CAUSE")
+    print("=" * 68)
+    if not fails:
+        print("  none")
+    for reason, n in fails.most_common(8):
+        print(f"  {n:>3} x  {reason}")
+
+    print()
+    print("=" * 68)
+    print("FRONT-END GAPS  (settable keys with NO field on the dashboard)")
+    print("=" * 68)
+    allowed = set(C.CONNECTOR_ENV_KEYS)
+    # If the render fails, SAY SO. Reporting an empty page as "40 keys have no
+    # field" is a false alarm dressed as a finding - the same mistake that once
+    # condemned a perfectly good database backup.
+    html, render_err = "", ""
+    try:
+        html = API.api_dashboard_html()
+    except Exception as e:
+        render_err = f"{type(e).__name__}: {e}"
+    if len(html) < 20000:
+        try:
+            html = D.dashboard_html(
+                jobs=jobs, st=status, health={"healthy": True}, month_spent=0,
+                month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
+            render_err = ""
+        except Exception as e:
+            render_err = render_err or f"{type(e).__name__}: {e}"
+    if len(html) < 20000:
+        print(f"  SKIPPED - the dashboard did not render ({render_err or 'too small'}).")
+        print("  Run this INSIDE the api container, where the store is reachable.")
+        html = ""
+    import re
+    on_page = set(re.findall(r"<input[^>]*name='([A-Z0-9_]+)'", html)) if html else allowed
+    missing_field = sorted(allowed - on_page)
+    print(f"  allow-listed keys      : {len(allowed)}")
+    print(f"  with a field on screen : {len(allowed & on_page)}")
+    if missing_field:
+        print(f"  NO FIELD (unreachable) : {len(missing_field)}")
+        for k in missing_field:
+            print(f"     {k}")
+    else:
+        print("  every allow-listed key has a field. Nothing is unreachable.")
+
+    unlabelled = sorted(on_page - set(re.findall(r"<label for='f-([A-Z0-9_]+)'", html)))
+    if unlabelled:
+        print(f"\n  fields with NO label ({len(unlabelled)}): {unlabelled[:8]}")
+
+    print()
+    print("=" * 68)
+    print("THE ONE THING TO DO NEXT")
+    print("=" * 68)
+    blocked = [n for n, w, _f, _c, _x in LOOPS if any(not wire(x) for x in w)]
+    if by_status.get("AWAITING_APPROVAL"):
+        print(f"  {by_status['AWAITING_APPROVAL']} piece(s) are waiting for YOUR approval.")
+        print("  Nothing downstream of them can run until you decide.")
+    elif blocked:
+        print(f"  {len(blocked)} loop(s) are blocked on a credential. Start with:")
+        print(f"    {blocked[0]}")
+    elif tally[STARVED]:
+        print("  Nothing is blocked. The loops are STARVED - they are waiting for")
+        print("  work to finish, not for you to fix anything.")
+    else:
+        print("  Everything is running.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

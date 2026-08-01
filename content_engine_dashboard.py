@@ -127,6 +127,11 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .kfield{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
 .kfield label{font-size:11.5px;font-weight:650;color:var(--ink);display:flex;
   align-items:center;gap:6px}
+.kfield .krow{display:flex;gap:6px;align-items:stretch}
+.kfield .krow input{flex:1 1 auto;min-width:0}
+.keye{background:var(--s2);border:1px solid var(--line);color:var(--mut);
+  border-radius:7px;padding:0 10px;font:inherit;font-size:11px;cursor:pointer}
+.keye:hover{border-color:var(--teal);color:var(--teal)}
 .kfield .khint{font-size:10.5px;color:var(--dim);display:flex;gap:8px;align-items:center}
 .kfield .khint code{background:var(--s2);border-radius:4px;padding:1px 5px;
   font-family:ui-monospace,Consolas,monospace;font-size:10px}
@@ -479,11 +484,21 @@ def _field(name, hint, saved=False, secret=None):
     where = (f" <a class='klink' href='{src[1]}' target='_blank' rel='noopener'>"
              f"get it &#8599;</a>" if src else "")
     state = ("<span class='ksaved'>saved</span>" if saved else "")
+    # API keys are NOT passwords. Masking them means you cannot see whether a
+    # paste landed, whether it picked up a trailing space, or whether it is the
+    # right key at all - and browser password managers fight over type=password
+    # fields, which is the most likely reason a paste appears to do nothing.
+    # Secrets start masked (shoulder-surfing is real) with a reveal toggle.
+    eye = (f"<button type='button' class='keye' onclick=\"keyEye(this)\" "
+           f"title='Show or hide'>show</button>" if secret else "")
     return (f"<div class='kfield'>"
             f"<label for='f-{_esc(name)}'>{_esc(hint)}{state}</label>"
+            f"<div class='krow'>"
             f"<input id='f-{_esc(name)}' name='{_esc(name)}' "
             f"type='{'password' if secret else 'text'}' "
+            f"autocomplete='off' autocapitalize='off' spellcheck='false' "
             f"placeholder='{'saved - type to replace' if saved else _esc(name)}'>"
+            f"{eye}</div>"
             f"<span class='khint'><code>{_esc(name)}</code>{where}</span></div>")
 
 
@@ -4130,8 +4145,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     try:
         import content_engine_system_boards as _SYSB
         _sysctx = dict(system_ctx or {})
-        _sysctx.setdefault("connect_html", diag + connect_card)
-        _sysctx.setdefault("legacy_svgs", _map_svgs)
+        # NOT setdefault. build_system_ctx always writes "connect_html": "" —
+        # an empty string is a PRESENT key, so setdefault silently did nothing
+        # and the entire Connect form plus the 36-key card never rendered on the
+        # real API path. The dashboard looked complete; the fields simply were
+        # not there. Fill only when the value is actually empty.
+        if not _sysctx.get("connect_html"):
+            _sysctx["connect_html"] = diag + connect_card
+        if not _sysctx.get("legacy_svgs"):
+            _sysctx["legacy_svgs"] = _map_svgs
         _sysctx.setdefault("build_tag", BUILD_TAG)
         _system_all = _SYSB.system_section(_sysctx)
     except Exception as _e3:
@@ -4369,6 +4391,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               # tells you nothing about WHICH field saved and leaves no trace on
               # the form. The result now appears next to the button and the
               # saved fields get their badge without a reload.
+              # reveal a key so you can SEE that the paste landed
+              "function keyEye(b){var i=b.previousElementSibling;if(!i)return;"
+              "var hide=i.type==='password';i.type=hide?'text':'password';"
+              "b.textContent=hide?'hide':'show';}"
               "function ksay(f,msg,ok){var e=f.querySelector('.ksaveok,.ksaveerr');"
               "if(!e){e=document.createElement('span');f.querySelector('button').after(e);}"
               "e.className=ok?'ksaveok':'ksaveerr';e.textContent=msg;}"

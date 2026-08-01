@@ -2529,6 +2529,19 @@ if __name__ == "__main__":
         _COL._content_analytics = _real
 
     orch._LLM_HOOK = orch.run_llm_skill
+    # The dashboard rendered through the REAL api path must contain the connect
+    # form. It did not: build_system_ctx writes connect_html="" and the injector
+    # used setdefault, which never overwrites a present-but-empty key. The page
+    # looked complete and had ZERO credential fields on it. Assert the thing the
+    # user actually needs, not that the page rendered.
+    _h = api_dashboard_html()
+    import re as _re9
+    _fields = _re9.findall(r"<input[^>]*name='([A-Z0-9_]+)'", _h)
+    assert len(_fields) >= 80, (
+        f"the api dashboard rendered {len(_fields)} credential fields - the "
+        f"Connect form is missing from the page people actually load")
+    assert "<label for='f-" in _h, "credential fields must carry labels"
+
     print("OK — REST API core verified: health, skills, create/tick/approve/"
           "measure/finish, and the learning loop persisted the playbook. "
           "(LLM stubbed; no server, no API calls.)")
