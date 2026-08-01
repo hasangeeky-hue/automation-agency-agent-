@@ -4520,6 +4520,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               # Land ON the field, focused and highlighted - not "somewhere
               # above". A card that names a missing key and then leaves you to
               # hunt for its box is why the keys felt unaddable.
+              # Land on the PREVIEW of the piece you are approving. "Open
+              # previews" used to drop you on Factory Command, leaving you to
+              # find one of six preview tabs yourself - which is why the
+              # preview felt missing when it was rendering all along.
+              "function goPreview(tab){nav('content');"
+              "setTimeout(function(){seoTab(tab||'cfpvweb');},140);}"
               "function focusKey(name){nav('system');sysTab('sysconnect');"
               "setTimeout(function(){var el=document.getElementById('f-'+name);"
               "if(!el){return;}"

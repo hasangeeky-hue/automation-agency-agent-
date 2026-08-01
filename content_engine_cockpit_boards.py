@@ -398,7 +398,10 @@ def _approval_board(kind, label, icon, count, live_key, blurb):
                  ("Website, LinkedIn, Instagram, X, Facebook, YouTube and the "
                   "Google result — all rendered from the piece that publishes."),
                  "Content Factory", VIOLET,
-                 "<button class='cta' onclick=\"nav('content')\">Open previews</button>"),
+                 "<button class='cta' onclick=\"goPreview('cfpvweb')\">"
+                 "See the website preview</button>"
+                 "<button class='cta' onclick=\"goPreview('cfpvli')\">"
+                 "LinkedIn preview</button>"),
                 ("Blocked platforms", "checked", "before you approve", "",
                  ("Instagram and YouTube reject a post with no visual. The "
                   "preview says so rather than failing at publish time."),
