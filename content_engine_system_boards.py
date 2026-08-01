@@ -251,10 +251,22 @@ def board_connect(ctx) -> str:
              else "Cost, not call count, is the limit here."),
             x["key"], _pct_color(100 - x["pct"]) if not x["unlimited"] else BLUE, ""))
     for w in connectable[:14]:
+        # The key names used to be cut at 40 characters, so a card read
+        # "GOOGLE_ADS_DEVELOPER_TOKEN + GOOGLE_ADS_" and you could not tell WHAT
+        # to paste. And the button said "Save keys above" while pointing at a
+        # tab, not at the field - so the card named a problem and then walked
+        # away from it. It now jumps to the actual input and focuses it.
+        keys = [t.split("=", 1)[0].strip()
+                for t in str(w.get("fix") or "").split(" + ") if t.strip()]
+        first = keys[0] if keys else ""
+        jump = (f"<button class='cta' onclick=\"focusKey('{first}')\">"
+                f"Paste the key</button>" if first and not w["live"] else "")
         cards.append((
-            w["name"], "connected" if w["live"] else "not set", w["fix"][:40], "",
+            w["name"], "connected" if w["live"] else "not set",
+            f"{len(keys)} field{'s' if len(keys) != 1 else ''}", "",
             (w["breaks"] if not w["live"] else "Connected and working."),
-            w["fix"], GREEN if w["live"] else AMBER, ""))
+            " + ".join(keys) or "no credential",
+            GREEN if w["live"] else AMBER, jump))
     extras = [
         _na("Where keys are stored", "Postgres settings, not the image",
             "A rebuild or a revert cannot lose a key — they live in the database.",

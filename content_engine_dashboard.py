@@ -4511,6 +4511,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               # Cockpit -> the actual box you type the key into. Naming a form
               # without landing on it is how the Keys board pointed at a page
               # that had no field for any of the 36 keys.
+              # Land ON the field, focused and highlighted - not "somewhere
+              # above". A card that names a missing key and then leaves you to
+              # hunt for its box is why the keys felt unaddable.
+              "function focusKey(name){nav('system');sysTab('sysconnect');"
+              "setTimeout(function(){var el=document.getElementById('f-'+name);"
+              "if(!el){return;}"
+              "var w=el.closest('.kfield')||el;"
+              "w.scrollIntoView({block:'center',behavior:'smooth'});"
+              "el.focus();"
+              "w.style.transition='box-shadow .3s';"
+              "w.style.boxShadow='0 0 0 2px #2FE3D2';"
+              "setTimeout(function(){w.style.boxShadow='';},2200);},160);}"
               "function goKeys(){nav('system');sysTab('sysconnect');"
               "setTimeout(function(){var e=document.getElementById('extrakeys');"
               "if(e)e.scrollIntoView({block:'start',behavior:'smooth'});},120);}"

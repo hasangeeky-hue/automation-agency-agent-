@@ -2541,6 +2541,16 @@ if __name__ == "__main__":
         f"the api dashboard rendered {len(_fields)} credential fields - the "
         f"Connect form is missing from the page people actually load")
     assert "<label for='f-" in _h, "credential fields must carry labels"
+    # A "Paste the key" button that lands nowhere is worse than no button: it
+    # promises the thing the whole card is about and then drops you. Every jump
+    # target must be a field that exists on the same page.
+    _targets = set(_re9.findall(r"focusKey\('([A-Z0-9_]+)'", _h))
+    _ids = set(_re9.findall(r"id='f-([A-Z0-9_]+)'", _h))
+    _lost = sorted(_targets - _ids)
+    assert not _lost, f"focusKey points at fields that do not exist: {_lost[:6]}"
+    assert len(_targets) >= 5, (
+        "unconnected wires must offer a jump straight to their input - "
+        f"only {len(_targets)} do")
 
     print("OK — REST API core verified: health, skills, create/tick/approve/"
           "measure/finish, and the learning loop persisted the playbook. "
