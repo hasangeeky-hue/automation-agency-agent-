@@ -36,9 +36,15 @@ MAX_ORDERS = 600          # keep the settings row sane
 
 # Which finding codes the machine may fix WITHOUT human approval.
 # Rule: it may add machine-readable markup and links; it may not rewrite prose.
+# What the engine can genuinely apply on its own, with no human in the loop.
+# canonical_missing was listed here AND in THEME_CODES below: the batcher picked
+# it as auto work, the fixer then fell through to the theme branch and parked it
+# awaiting approval. It occupied a slot in every automatic run and could never
+# complete. A canonical tag lives in the theme <head>, which the engine cannot
+# reach from the post body, so it belongs in THEME_CODES only.
 AUTO_CODES = {
     "schema_missing", "img_alt_missing", "few_internal_links",
-    "orphan_page", "canonical_missing", "indexnow_pending",
+    "orphan_page", "indexnow_pending",
 }
 
 # Real findings the ENGINE cannot fix, because they live outside the post body
@@ -53,6 +59,13 @@ APPROVAL_CODES = {
     "meta_missing", "meta_short", "meta_long", "meta_duplicate",
     "thin_content", "ctr_gap", "decay_refresh", "cannibalization",
 }
+
+# A code cannot be both "the engine applies this alone" and "the engine cannot
+# reach this". Overlap means the batcher promises work the fixer will refuse.
+assert not (AUTO_CODES & THEME_CODES), (
+    f"a code is both auto-fixable and theme-only: {AUTO_CODES & THEME_CODES}")
+assert not (AUTO_CODES & APPROVAL_CODES), (
+    f"a code is both auto-fixable and approval-gated: {AUTO_CODES & APPROVAL_CODES}")
 
 # Effort in "machine minutes" — used only to rank impact/effort.
 EFFORT = {
