@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -81,6 +82,9 @@ PRICING = {
 }
 _CACHE_WRITE_MULT = 1.25   # 5-minute ephemeral cache write premium
 _CACHE_READ_MULT = 0.10    # cache read discount
+
+
+log = logging.getLogger("content_engine.providers")
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +225,50 @@ def _render_brand(job: dict) -> str:
     except Exception:
         pass
     return text
+
+
+# Anthropic silently IGNORES cache_control when the prefix is shorter than the
+# model's minimum cacheable length. No error, no warning, no cache — the call
+# just costs full price. This engine marked every prompt as cacheable and 20 of
+# 23 skills were below the line, so SECTION 5's "cost lever #1" did nothing at
+# all for most of the pipeline.
+CACHE_MIN_TOKENS = {"haiku": 2048}      # everything else: 1024
+CACHE_MIN_DEFAULT = 1024
+_CHARS_PER_TOKEN = 3.6                  # prose prefix, not dense JSON
+
+
+def cache_minimum(model: str) -> int:
+    m = str(model or "").lower()
+    for family, n in CACHE_MIN_TOKENS.items():
+        if family in m:
+            return n
+    return CACHE_MIN_DEFAULT
+
+
+def prefix_tokens(system_blocks: list) -> int:
+    return round(sum(len(b.get("text", "")) for b in system_blocks) / _CHARS_PER_TOKEN)
+
+
+def will_cache(system_blocks: list, model: str) -> bool:
+    """Would this prefix ACTUALLY be cached by the provider?"""
+    return prefix_tokens(system_blocks) >= cache_minimum(model)
+
+
+def apply_cache_control(system_blocks: list, model: str) -> list:
+    """Mark the prefix cacheable ONLY when the provider would honour it.
+
+    Marking it regardless is not free-and-harmless: it reads as 'caching is on'
+    in the code, in the self-check and in every cost conversation, while the
+    bill says otherwise."""
+    blocks = [dict(b) for b in system_blocks]
+    for b in blocks:
+        b.pop("cache_control", None)
+    if blocks and will_cache(blocks, model):
+        blocks[-1]["cache_control"] = {"type": "ephemeral"}
+    else:
+        log.debug("prompt caching skipped: prefix ~%d tok < %d minimum for %s",
+                  prefix_tokens(blocks), cache_minimum(model), model)
+    return blocks
 
 
 def build_prompt(skill_name: str, job: dict) -> PromptSpec:
@@ -467,7 +515,9 @@ def anthropic_call(model: str, spec: PromptSpec) -> SkillResult:
     kwargs = dict(
         model=model,
         max_tokens=spec.max_tokens,
-        system=spec.system_blocks,
+        # the marker is corrected HERE because only now do we know the model,
+        # and the minimum cacheable length is per-model (haiku needs 2048)
+        system=apply_cache_control(spec.system_blocks, model),
         messages=[{"role": "user", "content": spec.user_content}],
     )
     if spec.schema:
@@ -670,6 +720,34 @@ if __name__ == "__main__":
         "these schemas contain an array with no maxItems, so their output "
         f"length is unbounded and no budget can be proven sufficient: "
         f"{sorted(set(unbounded))}")
+
+    # ---- prompt caching: is it REAL? --------------------------------------
+    # The self-check used to assert only that a cache breakpoint EXISTED. It
+    # existed on all 23 skills and worked on 3, because a marker below the
+    # provider's minimum is silently ignored. Assert the honest thing instead:
+    # a marker is present ONLY where it will actually be honoured.
+    import content_engine_orchestrator as _ORCH
+    _real, _skipped = [], []
+    for _sk in sorted(SKILL_PROMPTS):
+        try:
+            _sp = build_prompt(_sk, {"brand": {}, "payload": {}})
+        except Exception:
+            continue
+        _model = str(_ORCH.ROUTES.get(_sk, {}).get("engine", "") or "")
+        if _model == "code":
+            _model = str(_ORCH.ROUTES.get(_sk, {}).get("narrate", "") or "")
+        _blocks = apply_cache_control(_sp.system_blocks, _model)
+        _marked = any("cache_control" in b for b in _blocks)
+        (_real if _marked else _skipped).append(
+            (_sk, prefix_tokens(_sp.system_blocks), cache_minimum(_model)))
+        # the invariant: never claim a cache we will not get
+        assert _marked == will_cache(_sp.system_blocks, _model), _sk
+
+    assert not any(t >= m for _s, t, m in _skipped),         "a skill was skipped despite clearing the minimum"
+    assert all(t >= m for _s, t, m in _real),         "a skill was marked cacheable below the minimum - that marker is a no-op"
+    print(f"   prompt caching: {len(_real)} of {len(_real)+len(_skipped)} skills "
+          f"actually cache; {len(_skipped)} are below the provider minimum and "
+          f"are no longer marked as if they did")
 
     print(f"OK — build_prompt + routing + cost verified for {len(checks)} skills "
           f"(sample cost check ${c}); truncation is named, every array is "
