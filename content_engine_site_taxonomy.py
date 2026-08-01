@@ -64,6 +64,19 @@ PILLARS = [
 KIND_CATEGORY = {"blog": "Blog", "guide": "Guides", "service": "Services",
                  "social_carousel": "Blog", "reel": "Blog", "email": "Blog"}
 
+# The theme's own `ao_type` taxonomy — the one the site actually FILTERS on.
+# index.php lists posts where ao_type=blog and the guides listing queries
+# ao_type=guide, so a post without it is published, live, and invisible on both.
+# Only two terms exist in the theme (functions.php seeds 'guide' and 'blog'),
+# so anything that is not a guide lands in blog rather than inventing a term.
+KIND_AO_TYPE = {"guide": "guide"}
+AO_TYPE_DEFAULT = "blog"
+
+
+def wp_ao_type(kind: str) -> str:
+    """The theme's Content Type slug for this piece: 'guide' or 'blog'."""
+    return KIND_AO_TYPE.get((kind or "").strip().lower(), AO_TYPE_DEFAULT)
+
 # On-brand image style — matched to the live site (dark navy, cyan/violet, modern).
 IMAGE_STYLE = (
     "Modern minimal editorial tech illustration, 16:9 hero. Deep navy #080B14 background, "

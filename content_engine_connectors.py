@@ -635,6 +635,41 @@ class WordPress:
                 log.warning("wp category '%s' failed: %s", name, e)
         return [i for i in ids if i]
 
+    def _ao_type_ids(self, slug: str) -> list:
+        """Resolve an ao_type SLUG -> its WordPress term id, creating it if the
+        theme has not seeded it yet.
+
+        Mirrors _category_ids but hits the custom taxonomy's own route. This
+        only works because the theme now registers ao_type with
+        show_in_rest => true; without that the endpoint 404s and the field is
+        dropped from the post silently."""
+        if not slug:
+            return []
+        rq = _requests()
+        url = f"{self.base}/wp-json/wp/v2/ao_type"
+        try:
+            r = rq.get(url, params={"slug": slug}, auth=self._auth(),
+                       headers={"User-Agent": _UA}, timeout=_HTTP_TIMEOUT)
+            if r.status_code == 404:
+                log.warning(
+                    "ao_type is not exposed over REST - the theme needs "
+                    "show_in_rest => true on register_taxonomy. The post will "
+                    "publish but stay invisible on the blog and guides pages.")
+                return []
+            match = next((t for t in (r.json() if r.ok else [])
+                          if str(t.get("slug", "")).lower() == slug.lower()), None)
+            if match:
+                return [match["id"]]
+            cr = rq.post(url, json={"name": slug.title(), "slug": slug},
+                         auth=self._auth(), headers={"User-Agent": _UA},
+                         timeout=_HTTP_TIMEOUT)
+            if cr.ok:
+                return [cr.json().get("id")]
+            log.warning("could not create ao_type '%s': %s", slug, cr.status_code)
+        except Exception as e:
+            log.warning("ao_type '%s' failed: %s", slug, e)
+        return []
+
     def upload_media(self, content: bytes, filename: str = "image.png",
                      mime: str = "image/png"):
         """Upload raw image bytes to the WP media library -> (id, source_url).
@@ -698,6 +733,14 @@ class WordPress:
             cat_ids = self._category_ids(cats)
             if cat_ids:
                 data["categories"] = cat_ids
+            # ...and the taxonomy the SITE filters on. categories decide where a
+            # piece is filed; ao_type decides whether the blog index and the
+            # guides listing can see it at all.
+            kind = (piece.get("type")
+                    or (job.get("payload", {}) or {}).get("config", {}).get("type", "blog"))
+            ao = self._ao_type_ids(TAX.wp_ao_type(kind))
+            if ao:
+                data["ao_type"] = ao
         except Exception as e:
             log.warning("wp categorisation skipped: %s", e)
         # Attach the on-brand hero image as the featured image (best-effort)
@@ -3380,6 +3423,81 @@ if __name__ == "__main__":
     _st = status()
     assert all(k in _st for k in VERIFIABLE), "status() lost a wire"
     assert len(_st) == len(status()), "status() shape must be stable"
+
+    # ---- ao_type: the taxonomy the SITE filters on ----------------------
+    # index.php lists posts where ao_type=blog and the guides listing queries
+    # ao_type=guide. A post published without it is live and invisible on both.
+    # This failed silently for every piece the engine ever published, so it gets
+    # a test rather than a comment.
+    import content_engine_site_taxonomy as _TAX
+    assert _TAX.wp_ao_type("guide") == "guide"
+    for _k in ("blog", "", None, "reel", "social_carousel", "anything_else"):
+        assert _TAX.wp_ao_type(_k) == "blog", _k
+    assert _TAX.wp_ao_type("GUIDE") == "guide", "must not be case-sensitive"
+
+    class _FakeResp:
+        def __init__(self, code=200, payload=None):
+            self.status_code, self._p = code, payload if payload is not None else []
+            self.ok = 200 <= code < 300
+
+        def json(self):
+            return self._p
+
+    class _FakeRQ:
+        """Stands in for requests. Records what the publisher would SEND."""
+        def __init__(self, taxonomy_exposed=True, existing=True):
+            self.exposed, self.existing = taxonomy_exposed, existing
+            self.posted = {}
+
+        def get(self, url, **kw):
+            if "/ao_type" in url:
+                if not self.exposed:
+                    return _FakeResp(404)
+                return _FakeResp(200, [{"id": 77, "slug": "guide"}]
+                                 if self.existing else [])
+            return _FakeResp(200, [])
+
+        def post(self, url, **kw):
+            self.posted[url] = kw.get("json")
+            if "/ao_type" in url:
+                return _FakeResp(201, {"id": 99})
+            return _FakeResp(201, {"id": 1, "link": "https://x/y"})
+
+    _wp = WordPress.__new__(WordPress)
+    _wp.base, _wp.status = "https://site", "publish"
+    _wp._auth = lambda: None
+
+    # patch THIS module's global: run as a script the module is __main__, so
+    # `import content_engine_connectors` would create a second copy and the
+    # patch would land on the one nobody is calling.
+    _G = globals()
+    _orig = _G["_requests"]
+    try:
+        _rq = _FakeRQ()
+        _G["_requests"] = lambda: _rq
+        assert _wp._ao_type_ids("guide") == [77], "must find the seeded term"
+
+        _rq2 = _FakeRQ(existing=False)
+        _G["_requests"] = lambda: _rq2
+        assert _wp._ao_type_ids("guide") == [99], "must create a missing term"
+
+        # THE REGRESSION THAT MATTERED: taxonomy not exposed over REST.
+        _rq3 = _FakeRQ(taxonomy_exposed=False)
+        _G["_requests"] = lambda: _rq3
+        assert _wp._ao_type_ids("guide") == [],             "a 404 must degrade to no term, never raise"
+    finally:
+        _G["_requests"] = _orig
+
+    # the theme must actually expose it, or the engine half is pointless
+    from pathlib import Path as _P
+    _fn = _P("anthropos-design/functions.php")
+    if _fn.exists():
+        _src = _fn.read_text(encoding="utf-8", errors="ignore")
+        _blk = _src[_src.index("register_taxonomy( 'ao_type'"):][:600]
+        assert "'show_in_rest' => true" in _blk, (
+            "the theme registers ao_type WITHOUT show_in_rest, so WordPress "
+            "will silently drop it and every published post stays invisible "
+            "on the blog and guides pages")
 
     print("OK — connectors self-check passed: graceful offline degradation, "
           "verifier always on, hooks wire only when creds present, collectors "

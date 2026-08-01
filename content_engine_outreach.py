@@ -853,8 +853,24 @@ if __name__ == "__main__":
     assert record_event(st, t1, "nonsense") is False
 
     # ---- jobs fixture ----
+    # Dates are RELATIVE. Hardcoded ones rot twice over: they fall out of the
+    # 14-day window sourcing() filters on, and on the first of any month they
+    # slide into "last month" so sourcing_mom() finds a comparison this test
+    # asserts cannot exist. Anchoring to today keeps the fixture meaning
+    # "recent activity, all within one month" on every day of the year.
+    _T = date.today()
+    _D0 = _T.isoformat()                      # today
+    _D1 = (_T - timedelta(days=1)).isoformat()
+    _D2 = (_T - timedelta(days=2)).isoformat()
+    if _T.day < 4:                            # near a month boundary, do not
+        _D1 = _D2 = _D0                       # step back across it
+    # leads_per_day only buckets by date and never compares against today, so
+    # its fixture needs two DISTINCT days in one month and nothing else. Days 1
+    # and 2 of the current month satisfy that on every date of the year.
+    _P1 = _T.replace(day=1).isoformat()
+    _P2 = _T.replace(day=2).isoformat()
     jobs = [{"job_id": "o1", "type": "outreach_campaign", "status": "sent",
-             "created_at": "2026-07-20T09:00:00Z", "cost_so_far_usd": 1.2,
+             "created_at": f"{_D0}T09:00:00Z", "cost_so_far_usd": 1.2,
              "payload": {
                  "raw_leads": [{"email": f"p{i}@x.com", "name": f"P{i}",
                                 "company": "C", "title": "Dr",
@@ -869,9 +885,9 @@ if __name__ == "__main__":
                            for i in range(7)],
                  "lead_qualifier": {"results": [{}] * 5},
                  "send_ref": "x",
-                 "sent_at": {"p0@x.com": ["2026-07-21T09:00:00+00:00",
-                                          "2026-07-24T09:00:00+00:00"],
-                             "p1@x.com": ["2026-07-22T09:00:00+00:00"]},
+                 "sent_at": {"p0@x.com": [f"{_D2}T09:00:00+00:00",
+                                          f"{_D0}T09:00:00+00:00"],
+                             "p1@x.com": [f"{_D1}T09:00:00+00:00"]},
                  "sent_meta": {"p0@x.com": [{"alias": "marketing@a.com", "step": 1,
                                              "subject": "Quick question"},
                                             {"alias": "marketing@a.com", "step": 2,
@@ -886,7 +902,7 @@ if __name__ == "__main__":
 
     # a lead with no source must NOT be assigned to a provider
     jobs2 = [{"job_id": "o2", "type": "outreach_campaign",
-              "created_at": "2026-07-01T09:00:00Z",
+              "created_at": f"{_D0}T09:00:00Z",
               "payload": {"raw_leads": [{"email": "z@x.com"}]}}]
     sc2 = sourcing(jobs2)
     assert sc2["by_source"] == [] and sc2["unattributed"] == 1
@@ -915,7 +931,7 @@ if __name__ == "__main__":
 
     # with no meta the alias must be reported as unrecorded, never assumed
     sd2 = sends([{"job_id": "o3", "type": "outreach_campaign",
-                  "payload": {"sent_at": {"a@x.com": ["2026-07-21T09:00:00+00:00"]}}}])
+                  "payload": {"sent_at": {"a@x.com": [f"{_D1}T09:00:00+00:00"]}}}])
     assert sd2["total"] == 1 and sd2["alias_recorded"] is False
     rt = routing(sd2)
     assert rt["recorded"] is False and "assumed every outreach email" in rt["note"]
@@ -992,9 +1008,9 @@ if __name__ == "__main__":
     assert lpd["undated"] == len(lr), "leads with no stamp must be counted, not placed"
     assert lpd["series"] == [] and "cannot be placed on a day" in lpd["note"]
     dated = [{"job_id": "o9", "type": "outreach_campaign",
-              "payload": {"leads": [{"email": "a@x.com", "collected_at": "2026-07-30T09:00:00+00:00"},
-                                    {"email": "b@x.com", "collected_at": "2026-07-30T11:00:00+00:00"},
-                                    {"email": "c@x.com", "collected_at": "2026-07-29T09:00:00+00:00"}]}}]
+              "payload": {"leads": [{"email": "a@x.com", "collected_at": f"{_P1}T09:00:00+00:00"},
+                                    {"email": "b@x.com", "collected_at": f"{_P1}T11:00:00+00:00"},
+                                    {"email": "c@x.com", "collected_at": f"{_P2}T09:00:00+00:00"}]}}]
     lpd2 = leads_per_day(dated)
     assert lpd2["total"] == 3 and lpd2["busiest"] == 2, lpd2
     assert lpd2["days_active"] == 2, lpd2

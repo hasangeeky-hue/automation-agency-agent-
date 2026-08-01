@@ -3,3 +3,4 @@
 *.sh text eol=lf
 # The engine writes its own files with newline="\n"; keep the repo consistent.
 *.py text eol=lf
+graphify-out/graph.json merge=graphify
