@@ -139,7 +139,8 @@ print("=" * 62)
 print("5. THE ENGINE  (offline self-checks)")
 print("=" * 62)
 mods = sorted(p.name for p in ROOT.glob("content_engine_*.py"))
-extra = [f for f in ("verify_loop.py", "verify_cadence.py", "verify_deploy.py")
+extra = [f for f in ("verify_loop.py", "verify_cadence.py", "verify_deploy.py",
+                     "verify_contract.py")
          if (ROOT / f).exists()]
 ok = bad = 0
 failed = []
