@@ -148,10 +148,16 @@ def main() -> int:
     # which is a false alarm, and a false alarm in an audit is worse than a
     # missing check: it sends you hunting for a problem that is not there.
     def _is_set(k):
+        # settings FIRST, environment SECOND - the same order connectors._env
+        # resolves in. Checking only the store misfiled ANTHROPIC_API_KEY as
+        # unreachable when it is set in the environment and plainly working.
         try:
-            return bool(str(get(k, "") or "").strip())
+            if str(get(k, "") or "").strip():
+                return True
         except Exception:
-            return False
+            pass
+        import os as _os
+        return bool(str(_os.getenv(k, "") or "").strip())
 
     # Without a readable store every key looks "not set", so a CONNECTED key
     # gets misfiled as unreachable. Say that plainly instead of producing a

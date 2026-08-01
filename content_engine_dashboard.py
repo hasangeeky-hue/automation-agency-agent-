@@ -4500,7 +4500,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "var list=(root||document).querySelectorAll('button.cta');"
               "for(var i=0;i<list.length;i++){var b=list[i];"
               "var o=b.getAttribute('onclick')||'';"
-              "var f=o.replace(/^\s+/,'').split(LP)[0];"
+              # r"" so \s reaches JavaScript intact. Without it Python reads
+              # \s as an unknown escape: a SyntaxWarning on 3.12 (your
+              # container) and silently fine on 3.11 (this laptop), which is
+              # why the first fix "passed" here and still warned on the VPS.
+              r"var f=o.replace(/^\s+/,'').split(LP)[0];"
               "if(f==='nav'||f==='seoTab'||f==='sysTab'||f==='seoGroup'){"
               "b.classList.remove('cta');b.classList.add('goto');}}}"
               "window.addEventListener('DOMContentLoaded',function(){demoteNavButtons();});"
