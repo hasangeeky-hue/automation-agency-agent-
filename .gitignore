@@ -28,6 +28,10 @@ fixtures/
 engine-*.gz
 content-engine-backups/
 
+# Graphify output — a generated map of every file, schema and config in here.
+# Regenerable in seconds, and not something to commit.
+graphify-out/
+
 # OS / editor
 .DS_Store
 Thumbs.db
