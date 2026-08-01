@@ -142,19 +142,67 @@ def main() -> int:
         html = ""
     import re
     on_page = set(re.findall(r"<input[^>]*name='([A-Z0-9_]+)'", html)) if html else allowed
-    missing_field = sorted(allowed - on_page)
-    print(f"  allow-listed keys      : {len(allowed)}")
-    print(f"  with a field on screen : {len(allowed & on_page)}")
-    if missing_field:
-        print(f"  NO FIELD (unreachable) : {len(missing_field)}")
-        for k in missing_field:
+    # A CONNECTED key deliberately shows "connected + Disconnect" instead of an
+    # input, so "no field" is the correct rendering for it - not a gap. The
+    # first version of this audit reported all 33 connected keys as unreachable,
+    # which is a false alarm, and a false alarm in an audit is worse than a
+    # missing check: it sends you hunting for a problem that is not there.
+    def _is_set(k):
+        try:
+            return bool(str(get(k, "") or "").strip())
+        except Exception:
+            return False
+
+    # Without a readable store every key looks "not set", so a CONNECTED key
+    # gets misfiled as unreachable. Say that plainly instead of producing a
+    # confident wrong list - this file has now produced two false alarms and
+    # both came from reporting an unknown as a finding.
+    store_readable = any(_is_set(k) for k in list(allowed)[:40])
+    if not store_readable:
+        print("  NOTE: settings are not readable from here, so 'connected' "
+              "cannot be told apart from 'missing'.")
+        print("  Run this inside the api container for an accurate split.")
+    no_field = allowed - on_page
+    connected = sorted(k for k in no_field if _is_set(k))
+    unreachable = sorted(no_field - set(connected))
+    print(f"  allow-listed keys        : {len(allowed)}")
+    print(f"  with a field on screen   : {len(allowed & on_page)}")
+    print(f"  already connected        : {len(connected)}  "
+          f"(no input by design - Disconnect first to replace)")
+    if unreachable:
+        print(f"  UNREACHABLE (real gap)   : {len(unreachable)}")
+        for k in unreachable:
             print(f"     {k}")
     else:
-        print("  every allow-listed key has a field. Nothing is unreachable.")
+        print("  UNREACHABLE (real gap)   : 0  "
+              "- every unset key has a field you can type into")
 
     unlabelled = sorted(on_page - set(re.findall(r"<label for='f-([A-Z0-9_]+)'", html)))
     if unlabelled:
         print(f"\n  fields with NO label ({len(unlabelled)}): {unlabelled[:8]}")
+
+    print()
+    print("=" * 68)
+    print("CREDENTIALS THE PROVIDER ACTIVELY REJECTED")
+    print("=" * 68)
+    # A key that is SET but REFUSED is the worst state: the dashboard shows it
+    # as configured, the loop that needs it does nothing, and the only evidence
+    # is a stack trace in the logs. During the run that produced this file, a
+    # Google token refresh returned 401 and it printed as noise in the middle of
+    # the output rather than as a finding.
+    try:
+        rejected = C.auth_reasons() or {}
+    except Exception as e:
+        rejected = {}
+        print(f"  could not read rejection state: {e}")
+    if rejected:
+        for k, why in rejected.items():
+            print(f"  REJECTED  {k}")
+            print(f"            {str(why)[:100]}")
+        print("\n  A rejected key is not a missing key. Replace it - "
+              "do not add another.")
+    else:
+        print("  none - every saved credential that has been used was accepted")
 
     print()
     print("=" * 68)
