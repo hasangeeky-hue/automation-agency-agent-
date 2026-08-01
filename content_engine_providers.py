@@ -380,11 +380,20 @@ def _maybe_record(model: str, spec: PromptSpec, result: SkillResult) -> None:
 _anthropic_client = None
 
 
+# No timeout was ever set, so every call inherited the SDK default of ten
+# minutes. One stalled connection blocked the worker for that long with no
+# output at all - indistinguishable from a crash, and the reason a probe run
+# looks frozen. The orchestrator already retries once and falls back to a second
+# model, so failing fast is strictly better than waiting.
+LLM_TIMEOUT_S = float(os.getenv("LLM_TIMEOUT_S", "240"))
+
+
 def _get_anthropic():
     global _anthropic_client
     if _anthropic_client is None:
         import anthropic  # imported lazily so a missing SDK only errors on use
-        _anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY / profile
+        _anthropic_client = anthropic.Anthropic(timeout=LLM_TIMEOUT_S,
+                                                max_retries=1)
     return _anthropic_client
 
 

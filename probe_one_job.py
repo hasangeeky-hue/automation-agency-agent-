@@ -70,21 +70,37 @@ def main() -> int:
           + ("  (advancing this one job anyway — the engine stays off)"
              if paused else ""))
 
+    # Print BEFORE each step, not after. The old version printed only on a
+    # status CHANGE, so the minutes an LLM call takes looked exactly like a
+    # freeze - there was no way to tell working from hung.
+    import time
+    t0 = time.time()
+
+    def _elapsed():
+        return f"{time.time() - t0:6.1f}s"
+
     seen, last = [], None
     job = store.get(jid)
     for _ in range(40):
         st = job["status"]
         if st != last:
-            steps = list((job.get("payload") or {}).keys())
-            print(f"  {st:<22} {('after ' + steps[-1]) if steps else ''}")
             seen.append(st)
             last = st
+        step = orch.flow_for(job).get(st)
+        nxt = getattr(step, "skill", None) if step else None
+        if nxt:
+            print(f"  [{_elapsed()}] {st:<20} -> running {nxt} ...",
+                  flush=True)
         if st in ("AWAITING_APPROVAL", "failed", "revision_needed",
                   "halted_budget", "optimized"):
             break
         before = st
         try:
-            orch.run_until_blocked(job, store)
+            # ONE step at a time so every transition is visible as it happens
+            orch.advance(job, store)
+            if job["status"] != before:
+                print(f"  [{_elapsed()}] {before:<20} -> {job['status']} "
+                      f"(${job.get('cost_so_far_usd', 0):.4f})", flush=True)
         except Exception as e:
             print(f"  !! the step raised: {type(e).__name__}: {str(e)[:200]}")
             break
