@@ -50,6 +50,14 @@ NOW = datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc)
 # things fire and what they are allowed to do — not the SEO engines themselves.
 SEO_CALLS, REPLY_CALLS = [], []
 S.run_seo_due = lambda store, **kw: (SEO_CALLS.append(kw), {"ran": []})[1]
+# _run_seo reaches the real crawler and the real fixer. Both hit the network /
+# WordPress, so stub them: this file tests the CADENCE and its boundaries, not
+# the SEO engines themselves.
+import content_engine_seo_ops as _SEOOPS
+_SEOOPS.run_crawl = lambda store, **kw: {"urls": []}
+_SEOOPS.run_fixes = lambda store, **kw: (SEO_CALLS.append(kw),
+                                         {"attempted": 0, "done": 0,
+                                          "details": []})[1]
 import content_engine_reply_agent as RA
 RA.answer_replies = lambda **kw: (REPLY_CALLS.append(kw), {"drafts": []})[1]
 
@@ -116,6 +124,43 @@ try:
         "interval instead of every loop")
 finally:
     S.plan_today = boom
+
+print("\n== 24/7 TECHNICAL SEO: its own switch, and bounded ==")
+import content_engine_workorders as WO
+
+st5 = Store()
+chk(S.seo_auto_level(st5) == "off", "off by default - a deploy does not start fixing")
+chk(S.run_due_work(st5, NOW).get("skipped") == "cadence off",
+    "with SEO off and the engine stopped, nothing runs")
+chk(S.set_seo_auto(st5, "safe")["ok"], "safe level accepts")
+chk(not S.set_seo_auto(st5, "banana")["ok"], "an unknown level is refused")
+chk(S.seo_auto_level(st5) == "safe", "the level persists")
+
+# THE POINT: SEO runs while the CONTENT engine is still stopped
+r5 = S.run_due_work(st5, NOW)
+chk(r5.get("ran") == "seo",
+    "technical SEO runs with the content engine STOPPED", str(r5.get("ran")))
+codes = set(r5.get("codes") or [])
+chk(codes == WO.SAFE_AUTO_CODES,
+    "safe mode runs ONLY fixes a reader cannot see", str(sorted(codes)))
+chk("few_internal_links" not in codes and "orphan_page" not in codes,
+    "safe mode never rewrites a post body")
+
+st6 = Store()
+S.set_seo_auto(st6, "all")
+r6 = S.run_due_work(st6, NOW)
+chk(set(r6.get("codes") or []) == WO.AUTO_CODES,
+    "all mode adds the body rewrites - only on an explicit choice")
+
+# it can never publish or send, at any level
+_src = open("content_engine_scheduler.py", encoding="utf-8").read()
+_blk = _src[_src.index("def _run_seo("):_src.index("def _get_crawl(")]
+for _forbidden in ("publish", "outreach_send", "send_all", "approve",
+                   "auto_only=False"):
+    chk(_forbidden not in _blk,
+        f"the unattended SEO pass never calls '{_forbidden}'")
+chk("SEO_AUTO_LOG" in _blk,
+    "every applied fix is recorded - unattended must not mean unaccountable")
 
 print("\n== the dashboard can see it ==")
 v = S.cadence_view(Store(cadence_on=True))

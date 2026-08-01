@@ -386,12 +386,12 @@ def run_prospecting(store, *, limit: int = 12) -> dict:
 
 
 def run_fixes(store, *, limit: int = 20, auto_only: bool = True,
-              dry_run: bool = False) -> dict:
+              dry_run: bool = False, types=None) -> dict:
     """E7/E8/E9. Apply what may be applied; draft what must be approved."""
     import content_engine_seo_fixer as FIX
     crawl = _get(store, K_CRAWL, {}) or {}
     rep = FIX.run_batch(store, crawl=crawl, limit=limit, auto_only=auto_only,
-                        dry_run=dry_run)
+                        dry_run=dry_run, types=types)
     _stamp(store, "fixes")
     return rep
 

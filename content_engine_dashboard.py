@@ -4526,6 +4526,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "function goKeys(){nav('system');sysTab('sysconnect');"
               "setTimeout(function(){var e=document.getElementById('extrakeys');"
               "if(e)e.scrollIntoView({block:'start',behavior:'smooth'});},120);}"
+              # 24/7 technical SEO. Two levels, because one of them rewrites
+              # the words on your pages and the other cannot be seen at all.
+              "async function seoAuto(){"
+              "var m='Unattended technical SEO. 1 = SAFE (schema, alt text, IndexNow - invisible to readers). 2 = ALL (also rewrites post bodies to add internal links - readers see it). 0 = off. Type 0, 1 or 2:';"
+              "var a=prompt(m,'1');if(a===null)return;"
+              "var t=a.trim();var lv=t==='2'?'all':(t==='1'?'safe':'off');"
+              "try{var r=await fetch('/seo/auto',{method:'POST',headers:"
+              "{'Content-Type':'application/json'},body:JSON.stringify({level:lv})});"
+              "var j=await r.json();alert(j.ok?j.message:('Failed: '+(j.error||'')));"
+              "if(j.ok)location.reload();}catch(e){alert('Failed: '+e);}}"
               "function runSeoDue(){seoRun('/seo/due','Running what is due…',"
               "'Run every SEO engine that is due right now? Free engines run "
               "immediately; paid ones respect your cap.');}"

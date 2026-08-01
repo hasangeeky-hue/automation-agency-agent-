@@ -47,6 +47,16 @@ AUTO_CODES = {
     "orphan_page", "indexnow_pending",
 }
 
+# Of the auto codes, these three change NOTHING a reader sees: structured data,
+# an alt attribute, and a ping to Bing/Yandex. They are safe to run unattended
+# around the clock.
+SAFE_AUTO_CODES = {"schema_missing", "img_alt_missing", "indexnow_pending"}
+
+# ...and these two REWRITE THE POST BODY to insert links. Still a fix, still
+# reversible, but a person reading the page sees the change - so running them
+# unattended is a separate decision from running the invisible ones.
+BODY_AUTO_CODES = AUTO_CODES - SAFE_AUTO_CODES
+
 # Real findings the ENGINE cannot fix, because they live outside the post body
 # (theme <head>, server config). They must stay visible as human work rather
 # than being marked "skipped" and disappearing from the queue.

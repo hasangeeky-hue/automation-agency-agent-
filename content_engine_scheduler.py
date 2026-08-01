@@ -208,6 +208,59 @@ def run_seo_due(store, *, include_paid: bool = True) -> dict:
 # ===========================================================================
 CADENCE_KEY = "engine_cadence_last"
 
+# TECHNICAL SEO, UNATTENDED. Its own switch, deliberately NOT the content one:
+# fixing a missing alt attribute is not the same decision as publishing an
+# article, and tying them together would mean you cannot have the first without
+# the second.
+#   off   nothing runs unattended (default)
+#   safe  only fixes a reader can never see - schema, alt text, IndexNow
+#   all   also rewrites post bodies to insert internal links
+SEO_AUTO_KEY = "seo_autofix"
+SEO_AUTO_LOG = "seo_autofix_log"
+SEO_AUTO_LEVELS = ("off", "safe", "all")
+
+
+def seo_auto_level(store) -> str:
+    try:
+        v = str(store.get_setting(SEO_AUTO_KEY, "off") or "off").lower()
+    except Exception:
+        return "off"
+    return v if v in SEO_AUTO_LEVELS else "off"
+
+
+def set_seo_auto(store, level: str) -> dict:
+    level = str(level or "").lower()
+    if level not in SEO_AUTO_LEVELS:
+        return {"ok": False, "error": f"level must be one of {SEO_AUTO_LEVELS}"}
+    try:
+        store.set_setting(SEO_AUTO_KEY, level)
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:120]}
+    return {"ok": True, "level": level, "message": {
+        "off": "Unattended SEO fixing is OFF.",
+        "safe": "ON - invisible fixes only. Schema, alt text and IndexNow run "
+                "around the clock; nothing a reader sees is touched.",
+        "all": "ON - includes rewriting post bodies to insert internal links. "
+               "Readers will see those changes.",
+    }[level]}
+
+
+def _seo_codes(level: str):
+    """Which work-order types the unattended run may execute."""
+    import content_engine_workorders as WO
+    if level == "all":
+        return sorted(WO.AUTO_CODES)
+    return sorted(WO.SAFE_AUTO_CODES)
+
+
+def seo_auto_log(store, limit: int = 40) -> list:
+    """What the machine changed while you were not watching. Without this,
+    unattended means unaccountable."""
+    try:
+        return list(store.get_setting(SEO_AUTO_LOG, []) or [])[::-1][:limit]
+    except Exception:
+        return []
+
 # seconds between attempts. Deliberately conservative: the SEO engines
 # self-throttle by their own per-day cadence, so checking hourly is plenty.
 CADENCE = {
@@ -246,6 +299,51 @@ def _stamp(store, state: dict, task: str, now: datetime) -> None:
         log.warning("could not record the cadence stamp for %s: %s", task, e)
 
 
+def _run_seo(store, level: str, now) -> dict:
+    """One unattended technical-SEO pass, and a record of what it changed.
+
+    Crawl first when there is nothing to work from: run_fixes reads the stored
+    crawl, so on a cold engine it would find zero orders and report success
+    having done nothing."""
+    import content_engine_seo_ops as SEO
+    codes = _seo_codes(level)
+    out = {"ran": "seo", "level": level, "codes": codes}
+    try:
+        if not _get_crawl(store):
+            # nothing to work from yet - crawl first, or the pass reports
+            # success having found zero orders and done nothing
+            out["crawl"] = SEO.run_crawl(store)
+        rep = SEO.run_fixes(store, auto_only=True, types=codes, limit=20)
+        out["fixes"] = {k: rep.get(k) for k in
+                        ("attempted", "done", "failed", "awaiting_approval")}
+        applied = [d for d in (rep.get("details") or [])
+                   if str(d.get("status")) == "done"]
+        if applied:
+            try:
+                logrec = list(store.get_setting(SEO_AUTO_LOG, []) or [])
+                for d in applied:
+                    logrec.append({"at": now.isoformat(), "level": level,
+                                   "code": d.get("code") or d.get("type"),
+                                   "url": d.get("url"),
+                                   "result": str(d.get("result", ""))[:200]})
+                store.set_setting(SEO_AUTO_LOG, logrec[-300:])
+            except Exception as e:
+                log.warning("could not record the autofix log: %s", e)
+            log.info("unattended SEO (%s): applied %d fix(es)", level, len(applied))
+    except Exception as e:
+        log.exception("unattended SEO pass failed")
+        out["error"] = f"{type(e).__name__}: {e}"
+    return out
+
+
+def _get_crawl(store):
+    try:
+        import content_engine_seo_ops as SEO
+        return store.get_setting(SEO.K_CRAWL, {}) or {}
+    except Exception:
+        return {}
+
+
 def run_due_work(store, now=None) -> dict:
     """Fire whatever is due. Called by the worker on every loop.
 
@@ -265,10 +363,17 @@ def run_due_work(store, now=None) -> dict:
         return {"skipped": "store cannot read settings"}
     if getset("paused", False):
         return {"skipped": "paused"}
+    _seo_level = seo_auto_level(store)
     if not getset("cadence_on", False):
-        # Off until you switch the machine on. A fresh deploy does not start
-        # queueing work by itself.
-        return {"skipped": "cadence off"}
+        # The CONTENT engine is stopped. Technical SEO can still run if it was
+        # switched on separately - that is the whole point of a second switch.
+        if _seo_level == "off":
+            return {"skipped": "cadence off"}
+        state = cadence_state(store)
+        if not _due(state, "seo", now):
+            return {"skipped": "cadence off (seo not due)"}
+        _stamp(store, state, "seo", now)
+        return _run_seo(store, _seo_level, now)
 
     state = cadence_state(store)
 
@@ -285,6 +390,8 @@ def run_due_work(store, now=None) -> dict:
 
     if _due(state, "seo", now):
         _stamp(store, state, "seo", now)
+        if _seo_level != "off":
+            return _run_seo(store, _seo_level, now)
         try:
             # Paid engines only when the cap allows it. A cadence that quietly
             # spends is a cadence you would have to watch.

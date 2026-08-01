@@ -309,10 +309,14 @@ def _theme_instruction(code, url):
 
 
 def run_batch(store, *, crawl=None, limit: int = 20, auto_only: bool = True,
-              dry_run: bool = False) -> dict:
+              dry_run: bool = False, types=None) -> dict:
     """Execute the highest-priority open work orders. Returns a run report.
 
     Safe by default: only `auto` orders run; copy changes become proposals.
+
+    `types` narrows further — used by the unattended 24/7 mode to run only the
+    fixes that change nothing a reader sees, leaving body rewrites out unless
+    they were explicitly opted into.
     """
     crawl = crawl or {}
     by_url = {r.get("url"): r for r in crawl.get("urls", [])}
@@ -320,7 +324,8 @@ def run_batch(store, *, crawl=None, limit: int = 20, auto_only: bool = True,
                   for r in crawl.get("urls", [])
                   if r.get("status") == 200 and r.get("title")]
     orders = WO.load(store)
-    batch = WO.next_batch(orders, auto_only=auto_only, limit=limit)
+    batch = WO.next_batch(orders, auto_only=auto_only, limit=limit,
+                          types=types)
     report = {"attempted": 0, "done": 0, "skipped": 0, "failed": 0,
               "awaiting_approval": 0, "details": []}
     for o in batch:

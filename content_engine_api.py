@@ -2094,6 +2094,19 @@ def build_app():
     def seo_run_all():
         return api_seo("all")
 
+    @app.post("/seo/auto")
+    async def seo_auto(request: Request):
+        """Unattended technical SEO: off | safe | all.
+
+        Deliberately separate from /system/start. Fixing a missing alt
+        attribute is not the same decision as publishing an article."""
+        import content_engine_scheduler as _S
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        return _S.set_seo_auto(get_store(), d.get("level", "off"))
+
     @app.post("/seo/due")
     def seo_due_run():
         """Run only the SEO engines that are due (self-throttling). Point an
