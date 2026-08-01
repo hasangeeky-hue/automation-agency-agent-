@@ -110,7 +110,38 @@ if seeder:
 chk('params={"search": name}' in src,
     "the engine looks categories up by name")
 
-print("\n== 5. the section names the engine files under must exist on the site ==")
+print("\n== 5. what the engine PUBLISHES must be blocks the theme can style ==")
+import content_engine_connectors as _C
+
+_md = ("## Heading\n\nBody with **bold**.\n\n![Hero](https://x/h.png)\n\n"
+       "- one\n- two\n\n> quoted\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n")
+_html = _C.md_to_html(_md)
+for _blk in ("wp:heading", "wp:paragraph", "wp:image", "wp:list",
+             "wp:quote", "wp:table"):
+    chk(_blk in _html, f"publishes a real {_blk} block",
+        "" if _blk in _html else
+        "classic HTML renders as ONE unstyled Classic block in the editor")
+chk("<p><img" not in _html,
+    "a hero image is a FIGURE block, never an <img> inside a paragraph")
+chk('class="wp-block-heading"' in _html,
+    "headings carry the class the editor expects")
+
+_cta = _C.cta_block("Talk to us about automating this.",
+                    "https://cal.com/anthropos")
+chk("art-cta" in _cta, "the CTA uses the theme's own .art-cta band",
+    "the theme styles .art-cta - it styles nothing named wp-block-*")
+chk("btn btn-cta" in _cta, "and the theme's .btn.btn-cta button")
+chk("cal.com" in _cta, "pointing at the booking link")
+chk(_C.cta_block("", "https://x") == "", "no CTA text means no empty band")
+
+_src = Path("content_engine_connectors.py").read_text(encoding="utf-8")
+_pub = _src[_src.index("    def publish(self, job: dict, piece: dict) -> str:"):][:2600]
+chk("cta_block(" in _pub, "publish() actually appends the CTA",
+    "cta_text was written by the agent, compliance-checked by QA, and then "
+    "dropped right here")
+chk("EMAIL_BOOKING_URL" in _pub, "using the booking URL")
+
+print("\n== 6. the section names the engine files under must exist on the site ==")
 kinds = set(T.KIND_CATEGORY.values())
 for k in sorted(kinds):
     present = (f"'{k}'" in php) or (f'"{k}"' in php) or (k.lower() in php.lower())

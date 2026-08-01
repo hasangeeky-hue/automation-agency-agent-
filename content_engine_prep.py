@@ -331,6 +331,7 @@ def _ensure_hero_image(job: dict) -> None:
             and not _needs:
         return
     title = piece.get("title") or _chosen_row(job).get("working_title", "")
+    _why = ""
     try:
         import content_engine_site_taxonomy as TAX
         import content_engine_connectors as C
@@ -341,8 +342,24 @@ def _ensure_hero_image(job: dict) -> None:
         except Exception:
             ci = ""
         url = C.generate_image(TAX.image_prompt(title, ci))
-    except Exception:
+        if not url:
+            _why = ("IMAGE_API_KEY is not set" if not C._env("IMAGE_API_KEY")
+                    else "the image provider returned nothing")
+    except Exception as _e:
         url = ""
+        _why = f"{type(_e).__name__}: {str(_e)[:140]}"
+    # A missing image was indistinguishable from an image that FAILED: both
+    # produced silence. The preview then honestly showed no picture and there
+    # was nothing anywhere saying why. Record the reason on the job.
+    if not url:
+        p["image_error"] = _why or "image generation produced no URL"
+        try:
+            log.warning("hero image not generated for %s: %s",
+                        job.get("job_id"), p["image_error"])
+        except Exception:
+            pass
+    else:
+        p.pop("image_error", None)
     if url:
         piece["image_url"] = url
         body = piece.get("body", "") or ""

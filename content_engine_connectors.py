@@ -549,44 +549,192 @@ def _post_json(url: str, payload: dict, headers: Optional[dict] = None):
 # Q2 / Q5 / Q8 — WordPress publisher  (PUBLISH_FN)
 # ---------------------------------------------------------------------------
 def md_to_html(text: str) -> str:
-    """Markdown -> HTML for publishing (headings, lists, bold/italic, links,
-    images, paragraphs). The writer outputs markdown; WordPress needs HTML."""
-    def _inline(s: str) -> str:
-        s = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", r'<img src="\2" alt="\1" style="max-width:100%;height:auto"/>', s)
-        s = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', s)
-        s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
-        s = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<em>\1</em>", s)
-        return s
-    out, inlist = [], False
-    for ln in (text or "").split("\n"):
-        s = ln.rstrip()
-        if not s.strip():
-            if inlist:
-                out.append("</ul>")
-                inlist = False
+    """Markdown -> WordPress BLOCK markup, styled by the Anthropos theme.
+
+    The old version emitted classic HTML: <h3>, <p>, and a bare <img> inside a
+    paragraph. WordPress accepted it and rendered the whole article as ONE
+    "Classic" block - unstyled by the theme, uneditable block by block, and the
+    hero image got none of the site's image treatment.
+
+    Two things are true at once and both are handled here:
+      * WordPress needs <!-- wp:* --> delimiters or the editor cannot see blocks
+      * this theme styles NOTHING named wp-block-*. It styles .art h2 / .art p /
+        .art ul and .btn / .btn-cta. So each block also carries the class the
+        site actually paints.
+
+    Covers headings, paragraphs, images, unordered and ordered lists, block
+    quotes, fenced code, tables, and horizontal rules.
+    """
+    def _esc_attr(v: str) -> str:
+        return str(v or "").replace('"', "&quot;")
+
+    def _inline(v: str) -> str:
+        v = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)",
+                   lambda m: f'<img src="{_esc_attr(m.group(2))}" '
+                             f'alt="{_esc_attr(m.group(1))}"/>', v)
+        v = re.sub(r"\[([^\]]+)\]\(([^)]+)\)",
+                   lambda m: f'<a href="{_esc_attr(m.group(2))}">{m.group(1)}</a>', v)
+        v = re.sub(r"`([^`]+)`", r"<code>\1</code>", v)
+        v = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", v)
+        v = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<em>\1</em>", v)
+        return v
+
+    lines = str(text or "").replace("\r\n", "\n").split("\n")
+    out, i = [], 0
+    n = len(lines)
+
+    def flush_list(kind, items):
+        if not items:
+            return
+        tag = "ol" if kind == "ol" else "ul"
+        attr = ' {"ordered":true}' if kind == "ol" else ""
+        body = "".join(f"<li>{_inline(x)}</li>" for x in items)
+        out.append(f'<!-- wp:list{attr} -->\n'
+                   f'<{tag} class="wp-block-list">{body}</{tag}>\n'
+                   f'<!-- /wp:list -->')
+
+    while i < n:
+        raw = lines[i]
+        s_ = raw.strip()
+        if not s_:
+            i += 1
             continue
-        m = re.match(r"^(#{1,4})\s+(.*)", s)
+
+        # fenced code
+        if s_.startswith("```"):
+            i += 1
+            buf = []
+            while i < n and not lines[i].strip().startswith("```"):
+                buf.append(lines[i])
+                i += 1
+            i += 1
+            code = "\n".join(buf).replace("&", "&amp;").replace("<", "&lt;")
+            out.append('<!-- wp:code -->\n'
+                       f'<pre class="wp-block-code"><code>{code}</code></pre>\n'
+                       '<!-- /wp:code -->')
+            continue
+
+        # horizontal rule
+        if re.match(r"^(-{3,}|\*{3,}|_{3,})$", s_):
+            out.append('<!-- wp:separator -->\n'
+                       '<hr class="wp-block-separator has-alpha-channel-opacity"/>\n'
+                       '<!-- /wp:separator -->')
+            i += 1
+            continue
+
+        # a standalone image becomes a real image BLOCK, not an <img> in a <p>.
+        m = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)$", s_)
         if m:
-            if inlist:
-                out.append("</ul>")
-                inlist = False
-            lvl = min(len(m.group(1)) + 1, 4)      # '#' -> h2 (h1 = the post title)
-            out.append(f"<h{lvl}>{_inline(m.group(2))}</h{lvl}>")
+            alt, src = _esc_attr(m.group(1)), _esc_attr(m.group(2))
+            cap = (f'<figcaption class="wp-element-caption">{m.group(1)}</figcaption>'
+                   if m.group(1) else "")
+            out.append('<!-- wp:image {"sizeSlug":"large","linkDestination":"none"} -->\n'
+                       '<figure class="wp-block-image size-large">'
+                       f'<img src="{src}" alt="{alt}"/>{cap}</figure>\n'
+                       '<!-- /wp:image -->')
+            i += 1
             continue
-        if re.match(r"^[-*]\s+", s):
-            if not inlist:
-                out.append("<ul>")
-                inlist = True
-            item = re.sub(r"^[-*]\s+", "", s)
-            out.append(f"<li>{_inline(item)}</li>")
+
+        # heading. '#' -> h2 because h1 is the post title.
+        m = re.match(r"^(#{1,4})\s+(.*)$", s_)
+        if m:
+            lvl = min(len(m.group(1)) + 1, 4)
+            out.append(f'<!-- wp:heading {{"level":{lvl}}} -->\n'
+                       f'<h{lvl} class="wp-block-heading">{_inline(m.group(2))}</h{lvl}>\n'
+                       f'<!-- /wp:heading -->')
+            i += 1
             continue
-        if inlist:
-            out.append("</ul>")
-            inlist = False
-        out.append(f"<p>{_inline(s)}</p>")
-    if inlist:
-        out.append("</ul>")
-    return "\n".join(out)
+
+        # blockquote
+        if s_.startswith(">"):
+            buf = []
+            while i < n and lines[i].strip().startswith(">"):
+                buf.append(re.sub(r"^>\s?", "", lines[i].strip()))
+                i += 1
+            inner = "".join(f"<p>{_inline(x)}</p>" for x in buf if x)
+            out.append('<!-- wp:quote -->\n'
+                       f'<blockquote class="wp-block-quote">{inner}</blockquote>\n'
+                       '<!-- /wp:quote -->')
+            continue
+
+        # table (| a | b | with a --- separator row)
+        if s_.startswith("|") and i + 1 < n and re.match(r"^\|[\s:|-]+\|$",
+                                                        lines[i + 1].strip()):
+            def cells(row):
+                return [c.strip() for c in row.strip().strip("|").split("|")]
+            head = cells(s_)
+            i += 2
+            body = []
+            while i < n and lines[i].strip().startswith("|"):
+                body.append(cells(lines[i]))
+                i += 1
+            th = "".join(f"<th>{_inline(c)}</th>" for c in head)
+            tr = "".join("<tr>" + "".join(f"<td>{_inline(c)}</td>" for c in r)
+                         + "</tr>" for r in body)
+            out.append('<!-- wp:table -->\n'
+                       '<figure class="wp-block-table"><table>'
+                       f'<thead><tr>{th}</tr></thead><tbody>{tr}</tbody>'
+                       '</table></figure>\n'
+                       '<!-- /wp:table -->')
+            continue
+
+        # lists
+        if re.match(r"^[-*]\s+", s_) or re.match(r"^\d+[.)]\s+", s_):
+            kind = "ul" if re.match(r"^[-*]\s+", s_) else "ol"
+            items = []
+            while i < n:
+                t = lines[i].strip()
+                if kind == "ul" and re.match(r"^[-*]\s+", t):
+                    items.append(re.sub(r"^[-*]\s+", "", t))
+                elif kind == "ol" and re.match(r"^\d+[.)]\s+", t):
+                    items.append(re.sub(r"^\d+[.)]\s+", "", t))
+                else:
+                    break
+                i += 1
+            flush_list(kind, items)
+            continue
+
+        # paragraph
+        out.append(f'<!-- wp:paragraph -->\n<p>{_inline(s_)}</p>\n'
+                   '<!-- /wp:paragraph -->')
+        i += 1
+
+    return "\n\n".join(out)
+
+
+def cta_block(cta_text: str, url: str = "", heading: str = "") -> str:
+    """The call to action, as blocks the theme already styles.
+
+    cta_text was written by the agent and read by QA for compliance, then
+    dropped: publish() never sent it. It reaches the page now, wrapped in the
+    theme's own .art-cta band with a .btn.btn-cta button, so it matches every
+    other call to action on the site instead of looking bolted on."""
+    cta = str(cta_text or "").strip()
+    if not cta:
+        return ""
+    link = str(url or "").strip()
+    head = str(heading or "Ready to see this working in your business?").strip()
+    btn = ""
+    if link:
+        btn = ('<!-- wp:buttons {"className":"art-cta-row"} -->\n'
+               '<div class="wp-block-buttons art-cta-row">'
+               '<!-- wp:button {"className":"btn btn-cta"} -->'
+               '<div class="wp-block-button btn btn-cta">'
+               f'<a class="wp-block-button__link" href="{link}">'
+               'Book a free consultation</a></div>'
+               '<!-- /wp:button --></div>\n'
+               '<!-- /wp:buttons -->')
+    return ('<!-- wp:group {"className":"art-cta"} -->\n'
+            '<div class="wp-block-group art-cta">\n'
+            '<!-- wp:heading {"level":3} -->\n'
+            f'<h3 class="wp-block-heading">{head}</h3>\n'
+            '<!-- /wp:heading -->\n'
+            '<!-- wp:paragraph -->\n'
+            f'<p>{cta}</p>\n'
+            '<!-- /wp:paragraph -->\n'
+            f'{btn}\n'
+            '</div>\n'
+            '<!-- /wp:group -->')
 
 
 class WordPress:
@@ -719,6 +867,15 @@ class WordPress:
         # WordPress expects HTML — publishing raw markdown was the 'no proper
         # headings' bug. Convert here.
         body = md_to_html(piece.get("body") or "")
+        # THE CTA. The agent writes cta_text and QA compliance-checks it, and
+        # until now publish() never read it - so every call to action the engine
+        # produced was discarded on the way to the site. It goes out as the
+        # theme's own .art-cta band, pointing at the booking link.
+        _cta = cta_block(piece.get("cta_text", ""),
+                         _env("EMAIL_BOOKING_URL", ""),
+                         piece.get("cta_heading", ""))
+        if _cta:
+            body = body + "\n\n" + _cta
         excerpt = piece.get("meta_description", "")
         data = {"title": title, "content": body, "status": self.status,
                 "excerpt": excerpt}

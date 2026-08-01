@@ -436,6 +436,12 @@ EXTRA_KEY_GROUPS = [
      "Only needed for a non-standard WordPress setup.",
      [("WORDPRESS_USER", "WordPress username"),
       ("WP_STATUS", "publish or draft")]),
+    ("🖼 Images", "img",
+     "Which model draws your hero images. Blank uses the default, and the "
+     "engine embeds the result as a real WordPress image block.",
+     [("IMAGE_PROVIDER", "Image provider (openai)"),
+      ("IMAGE_API_KEY", "Image API key (sk-…)"),
+      ("IMAGE_MODEL", "Image model (gpt-image-1)")]),
     ("⚙️ Advanced", "adv",
      "Overrides and pins. Every one is optional — blank uses the default.",
      [("CI_JSON", "Brand CI as JSON (or use the CI upload)"),
