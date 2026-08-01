@@ -2209,6 +2209,24 @@ _TAB_CSS = """<style>
 .card.sev-critical{border-color:#FF6B93}
 .card.sev-warn{border-color:#F5B14C}
 .cta{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+/* `.cta` was ONLY ever a flex container. 206 card buttons also carry the class,
+   so they inherited display:flex and NOTHING else - rendering as raw browser
+   buttons: light grey on a dark theme with a black border. They looked broken
+   because they were unstyled. A button and its container cannot share a class. */
+button.cta,a.cta{display:inline-flex;align-items:center;gap:5px;
+  background:linear-gradient(180deg,#1d3f63,#121A2E);
+  border:1px solid #2FE3D2;color:#EDF1FB;border-radius:9px;padding:7px 13px;
+  font:inherit;font-size:12px;font-weight:650;cursor:pointer;text-decoration:none;
+  transition:transform .12s,border-color .12s}
+button.cta:hover,a.cta:hover{transform:translateY(-1px);border-color:#8B7CFF}
+/* NAVIGATION is not an action. A button that only moves you now reads as a
+   quiet link, so a filled button always means "this does something". */
+button.goto,a.goto{display:inline-flex;align-items:center;gap:4px;background:none;
+  border:0;border-bottom:1px dashed #3a4b6d;
+  color:#8FA0BF;padding:2px 0;margin-top:8px;font:inherit;font-size:11.5px;
+  cursor:pointer;text-decoration:none}
+button.goto:hover,a.goto:hover{color:#2FE3D2;border-bottom-color:#2FE3D2}
+button.goto::after,a.goto::after{content:'97';font-size:10px;opacity:.75}
 .card.hidecard{display:none}
 .card.overflowcard{display:none}
 .cardgrid.expanded .card.overflowcard{display:block}

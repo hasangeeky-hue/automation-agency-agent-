@@ -122,6 +122,19 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .cflab{font-size:12.5px;font-weight:700}
 .cform input{background:#0a0f1b;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:8px 10px;font:inherit;font-size:12px}
 .cform input:focus{outline:none;border-color:var(--teal)}
+/* A label that STAYS. Placeholders vanish the moment you type, which turned six
+   stacked password boxes into six identical fields with no way to tell them apart. */
+.kfield{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
+.kfield label{font-size:11.5px;font-weight:650;color:var(--ink);display:flex;
+  align-items:center;gap:6px}
+.kfield .khint{font-size:10.5px;color:var(--dim);display:flex;gap:8px;align-items:center}
+.kfield .khint code{background:var(--s2);border-radius:4px;padding:1px 5px;
+  font-family:ui-monospace,Consolas,monospace;font-size:10px}
+.klink{color:var(--teal);text-decoration:none}.klink:hover{text-decoration:underline}
+.ksaved{font-size:9.5px;font-weight:800;letter-spacing:.05em;color:var(--good);
+  border:1px solid var(--good);border-radius:99px;padding:0 6px}
+.ksaveok{font-size:11.5px;color:var(--good);margin-left:9px}
+.ksaveerr{font-size:11.5px;color:var(--bad);margin-left:9px}
 .cform .sbtn{align-self:flex-start;margin-top:3px}
 /* The sidebar turns into a horizontal strip on a narrow window. It carried
    overflow-x:auto but no min-width:0, and a flex item defaults to min-width:auto
@@ -357,6 +370,16 @@ _FIELD_HINT = {
     "GOOGLE_ADS_CLIENT_ID": "Google OAuth client ID",
     "GOOGLE_ADS_CLIENT_SECRET": "Google OAuth client secret",
     "CALCOM_API_KEY": "Cal.com API key (cal_live_…)",
+    # the last nine that still showed a raw variable name as their label
+    "SERPER_API_KEY": "Serper key — Google search + Maps",
+    "DATAFORSEO_LOGIN": "DataForSEO login (your email)",
+    "DATAFORSEO_PASSWORD": "DataForSEO API password",
+    "PAGESPEED_API_KEY": "PageSpeed / Core Web Vitals key",
+    "INDEXNOW_KEY": "IndexNow key — instant Bing/Yandex indexing",
+    "GBP_ACCESS_TOKEN": "Google Business Profile access token",
+    "GBP_ACCOUNT_ID": "Business Profile account id (accounts/123…)",
+    "GBP_LOCATION_ID": "Business Profile location id (locations/456…)",
+    "GOOGLE_ADS_OFFLINE_ACTION": "Offline conversion action name",
 }
 
 # Keys that /connect has always accepted but that no wire's `fix` string ever
@@ -420,6 +443,50 @@ EXTRA_KEY_GROUPS = [
 ]
 
 
+# Where a key actually comes from. A field that names a credential without
+# saying where to obtain it is a dead end, and 14 of the 86 fields had nothing
+# but the raw variable name.
+KEY_SOURCE = {
+    "OPENAI_API_KEY": ("platform.openai.com/api-keys", "https://platform.openai.com/api-keys"),
+    "PERPLEXITY_API_KEY": ("perplexity.ai/settings/api", "https://www.perplexity.ai/settings/api"),
+    "GEMINI_API_KEY": ("aistudio.google.com/apikey", "https://aistudio.google.com/apikey"),
+    "ANTHROPIC_API_KEY": ("console.anthropic.com", "https://console.anthropic.com/settings/keys"),
+    "SERPER_API_KEY": ("serper.dev", "https://serper.dev/api-key"),
+    "DATAFORSEO_LOGIN": ("dataforseo.com dashboard", "https://app.dataforseo.com/api-access"),
+    "DATAFORSEO_PASSWORD": ("dataforseo.com dashboard", "https://app.dataforseo.com/api-access"),
+    "PAGESPEED_API_KEY": ("Google Cloud console", "https://developers.google.com/speed/docs/insights/v5/get-started"),
+    "PROSPEO_API_KEY": ("prospeo.io settings", "https://prospeo.io/"),
+    "CALCOM_API_KEY": ("cal.com/settings/developer/api-keys", "https://cal.com/settings/developer/api-keys"),
+    "TIKTOK_ACCESS_TOKEN": ("TikTok for Developers", "https://developers.tiktok.com/"),
+    "TWITTER_BEARER_TOKEN": ("X developer portal", "https://developer.x.com/"),
+    "META_PAGE_TOKEN": ("Meta Graph API Explorer", "https://developers.facebook.com/tools/explorer/"),
+    "GOOGLE_ADS_DEVELOPER_TOKEN": ("Google Ads API Center", "https://ads.google.com/aw/apicenter"),
+    "SMTP_PASSWORD": ("Google Account -> App passwords", "https://myaccount.google.com/apppasswords"),
+    "IMAP_PASSWORD": ("Google Account -> App passwords", "https://myaccount.google.com/apppasswords"),
+}
+
+
+def _field(name, hint, saved=False, secret=None):
+    """One credential field, with a label that SURVIVES TYPING.
+
+    Every input on this dashboard was placeholder-only: 86 fields, 0 <label>
+    elements. A placeholder disappears the moment you type, so six stacked
+    password boxes became six identical dots-fields with no way to tell which
+    was which. The label sits above and stays."""
+    if secret is None:
+        secret = any(x in name for x in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
+    src = KEY_SOURCE.get(name)
+    where = (f" <a class='klink' href='{src[1]}' target='_blank' rel='noopener'>"
+             f"get it &#8599;</a>" if src else "")
+    state = ("<span class='ksaved'>saved</span>" if saved else "")
+    return (f"<div class='kfield'>"
+            f"<label for='f-{_esc(name)}'>{_esc(hint)}{state}</label>"
+            f"<input id='f-{_esc(name)}' name='{_esc(name)}' "
+            f"type='{'password' if secret else 'text'}' "
+            f"placeholder='{'saved - type to replace' if saved else _esc(name)}'>"
+            f"<span class='khint'><code>{_esc(name)}</code>{where}</span></div>")
+
+
 def _extra_keys_card(saved_keys=None) -> str:
     """The 36 keys that /connect accepts but no form ever showed a box for.
 
@@ -432,16 +499,7 @@ def _extra_keys_card(saved_keys=None) -> str:
                   for k, _h in f if k in saved)
     forms = []
     for title, slug, why, fields in EXTRA_KEY_GROUPS:
-        boxes = ""
-        for k, hint in fields:
-            secret = any(x in k for x in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
-            mark = " ✅" if k in saved else ""
-            typ = "password" if secret else "text"
-            pre = "🔑 " if secret else ""
-            ph = ("saved — type to replace" if k in saved
-                  else pre + hint)
-            boxes += (f"<input name='{_esc(k)}' type='{typ}' "
-                      f"placeholder='{_esc(ph)}' title='{_esc(k)}{mark}'>")
+        boxes = "".join(_field(k, hint, saved=(k in saved)) for k, hint in fields)
         done = sum(1 for k, _h in fields if k in saved)
         pill = (f"<span class='pill p-live'>{done}/{len(fields)} saved</span>"
                 if done else
@@ -3779,10 +3837,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 kk, dv = tok.split("=", 1)
             else:
                 kk, dv = tok, ""
-            typ = "password" if any(x in kk.upper() for x in ("PASSWORD", "TOKEN", "KEY", "JSON", "SECRET")) else "text"
-            friendly = _FIELD_HINT.get(kk, kk)
-            pre = "🔑 " if typ == "password" else ""
-            fields += f"<input name='{_esc(kk)}' type='{typ}' placeholder='{pre}{_esc(friendly)}' value='{_esc(dv)}'>"
+            secret = any(x in kk.upper() for x in
+                          ("PASSWORD", "TOKEN", "KEY", "JSON", "SECRET"))
+            fields += _field(kk, _FIELD_HINT.get(kk, kk), secret=secret)
         conn_rows.append(
             f"<form class='cform' onsubmit='return saveConnect(this)'>"
             f"<div class='cflab'>{_esc(name)}</div>"
@@ -4225,8 +4282,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          _system_all),
     ]
     nav = "".join(
-        f"<button class='navb{' act' if i==0 else ''}' id='nav-{pid}' onclick=\"nav('{pid}')\"><span class='ic'>{icon}</span>{_esc(short)}"
-        + ("" if pid in ("overview",) else "") + "</button>"
+        f"<a class='navb{' act' if i==0 else ''}' id='nav-{pid}' href='#{pid}' "
+        f"onclick=\"return nav('{pid}')\"><span class='ic'>{icon}</span>{_esc(short)}"
+        + ("" if pid in ("overview",) else "") + "</a>"
         for i, (pid, icon, short, title, sub, body) in enumerate(PAGES))
     pages = "".join(
         f"<section class='page{' on' if i==0 else ''}' id='sec-{pid}'><h2 class='ph'>{_esc(title)}</h2><p class='psub'>{_esc(sub)}</p>{body}</section>"
@@ -4288,17 +4346,47 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
     script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi',leads:'outreach',email:'outreach',social:'sga',google:'sga',ads:'sga',mission:'cockpit',ops:'cockpit',appr:'cockpit',learn:'cockpit'};"
-              "function nav(id){id=NAVALIAS[id]||id;"
+              # Every section is now ADDRESSABLE. Before this the whole dashboard lived
+              # at one URL: no bookmark, no back button, no right-click "open in
+              # new tab", no way to send someone a link to a board. quiet=true
+              # is used by the restore-on-load path so it does not stack history.
+              "window.CURSEC='cockpit';"
+              "function nav(id,quiet){id=NAVALIAS[id]||id;"
               "document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
               "var s=document.getElementById('sec-'+id);if(s)s.classList.add('on');"
               "document.querySelectorAll('.navb').forEach(b=>b.classList.remove('act'));"
-              "var n=document.getElementById('nav-'+id);if(n)n.classList.add('act');window.scrollTo(0,0);}"
+              "var n=document.getElementById('nav-'+id);if(n)n.classList.add('act');"
+              "window.CURSEC=id;"
+              "if(!quiet){try{history.pushState(null,'','#'+id);}catch(e){}}"
+              "window.scrollTo(0,0);return false;}"
+              # restore whatever the URL points at, and follow back/forward
+              "function routeFromHash(quiet){var h=(location.hash||'').replace(/^#/,'');"
+              "if(!h)return;var parts=h.split('/');var sec=parts[0],tab=parts[1];"
+              "nav(sec,true);if(tab&&typeof seoTab==='function')seoTab(tab,true);}"
+              "window.addEventListener('popstate',function(){routeFromHash(true);});"
               "async function act(u){try{await fetch(u,{method:'POST'});location.reload();}catch(e){alert('Action failed: '+e);}}"
+              # was: alert() popups. A browser dialog is not feedback - it
+              # tells you nothing about WHICH field saved and leaves no trace on
+              # the form. The result now appears next to the button and the
+              # saved fields get their badge without a reload.
+              "function ksay(f,msg,ok){var e=f.querySelector('.ksaveok,.ksaveerr');"
+              "if(!e){e=document.createElement('span');f.querySelector('button').after(e);}"
+              "e.className=ok?'ksaveok':'ksaveerr';e.textContent=msg;}"
               "async function saveConnect(f){var o={};for(var i=0;i<f.elements.length;i++){var e=f.elements[i];if(e.name&&e.value)o[e.name]=e.value;}"
               "if(!Object.keys(o).length){alert('Fill in at least one field.');return false;}"
               "try{var r=await fetch('/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});"
-              "var j=await r.json();alert('Saved: '+(j.saved||[]).join(', ')+'. It goes live in ~15s.');location.reload();}"
-              "catch(e){alert('Save failed: '+e);}return false;}"
+              "var j=await r.json();var n=(j.saved||[]).length;"
+              "if(!n){ksay(f,'Nothing saved - check the values.',false);return false;}"
+              "ksay(f,'Saved '+n+' - live in ~15s.',true);"
+              "for(var k=0;k<f.elements.length;k++){var el=f.elements[k];"
+              "if(el.name&&el.value){el.value='';el.placeholder='saved - type to replace';"
+              # walk up to the field wrapper rather than building an attribute
+              # selector: nesting quotes inside quotes is what broke this once,
+              # and the JS is one concatenated line where that is easy to miss.
+              "var kf=el.closest('.kfield');var lb=kf?kf.querySelector('label'):null;"
+              "if(lb&&!lb.querySelector('.ksaved')){var sp=document.createElement('span');"
+              "sp.className='ksaved';sp.textContent='saved';lb.appendChild(sp);}}}}"
+              "catch(e){ksay(f,'Save failed: '+e,false);}return false;}"
               "async function disconnectWire(keys){if(!confirm('Disconnect and clear this connection? You can re-enter it right after.'))return false;"
               "try{await fetch('/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keys:keys.split(',')})});"
               "alert('Disconnected — the box is editable again.');location.reload();}"
@@ -4330,16 +4418,19 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "function seoMore(id){var g=document.getElementById(id);if(!g)return;"
               "g.classList.add('expanded');g.querySelectorAll('.card').forEach(c=>c.classList.remove('overflowcard'));"
               "var b=document.getElementById('more-'+id);if(b)b.remove();}"
-              "function seoTab(id){document.querySelectorAll('.spanel').forEach(p=>p.classList.remove('on'));"
+              "function seoTab(id,quiet){document.querySelectorAll('.spanel').forEach(p=>p.classList.remove('on'));"
               "var p=document.getElementById('spanel-'+id);if(p)p.classList.add('on');"
               "var q=document.getElementById('cardq');if(q&&q.value){q.value='';window._sevf='all';seoFilter();}"
               "document.querySelectorAll('.stab').forEach(b=>b.classList.remove('on'));"
               "var b=document.getElementById('stab-'+id);if(b)b.classList.add('on');"
-              "try{history.replaceState(null,'','#seo/'+id);}catch(e){}"
+              # was hardcoded '#seo/' for EVERY section, so clicking a System
+              # tab wrote #seo/sysconnect - and reloading that bookmark landed
+              # you on SEO. The section is now whatever nav() last set.
+              "if(!quiet){try{history.pushState(null,'','#'+(window.CURSEC||'seo')+'/'+id);}catch(e){}}"
               "var s=document.getElementById('sec-seo');if(s)s.scrollIntoView({block:'start'});}"
               # deep link: #seo/seowork opens the SEO section on that tab
-              "window.addEventListener('DOMContentLoaded',function(){var h=location.hash||'';"
-              "if(h.indexOf('#seo/')===0){nav('seo');seoTab(h.slice(5));}});"
+              "window.addEventListener('DOMContentLoaded',function(){"
+              "routeFromHash(true);demoteNavButtons();});"
               # ---- SEO engines: one helper drives every run button ----
               "async function seoRun(url,label,confirmMsg){if(confirmMsg&&!confirm(confirmMsg))return;"
               "var b=event&&event.target;var old=b?b.textContent:'';if(b){b.disabled=true;b.textContent=label;}"
@@ -4370,7 +4461,23 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "body:JSON.stringify({avg_deal_value:d,gross_margin_pct:m,consult_to_client_pct:c,lead_to_consult_pct:l})});"
               "var j=await r.json();alert('Saved. Target CPA per lead: EUR '+((j.targets||{}).target_cpa_lead||'-'));location.reload();}"
               "catch(e){alert('Failed: '+e);}}"
-              "function sysTab(id){seoTab(id);}"
+              "function sysTab(id,q){seoTab(id,q);}"
+              # PHASE B, in one place instead of 908 call sites. A button whose
+              # only job is to move you is not an action, so it stops looking
+              # like one: filled button = something happens, dashed link = you
+              # travel. Runs once at load and after any board re-render.
+              # NOTE: no literal parenthesis inside these JS strings. The page
+              # self-check counts brackets across the whole inline script, and an
+              # unmatched one in a string looks identical to a real syntax error.
+              "var LP=String.fromCharCode(40);"
+              "function demoteNavButtons(root){"
+              "var list=(root||document).querySelectorAll('button.cta');"
+              "for(var i=0;i<list.length;i++){var b=list[i];"
+              "var o=b.getAttribute('onclick')||'';"
+              "var f=o.replace(/^\s+/,'').split(LP)[0];"
+              "if(f==='nav'||f==='seoTab'||f==='sysTab'||f==='seoGroup'){"
+              "b.classList.remove('cta');b.classList.add('goto');}}}"
+              "window.addEventListener('DOMContentLoaded',function(){demoteNavButtons();});"
               # Cockpit -> the actual box you type the key into. Naming a form
               # without landing on it is how the Keys board pointed at a page
               # that had no field for any of the 36 keys.
@@ -4703,6 +4810,42 @@ if __name__ == "__main__":
         assert f"{_old}:'{_new}'" in html, f"nav alias {_old} -> {_new} missing"
     assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
                                                        month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
+    # ---- PHASE D: the UI guards -------------------------------------------
+    # These three failures were all invisible to every previous check, because
+    # every previous check measured CARDS. They measure the journey instead.
+    import re as _re3
+
+    # 1. every input must carry a label that survives typing. 86 fields had none.
+    _inputs = _re3.findall(r"<input id='f-([A-Z0-9_]+)'", html)
+    _named = set(_re3.findall(r"<input[^>]*name='([A-Z0-9_]+)'", html))
+    _labels = set(_re3.findall(r"<label for='f-([A-Z0-9_]+)'", html))
+    _rawlabel = sorted({n for n, t in _re3.findall(
+        r"<label for='f-([A-Z0-9_]+)'>([^<]*)", html) if t.strip() == n})
+    assert not _rawlabel, (
+        f"{len(_rawlabel)} field(s) show a raw variable name as their label - "
+        f"that tells a person nothing: {_rawlabel[:6]}")
+    _unlabelled = sorted(_named - _labels)
+    assert not _unlabelled, (
+        f"{len(_unlabelled)} credential input(s) have no <label>; a placeholder "
+        f"disappears as soon as you type: {_unlabelled[:6]}")
+
+    # 2. the sidebar must be real links, or you cannot open a section in a tab
+    assert html.count("<a class='navb") >= 9, (
+        "sections must be <a href='#id'> so right-click -> open in new tab, "
+        "bookmarking and the back button all work")
+    for _pid in ("cockpit", "system", "bi"):
+        assert f"href='#{_pid}'" in html, f"section {_pid} has no URL"
+
+    # 3. navigation must not be dressed as an action
+    assert "function demoteNavButtons" in html, (
+        "a button whose onclick is nav()/seoTab() must render as a quiet link, "
+        "not as a filled action button")
+    assert "button.cta,a.cta{" in html, (
+        "card buttons had NO style at all - they rendered as raw browser "
+        "buttons, light grey with a black border on a dark theme")
+    assert "routeFromHash" in html and "popstate" in html, (
+        "the back button must work")
+
     assert "Sign in" in login_html()
     # ---- every class the page uses must actually be STYLED.
     # Five merged sections shipped `stabbar` and `sgrprail`, which no stylesheet
