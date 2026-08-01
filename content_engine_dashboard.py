@@ -4889,6 +4889,25 @@ if __name__ == "__main__":
         assert f"href='#{_pid}'" in html, f"section {_pid} has no URL"
 
     # 3. navigation must not be dressed as an action
+    # A handler with no button is invisible work. I have now shipped that three
+    # times - the outcome collector nothing called, the rewrite proposal nothing
+    # rendered, and seoAuto() with zero buttons on the page. Defining a function
+    # is not shipping a feature; this asserts the ENTRY POINT exists.
+    # Only handlers that must appear on EVERY render belong here. focusKey needs
+    # live wire data and proposal needs a pending proposal, so both are asserted
+    # where that context exists - focusKey in the API self-check against the real
+    # page, proposal in verify_loop.py section 3b. Asserting them here would fail
+    # on a fixture that legitimately has neither.
+    _MUST_BE_CLICKABLE = ("seoAuto", "setBudget", "runSeoDue", "keyEye",
+                          "startExperiment", "biDeal")
+    import re as _re4
+    _clickable = set(_re4.findall(r"onclick=[\"']([A-Za-z_$][\w$]*)\(", html))
+    _orphans = [h for h in _MUST_BE_CLICKABLE
+                if f"function {h}" in html and h not in _clickable]
+    assert not _orphans, (
+        f"these handlers exist but NOTHING on the page calls them, so the "
+        f"feature is unreachable: {_orphans}")
+
     assert "function demoteNavButtons" in html, (
         "a button whose onclick is nav()/seoTab() must render as a quiet link, "
         "not as a filled action button")

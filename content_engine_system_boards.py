@@ -1028,6 +1028,7 @@ def system_section(ctx) -> str:
               "<button class='cbtn' onclick=\"act('/selftest')\">🧪 Self-test all agents</button>"
               "<button class='cbtn' onclick=\"act('/tick')\">▶ Tick the queue</button>"
               "<button class='cbtn' onclick='runSeoDue()'>⏱ Run what's due</button>"
+              "<button class='cbtn on' onclick='seoAuto()'>♾ Technical SEO 24/7</button>"
               "<button class='cbtn' onclick=\"act('/evals/run')\">📉 Run evals</button>"
               "</div>")
     tools = ("<div class='stools'>"
