@@ -88,25 +88,25 @@ _CACHE_READ_MULT = 0.10    # cache read discount
 # dynamic and handled in _max_tokens_for().
 # ---------------------------------------------------------------------------
 _MAX_TOKENS = {
-    "site_intelligence": 1400,   # 5 issues x 4 prose fields + wins
-    "authority_backlinks": 1400,  # shares the same narrate shape
-    "competitor_intel": 2800,
-    "content_strategist": 1450,
-    "content_producer_image": 300,
-    "seo_optimizer": 1000,
-    "qa_compliance": 1000,
-    "analytics_funnel": 400,
-    "optimizer": 1350,
-    "segmenter": 900,
-    "outreach_copy": 800,   # per lead; room for a full email (incl. German)
-    "media_buyer": 10500,    # a full campaign (ad groups + kw + headlines) must not truncate
-    "media_chat": 10550,     # discuss + return the FULL revised campaign (same size)
+    "site_intelligence": 1700,   # 5 issues x 4 prose fields + wins
+    "authority_backlinks": 1700,  # shares the same narrate shape
+    "competitor_intel": 3900,
+    "content_strategist": 2150,
+    "content_producer_image": 500,
+    "seo_optimizer": 1650,
+    "qa_compliance": 1500,
+    "analytics_funnel": 650,
+    "optimizer": 2450,
+    "segmenter": 1100,
+    "outreach_copy": 1150,   # per lead; room for a full email (incl. German)
+    "media_buyer": 18550,    # a full campaign (ad groups + kw + headlines) must not truncate
+    "media_chat": 18600,     # discuss + return the FULL revised campaign (same size)
     "reply_responder": 500,  # one inbound reply per call
     "judge": 500,            # S1 evaluator — compact verdict only
-    "content_planner": 5150,  # a batch of proposed pieces (segment+pillar+channel+day) to approve
+    "content_planner": 7350,  # a batch of proposed pieces (segment+pillar+channel+day) to approve
     "seo_fixer": 600,        # one page's title/meta/alt rewrite — compact by design
     "link_pitch": 500,       # one link-building email
-    "seo_analyst": 1350,      # the qualitative reads across the SEO boards
+    "seo_analyst": 2550,      # the qualitative reads across the SEO boards
 }
 
 
@@ -122,32 +122,47 @@ def schema_token_estimate(schema: dict) -> int:
     Deliberately pessimistic. max_tokens is a CEILING, not a reservation — you
     are billed for tokens generated, not tokens permitted — so headroom is
     close to free and truncation is not."""
-    STRING_CHARS = 90        # a prose field: a rationale, a fix, a summary
+    # CALIBRATED AGAINST PRODUCTION, not guessed. content_strategist was sized
+    # at 1233 tokens by the first version of this function, given a 1450 budget,
+    # and still truncated in the field: it reached 3767 characters and was not
+    # finished. Two constants were wrong and both are now measured:
+    #   chars-per-token  3.2 -> 2.6   (3767 chars / 1450 tokens, observed)
+    #   prose strings    90  -> 200   (a rationale or summary is a sentence or
+    #                                  three, not a label)
+    # Short fields keep a small allowance so a slug or a date is not charged as
+    # an essay.
+    PROSE = ("rationale", "why", "summary", "note", "insight", "description",
+             "body", "headline", "fix", "suggestion", "answer", "reason",
+             "recommendation", "finding", "read", "move", "cause", "focus",
+             "opportunity", "angle", "weakness", "gap", "next", "advice")
+    SHORT_CHARS = 90
+    PROSE_CHARS = 200
     UNBOUNDED_ITEMS = 10     # only reachable if a cap was missed
 
-    def walk(node) -> int:
+    def walk(node, key="") -> int:
         if not isinstance(node, dict):
             return 0
         if "enum" in node:
             return max((len(str(x)) for x in node["enum"]), default=8) + 3
         t = node.get("type")
         if t == "string":
-            return STRING_CHARS
+            k = key.lower()
+            return PROSE_CHARS if any(w in k for w in PROSE) else SHORT_CHARS
         if t in ("number", "integer"):
             return 8
         if t == "boolean":
             return 5
         if t == "array":
             n = node.get("maxItems", UNBOUNDED_ITEMS)
-            return 2 + n * (walk(node.get("items", {})) + 2)
+            return 2 + n * (walk(node.get("items", {}), key) + 2)
         if t == "object" or "properties" in node:
             total = 2
-            for key, val in (node.get("properties") or {}).items():
-                total += len(key) + 4 + walk(val)
+            for k2, val in (node.get("properties") or {}).items():
+                total += len(k2) + 4 + walk(val, k2)
             return total
         return 20
 
-    return round(walk(schema) / 3.2)   # JSON is punctuation-dense
+    return round(walk(schema) / 2.6)   # measured, not assumed
 
 
 def _max_tokens_for(skill_name: str, payload: dict) -> int:
@@ -570,15 +585,15 @@ if __name__ == "__main__":
         "payload": {"type": "blog", "leads": [{"id": "1"}, {"id": "2"}]},
     }
     checks = {
-        "site_intelligence": 1400,
+        "site_intelligence": 1700,
         "content_producer": 2600,          # payload.type == blog
-        "content_producer_image": 300,
+        "content_producer_image": 500,
         # Mirrors _max_tokens_for(): 140 tokens/lead + 150, floor 400. (This
         # assertion was left on the OLD 60/lead formula when the qualifier
         # gained its business/pain/offer fields — stale test, not a bug.)
         "lead_qualifier": max(400, 140 * 2 + 150),
-        "qa_compliance": 1000,
-        "outreach_copy": 800,
+        "qa_compliance": 1500,
+        "outreach_copy": 1150,
     }
     for skill, expected in checks.items():
         spec = build_prompt(skill, sample_job)
@@ -637,6 +652,16 @@ if __name__ == "__main__":
                 _stack.extend(_node.values())
             elif isinstance(_node, list):
                 _stack.extend(_node)
+    # A regression guard with the real numbers in it. content_strategist was
+    # given 1450 by an estimate of 1233 and still truncated in production at
+    # 3767 characters; if a future edit lowers these constants back, this fails
+    # here rather than in a job three days later.
+    _cs = _SC.SCHEMAS.get("content_strategist")
+    if _cs is not None:
+        _need = schema_token_estimate(getattr(_cs, "schema", _cs))
+        assert _need >= 1800, (
+            f"the estimator has drifted back to optimistic: content_strategist "
+            f"needs {_need}, but production proved 1450 was not enough")
     assert not undersized, (
         "these token budgets are smaller than the output their own schema "
         "permits, so a full response truncates into invalid JSON "
