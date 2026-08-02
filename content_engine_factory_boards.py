@@ -293,7 +293,7 @@ def _preview_board(platform):
             f"<div style='max-height:520px;overflow:auto;border-radius:10px;"
             f"background:#0B1120;padding:10px;"
             f"box-shadow:inset 0 -18px 18px -18px rgba(0,0,0,.8)'>{body}</div>"
-            f"<p class='cs' style='margin-top:8px'>Scroll inside the frame for "
+            f"<p class='cc' style='margin-top:8px'>Scroll inside the frame for "
             f"the full piece.</p></div>")
         return _head(icon, f"{label} preview", blurb) + header + _vizcards(cards[:count])
 
