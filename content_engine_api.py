@@ -208,6 +208,19 @@ def api_get_job(job_id: str) -> dict:
             "learned_nothing": job.get("learned_nothing", ""),
             "rewrite_proposed": job.get("rewrite_proposed", False),
             "measure_at": job.get("measure_at", ""),
+            # WHY A JOB FAILED. This whitelist is hand-written, and the three
+            # fields the orchestrator writes when a step dies were not in it —
+            # so advance() recorded "qa_compliance: no model produced a valid
+            # result", the database kept it, and every reader that went through
+            # this function saw a failed job with no reason whatsoever. The
+            # probe printed "It stopped at 'failed'." and stopped, twice, while
+            # the answer sat one column away.
+            #
+            # factory_report.py reads the store directly, which is the only
+            # reason the reasons were ever visible at all.
+            "halt_reason": job.get("halt_reason", ""),
+            "qa_verdict": job.get("qa_verdict", ""),
+            "needs_human": job.get("needs_human", False),
             "payload": job.get("payload", {})}
 
 

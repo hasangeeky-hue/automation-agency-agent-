@@ -148,3 +148,23 @@ if FAILS:
 print("Every tool that reports on a live credential reads the same source the "
       "engine reads, binds it before the first read, and names the source in "
       "its output.")
+
+print("== a failed job must carry its reason THROUGH the API view ==")
+import re as _re2
+_api = Path("content_engine_api.py").read_text(encoding="utf-8")
+_orc = Path("content_engine_orchestrator.py").read_text(encoding="utf-8")
+# every field the orchestrator writes when a step dies
+_written = set(_re2.findall(r'job\["([a-z_]+)"\]\s*=', _orc))
+_failure_fields = {f for f in ("halt_reason", "qa_verdict", "needs_human")
+                   if f in _written}
+_view = _api[_api.index("def api_get_job"):]
+_view = _view[:_view.index("def _set_flag")]
+for _f in sorted(_failure_fields):
+    chk(f'"{_f}"' in _view, f"api_get_job returns {_f}",
+        "the orchestrator writes it on failure and this hand-written "
+        "whitelist drops it, so every API reader sees a failed job with no "
+        "reason")
+chk("halt_reason" in _view,
+    "the single most important field on a dead job survives the read",
+    "it did not, and the probe printed 'It stopped at failed.' twice while "
+    "the answer sat one column away in the database")
