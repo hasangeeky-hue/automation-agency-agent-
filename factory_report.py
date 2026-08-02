@@ -194,6 +194,33 @@ def main() -> int:
                        or {}).get("image_url"))
     print(f"  of those, carrying an image : {with_img}")
 
+    # WAITING IS NOT STUCK. measuring:0 in section 1 looks like a wall and is
+    # usually a clock: a published job sits on a time gate until its
+    # measurement window opens, and tick() re-claims it each cycle and reports
+    # idle. I read section 1, found no advance, and called it a structural gap
+    # for two rounds. It was a countdown.
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    print()
+    print("  measurement windows:")
+    if not pub:
+        print("    (nothing published yet)")
+    for j in pub:
+        ma = str(j.get("measure_at") or "")
+        if not ma:
+            print(f"    {str(j.get('job_id'))[:22]:<24} NO measure_at stamped "
+                  f"— this one really is stuck")
+            continue
+        try:
+            due = datetime.fromisoformat(ma.replace("Z", "+00:00"))
+            if due.tzinfo is None:
+                due = due.replace(tzinfo=timezone.utc)
+            days = (due - now).days
+            state = (f"opens in {days}d" if days > 0 else "OPEN — due to measure")
+        except Exception:
+            state = f"unparseable measure_at: {ma[:24]}"
+        print(f"    {str(j.get('job_id'))[:22]:<24} {state}")
+
     # ---------------------------------------------------------------- WIRES
     rule("7. WIRES — credentials, by the wire they power")
     try:
@@ -225,7 +252,7 @@ def main() -> int:
             continue
         why = str(j.get("halt_reason") or j.get("qa_verdict")
                   or ((j.get("payload") or {}).get("error"))
-                  or "(no reason recorded)")[:64]
+                  or "(no reason recorded)")
         when = str(j.get("created_at") or "")[:10]
         fr[why] += 1
         if when:
@@ -237,7 +264,14 @@ def main() -> int:
         span = (f"{oldest.get(why, '?')} .. {newest.get(why, '?')}"
                 if oldest.get(why) != newest.get(why)
                 else newest.get(why, "?"))
-        print(f"  x{n:<4} [{span:<24}] {why}")
+        print(f"  x{n:<4} [{span:<24}]")
+        # WRAPPED, NOT CLIPPED. This printed the first 64 characters, which cut
+        # off "Last problem: ..." — the part added specifically to say WHY a
+        # skill failed. A report that truncates the reason is the same failure
+        # as not recording it.
+        import textwrap
+        for line in textwrap.wrap(why, W - 12):
+            print(f"            {line}")
     print()
     print("  The date span is the point. A reason whose NEWEST job predates a")
     print("  fix is history; one still appearing today is a live bug.")

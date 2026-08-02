@@ -274,9 +274,39 @@ def sync_env(C, apply: bool) -> int:
     return 0
 
 
+def clear_one(C, name: str) -> int:
+    """Empty a field. Some credentials should be DELETED, not corrected.
+
+    GOOGLE_ACCESS_TOKEN is the example that forced this to exist. It is a
+    fallback slot for a raw bearer token, used only when there is no service
+    account — and Google access tokens expire in about an hour, so a value
+    there is stale within the day. With GOOGLE_SERVICE_ACCOUNT_JSON set, the
+    engine mints its own. The field held a malformed value that every board
+    reported as a problem to fix, when the right answer was to remove it."""
+    import content_engine_api as API
+    if name not in C.CONNECTOR_ENV_KEYS:
+        print(f"{name} is not a field this engine reads.")
+        return 1
+    if not C._env(name):
+        print(f"{name} is already empty. Nothing to do.")
+        return 0
+    store = API.get_store()
+    store.set_setting(name, "")
+    print(f"Cleared {name} from the settings store.")
+    import os
+    if (os.getenv(name, "") or "").strip():
+        print(f"NOTE: {name} is ALSO set in deploy/.env, and the engine will "
+              f"now fall through to that value. Remove the line there too if "
+              f"you want the field genuinely empty.")
+    return 0
+
+
 def main() -> int:
     C = _bind()
     a = sys.argv[1:]
+    if "--clear" in a:
+        i = a.index("--clear")
+        return clear_one(C, a[i + 1] if len(a) > i + 1 else "")
     if "--sync-env" in a:
         return sync_env(C, apply="--apply" in a)
     if "--set" in a:
