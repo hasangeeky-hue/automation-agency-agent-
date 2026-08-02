@@ -226,7 +226,54 @@ def find_key() -> int:
     return 1
 
 
+def set_key() -> int:
+    """Type the key in, invisibly, and store it. Then test it immediately.
+
+    Every route this key could have taken was a bad one: pasted into a web
+    form that silently accepted a shell command, typed into a shell where it
+    lands in ~/.bash_history, or sent into a chat where it becomes public and
+    has to be revoked.
+
+    getpass reads it with no echo. It never appears on screen, never enters
+    shell history, and is never printed back. It goes straight to the settings
+    store the engine reads."""
+    import getpass
+    import content_engine_api as API
+    import content_engine_connectors as C
+    store = API.get_store()
+
+    print("Paste your OpenAI key. It will NOT be shown as you type.")
+    print("(Get one at platform.openai.com/api-keys - it starts 'sk-'.)")
+    print()
+    try:
+        key = getpass.getpass("OPENAI KEY: ").strip()
+    except Exception:
+        print("!! No terminal available. Re-run with a TTY attached.")
+        return 1
+    if not key:
+        print("Nothing entered. Nothing changed.")
+        return 1
+
+    bad = C.credential_problem("IMAGE_API_KEY", key)
+    if bad:
+        print()
+        print(f"!! That value {bad}")
+        print("   Nothing was saved. Try again.")
+        return 1
+
+    store.set_setting("IMAGE_API_KEY", key)
+    store.set_setting("IMAGE_PROVIDER", "openai")
+    del key                                   # do not keep it in this frame
+    print()
+    print("Saved, and IMAGE_PROVIDER set to 'openai'.")
+    print("Testing it now with one real call ...")
+    print()
+    return live_test()
+
+
 def main() -> int:
+    if "--set-key" in sys.argv:
+        return set_key()
     if "--test" in sys.argv:
         return live_test()
     if "--audit" in sys.argv:

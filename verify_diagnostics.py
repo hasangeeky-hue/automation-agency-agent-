@@ -95,6 +95,18 @@ chk("cred_problems" in _sb, "and a CARD shows the result",
     "status() only asks whether a field is non-empty, so a wrong value "
     "reads green everywhere else")
 
+print("== there must be a way to enter a key that leaks nowhere ==")
+_w = Path("why_no_image.py").read_text(encoding="utf-8")
+chk("getpass" in _w, "--set-key reads the key with no echo",
+    "a key typed into a shell lands in ~/.bash_history forever")
+chk("--set-key" in _w, "and is reachable from the command line")
+chk("credential_problem" in _w, "and refuses to save a malformed value")
+chk("print(key" not in _w and "{key}" not in _w,
+    "and never prints the key back")
+chk("OPENAI_API_KEY" in _C.KEY_ALIASES.get("IMAGE_API_KEY", ()),
+    "IMAGE_API_KEY accepts the name everyone actually uses",
+    "IMAGE_API_KEY is an invention of this engine; OPENAI_API_KEY is not")
+
 print()
 if FAILS:
     print(f"{len(FAILS)} DIAGNOSTIC(S) READING THE WRONG PLACE: {FAILS}")
