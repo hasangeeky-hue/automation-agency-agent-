@@ -2722,6 +2722,32 @@ def credential_problem(name: str, value: str) -> str:
     return ""
 
 
+def credential_audit() -> list:
+    """Every stored credential, checked. Returns [{key, problem}] and NEVER
+    the values themselves.
+
+    Chasing this one field at a time is how it survived: IMAGE_PROVIDER held
+    "open ai" and IMAGE_API_KEY held a pasted shell command, both saved in
+    silence, and each was only found by staring at one failure for an hour.
+    There are 85 of these fields. One of them being wrong must be visible on
+    the board without anyone going looking for it."""
+    out = []
+    for k in sorted(CONNECTOR_ENV_KEYS):
+        try:
+            v = _env(k)
+        except Exception:
+            continue
+        if not v:
+            continue
+        try:
+            bad = credential_problem(k, v)
+        except Exception:
+            bad = ""
+        if bad:
+            out.append({"key": k, "problem": bad})
+    return out
+
+
 def _norm_provider(v: str) -> str:
     """'Open AI', 'open ai', 'OPENAI ' all mean openai.
 

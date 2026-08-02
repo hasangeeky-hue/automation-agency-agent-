@@ -181,7 +181,21 @@ def board_wires(ctx) -> str:
                                                    else "needs a key"))
                         for w in wires[:24]])
     down = [w for w in wires if not (w["live"] or w["always_on"])]
+    bad = _L(ctx.get("cred_problems"))
     cards = [
+        # A KEY THAT IS PRESENT BUT WRONG reads as connected everywhere else -
+        # status() only asks whether the field is non-empty. IMAGE_API_KEY held
+        # a pasted shell command for days and every board showed it green.
+        # This card checks the VALUES, on every render, and never prints one.
+        ("Credentials that look wrong", len(bad), "of 85 fields checked", "",
+         ("Every stored value is checked on each render for pasted commands, "
+          "line breaks, spaces inside a key, and keys in the wrong slot. "
+          "Nothing here shows the value itself." if not bad else
+          "These are SET, so every wire reads green - and they cannot work. "
+          "Fix them on the Connect board."),
+         "credential_audit()", GREEN if not bad else PINK,
+         _rows(bad, left_fmt=lambda r: r["key"][:30],
+               right_fmt=lambda r: r["problem"][:44], empty="")),
         ("All wires", f"{s.get('live', 0)}/{s.get('total', 0)}", "connected", grid,
          ("Every wire the engine knows about, in one grid. Twelve of these had no "
           "diagnostic at all until now."),

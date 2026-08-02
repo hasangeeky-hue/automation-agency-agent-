@@ -550,6 +550,13 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
     """Everything the 12 System & Wiring boards read. Pure reads — this never
     writes a setting and never touches a credential."""
     import content_engine_system as SYS
+    # EVERY stored credential, checked, every render. Finding a bad paste used
+    # to take an hour of staring at one failure; there are 85 of these fields.
+    try:
+        import content_engine_connectors as _CC
+        cred_problems = _CC.credential_audit()
+    except Exception:
+        cred_problems = []
     try:
         import content_engine_scheduler as SCH
         cadence = SCH.SEO_CADENCE
@@ -565,6 +572,7 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
     diag = diag if isinstance(diag, list) else []
     wires = SYS.wire_rows(status, diag)
     return {
+        "cred_problems": cred_problems,
         "status": status, "diag": diag, "wires": wires,
         "summary": SYS.wire_summary(wires),
         "agents": SYS.agent_stats(jobs, skills),

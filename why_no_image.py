@@ -114,9 +114,44 @@ def live_test() -> int:
     return 1
 
 
+def audit_all() -> int:
+    """Every stored credential, checked. Never prints a value.
+
+    The image key was found by staring at one failure for an hour. There are
+    85 of these fields and any of them can hold a paste accident, so none of
+    them should need an hour."""
+    import content_engine_api as API
+    import content_engine_connectors as C
+    API.get_store()                       # bind settings BEFORE reading them
+    if C._SETTINGS_GET is None:
+        print("!! settings store not connected — this would only check "
+              "environment variables. Not reporting.")
+        return 1
+    total = len(C.CONNECTOR_ENV_KEYS)
+    filled = [k for k in C.CONNECTOR_ENV_KEYS if C._env(k)]
+    bad = C.credential_audit()
+    print(f"{len(filled)} of {total} credential fields have a value.")
+    print()
+    if not bad:
+        print("None of them look wrong. (This checks the SHAPE of a value — "
+              "a well-formed key can still be revoked or out of quota.)")
+        return 0
+    print(f"{len(bad)} look wrong. They are SET, so every wire reads green, "
+          f"and they cannot work:")
+    print()
+    for r in bad:
+        print(f"  {r['key']}")
+        print(f"      {r['problem']}")
+    print()
+    print("Fix them on the Connect board. No value is printed above, by design.")
+    return 1
+
+
 def main() -> int:
     if "--test" in sys.argv:
         return live_test()
+    if "--audit" in sys.argv:
+        return audit_all()
     import content_engine_api as API
 
     store = API.get_store()

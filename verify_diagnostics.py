@@ -76,6 +76,25 @@ callers = [f.name for f in Path(".").glob("*.py")
 chk(len(callers) >= 2, f"the api and the worker both bind it ({len(callers)})",
     ", ".join(callers))
 
+print("== a credential that is SET but WRONG must be visible without looking ==")
+import content_engine_connectors as _C
+chk(hasattr(_C, "credential_audit"), "connectors can sweep every stored value")
+chk(hasattr(_C, "credential_problem"), "and describe the fault in one sentence")
+_probe = _C.credential_problem("IMAGE_API_KEY", "cd /opt && docker compose up")
+chk(bool(_probe), "a pasted shell command is caught", _probe)
+chk("cd /opt" not in _probe and "docker" not in _probe,
+    "and the value itself is never echoed back",
+    "a credential report that quotes the credential is a leak")
+chk(_C._norm_provider("open ai") == "openai",
+    "a provider name with a stray space still routes",
+    "one space here sent zero HTTP requests for days")
+_ops = Path("content_engine_seo_ops.py").read_text(encoding="utf-8")
+chk("credential_audit()" in _ops, "the system context sweeps on every render")
+_sb = Path("content_engine_system_boards.py").read_text(encoding="utf-8")
+chk("cred_problems" in _sb, "and a CARD shows the result",
+    "status() only asks whether a field is non-empty, so a wrong value "
+    "reads green everywhere else")
+
 print()
 if FAILS:
     print(f"{len(FAILS)} DIAGNOSTIC(S) READING THE WRONG PLACE: {FAILS}")
