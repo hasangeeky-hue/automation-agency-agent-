@@ -473,31 +473,128 @@ def preview_website(piece=None, ci_text="", site="anthropos-automation.com") -> 
             "words": words, "headings": len(heads), "has_image": bool(img)}
 
 
+def _li_images(piece) -> list:
+    """Every image the piece carries, hero first, in body order.
+
+    A piece now holds a hero plus one picture per section, which is what makes
+    a MULTI-IMAGE LinkedIn post possible. The old preview looked at image_url
+    only, so it could never show anything but a single-image post."""
+    p = _D(piece)
+    out = []
+    hero = _s(p.get("image_url"))
+    if hero:
+        out.append(hero)
+    for u in re.findall(r"!\[[^\]]*\]\(([^)]+)\)", _s(p.get("body"))):
+        u = _s(u)
+        if u and u not in out:
+            out.append(u)
+    return out
+
+
+def _li_grid(urls) -> str:
+    """LinkedIn's real multi-image layouts: 1 full, 2 side by side, 3 as one
+    big plus two stacked, 4+ as a 2x2 with a +N overlay on the last tile."""
+    n = len(urls)
+    if n == 0:
+        return _img_box("", 1200, 627)
+    box = ("width:100%;height:100%;object-fit:cover;display:block;"
+           "border:0;background:#EEF3F8")
+    if n == 1:
+        return (f"<img src='{_e(urls[0])}' alt='' style='width:100%;"
+                f"aspect-ratio:1200/627;object-fit:cover;display:block'>")
+    if n == 2:
+        cells = "".join(f"<div style='aspect-ratio:1/1;overflow:hidden'>"
+                        f"<img src='{_e(u)}' alt='' style='{box}'></div>"
+                        for u in urls[:2])
+        return (f"<div style='display:grid;grid-template-columns:1fr 1fr;"
+                f"gap:2px'>{cells}</div>")
+    if n == 3:
+        right = "".join(f"<div style='overflow:hidden'>"
+                        f"<img src='{_e(u)}' alt='' style='{box}'></div>"
+                        for u in urls[1:3])
+        return (f"<div style='display:grid;grid-template-columns:2fr 1fr;"
+                f"gap:2px;aspect-ratio:3/2'>"
+                f"<div style='overflow:hidden'><img src='{_e(urls[0])}' alt='' "
+                f"style='{box}'></div>"
+                f"<div style='display:grid;grid-template-rows:1fr 1fr;gap:2px'>"
+                f"{right}</div></div>")
+    extra = n - 4
+    cells = ""
+    for i, u in enumerate(urls[:4]):
+        overlay = ("" if not (i == 3 and extra) else
+                   f"<div style='position:absolute;inset:0;background:rgba(0,0,0,.55);"
+                   f"display:flex;align-items:center;justify-content:center;"
+                   f"color:#fff;font-size:20px;font-weight:600'>+{extra}</div>")
+        cells += (f"<div style='position:relative;aspect-ratio:1/1;"
+                  f"overflow:hidden'><img src='{_e(u)}' alt='' "
+                  f"style='{box}'>{overlay}</div>")
+    return (f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:2px'>"
+            f"{cells}</div>")
+
+
 def preview_linkedin(piece=None) -> dict:
+    """The post as LinkedIn's own feed renders it.
+
+    The old preview was a dark generic card with an avatar dot: it told you
+    nothing about how the post would LOOK on LinkedIn, and it knew exactly one
+    format. LinkedIn's feed is WHITE (#FFFFFF, text #000000E6, links #0A66C2),
+    and a post with several images is laid out as a grid, not a single banner.
+
+    Which format posts is decided by the images the piece carries, and the card
+    says so out loud — so approving is a decision, not a guess."""
     p = _D(piece)
     text = _plain(p.get("linkedin_post") or p.get("body"))
     vis, hidden = _cut(text, PLATFORMS["linkedin"]["cut"])
-    img = _s(p.get("image_url"))
+    imgs = _li_images(p)
     tags = re.findall(r"#\w+", text)
-    inner = ("<div style='display:flex;gap:8px;align-items:center'>"
-             "<div style='width:34px;height:34px;border-radius:50%;background:#2FE3D2'></div>"
-             "<div><div style='color:#EDF1FB;font-size:12px;font-weight:700'>"
-             "Anthropos Automation</div><div style='color:#8E9BBE;font-size:10px'>"
-             "Now · 🌐</div></div></div>"
-             f"<p style='color:#C7D0E8;font-size:12.5px;line-height:1.5;margin:9px 0'>"
-             f"{_e(vis)}"
-             + (f"<span style='color:#59668A'>…</span> <span style='color:#4C9AFF;"
-                f"font-weight:600'>see more</span>" if hidden else "") + "</p>"
-             + _img_box(img, 1200, 627))
-    return {"html": _shell(inner, 480),
+    fmt = ("text-only post" if not imgs else
+           "single-image post" if len(imgs) == 1 else
+           f"multi-image post ({len(imgs)} images)")
+    BODY = "-apple-system,'Segoe UI',Roboto,sans-serif"
+    ink, sub, blue = "rgba(0,0,0,.9)", "rgba(0,0,0,.6)", "#0A66C2"
+    inner = (
+        f"<div style='font-family:{BODY};background:#fff;border-radius:8px;"
+        f"box-shadow:0 0 0 1px rgba(0,0,0,.08);overflow:hidden'>"
+        # author row
+        f"<div style='display:flex;gap:8px;align-items:center;padding:12px 12px 0'>"
+        f"<div style='width:44px;height:44px;border-radius:50%;flex:0 0 44px;"
+        f"background:linear-gradient(135deg,#2FE3D2,#7C6BFF)'></div>"
+        f"<div style='min-width:0'>"
+        f"<div style='color:{ink};font-size:14px;font-weight:600'>"
+        f"Anthropos Automation</div>"
+        f"<div style='color:{sub};font-size:12px'>AI automation for small "
+        f"business</div>"
+        f"<div style='color:{sub};font-size:12px'>now · 🌐</div></div></div>"
+        # copy
+        f"<p style='color:{ink};font-size:14px;line-height:1.43;"
+        f"padding:10px 12px 12px;white-space:pre-wrap'>{_e(vis)}"
+        + (f"<span style='color:{sub}'>…</span> "
+           f"<span style='color:{sub}'>see more</span>" if hidden else "")
+        + "</p>"
+        + _li_grid(imgs)
+        # social proof + actions, so the fold and the chrome are honest
+        + f"<div style='display:flex;justify-content:space-between;"
+          f"padding:8px 12px;color:{sub};font-size:12px;"
+          f"border-bottom:1px solid rgba(0,0,0,.08)'>"
+          f"<span>👍❤️💡 24</span><span>6 comments · 2 reposts</span></div>"
+        + f"<div style='display:flex;justify-content:space-around;padding:6px 0;"
+          f"color:{sub};font-size:13px;font-weight:600'>"
+          f"<span>👍 Like</span><span>💬 Comment</span>"
+          f"<span>🔁 Repost</span><span>➤ Send</span></div>"
+        f"</div>")
+    return {"html": _shell(inner, 480, bg="#F4F2EE", pad=10, radius=10,
+                           font=BODY),
             "cut_at": PLATFORMS["linkedin"]["cut"], "hidden_chars": len(hidden),
+            "format": fmt, "images": len(imgs),
             "checks": [("Hook fits the fold", len(text) <= 210 or bool(vis.strip()),
                         f"{len(vis)} chars visible before 'see more'"),
                        ("Within 3000 chars", len(text) <= 3000, f"{len(text)} chars"),
-                       ("Image 1200×627", bool(img),
-                        "present" if img else "missing — reach drops sharply"),
+                       ("Posts as", bool(imgs), fmt),
+                       ("Image 1200×627", bool(imgs),
+                        f"{len(imgs)} carried" if imgs
+                        else "missing — reach drops sharply"),
                        ("Hashtags 3-5", 3 <= len(tags) <= 5, f"{len(tags)} found")],
-            "chars": len(text), "hashtags": len(tags), "has_image": bool(img)}
+            "chars": len(text), "hashtags": len(tags), "has_image": bool(imgs)}
 
 
 def preview_instagram(piece=None) -> dict:
