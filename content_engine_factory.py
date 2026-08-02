@@ -360,18 +360,59 @@ def preview_website(piece=None, ci_text="", site="anthropos-automation.com") -> 
     title = _s(p.get("title")) or "Untitled"
     body = _plain(p.get("body"))
     img = _s(p.get("image_url"))
-    heads = re.findall(r"^#{2,3}\s+(.+)$", _s(p.get("body")), re.M)
+    raw = _s(p.get("body"))
+    heads = re.findall(r"^#{2,3}\s+(.+)$", raw, re.M)
     words = len(body.split())
-    paras = [x for x in body.split("\n\n") if x.strip()][:3]
+    # IN ORDER, WITH THE HEADINGS AS HEADINGS.
+    #
+    # This used to flatten the markdown, take the first three blocks, render
+    # them all as <p> — so an "## H2" became body text — and then append the
+    # first three headings as <h2> at the BOTTOM. The result showed the same
+    # line twice, once as grey body and once as a teal heading, in an order
+    # the article does not have. You cannot judge a piece for approval from
+    # that, which is exactly what a preview is for.
+    #
+    # Walk the real blocks in sequence instead.
+    blocks, seen_w = [], 0
+    for chunk in re.split(r"\n{2,}", raw):
+        chunk = chunk.strip()
+        if not chunk or seen_w > 260:
+            continue
+        m = re.match(r"^(#{2,4})\s+(.+)$", chunk)
+        if m:
+            blocks.append(("h", m.group(2)))
+        elif chunk.startswith(("- ", "* ", "1. ")):
+            blocks.append(("li", re.sub(r"^[-*]\s+|^\d+\.\s+", "",
+                                        chunk.split("\n")[0])))
+        elif chunk.startswith(">"):
+            blocks.append(("q", chunk.lstrip("> ")))
+        elif chunk.startswith("!["):
+            continue                      # the hero renders above, not inline
+        else:
+            blocks.append(("p", chunk))
+            seen_w += len(chunk.split())
+    parts = []
+    for kind, text in blocks[:14]:
+        t = _e(_plain(text)[:260])
+        if kind == "h":
+            parts.append(f"<h2 style='color:#2FE3D2;font-size:14px;"
+                         f"margin:14px 0 4px;font-weight:600'>{t}</h2>")
+        elif kind == "li":
+            parts.append(f"<p style='color:#C7D0E8;font-size:12.5px;"
+                         f"line-height:1.65;margin:2px 0 2px 14px'>• {t}</p>")
+        elif kind == "q":
+            parts.append(f"<p style='color:#8E9BBE;font-size:12.5px;"
+                         f"line-height:1.6;border-left:3px solid #2FE3D2;"
+                         f"padding-left:10px;margin:8px 0'>{t}</p>")
+        else:
+            parts.append(f"<p style='color:#C7D0E8;font-size:12.5px;"
+                         f"line-height:1.65'>{t}</p>")
     inner = (f"<div style='color:#8E9BBE;font-size:10px;letter-spacing:.14em'>"
              f"{_e(site.upper())}</div>"
              f"<h1 style='color:#EDF1FB;font-size:20px;line-height:1.25;margin:8px 0'>"
              f"{_e(title)}</h1>"
-             + (_img_box(img, 1200, 630) if True else "")
-             + "".join(f"<p style='color:#C7D0E8;font-size:12.5px;line-height:1.65'>"
-                       f"{_e(x[:220])}</p>" for x in paras)
-             + ("".join(f"<h2 style='color:#2FE3D2;font-size:14px;margin:10px 0 4px'>"
-                        f"{_e(h)}</h2>" for h in heads[:3])))
+             + _img_box(img, 1200, 630)
+             + "".join(parts))
     return {"html": _shell(inner, 560),
             "checks": [("Hero image", bool(img),
                         "present" if img else "missing — the article publishes flat"),
