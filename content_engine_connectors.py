@@ -94,16 +94,53 @@ def set_settings_provider(fn) -> None:
     _SETTINGS_GET = fn
 
 
+_SHADOWED = {}          # name -> why the stored value was ignored
+
+
 def _env(name: str, default: str = "") -> str:
+    """Settings first, environment second - but never a BROKEN setting over a
+    working environment variable.
+
+    Settings-first is right: it lets the dashboard change a credential without
+    a redeploy. But it also meant that one bad paste into the Connect board
+    permanently shadowed a perfectly good key in deploy/.env, with nothing
+    anywhere saying so. IMAGE_API_KEY held a shell command in Postgres while
+    the real key sat in the environment the whole time, unreachable.
+
+    So: if the stored value is malformed and the environment holds a clean
+    one, use the environment and record that the stored value was ignored."""
     v = None
     if _SETTINGS_GET is not None:
         try:
             v = _SETTINGS_GET(name)
         except Exception:
             v = None
-    if v is None or v == "":
-        v = os.getenv(name, default)
-    return (str(v) if v is not None else "").strip()
+    sv = (str(v) if v is not None else "").strip()
+    if sv:
+        try:
+            bad = credential_problem(name, sv)
+        except Exception:
+            bad = ""
+        if bad:
+            ev = (os.getenv(name, "") or "").strip()
+            if ev:
+                try:
+                    ev_bad = credential_problem(name, ev)
+                except Exception:
+                    ev_bad = ""
+                if not ev_bad:
+                    _SHADOWED[name] = bad
+                    return ev
+        _SHADOWED.pop(name, None)
+        return sv
+    return (str(os.getenv(name, default) or "")).strip()
+
+
+def shadowed() -> dict:
+    """Fields where a malformed stored value was ignored in favour of the
+    environment. The Connect board still needs fixing - the engine is simply
+    no longer held hostage by it."""
+    return dict(_SHADOWED)
 
 
 # ---------------------------------------------------------------------------

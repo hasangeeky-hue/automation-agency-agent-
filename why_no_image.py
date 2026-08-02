@@ -44,9 +44,13 @@ def live_test() -> int:
     key = C._env("IMAGE_API_KEY") or ""
     src = ""
     if key:
-        src = ("the Connect board (database)"
-               if bound and (C._SETTINGS_GET("IMAGE_API_KEY") or "")
-               else "an environment variable")
+        if "IMAGE_API_KEY" in C.shadowed():
+            src = ("the ENVIRONMENT — the Connect board value was ignored "
+                   f"because it {C.shadowed()['IMAGE_API_KEY']}")
+        elif bound and (C._SETTINGS_GET("IMAGE_API_KEY") or ""):
+            src = "the Connect board (database)"
+        else:
+            src = "an environment variable"
     print(f"settings : {'connected' if bound else 'NOT CONNECTED — env only'}")
     print(f"provider : {C._env('IMAGE_PROVIDER', 'openai')}")
     print(f"model    : {C._env('IMAGE_MODEL', 'gpt-image-1')}  "
@@ -139,11 +143,26 @@ def audit_all() -> int:
     print(f"{len(bad)} look wrong. They are SET, so every wire reads green, "
           f"and they cannot work:")
     print()
+    import os
     for r in bad:
         print(f"  {r['key']}")
         print(f"      {r['problem']}")
+        # DID YOU ALREADY PUT A GOOD ONE IN deploy/.env? Say so. The stored
+        # value used to shadow it silently, which is how a correct key can be
+        # present on the box and unreachable by the engine.
+        ev = (os.getenv(r["key"], "") or "").strip()
+        if ev and not C.credential_problem(r["key"], ev):
+            print("      -> the ENVIRONMENT holds a well-formed value for this "
+                  "field, and the engine now uses it. Clean up the Connect "
+                  "board entry when convenient; nothing is blocked.")
+        elif ev:
+            print("      -> deploy/.env also has a value for this field, and it "
+                  "has the same problem.")
+        else:
+            print("      -> nothing usable in deploy/.env either, so this field "
+                  "is genuinely blocked until you fix it.")
     print()
-    print("Fix them on the Connect board. No value is printed above, by design.")
+    print("No value is printed above, by design.")
     return 1
 
 
