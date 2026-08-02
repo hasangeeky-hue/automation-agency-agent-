@@ -71,42 +71,56 @@ def main() -> int:
 
     # ------------------------------------------------------------ CHANNELS
     rule("2. CHANNELS — does the publisher speak the same language as the boards?")
-    pub_ok = ("wordpress", "cms", "web", "blog")
+    # TEST THE BEHAVIOUR, DO NOT RESTATE THE LIST. The first version of this
+    # section hard-coded the publisher's old CMS names here — so it compared a
+    # list invented in this file against PLATFORMS and reported a break that
+    # had already been fixed. A diagnostic that carries its own copy of the
+    # thing it is checking is the bug it is checking for.
     plats = list(F.PLATFORMS)
-    default = CS._target_channels({})
-    print(f"  publisher CMS branch accepts : {', '.join(pub_ok)}")
-    print(f"  PLATFORMS (previews/rules)   : {', '.join(plats)}")
-    print(f"  publisher DEFAULT when a job sets nothing : {default}")
-    overlap = set(pub_ok) & set(plats)
+    print(f"  PLATFORMS (previews / image rules) : {', '.join(plats)}")
+    print(f"  publisher default when a job sets nothing : "
+          f"{CS._target_channels({})}")
     print()
-    if not overlap:
-        print("  !! THESE TWO LISTS SHARE NOTHING.")
-        print("     A job whose deploy_channels say 'website' misses the CMS")
-        print("     branch and is handed to the SOCIAL poster as if 'website'")
-        print("     were a social network. A job saying 'wordpress' publishes,")
-        print("     but every preview and image rule looks it up in PLATFORMS")
-        print("     and finds nothing.")
+    print("  does each name reach the right place?")
+    bad = []
+    for alias in ("website", "wordpress", "wp", "cms", "blog", "linkedin",
+                  "instagram", "x", "ig", "twitter", "youtube", "facebook"):
+        canon = T.channel(alias)
+        site = T.is_website(alias)
+        known = canon in F.PLATFORMS
+        ok = known and (site == (canon == "website"))
+        if not ok:
+            bad.append(alias)
+        print(f"    {alias:<12} -> {canon:<12}"
+              f"{'the SITE' if site else 'social':<10}"
+              f"{'ok' if ok else 'UNKNOWN TO PLATFORMS'}")
+    print()
+    if bad:
+        print(f"  !! {bad} do not resolve to a channel the preview and image")
+        print("     rules know. Those jobs publish blind.")
     else:
-        print(f"  shared: {sorted(overlap)}")
+        print("  Every alias resolves to a canonical channel that both the")
+        print("  publisher and the preview/image rules recognise.")
+
     used = Counter()
     for j in pieces:
         cfg = ((j.get("payload") or {}).get("config") or {})
-        for ch in (cfg.get("deploy_channels") or ["(none set)"]):
-            used[str(ch).lower()] += 1
+        raw = cfg.get("deploy_channels")
+        for ch in (raw or ["(unset -> website)"]):
+            used[T.channel(ch) if raw else "(unset -> website)"] += 1
     print()
-    print("  what your jobs ACTUALLY carry:")
+    print("  what your jobs ACTUALLY carry (canonicalised):")
     for ch, n in used.most_common():
-        known = ("publishes" if ch in pub_ok else
-                 "social" if ch in plats else "UNKNOWN TO BOTH")
-        print(f"    {ch:<18} {n:<4} {known}")
-    social_reachable = sum(n for ch, n in used.items()
-                           if ch in plats and ch != "website")
+        role = ("the SITE" if ch.startswith("(unset") or T.is_website(ch)
+                else "social" if ch in F.PLATFORMS else "UNKNOWN")
+        print(f"    {ch:<22} {n:<4} {role}")
+    social = sum(n for ch, n in used.items()
+                 if ch in F.PLATFORMS and ch != "website")
     print()
-    print(f"  pieces that could reach a social channel: {social_reachable}")
-    if not social_reachable:
-        print("  !! LinkedIn, Instagram, X, Facebook and YouTube are BUILT and")
-        print("     UNREACHABLE. Nothing sets deploy_channels except the plan")
-        print("     approval path, so every other job is website-only.")
+    print(f"  pieces whose config names a social channel: {social}")
+    if not social:
+        print("  !! Every social channel is built and unreachable — nothing")
+        print("     is putting them in deploy_channels.")
 
     # --------------------------------------------------------------- GATES
     rule("3. GATES — what each content type is allowed to receive")
@@ -202,17 +216,31 @@ def main() -> int:
 
     # ------------------------------------------------------------- FAILURES
     rule("8. FAILURES — every distinct reason, with counts")
-    fr = Counter()
+    # WITH DATES. A count alone cannot tell damage already done from damage
+    # still happening, and every fix in this codebase has been judged on a
+    # number that included jobs from before the fix existed.
+    fr, newest, oldest = Counter(), {}, {}
     for j in pieces:
         if str(j.get("status")) not in ("failed", "revision_needed"):
             continue
-        why = (j.get("halt_reason") or j.get("qa_verdict")
-               or ((j.get("payload") or {}).get("error")) or "(no reason recorded)")
-        fr[str(why)[:70]] += 1
+        why = str(j.get("halt_reason") or j.get("qa_verdict")
+                  or ((j.get("payload") or {}).get("error"))
+                  or "(no reason recorded)")[:64]
+        when = str(j.get("created_at") or "")[:10]
+        fr[why] += 1
+        if when:
+            newest[why] = max(newest.get(why, ""), when)
+            oldest[why] = min(oldest.get(why, "9999"), when)
     if not fr:
         print("  No failed pieces.")
     for why, n in fr.most_common(12):
-        print(f"  x{n:<4} {why}")
+        span = (f"{oldest.get(why, '?')} .. {newest.get(why, '?')}"
+                if oldest.get(why) != newest.get(why)
+                else newest.get(why, "?"))
+        print(f"  x{n:<4} [{span:<24}] {why}")
+    print()
+    print("  The date span is the point. A reason whose NEWEST job predates a")
+    print("  fix is history; one still appearing today is a live bug.")
 
     rule()
     print("Read-only. Nothing was published, sent, or spent.")
