@@ -201,7 +201,20 @@ CONTENT_PRODUCER_COPY = {
         "meta_title": {"type": "string"},        # blog only
         "meta_description": {"type": "string"},   # blog only
         "cta_text": {"type": "string"},
-        "hashtags": {"type": "array", "items": {"type": "string"}},  # social only
+        "hashtags": {"type": "array", "items": {"type": "string"}},
+        # ONE PROMPT PER SECTION IMAGE, in the order the sections appear.
+        #
+        # A blog used to get exactly one hero and nothing else, because the
+        # only image the engine ever made was the hero. ROUTES already named
+        # an "image_prompts" model for content_producer — a config line
+        # pointing at a capability nobody built. This is the field it needed.
+        #
+        # The writer chooses these, not a generic prompt afterwards, because
+        # the writer is the only thing that knows what each section is about.
+        # additionalProperties is false here, so without this declaration the
+        # model's prompts would be REJECTED rather than ignored.
+        "image_prompts": {"type": "array", "maxItems": 6,
+                          "items": {"type": "string"}},  # social only
     },
     "additionalProperties": False,
 }

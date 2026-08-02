@@ -167,3 +167,53 @@ if FAILS:
 print("ONE VOCABULARY — the strategist, the image gate, the factory, the length "
       "table and the WordPress routing all mean the same thing by a type, and a "
       "missing picture states its reason all the way to the preview.")
+
+
+print("\n== 10. a long piece carries SECTION images, not one hero ==")
+import content_engine_connectors as _CC
+import content_engine_factory as _FA
+
+chk("image_prompts" in getattr(S.SCHEMAS["content_producer"], "schema",
+                               {}).get("properties", {}),
+    "content_producer may return image_prompts",
+    "additionalProperties is false, so without the field the writer's prompts "
+    "are REJECTED, not ignored")
+_in = P._in_content_producer({"payload": {"config": {"produce_index": 0},
+    "content_strategist": {"calendar": [{"type": "blog"}]}}})
+chk(bool(_in.get("structure")), "the brief asks for a structure, not just a length",
+    str(_in.get("structure", {}).get("images")) + " images, "
+    + str(_in.get("structure", {}).get("sections")) + " sections, min "
+    + str(_in.get("structure", {}).get("min_words")) + " words")
+chk(_in.get("structure", {}).get("images", 0) >= 4,
+    "at least 4 images are requested")
+
+# the behaviour: 4 prompts must become 4 images, each AFTER its own section
+_orig = _CC.generate_image
+_n = [0]
+_CC.generate_image = lambda pr, size="1024x1024": (
+    _n.__setitem__(0, _n[0] + 1) or f"https://cdn/s{_n[0]}.png")
+try:
+    _nl = chr(10)
+    _body = _nl.join(f"## Section {i}{_nl}{_nl}Text {i}.{_nl}" for i in range(1, 5))
+    _job = {"job_id": "v", "payload": {"config": {"produce_index": 0},
+        "content_strategist": {"calendar": [{"type": "blog"}]},
+        "content_producer": {"title": "T", "body": _body,
+                             "image_prompts": ["a", "b", "c", "d"]}}}
+    P._ensure_hero_image(_job)
+    _pc = _job["payload"]["content_producer"]
+    chk(_job["payload"].get("section_images") == 4,
+        f"4 prompts produced {_job['payload'].get('section_images')} section images")
+    chk(_pc["body"].count("![") == 5, "hero + 4 section images in the body",
+        f"{_pc['body'].count('![')} found")
+    _before = _pc["body"]
+    P._ensure_hero_image(_job)
+    chk(_job["payload"]["content_producer"]["body"] == _before,
+        "re-running does NOT duplicate images")
+    # and the preview must SHOW them — it used to `continue` past every inline
+    # image, so four generated pictures would have previewed as none
+    _html = _FA.preview_website({"title": "T", "body": _pc["body"],
+                                 "image_url": _pc.get("image_url")})["html"]
+    chk(_html.count("<img ") == 5, "all 5 reach the PREVIEW",
+        f"{_html.count('<img ')} rendered — the preview used to drop inline images")
+finally:
+    _CC.generate_image = _orig

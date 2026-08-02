@@ -392,7 +392,14 @@ def preview_website(piece=None, ci_text="", site="anthropos-automation.com") -> 
         elif chunk.startswith(">"):
             blocks.append(("q", chunk.lstrip("> ")))
         elif chunk.startswith("!["):
-            continue                      # the hero renders above, not inline
+            # RENDER IT. This used to `continue` — every inline image in the
+            # body was silently dropped from the preview. Harmless while a
+            # piece had exactly one hero (which renders above), and the exact
+            # reason a 4-image article would have previewed with zero of them.
+            m2 = re.match(r"!\[([^\]]*)\]\(([^)]+)\)", chunk)
+            if m2 and _s(m2.group(2)) != img:      # skip the hero, shown above
+                blocks.append(("img", m2.group(2) + "|" + (m2.group(1) or "")))
+            continue
         else:
             blocks.append(("p", chunk))
             seen_w += len(chunk.split())
@@ -417,6 +424,16 @@ def preview_website(piece=None, ci_text="", site="anthropos-automation.com") -> 
         elif kind == "li":                               # .art ul
             parts.append(f"<p style='color:{MUTED};font-size:12.5px;"
                          f"line-height:1.65;margin:6px 0 0 18px'>• {t}</p>")
+        elif kind == "img":                               # an inline body image
+            u, _, alt = text.partition("|")
+            parts.append(
+                f"<figure style='margin:16px 0 0'>"
+                + _img_box(u, 1200, 630)
+                + (f"<figcaption style='color:{MUTED};font-size:11px;"
+                   f"margin-top:6px;text-align:center;opacity:.8'>{_e(alt)}"
+                   f"</figcaption>" if alt else "")
+                + "</figure>")
+            continue
         elif kind == "q":
             parts.append(f"<p style='color:{MUTED};font-size:12.5px;"
                          f"line-height:1.6;border-left:2px solid {FLOW};"

@@ -23,9 +23,20 @@ working defaults you can tighten later.
 
 from __future__ import annotations
 
+import os
+import re
+
 from content_engine_learning import get_playbook
 
 # Map a piece type -> the "length" hint the Content Producer prompt expects.
+# HOW MANY PICTURES A LONG PIECE CARRIES, and the floor it must clear.
+# Each image costs about EUR 0.04, so four is roughly EUR 0.16 a piece — 4x
+# what a single hero cost. Env-overridable rather than hard-coded, because
+# that multiplier belongs to whoever pays the monthly cap.
+_IMAGES_PER_PIECE = max(1, int(os.getenv("IMAGES_PER_PIECE", "4")))
+_SECTIONS_PER_PIECE = max(1, int(os.getenv("SECTIONS_PER_PIECE", "4")))
+_MIN_WORDS = {"blog": 650, "guide": 900, "service": 500}
+
 _LENGTH_BY_TYPE = {
     "blog": "blog:1500-2000w",
     "guide": "guide:2500-3500w",
@@ -283,6 +294,32 @@ def _in_content_producer(job: dict) -> dict:
         "service_pillar": tax.get("pillar", ""),
         "service_promise": tax.get("service", ""),
     }
+    # THE SHAPE OF THE PIECE, not just its length.
+    #
+    # The brief said "blog:1500-2000w" and nothing else, so the writer returned
+    # one prose blob and the engine bolted a single hero image on top. A blog
+    # that alternates section / picture / section / picture is a different
+    # artefact from a wall of text with a photo above it, and nothing in the
+    # brief ever asked for one.
+    #
+    # image_prompts must come from the WRITER: it is the only step that knows
+    # what each section is actually about. Generating pictures afterwards from
+    # the title gives four variations of the same generic image.
+    import content_engine_site_taxonomy as _TX
+    if _TX.wants_image(ptype) and ptype in ("blog", "guide", "service"):
+        out["structure"] = {
+            "sections": _SECTIONS_PER_PIECE,
+            "images": _IMAGES_PER_PIECE,
+            "min_words": _MIN_WORDS.get(ptype, 650),
+            "how": (f"Write at least {_SECTIONS_PER_PIECE} '## ' sections and at "
+                    f"least {_MIN_WORDS.get(ptype, 650)} words of researched "
+                    f"body. Return image_prompts with EXACTLY ONE prompt per "
+                    f"section, in the same order as the sections. Each prompt "
+                    f"describes what THAT section is about — not the article "
+                    f"in general. Do not put image markdown in the body; the "
+                    f"engine places each image after its section."),
+        }
+
     # If the founder declined a prior draft, feed their correction into the rewrite.
     rnote = (job.get("payload", {}) or {}).get("revision_note")
     if rnote:
@@ -373,6 +410,60 @@ def _ensure_hero_image(job: dict) -> None:
             piece["body"] = f"![{title}]({url})\n\n{body}"
         p["content_producer"] = piece
         p["image_url"] = url                    # dashboard web-view reads this too
+        _ensure_section_images(job)             # then one picture per section
+
+
+def _ensure_section_images(job: dict) -> None:
+    """One image per section, placed AFTER the section it illustrates.
+
+    The hero was the only picture this engine ever made, so a 1500-word article
+    arrived as a wall of text with one photo on top. The writer now returns an
+    image_prompt per section (it is the only step that knows what each section
+    is about); this generates them and inserts each after its own '## '.
+
+    Best-effort and per-image: one failure costs one picture, not the piece.
+    Idempotent — an image already in the body is never regenerated."""
+    p = job.setdefault("payload", {})
+    piece = p.get("content_producer") or {}
+    prompts = [str(x).strip() for x in (piece.get("image_prompts") or [])
+               if str(x).strip()][:_IMAGES_PER_PIECE]
+    if not prompts:
+        p["section_images"] = 0
+        return
+    body = piece.get("body", "") or ""
+    # split on H2s, keeping them: [preamble, "## A", textA, "## B", textB, ...]
+    parts = re.split(r"(?m)^(##\s+.+)$", body)
+    if len(parts) < 3:
+        p["section_images"] = 0
+        return
+
+    import content_engine_site_taxonomy as TAX
+    import content_engine_connectors as C
+    made, errs = 0, []
+    for i, prompt in enumerate(prompts):
+        idx = 2 + i * 2                       # the text block after heading i
+        if idx >= len(parts):
+            break
+        if "![" in parts[idx]:                # already illustrated
+            continue
+        try:
+            u = C.generate_image(TAX.image_prompt(prompt))
+        except Exception as e:
+            u, _ = "", errs.append(f"{type(e).__name__}: {str(e)[:80]}")
+        if not u:
+            errs.append(C.last_image_error() if hasattr(C, "last_image_error")
+                        else "no url")
+            continue
+        alt = prompt[:110]
+        parts[idx] = parts[idx].rstrip() + f"\n\n![{alt}]({u})\n"
+        made += 1
+    if made:
+        piece["body"] = "".join(parts)
+        p["content_producer"] = piece
+    p["section_images"] = made
+    p["section_images_wanted"] = len(prompts)
+    if errs:
+        p["section_image_errors"] = errs[:3]
 
 
 def _ensure_linkedin_post(job: dict) -> None:
