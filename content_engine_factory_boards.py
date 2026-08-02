@@ -122,6 +122,53 @@ PLATFORM_META = {
 }
 
 
+def _destination(ctx, platform) -> str:
+    """WHERE THIS PIECE LANDS, AND WHAT YOU CAN DO ABOUT IT.
+
+    The engine computes the destination at publish time - wp_categories()
+    returns e.g. ['Blog', 'Automate Everything', 'E-Commerce & Retail'] and
+    wp_ao_type() returns the taxonomy the site filters its listings on - and
+    the preview showed NONE of it. A screen you approve a publish from that
+    cannot say which section of the site it publishes to is a static card, not
+    a decision surface. It also carried zero buttons.
+    """
+    import content_engine_site_taxonomy as _T
+
+    def _s(v):
+        return str(v or "").strip()
+
+    st = _D(ctx.get("image_state"))
+    piece = _D(ctx.get("piece"))
+    title = _s(piece.get("title"))
+    kind = _s(st.get("type")) or "blog"
+    H = _H()
+    if platform == "website":
+        cats = _T.wp_categories(kind, title=title,
+                                keyword=_s(piece.get("target_keyword")))
+        where = (f"<b>{H._esc(cats[0])}</b> &rsaquo; "
+                 + " &middot; ".join(H._esc(c) for c in cats[1:])
+                 + f" &nbsp;|&nbsp; content type <b>{_T.wp_ao_type(kind)}</b>")
+        note = (f"{H._esc(_T.SITE_URL)} — the first name is the section, the "
+                f"rest are its pillar and audience categories.")
+    else:
+        where = f"<b>{H._esc(platform.title())}</b> feed"
+        note = "Posted from your connected account when you approve."
+    img = ("<span style='color:#2FE3D2'>image attached</span>"
+           if st.get("ok") else
+           f"<span style='color:#F5788A'>no image — "
+           f"{H._esc(_s(st.get('reason'))[:70])}</span>")
+    return (
+        f"<div style='margin-top:10px;padding:10px 12px;border-radius:10px;"
+        f"background:#0D1424;border:1px solid #1B2640'>"
+        f"<p class='cc' style='margin:0 0 4px'>PUBLISHES TO &nbsp; {where}</p>"
+        f"<p class='cc' style='margin:0 0 8px;opacity:.7'>{note} &nbsp;|&nbsp; "
+        f"{img}</p>"
+        f"<button class='cta' onclick=\"nav('appr')\">Approve or decline</button>"
+        f" <button class='cbtn' onclick=\"nav('cfimage')\">Fix the image</button>"
+        f" <button class='cbtn' onclick=\"nav('cfqa')\">See the checks</button>"
+        f"</div>")
+
+
 def _preview_board(platform):
     icon, label, count, blurb = PLATFORM_META[platform]
 
@@ -305,8 +352,9 @@ def _preview_board(platform):
             f"background:#0B1120;padding:12px;margin-top:10px;"
             f"box-shadow:inset 0 -18px 18px -18px rgba(0,0,0,.75)'>"
             f"<div style='max-width:620px;margin:0 auto'>{body}</div></div>"
-            f"<p class='cc' style='margin-top:8px;opacity:.75'>Scroll inside "
-            f"the frame for the full piece — the checks are below.</p>"
+            + _destination(ctx, platform)
+            + f"<p class='cc' style='margin-top:8px;opacity:.75'>Scroll inside "
+              f"the frame for the full piece — the checks are below.</p>"
             f"</div>") + _vizcards(cards[:count])
 
     board.__name__ = f"board_preview_{platform}"
