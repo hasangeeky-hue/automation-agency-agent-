@@ -40,6 +40,25 @@ for name, src in (("prep", src_prep), ("factory", src_fact)):
         "a second hand-written list is how this broke the first time")
 chk("wants_image" in src_prep, "the image gate asks the vocabulary")
 
+# THE CHECK I SHOULD HAVE WRITTEN FIRST. Scoping the guard to the image gate
+# let an identical bug survive four lines away: _ensure_linkedin_post compared
+# against a hard-coded ("blog", "guide") and dropped every carousel and reel.
+# Scan for ANY type comparison written as a literal.
+print("== 1b. nobody compares against a hand-written list of types ==")
+import re as _re
+_KNOWN = set(T.CONTENT_TYPES) | {"social", "post", "article", "case_study"}
+for _f in ("content_engine_prep.py", "content_engine_factory.py",
+           "content_engine_orchestrator.py"):
+    _s = open(_f, encoding="utf-8").read()
+    _hits = []
+    for _m in _re.finditer(r"(?:not\s+in|in)\s*\(([^()]*)\)", _s):
+        _lits = _re.findall(r"[\"']([a-z_]+)[\"']", _m.group(1))
+        if len([x for x in _lits if x in _KNOWN]) >= 2:
+            _hits.append(_m.group(0)[:58])
+    chk(not _hits, f"{_f} compares no hand-written type list",
+        "; ".join(_hits) + " - ask the vocabulary instead" if _hits else "")
+
+
 print("\n== 2. every type the strategist may PLAN is a real content type ==")
 raw = getattr(S.SCHEMAS["content_strategist"], "schema", S.SCHEMAS["content_strategist"])
 enum = raw["properties"]["calendar"]["items"]["properties"]["type"]["enum"]

@@ -91,6 +91,38 @@ NO_IMAGE_TYPES = ("email",)
 PLANNABLE_TYPES = ("blog", "guide", "social_carousel", "reel", "email")
 
 
+# Types that never get repurposed into a LinkedIn post. An email already IS
+# the message; everything else - including a carousel or a reel script - has a
+# LinkedIn version worth writing.
+NO_LINKEDIN_TYPES = ("email",)
+
+
+# Types too short to be worth a live web-research pass. A carousel and a reel
+# script are built from a piece that was already researched.
+NO_RESEARCH_TYPES = ("social_carousel", "reel")
+
+
+def wants_research(kind: str) -> bool:
+    """Should this piece get a live web-research brief? Unknown types do.
+
+    The hand-written version of this rule said ("blog", "email") under a
+    comment reading "long-form only" - which excluded GUIDE, the longest
+    thing this engine writes at 2500-3500 words, and included email at 120.
+    Exactly backwards, for over a year, because the list and the comment were
+    written at different moments and nothing compared them."""
+    return str(kind or "blog").strip().lower() not in NO_RESEARCH_TYPES
+
+
+def wants_linkedin(kind: str) -> bool:
+    """Should this piece get a native LinkedIn post? Unknown types do.
+
+    This was hard-coded as ('blog', 'guide') in prep, which is the SIXTH copy
+    of a content-type list in this codebase and the second one to silently
+    drop work: a social_carousel or a reel - the two things most obviously
+    destined for LinkedIn - got no LinkedIn post at all."""
+    return str(kind or "blog").strip().lower() not in NO_LINKEDIN_TYPES
+
+
 def wants_image(kind: str) -> bool:
     """Should this piece get a hero image? Unknown types get one."""
     return str(kind or "blog").strip().lower() not in NO_IMAGE_TYPES

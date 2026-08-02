@@ -226,7 +226,8 @@ def _content_research(job: dict, row: dict) -> str:
     import os
     if os.getenv("CONTENT_WEB_RESEARCH", "1") not in ("1", "true", "True"):
         return ""
-    if row.get("type", "blog") not in ("blog", "email"):   # long-form only
+    import content_engine_site_taxonomy as _T
+    if not _T.wants_research(row.get("type", "blog")):
         return ""
     idx = str(_cfg(job).get("produce_index", 0))
     cache = job.setdefault("payload", {}).setdefault("_research", {})
@@ -381,8 +382,12 @@ def _ensure_linkedin_post(job: dict) -> None:
     piece = p.get("content_producer") or {}
     if not piece or piece.get("linkedin_post"):
         return
-    if _chosen_row(job).get("type", "blog") not in ("blog", "guide"):
+    import content_engine_site_taxonomy as _T
+    _t = _chosen_row(job).get("type", "blog")
+    if not _T.wants_linkedin(_t):
+        p["linkedin_skipped"] = f"a '{_t}' piece does not get a LinkedIn post"
         return
+    p.pop("linkedin_skipped", None)
     try:
         import content_engine_connectors as C
         site = C._env("EMAIL_WEBSITE", "") if hasattr(C, "_env") else ""

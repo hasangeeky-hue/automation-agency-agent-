@@ -952,7 +952,7 @@ class WordPress:
             return 0
         rq = _requests()
         try:
-            img = rq.get(image_url, timeout=_HTTP_TIMEOUT)
+            img = rq.get(image_url, timeout=_IMAGE_TIMEOUT)
             if not img.ok:
                 return 0
             fn = (title or "hero").strip()[:60].replace('"', "") or "hero"
@@ -2636,7 +2636,7 @@ class LinkedInPoster:
                 return self.post(text)
             put = rq.put(upload_url, data=img.content,
                          headers={"Authorization": f"Bearer {self.token}"},
-                         timeout=_HTTP_TIMEOUT)
+                         timeout=_IMAGE_TIMEOUT)
             if put.status_code not in (200, 201):
                 return self.post(text)
             # 3. share with the image attached
