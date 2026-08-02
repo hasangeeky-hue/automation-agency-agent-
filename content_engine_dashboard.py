@@ -4620,6 +4620,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "try{var r=await fetch('/content/test-image',{method:'POST'});var j=await r.json();"
               "if(j.ok){if(confirm('Image generated. Open it?'))window.open(j.url,'_blank');}"
               "else{alert('Failed: '+(j.error||''));}}catch(e){alert('Failed: '+e);}}"
+              # Attach a hero image to the piece you are LOOKING AT.
+              # testImage() proves the key works and throws the picture away;
+              # this one keeps it. A piece produced before the image gate was
+              # fixed had no way to get one short of re-running six model calls.
+              "async function pieceImage(){if(!confirm('Generate the hero image "
+              "for the piece waiting for approval, and attach it? Costs about "
+              "EUR 0.04. Nothing is published.'))return;"
+              "try{var r=await fetch('/content/piece-image',{method:'POST'});"
+              "var j=await r.json();"
+              "if(j.ok){alert('Image attached. Reloading the preview.');"
+              "location.reload();}else{alert('Failed: '+(j.error||''));}}"
+              "catch(e){alert('Failed: '+e);}}"
               "function sgaCampaign(){var n=prompt('Campaign name');if(!n)return;"
               "var o=prompt('Objective: awareness / leads / bookings','leads')||'awareness';"
               "var c=prompt('Channels, comma separated: linkedin,facebook,instagram,youtube,twitter,tiktok','linkedin')||'linkedin';"

@@ -1990,6 +1990,56 @@ def build_app():
                                     spent_this_month=spent,
                                     note=d.get("note", ""))
 
+    @app.post("/content/piece-image")
+    def content_piece_image(job_id: str = ""):
+        """Generate the hero image for a piece that has none, and ATTACH it.
+
+        /content/test-image proves the key works and throws the picture away.
+        A piece produced before the image gate was fixed carries image_error
+        for ever and nothing could give it one — the operator was told to
+        re-run a whole piece (six model calls, minutes, real money) to get a
+        picture the engine could make in twenty seconds.
+
+        Costs about EUR 0.04. Human-triggered only; publishes nothing."""
+        store = get_store()
+        jid = str(job_id or "").strip()
+        if not jid:
+            # default to the newest piece that is waiting on a person
+            try:
+                cands = [j for j in store.list_jobs()
+                         if j.get("type") == "content_piece"
+                         and j.get("status") == "AWAITING_APPROVAL"]
+                cands.sort(key=lambda j: j.get("created_at") or "", reverse=True)
+                jid = cands[0]["job_id"] if cands else ""
+            except Exception:
+                jid = ""
+        if not jid:
+            return {"ok": False, "error": "No piece is waiting for approval."}
+        try:
+            job = store.get(jid)
+        except KeyError:
+            return {"ok": False, "error": f"no such job: {jid}"}
+        pl = job.setdefault("payload", {})
+        piece = pl.get("content_producer") or {}
+        if not piece:
+            return {"ok": False, "error": "That job never produced a piece."}
+        piece.pop("image_url", None)          # force a real attempt
+        pl.pop("image_url", None)
+        pl.pop("image_error", None)
+        try:
+            import content_engine_prep as P
+            P._ensure_hero_image(job)
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {str(e)[:160]}"}
+        url = (pl.get("content_producer") or {}).get("image_url") or ""
+        store.save(job)
+        if url:
+            return {"ok": True, "url": url, "job_id": jid,
+                    "message": "Image generated, hosted, and attached to the "
+                               "piece. Reload the preview to see it."}
+        return {"ok": False, "job_id": jid,
+                "error": pl.get("image_error") or "no image came back"}
+
     @app.post("/content/test-image")
     def content_test_image():
         """Generate ONE real image so you can see whether the key works and

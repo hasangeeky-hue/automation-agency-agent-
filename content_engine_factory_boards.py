@@ -164,7 +164,10 @@ def _destination(ctx, platform) -> str:
         f"<p class='cc' style='margin:0 0 8px;opacity:.7'>{note} &nbsp;|&nbsp; "
         f"{img}</p>"
         f"<button class='cta' onclick=\"nav('appr')\">Approve or decline</button>"
-        f" <button class='cbtn' onclick=\"nav('cfimage')\">Fix the image</button>"
+        + ("" if st.get("ok") else
+           " <button class='cbtn' onclick='pieceImage()'>Generate the image "
+           "now (&euro;0.04)</button>")
+        + f" <button class='cbtn' onclick=\"nav('cfimage')\">Image settings</button>"
         f" <button class='cbtn' onclick=\"nav('cfqa')\">See the checks</button>"
         f"</div>")
 
