@@ -286,16 +286,28 @@ def _preview_board(platform):
         # twice, the first of them above an empty box. And the frame had no
         # height limit, so a 1500-word article rendered as a card several
         # screens tall that pushed every check card below the fold.
+        # ONE CARD. _head() renders its own `card full` with the title and the
+        # blurb, and the frame used to render in a SECOND card underneath — so
+        # every preview screen opened with a card containing nothing but a
+        # heading, then a separate card with the frame. Two boxes, one of them
+        # empty, on six screens. Merging the frame into the head card is the
+        # whole fix: heading, description, frame, in that order, in one box.
+        #
+        # The frame is also centred and width-capped. A 560px mock sitting in a
+        # full-width card left two thirds of the box empty on a wide monitor.
         body = (frame + (fb_frame if fb_frame else ""))
-        header = (
-            f"<div class='card full' style='margin-bottom:10px'>"
-            f"<p class='ct'>{icon} as {label} will show it</p>"
+        H = _H()
+        return (
+            f"<div class='card full' style='margin-top:12px'>"
+            f"<p class='ct'>{icon} {H._esc(label)} preview</p>"
+            f"<p class='cc'>{H._esc(blurb)}</p>"
             f"<div style='max-height:520px;overflow:auto;border-radius:10px;"
-            f"background:#0B1120;padding:10px;"
-            f"box-shadow:inset 0 -18px 18px -18px rgba(0,0,0,.8)'>{body}</div>"
-            f"<p class='cc' style='margin-top:8px'>Scroll inside the frame for "
-            f"the full piece.</p></div>")
-        return _head(icon, f"{label} preview", blurb) + header + _vizcards(cards[:count])
+            f"background:#0B1120;padding:12px;margin-top:10px;"
+            f"box-shadow:inset 0 -18px 18px -18px rgba(0,0,0,.75)'>"
+            f"<div style='max-width:620px;margin:0 auto'>{body}</div></div>"
+            f"<p class='cc' style='margin-top:8px;opacity:.75'>Scroll inside "
+            f"the frame for the full piece — the checks are below.</p>"
+            f"</div>") + _vizcards(cards[:count])
 
     board.__name__ = f"board_preview_{platform}"
     return board
