@@ -531,16 +531,42 @@ def _get_json(url: str, headers: Optional[dict] = None, params: Optional[dict] =
         return None
 
 
-def _post_json(url: str, payload: dict, headers: Optional[dict] = None):
+def _post_json(url: str, payload: dict, headers: Optional[dict] = None,
+               capture: Optional[dict] = None):
+    """POST and return the parsed JSON, or None.
+
+    `capture` is filled with what actually went wrong: the HTTP status and the
+    provider's OWN error message. Without it this function swallowed the one
+    useful sentence in the whole exchange - raise_for_status() throws, the body
+    is discarded, and the caller reports a shrug. Every image failure on this
+    box read "the image provider returned nothing" when OpenAI had said
+    precisely why."""
     rq = _requests()
     if not rq:
+        if capture is not None:
+            capture["error"] = "the requests library is not installed"
         return None
     try:
         r = rq.post(url, headers={**{"User-Agent": _UA}, **(headers or {})},
                     json=payload, timeout=_HTTP_TIMEOUT)
-        r.raise_for_status()
+        if capture is not None:
+            capture["status"] = r.status_code
+        if not r.ok:
+            body = ""
+            try:                                  # the provider's own words
+                j = r.json()
+                body = (((j.get("error") or {}) if isinstance(j, dict) else {})
+                        .get("message") or "") or str(j)[:300]
+            except Exception:
+                body = (r.text or "")[:300]
+            if capture is not None:
+                capture["error"] = f"HTTP {r.status_code}: {body}"
+            log.warning("POST %s -> %s: %s", url, r.status_code, body)
+            return None
         return r.json()
     except Exception as e:
+        if capture is not None:
+            capture["error"] = f"{type(e).__name__}: {str(e)[:220]}"
         log.warning("POST %s failed: %s", url, e)
         return None
 
@@ -2653,6 +2679,16 @@ def video_available() -> bool:
     return bool(_env("VIDEO_API_KEY") and _env("VIDEO_API_URL") and _requests())
 
 
+import contextvars as _cvx
+_LAST_IMAGE_ERROR = _cvx.ContextVar("last_image_error", default="")
+
+
+def last_image_error() -> str:
+    """Why the most recent generate_image() call produced nothing, in the
+    provider's own words. Empty when the last call succeeded."""
+    return _LAST_IMAGE_ERROR.get()
+
+
 def generate_image(prompt: str, size: str = "1024x1024") -> str:
     """Generate one image and return a PERMANENT URL (hosted in the WordPress
     media library). Handles both OpenAI response shapes: gpt-image-1 returns
@@ -2660,17 +2696,26 @@ def generate_image(prompt: str, size: str = "1024x1024") -> str:
     'no images in blogs' bug), dall-e-3 returns a short-lived URL. Either way
     the bytes are uploaded to WordPress so the URL never expires. Returns ''
     only when generation fails or nothing can host the image."""
+    _LAST_IMAGE_ERROR.set("")
     key = _env("IMAGE_API_KEY")
     rq = _requests()
     if not key or not rq:
+        _LAST_IMAGE_ERROR.set("IMAGE_API_KEY is not set" if not key else
+                              "the requests library is not installed")
+        return ""
+    if key.startswith("sk-ant-"):
+        _LAST_IMAGE_ERROR.set(
+            "IMAGE_API_KEY holds an Anthropic key (sk-ant-). Anthropic has no "
+            "image API - this slot needs an OpenAI key.")
         return ""
     provider = _env("IMAGE_PROVIDER", "openai").lower()
+    _cap = {}
     img_bytes, transient_url = b"", ""
     if provider == "openai":
         j = _post_json("https://api.openai.com/v1/images/generations",
                        {"model": _env("IMAGE_MODEL", "gpt-image-1"), "prompt": prompt,
                         "size": size, "n": 1},
-                       headers={"Authorization": f"Bearer {key}"})
+                       headers={"Authorization": f"Bearer {key}"}, capture=_cap)
         d = (j.get("data") or [{}])[0] if j else {}
         transient_url = d.get("url") or ""
         b64 = d.get("b64_json") or ""
@@ -2684,7 +2729,8 @@ def generate_image(prompt: str, size: str = "1024x1024") -> str:
         url = _env("IMAGE_API_URL")
         if url:
             j = _post_json(url, {"prompt": prompt, "size": size},
-                           headers={"Authorization": f"Bearer {key}"})
+                           headers={"Authorization": f"Bearer {key}"},
+                           capture=_cap)
             transient_url = (j or {}).get("url", "") if j else ""
     if transient_url and not img_bytes:      # download so we can host it durably
         try:
@@ -2694,6 +2740,10 @@ def generate_image(prompt: str, size: str = "1024x1024") -> str:
         except Exception:
             pass
     if not img_bytes and not transient_url:
+        _LAST_IMAGE_ERROR.set(
+            _cap.get("error") or
+            f"{provider} accepted the request and returned no image data "
+            f"(model {_env('IMAGE_MODEL', 'gpt-image-1')})")
         return ""
     _record_cost(float(_env("IMAGE_COST_PER", "0.04") or 0.04), "image")
     # host permanently in the WordPress media library

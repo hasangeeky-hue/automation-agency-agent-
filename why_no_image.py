@@ -2,6 +2,7 @@
 
 Run on the VPS:
     docker compose -f deploy/docker-compose.yml exec api python why_no_image.py
+    ... --test    makes ONE real image call and prints what the provider said
 
 Reads only. Spends nothing. Publishes nothing.
 
@@ -14,7 +15,64 @@ previews showed the same silent blank for both.
 import sys
 
 
+def live_test() -> int:
+    """ONE real call to the image provider, and the provider's own answer.
+
+    Costs about EUR 0.04 if it succeeds and nothing if it fails. It publishes
+    nothing. This exists because every failure on this box reported "the image
+    provider returned nothing" - my phrase, not the provider's - while the real
+    message sat in a discarded HTTP body."""
+    import content_engine_connectors as C
+    import content_engine_site_taxonomy as T
+
+    key = C._env("IMAGE_API_KEY") or ""
+    print(f"provider : {C._env('IMAGE_PROVIDER', 'openai')}")
+    print(f"model    : {C._env('IMAGE_MODEL', 'gpt-image-1')}  "
+          f"(unset means gpt-image-1)")
+    print(f"key      : {'set, ' + str(len(key)) + ' chars, starts ' + key[:7] if key else 'NOT SET'}")
+    if key.startswith("sk-ant-"):
+        print()
+        print("!! That is an Anthropic key. Anthropic has no image API — this "
+              "slot needs an OpenAI key. Every call 401s.")
+        return 1
+    if not key:
+        print()
+        print("!! Nothing to test. Add IMAGE_API_KEY on the Connect board.")
+        return 1
+
+    print()
+    print("calling the provider once ...", flush=True)
+    url = C.generate_image(T.image_prompt("Automation for small firms"))
+    if url:
+        print()
+        print(f"WORKS. {url}")
+        print("The image is hosted in your WordPress media library, so the URL "
+              "will not expire. Produce a new piece and it will carry one.")
+        return 0
+    print()
+    print("FAILED — the provider said:")
+    print()
+    print(f"    {C.last_image_error()}")
+    print()
+    why = C.last_image_error().lower()
+    if "verif" in why:
+        print("gpt-image-1 needs your OpenAI ORGANISATION verified. Either "
+              "verify it at platform.openai.com/settings/organization/general, "
+              "or set IMAGE_MODEL=dall-e-3 on the Connect board — dall-e-3 "
+              "needs no verification and this code already handles its "
+              "URL-shaped response.")
+    elif "401" in why or "invalid" in why or "incorrect" in why:
+        print("The key is being rejected. Check it is an OpenAI key with the "
+              "images scope, and that it has not been revoked.")
+    elif "quota" in why or "billing" in why or "429" in why:
+        print("The key works but the OpenAI account will not bill. Add credit "
+              "or raise the rate limit.")
+    return 1
+
+
 def main() -> int:
+    if "--test" in sys.argv:
+        return live_test()
     import content_engine_api as API
 
     store = API.get_store()

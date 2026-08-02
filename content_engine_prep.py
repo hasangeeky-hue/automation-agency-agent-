@@ -347,8 +347,9 @@ def _ensure_hero_image(job: dict) -> None:
             ci = ""
         url = C.generate_image(TAX.image_prompt(title, ci))
         if not url:
-            _why = ("IMAGE_API_KEY is not set" if not C._env("IMAGE_API_KEY")
-                    else "the image provider returned nothing")
+            # the provider's OWN words, not my guess about them
+            _why = (C.last_image_error() if hasattr(C, "last_image_error")
+                    else "") or "the image provider returned nothing"
     except Exception as _e:
         url = ""
         _why = f"{type(_e).__name__}: {str(_e)[:140]}"
