@@ -57,7 +57,12 @@ PLATFORMS = {
 }
 SERP_TITLE_MAX = 60
 SERP_META_MAX = 155
-IMAGE_TYPES = ("blog", "guide", "social", "post", "article", "case_study")
+# Derived, never re-typed. This list used to be spelled out here AND in
+# content_engine_prep, and neither shared a single word with the types the
+# strategist actually emits - so every non-blog piece silently got no image.
+import content_engine_site_taxonomy as _TAX
+
+IMAGE_TYPES = tuple(t for t in _TAX.CONTENT_TYPES if _TAX.wants_image(t))
 
 
 # ------------------------------------------------------------------ coercion
@@ -330,6 +335,10 @@ def _cut(text, n):
     return t[:n], t[n:]
 
 
+import contextvars as _cv
+_IMG_REASON = _cv.ContextVar("img_reason", default="")
+
+
 def _img_box(url, w, h, label=""):
     if url and _s(url).startswith("http"):
         return (f"<img src='{_e(url)}' alt='' style='width:100%;max-width:100%;"
@@ -339,8 +348,11 @@ def _img_box(url, w, h, label=""):
             f"background:repeating-linear-gradient(45deg,#131B2E,#131B2E 10px,"
             f"#0F1626 10px,#0F1626 20px);display:flex;align-items:center;"
             f"justify-content:center;color:#F5788A;font-size:12px;"
-            f"border:1px dashed #F5788A'>no image · {w}×{h} needed"
-            f"{(' · ' + label) if label else ''}</div>")
+            f"border:1px dashed #F5788A;text-align:center;padding:8px'>"
+            f"no image · {w}×{h} needed"
+            f"{(' · ' + label) if label else ''}"
+            f"{('<br>' + _e(_IMG_REASON.get()[:120])) if _IMG_REASON.get() else ''}"
+            f"</div>")
 
 
 def preview_website(piece=None, ci_text="", site="anthropos-automation.com") -> dict:
@@ -527,8 +539,14 @@ PREVIEWS = {"website": preview_website, "linkedin": preview_linkedin,
             "serp": preview_serp}
 
 
-def previews(piece=None, channels=None, ci_text="", keyword="") -> dict:
-    """Every platform preview for one piece, plus a pass/fail roll-up."""
+def previews(piece=None, channels=None, ci_text="", keyword="",
+             image_reason="") -> dict:
+    """Every platform preview for one piece, plus a pass/fail roll-up.
+
+    image_reason is printed inside the empty image box. Without it the preview
+    said 'no image' and stopped there, which told you a fact you could already
+    see and withheld the only thing you needed."""
+    _IMG_REASON.set(_s(image_reason))
     out, blocked = {}, []
     for name, fn in PREVIEWS.items():
         try:

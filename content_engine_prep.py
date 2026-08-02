@@ -28,6 +28,8 @@ from content_engine_learning import get_playbook
 # Map a piece type -> the "length" hint the Content Producer prompt expects.
 _LENGTH_BY_TYPE = {
     "blog": "blog:1500-2000w",
+    "guide": "guide:2500-3500w",
+    "service": "service_page:800-1200w",
     "social_carousel": "caption:150-300c",
     "reel": "reel_script:20-40s",
     "email": "email:120-200w",
@@ -311,7 +313,7 @@ def _ensure_hero_image(job: dict) -> None:
     """Generate ONE on-brand hero image for the blog (matching the website's dark
     cyan/violet look) and embed it at the top of the body, so the piece is never
     image-less. Best-effort + cached: runs once, skips if no image API. Gated by
-    CONTENT_IMAGES (default on) and blog/guide types only."""
+    CONTENT_IMAGES (default on) and the ONE content vocabulary."""
     import os
     if os.getenv("CONTENT_IMAGES", "1") not in ("1", "true", "True"):
         return
@@ -327,9 +329,11 @@ def _ensure_hero_image(job: dict) -> None:
     _chans = [str(c).lower() for c in
               ((p.get("config") or {}).get("deploy_channels") or [])]
     _needs = bool({"instagram", "ig", "youtube", "facebook", "meta"} & set(_chans))
-    if _type not in ("blog", "guide", "social", "post", "article", "case_study") \
-            and not _needs:
+    import content_engine_site_taxonomy as _T
+    if not _T.wants_image(_type) and not _needs:
+        p["image_skipped"] = f"a '{_type}' piece does not carry a hero image"
         return
+    p.pop("image_skipped", None)
     title = piece.get("title") or _chosen_row(job).get("working_title", "")
     _why = ""
     try:

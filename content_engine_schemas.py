@@ -31,6 +31,8 @@ so the module still runs in dev.
 
 from __future__ import annotations
 
+import content_engine_site_taxonomy as _TAX
+
 try:
     from jsonschema import Draft202012Validator  # type: ignore
     _HAVE_JSONSCHEMA = True
@@ -170,7 +172,7 @@ CONTENT_STRATEGIST = {
                              "rationale"],
                 "properties": {
                     "date": {"type": "string"},
-                    "type": {"enum": ["blog", "social_carousel", "reel", "email"]},
+                    "type": {"enum": list(_TAX.PLANNABLE_TYPES)},
                     "working_title": {"type": "string"},
                     "primary_keyword": {"type": "string"},
                     "target_segment": {"enum": ["champions", "active",

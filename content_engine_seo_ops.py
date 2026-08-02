@@ -682,19 +682,44 @@ def build_factory_ctx(store, *, jobs=None, status=None, ci=None, piece=None,
         awaiting = [j for j in cands
                     if _D(j).get("status") == "AWAITING_APPROVAL"] or cands
         awaiting.sort(key=lambda j: _D(j).get("created_at") or "", reverse=True)
-        pc = _D(_D(_D(awaiting[0]).get("payload")).get("content_producer")) \
-            if awaiting else {}
+        _job = _D(awaiting[0]) if awaiting else {}
+        pc = _D(_D(_job.get("payload")).get("content_producer"))
     chans = []
     for j in jobs:
         cfg = _D(_D(j).get("payload")).get("config") or {}
         chans += [str(c).lower() for c in (_D(cfg).get("deploy_channels") or [])]
     chans = sorted(set(chans)) or ["website"]
     kw = _D(pc).get("target_keyword") or ""
+    # THE IMAGE STATE OF THE PIECE YOU ARE LOOKING AT.
+    # _ensure_hero_image already recorded WHY an image was missing
+    # (image_error / image_skipped) and nothing ever read it back out - so the
+    # preview honestly showed a picture-less piece and said nothing at all.
+    # A diagnostic nobody renders is not a diagnostic. It says now.
+    _pl = _D(_job).get("payload") or {} if "_job" in dir() else {}
+    _row = {}
+    try:
+        _cal = (_D(_pl.get("content_strategist")).get("calendar") or [])
+        _ix = int(_D(_pl.get("config")).get("produce_index", 0) or 0)
+        _row = _D(_cal[_ix]) if 0 <= _ix < len(_cal) else _D(_cal[0] if _cal else {})
+    except Exception:
+        _row = {}
+    _ptype = _row.get("type") or _D(_pl.get("config")).get("type") or "blog"
+    _iurl = _D(pc).get("image_url") or _pl.get("image_url") or ""
+    image_state = {
+        "type": _ptype, "url": _iurl, "ok": bool(_iurl),
+        "skipped": bool(_pl.get("image_skipped")),
+        "reason": (_pl.get("image_error") or _pl.get("image_skipped") or
+                   ("" if _iurl else "no image, and no reason recorded - this "
+                    "piece was produced before the engine explained itself. "
+                    "Re-run it and the reason will appear here.")),
+    }
     return {
         "brief": brief, "eligibility": el, "piece": pc,
-        "previews": F.previews(pc, chans, keyword=kw),
+        "previews": F.previews(pc, chans, keyword=kw,
+                               image_reason=image_state["reason"]),
         "images": F.image_status(status, image_key=image_key),
-        "image_need": F.image_needed(_D(pc).get("type", "blog"), chans),
+        "image_need": F.image_needed(_ptype, chans),
+        "image_state": image_state,
         "ci": F.ci_compliance(pc, ci),
         "pipeline": F.pipeline(jobs),
         "routing": F.routing(jobs, el),

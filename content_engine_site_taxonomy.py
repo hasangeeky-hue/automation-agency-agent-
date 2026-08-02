@@ -60,6 +60,42 @@ PILLARS = [
      "wp": "Automate Everything", "kw": ["automation", "n8n", "ai agent", "workflow", "dashboard", "integrate", "whole business", "tool sprawl", "system"]},
 ]
 
+# ===========================================================================
+# THE ONE CONTENT VOCABULARY.
+#
+# There were FIVE lists of content types across four files, and only "blog"
+# appeared in all of them:
+#
+#   strategist schema enum   blog, social_carousel, reel, email
+#   prep image gate          blog, guide, social, post, article, case_study
+#   factory.IMAGE_TYPES      blog, guide, social, post, article, case_study
+#   KIND_CATEGORY            blog, guide, service, social_carousel, reel, email
+#   prep._LENGTH_BY_TYPE     blog, social_carousel, reel, email
+#
+# The strategist writes the type; the image gate reads it. Their lists shared
+# one word, so every piece that was not a blog silently got no hero image -
+# no error, no card, nothing. Two word-lists that must agree, with nothing
+# making them agree, is a bug waiting for a quiet week. This is the list.
+# ===========================================================================
+CONTENT_TYPES = ("blog", "guide", "service", "social_carousel", "reel", "email")
+
+# Types that never carry a hero image. Everything else DOES - an opt-out, not
+# an opt-in, because a new type added later should get a picture by default
+# rather than silently going without one.
+NO_IMAGE_TYPES = ("email",)
+
+# What the strategist is allowed to PLAN. A service page is a site page someone
+# writes on purpose, not something a campaign schedules, so it is a valid
+# content type but not a plannable one. Everything here must be in
+# CONTENT_TYPES - verify_vocabulary.py asserts it.
+PLANNABLE_TYPES = ("blog", "guide", "social_carousel", "reel", "email")
+
+
+def wants_image(kind: str) -> bool:
+    """Should this piece get a hero image? Unknown types get one."""
+    return str(kind or "blog").strip().lower() not in NO_IMAGE_TYPES
+
+
 # WordPress top-level sections a piece can be routed to, by its 'kind'.
 KIND_CATEGORY = {"blog": "Blog", "guide": "Guides", "service": "Services",
                  "social_carousel": "Blog", "reel": "Blog", "email": "Blog"}

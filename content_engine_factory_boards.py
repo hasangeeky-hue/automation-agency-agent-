@@ -617,7 +617,23 @@ def board_image(ctx) -> str:
     ctx = _ctx(ctx)
     im, pv = ctx["images"], ctx["previews"]
     need = _D(ctx.get("image_need"))
+    st = _D(ctx.get("image_state"))
     cards = [
+        # THE FIRST THING YOU SHOULD SEE: does the piece you are about to
+        # approve actually have a picture, and if not, why not. This card is
+        # the whole reason the previous session was spent guessing.
+        ("This piece's image",
+         ("generated" if st.get("ok") else
+          "skipped" if st.get("skipped") else "MISSING"),
+         f"type: {st.get('type', '?')}",
+         _donut(100 if st.get("ok") else 0),
+         (f"The hero image is attached and the WordPress and LinkedIn previews "
+          f"will show it. {st.get('url', '')[:70]}" if st.get("ok")
+          else str(st.get("reason", "")) or "no reason recorded"),
+         "the live piece",
+         GREEN if st.get("ok") else (BLUE if st.get("skipped") else PINK),
+         "<button class='cta' onclick=\"goPreview('wordpress')\">"
+         "See it in the preview</button>"),
         ("Image generation", ("ready" if im.get("configured") else "not working"),
          im.get("provider", "openai"),
          _donut(100 if im.get("configured") else 0),
@@ -699,7 +715,7 @@ def board_image(ctx) -> str:
     ]
     return _head("🎨", "Creative & image",
                  "Whether a picture gets made, which key makes it, and which "
-                 "platforms refuse to publish without one.") + _vizcards(cards[:20])
+                 "platforms refuse to publish without one.") + _vizcards(cards[:24])
 
 
 # ======================================================================
@@ -1205,7 +1221,7 @@ _TAB_BOARDS = {
 
 _TAB_COUNTS = {"cfcmd": 16, "cfbrief": 20, "cfplan": 20, "cfpvweb": 18,
                "cfpvli": 16, "cfpvig": 16, "cfpvx": 16, "cfpvyt": 14,
-               "cfpvserp": 16, "cfimage": 20, "cfci": 18, "cfpipe": 20,
+               "cfpvserp": 16, "cfimage": 21, "cfci": 18, "cfpipe": 20,
                "cfqa": 18, "cfroute": 18, "cfrepurpose": 16, "cfcost": 16}
 TOTAL_CARDS = sum(_TAB_COUNTS.values())
 PREVIEW_CARDS = sum(_TAB_COUNTS[t] for t in
