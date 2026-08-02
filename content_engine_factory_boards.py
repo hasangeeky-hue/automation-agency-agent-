@@ -278,10 +278,23 @@ def _preview_board(platform):
             cards.append(("Check slot", "—", "no further checks", "",
                           f"{label} has no more automated checks for this piece.",
                           "platform rules", BLUE, ""))
+        # ONE HEADING, ONE BLURB, AND A FRAME THAT FITS ITS CARD.
+        #
+        # _head already prints "<label> preview" and the blurb. This card then
+        # printed "<label> — live preview" and the SAME blurb underneath it, so
+        # every preview screen opened with the title twice and the description
+        # twice, the first of them above an empty box. And the frame had no
+        # height limit, so a 1500-word article rendered as a card several
+        # screens tall that pushed every check card below the fold.
         body = (frame + (fb_frame if fb_frame else ""))
-        header = (f"<div class='card full' style='margin-bottom:10px'>"
-                  f"<p class='ct'>{icon} {label} — live preview</p>"
-                  f"<p class='cc'>{blurb}</p>{body}</div>")
+        header = (
+            f"<div class='card full' style='margin-bottom:10px'>"
+            f"<p class='ct'>{icon} as {label} will show it</p>"
+            f"<div style='max-height:520px;overflow:auto;border-radius:10px;"
+            f"background:#0B1120;padding:10px;"
+            f"box-shadow:inset 0 -18px 18px -18px rgba(0,0,0,.8)'>{body}</div>"
+            f"<p class='cs' style='margin-top:8px'>Scroll inside the frame for "
+            f"the full piece.</p></div>")
         return _head(icon, f"{label} preview", blurb) + header + _vizcards(cards[:count])
 
     board.__name__ = f"board_preview_{platform}"
@@ -1353,9 +1366,26 @@ if __name__ == "__main__":
 
     # THE point of this section: six real preview frames
     assert PREVIEW_CARDS == 96, PREVIEW_CARDS
-    for tab in ("cfpvweb", "cfpvli", "cfpvig", "cfpvx", "cfpvyt", "cfpvserp"):
-        assert "live preview" in pages[tab], f"{tab} has no preview frame"
-        assert "<div style=" in pages[tab], f"{tab} frame did not render"
+    # ASSERT THE FRAME, NOT A PHRASE. This checked for the words "live
+    # preview", so renaming a heading broke it while the preview rendered
+    # perfectly — and it would equally have PASSED on a page that printed the
+    # phrase and no frame at all. Check the rendered preview HTML instead, and
+    # that it is inside a scroll container so a 1500-word article cannot push
+    # every check card below the fold.
+    import content_engine_factory as _pvmod
+    _pvres = _pvmod.previews(PIECE, ["website", "linkedin", "instagram", "twitter",
+                               "youtube"], keyword="k")
+    _pvmap = {"cfpvweb": "website", "cfpvli": "linkedin", "cfpvig": "instagram",
+             "cfpvx": "twitter", "cfpvyt": "youtube"}
+    for tab, name in _pvmap.items():
+        _pvfr = (_pvres["by_platform"].get(name) or {}).get("html", "")
+        _pvcore = _pvfr[:120]
+        assert _pvcore and _pvcore in pages[tab], (
+            f"{tab}: the rendered {name} preview is not on the page")
+        assert "overflow:auto" in pages[tab], (
+            f"{tab}: the frame is not in a scroll container — a long article "
+            f"pushes every check card off the screen")
+    assert "<div style=" in pages["cfpvserp"], "serp frame did not render"
     assert "see more" in pages["cfpvli"], "LinkedIn must show its truncation"
     assert "… more" in pages["cfpvig"] or "more" in pages["cfpvig"]
 
