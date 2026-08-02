@@ -2683,6 +2683,54 @@ import contextvars as _cvx
 _LAST_IMAGE_ERROR = _cvx.ContextVar("last_image_error", default="")
 
 
+def credential_problem(name: str, value: str) -> str:
+    """Say what is WRONG with this credential value, in one sentence, or "".
+
+    The Connect board accepted any string for any field. IMAGE_PROVIDER was
+    saved as "open ai" - with a space - which matched no branch in
+    generate_image, so the else-branch looked for an IMAGE_API_URL that was
+    never set and quietly made no HTTP request at all. IMAGE_API_KEY was saved
+    holding 95 characters that began with a shell command. Both were accepted
+    in silence, and the engine then reported that a provider had answered.
+
+    Never returns the value itself, only a description of the fault."""
+    v = str(value or "")
+    if not v.strip():
+        return ""
+    n = (name or "").upper()
+    low = v.strip().lower()
+    if len(v) != len(v.strip()):
+        return "has leading or trailing whitespace, which is usually a paste "               "accident and will not match"
+    if any(c in v for c in (chr(10), chr(13), chr(9))):
+        return "contains a line break - the paste picked up more than the value"
+    if low.startswith(("cd ", "docker ", "sudo ", "curl ", "git ", "python ",
+                       "export ", "root@", "$ ")):
+        return "looks like a shell command that was pasted into the field, "                "not a credential"
+    if n.endswith("_KEY") or n.endswith("_TOKEN") or n.endswith("_SECRET"):
+        if " " in v:
+            return "contains a space — API keys never do, so this is a pasted "                    "command or a truncated copy"
+        if n == "IMAGE_API_KEY":
+            if v.startswith("sk-ant-"):
+                return "is an Anthropic key. Anthropic has no image API — "                        "this slot needs an OpenAI key beginning sk-"
+            if not v.startswith("sk-"):
+                return "does not begin with sk-, so it is not an OpenAI key"
+    if n == "IMAGE_PROVIDER":
+        if _norm_provider(v) not in ("openai", "custom"):
+            return "is not a provider this engine knows. Use 'openai', or set "                    "IMAGE_API_URL as well for a custom endpoint"
+        if _norm_provider(v) != low:
+            return "" if _norm_provider(v) == "openai" else ""
+    return ""
+
+
+def _norm_provider(v: str) -> str:
+    """'Open AI', 'open ai', 'OPENAI ' all mean openai.
+
+    The raw .lower() comparison meant one stray space silently routed image
+    generation into a dead branch."""
+    x = "".join(ch for ch in str(v or "").lower() if ch.isalnum())
+    return "openai" if x in ("openai", "oai", "gpt") else (x or "openai")
+
+
 def last_image_error() -> str:
     """Why the most recent generate_image() call produced nothing, in the
     provider's own words. Empty when the last call succeeded."""
@@ -2708,7 +2756,12 @@ def generate_image(prompt: str, size: str = "1024x1024") -> str:
             "IMAGE_API_KEY holds an Anthropic key (sk-ant-). Anthropic has no "
             "image API - this slot needs an OpenAI key.")
         return ""
-    provider = _env("IMAGE_PROVIDER", "openai").lower()
+    _bad = credential_problem("IMAGE_API_KEY", key)
+    if _bad:
+        _LAST_IMAGE_ERROR.set(f"IMAGE_API_KEY {_bad}")
+        return ""
+    _raw_provider = _env("IMAGE_PROVIDER", "openai")
+    provider = _norm_provider(_raw_provider)
     _cap = {}
     img_bytes, transient_url = b"", ""
     if provider == "openai":
@@ -2727,6 +2780,15 @@ def generate_image(prompt: str, size: str = "1024x1024") -> str:
                 img_bytes = b""
     else:
         url = _env("IMAGE_API_URL")
+        if not url:
+            # THE LIE THIS REPLACES: the old code fell through here, made no
+            # HTTP request whatsoever, and then reported that the provider had
+            # "accepted the request and returned no image data".
+            _LAST_IMAGE_ERROR.set(
+                f"IMAGE_PROVIDER is set to '{_raw_provider}', which is not a "
+                f"provider this engine knows, and IMAGE_API_URL is empty — so "
+                f"NO request was sent. Set IMAGE_PROVIDER to 'openai'.")
+            return ""
         if url:
             j = _post_json(url, {"prompt": prompt, "size": size},
                            headers={"Authorization": f"Bearer {key}"},

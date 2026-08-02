@@ -52,10 +52,24 @@ def live_test() -> int:
     print(f"model    : {C._env('IMAGE_MODEL', 'gpt-image-1')}  "
           f"(unset means gpt-image-1)")
     print(f"key      : {'set, ' + str(len(key)) + ' chars, starts ' + key[:7] + ', from ' + src if key else 'NOT SET'}")
-    if key.startswith("sk-ant-"):
+    # CHECK THE VALUES BEFORE SPENDING A CALL ON THEM. IMAGE_PROVIDER was
+    # saved as "open ai" with a space, which matched no branch, so the engine
+    # made no request at all and then reported that a provider had answered.
+    problems = []
+    for fld in ("IMAGE_PROVIDER", "IMAGE_API_KEY", "IMAGE_MODEL"):
+        bad = C.credential_problem(fld, C._env(fld))
+        if bad:
+            problems.append(f"{fld} {bad}")
+    raw_prov = C._env("IMAGE_PROVIDER", "openai")
+    if raw_prov and C._norm_provider(raw_prov) != raw_prov.strip().lower():
+        print(f"note     : IMAGE_PROVIDER is stored as {raw_prov!r}; the engine "
+              f"now reads that as '{C._norm_provider(raw_prov)}'. Before this "
+              f"fix a stray space here silently sent zero requests.")
+    if problems:
         print()
-        print("!! That is an Anthropic key. Anthropic has no image API — this "
-              "slot needs an OpenAI key. Every call 401s.")
+        print("!! Fix these on the Connect board before testing:")
+        for pr in problems:
+            print(f"   - {pr}")
         return 1
     if not key:
         print()

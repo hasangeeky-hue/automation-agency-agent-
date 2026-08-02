@@ -447,12 +447,24 @@ def api_connect(values: dict) -> dict:
         return {"error": "this store can't save credentials"}
     import content_engine_connectors as C
     allowed = set(C.CONNECTOR_ENV_KEYS)
-    saved = []
+    saved, warnings = [], []
     for k, v in (values or {}).items():
         if k in allowed and v not in (None, ""):
-            store.set_setting(k, str(v))
+            val = str(v).strip()          # a trailing space is always a paste slip
+            store.set_setting(k, val)
             saved.append(k)
-    return {"saved": saved, "status": C.status()}
+            # SAVE IT, THEN SAY WHAT LOOKS WRONG. Never block: a validator that
+            # refuses a key it does not recognise is a worse failure than one
+            # that warns. The board saved IMAGE_PROVIDER as "open ai" and
+            # IMAGE_API_KEY as a pasted shell command, in silence, and the
+            # engine then spent days reporting that a provider had answered.
+            try:
+                bad = C.credential_problem(k, val)
+            except Exception:
+                bad = ""
+            if bad:
+                warnings.append(f"{k} {bad}")
+    return {"saved": saved, "warnings": warnings, "status": C.status()}
 
 
 def api_disconnect(keys) -> dict:
