@@ -34,7 +34,38 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone, timedelta
 from typing import Callable, Optional
 
-from content_engine_providers import build_prompt, call_provider
+from content_engine_providers import (build_prompt, call_provider,
+                                      OutputTruncated)
+
+# How much more room a truncated skill gets on its retry, and the hard stop.
+# A ceiling is not a reservation - unused tokens cost nothing - so the only
+# real limit is the model's own maximum.
+_CEILING_GROWTH = 2.0
+_CEILING_CAP = 16000
+
+
+def _grow_ceiling(spec) -> bool:
+    """Give a truncated skill more room for its retry. True if it grew.
+
+    The retry loop used to re-send the identical request with the identical
+    ceiling, which truncates identically. This is what makes the retry mean
+    something."""
+    try:
+        now = int(getattr(spec, "max_tokens", 0) or 0)
+    except Exception:
+        return False
+    if now <= 0 or now >= _CEILING_CAP:
+        return False
+    bigger = min(_CEILING_CAP, int(now * _CEILING_GROWTH))
+    if bigger <= now:
+        return False
+    try:
+        spec.max_tokens = bigger
+    except Exception:
+        return False                      # frozen spec: cannot grow, say so
+    log.warning("%s truncated at %d tokens; retrying with %d",
+                getattr(spec, "skill_name", "?"), now, bigger)
+    return True
 from content_engine_schemas import SCHEMAS
 from content_engine_prep import prepare_input
 from content_engine_learning import record_cycle
@@ -562,6 +593,18 @@ def run_llm_skill(job: dict, skill: str, store: JobStore) -> tuple[dict, float]:
     if engine == "code":
         engine = route.get("narrate") or route.get("label") or CHEAP_MODEL
     models = [engine, route.get("fallback")]
+    # WHY THIS LOOP LOOKS LIKE THIS NOW.
+    #
+    # OutputTruncated was raised by call_provider and caught by nobody, so it
+    # flew straight past this retry machinery - the loop existed and truncation
+    # never reached it. And a retry that re-sends the identical request with the
+    # identical ceiling truncates identically, so catching it alone would have
+    # changed nothing. A truncation is RECOVERABLE INFORMATION: it says exactly
+    # what went wrong and exactly what to change. Grow the ceiling and go again.
+    #
+    # Raising max_tokens costs nothing unless the tokens are used - it is a
+    # ceiling, not a reservation.
+    last_why, attempts = [], 0
     for model in models:
         if not model:
             break
@@ -569,14 +612,27 @@ def run_llm_skill(job: dict, skill: str, store: JobStore) -> tuple[dict, float]:
             reason = over_budget(job, store)
             if reason:
                 raise BudgetExceeded(f"{job['job_id']}: {reason}")
-            result = call_provider(model, spec)
+            attempts += 1
+            try:
+                result = call_provider(model, spec)
+            except OutputTruncated as e:
+                last_why = [str(e)[:180]]
+                if _grow_ceiling(spec):
+                    continue          # same model, more room
+                raise                 # already at the cap: report it honestly
             total_cost += result.cost_usd
-            ok, _ = schema.validate(result.data) if schema else (True, [])
+            ok, errs = schema.validate(result.data) if schema else (True, [])
             if ok and "error" not in result.data:
                 _stamp_run(job, skill, model)   # S7 version stamp
                 return result.data, total_cost
-            # invalid shape or model returned the {"error":...} escape -> retry/escalate
-    raise SkillFailed(f"{skill}: no model produced a valid result")
+            # invalid shape or the {"error":...} escape -> retry/escalate.
+            # KEEP the reason: this used to be , so every failure
+            # reported "no model produced a valid result" and nothing else.
+            last_why = [str(x)[:120] for x in (errs or [])][:3] or                 [str(result.data.get("error", ""))[:180]] or ["unknown"]
+    raise SkillFailed(
+        f"{skill}: no model produced a valid result after {attempts} "
+        f"attempt(s) across {len([m for m in models if m])} model(s). "
+        f"Last problem: {'; '.join(last_why) or 'not recorded'}")
 
 
 # Indirection so tests can stub the LLM layer without touching providers.

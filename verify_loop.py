@@ -193,3 +193,58 @@ if FAILS:
 print("THE LOOP IS CLOSED — measured outcomes reach the steps that learn, an "
       "unmeasurable outcome states why and costs nothing, and a poor piece "
       "earns a proposal that still waits for a person.")
+
+
+# ===========================================================================
+# A TRUNCATION MUST BE RECOVERABLE, AND A FAILURE MUST SAY WHY.
+#
+# OutputTruncated was raised by call_provider and caught by nobody, so it flew
+# past the retry loop entirely - the machinery existed and truncation never
+# reached it. Five pieces died this way on 2026-08-02 alone. And every failure
+# reported "no model produced a valid result" because the validation errors
+# were thrown away at `ok, _ = schema.validate(...)`.
+# ===========================================================================
+def _verify_truncation_recovery():
+    import content_engine_orchestrator as _O
+    import content_engine_providers as _P
+    out = []
+
+    class _Spec:
+        def __init__(self, n=2000):
+            self.max_tokens, self.skill_name = n, "content_strategist"
+
+    sp = _Spec()
+    out.append((_O._grow_ceiling(sp) and sp.max_tokens > 2000,
+                "a truncated skill gets MORE room on its retry",
+                "a retry that re-sends the identical ceiling truncates "
+                "identically"))
+    big = _Spec(_O._CEILING_CAP)
+    out.append((_O._grow_ceiling(big) is False,
+                "growth stops at the cap instead of looping for ever", ""))
+
+    src = open("content_engine_orchestrator.py", encoding="utf-8").read()
+    out.append(("except OutputTruncated" in src,
+                "the retry loop actually CATCHES truncation",
+                "it was raised past the loop that existed to handle it"))
+    out.append(("ok, _ = schema.validate" not in src,
+                "validation errors are kept, not discarded",
+                "this is why every failure said only 'no valid result'"))
+    out.append(("Last problem:" in src,
+                "and the failure message carries them", ""))
+
+    for skill in ("content_strategist", "qa_compliance"):
+        n = _P._MAX_TOKENS.get(skill, 0)
+        out.append((n >= 2400, f"{skill} ceiling is {n}",
+                    "it truncated in production at its previous value"))
+    return out
+
+
+if __name__ == "__main__":
+    print("\n== truncation recovery ==")
+    _bad = 0
+    for ok, label, detail in _verify_truncation_recovery():
+        print(("  OK   " if ok else "  FAIL ") + label
+              + (f" — {detail}" if detail else ""))
+        _bad += 0 if ok else 1
+    if _bad:
+        raise SystemExit(f"{_bad} truncation-recovery check(s) failed")

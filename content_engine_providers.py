@@ -95,10 +95,10 @@ _MAX_TOKENS = {
     "site_intelligence": 1700,   # 5 issues x 4 prose fields + wins
     "authority_backlinks": 1700,  # shares the same narrate shape
     "competitor_intel": 3900,
-    "content_strategist": 2150,
+    "content_strategist": 4000,
     "content_producer_image": 500,
     "seo_optimizer": 1650,
-    "qa_compliance": 1500,
+    "qa_compliance": 2400,
     "analytics_funnel": 650,
     "optimizer": 2450,
     "segmenter": 1100,
@@ -651,7 +651,11 @@ if __name__ == "__main__":
         # assertion was left on the OLD 60/lead formula when the qualifier
         # gained its business/pain/offer fields — stale test, not a bug.)
         "lead_qualifier": max(400, 140 * 2 + 150),
-        "qa_compliance": 1500,
+        # Raised from 1500 on 2026-08-02: qa_compliance truncated in
+        # production that morning. A ceiling is not a reservation — unused
+        # tokens cost nothing — so the old number bought nothing and killed
+        # three pieces.
+        "qa_compliance": 2400,
         "outreach_copy": 1150,
     }
     for skill, expected in checks.items():
