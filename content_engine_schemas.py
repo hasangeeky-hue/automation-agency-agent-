@@ -712,8 +712,27 @@ class Schema:
             # Try the escape object before failing.
             if not list(self._err.iter_errors(obj)):
                 return True, []  # valid {"error": ...} — wrapper branches on it
-            return False, [f"{self.name}: {e.message} at /{'/'.join(map(str, e.path))}"
-                           for e in errs]
+            # LEAD WITH THE DIAGNOSIS, NOT THE DATA.
+            #
+            # jsonschema's e.message begins with the offending instance and
+            # ends with the rule: "['SBA 2025 Productivity Report...', 'HBR/MIT
+            # ...'] is not of type 'string'". Formatted this way the field path
+            # and the rule land at the END of a long string, so every clip
+            # downstream destroys exactly the part that matters. A qa_compliance
+            # failure reached the operator as 120 characters of echoed research
+            # citations and no statement of what was wrong — through three
+            # separate truncations, none of which were themselves the bug.
+            #
+            # Path and rule first; the data last, where clipping it is harmless.
+            out = []
+            for e in errs:
+                path = "/".join(map(str, e.path)) or "(root)"
+                got = str(getattr(e, "instance", ""))
+                if len(got) > 80:
+                    got = got[:77] + "..."
+                out.append(f"{self.name}: /{path} failed '{e.validator}' — "
+                           f"{e.validator_value!r} required, got {got}")
+            return False, out
 
         # ---- lightweight fallback (no jsonschema installed) ----
         if "error" in obj and isinstance(obj["error"], str):

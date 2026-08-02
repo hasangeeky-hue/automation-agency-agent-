@@ -628,7 +628,7 @@ def run_llm_skill(job: dict, skill: str, store: JobStore) -> tuple[dict, float]:
             # invalid shape or the {"error":...} escape -> retry/escalate.
             # KEEP the reason: this used to be , so every failure
             # reported "no model produced a valid result" and nothing else.
-            last_why = [str(x)[:120] for x in (errs or [])][:3] or                 [str(result.data.get("error", ""))[:180]] or ["unknown"]
+            last_why = [str(x)[:260] for x in (errs or [])][:3] or                 [str(result.data.get("error", ""))[:180]] or ["unknown"]
     raise SkillFailed(
         f"{skill}: no model produced a valid result after {attempts} "
         f"attempt(s) across {len([m for m in models if m])} model(s). "
