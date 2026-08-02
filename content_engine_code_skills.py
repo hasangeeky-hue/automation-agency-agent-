@@ -118,11 +118,16 @@ def authority_backlinks(job: dict) -> dict:
 # ---------------------------------------------------------------------------
 def _target_channels(job: dict) -> list:
     """Where to publish this piece. Defaults to the website only (preserves prior
-    behavior); set payload.config.deploy_channels to fan out, e.g.
-    ["wordpress", "linkedin", "twitter"]."""
+    behaviour); set payload.config.deploy_channels to fan out, e.g.
+    ["website", "linkedin", "twitter"].
+
+    Names are CANONICALISED first. This used to return whatever string the job
+    carried, compared it against a hand-written CMS list, and handed anything
+    else to the social poster - so "website", the name every board displays,
+    was posted as if it were a social network."""
+    import content_engine_site_taxonomy as _T
     cfg = job.get("payload", {}).get("config", {}) or {}
-    channels = cfg.get("deploy_channels") or ["wordpress"]
-    return [str(c).lower() for c in channels]
+    return _T.channels_of(cfg)
 
 
 def publisher(job: dict) -> dict:
@@ -133,15 +138,16 @@ def publisher(job: dict) -> dict:
 
     refs: dict[str, str] = {}
     for ch in _target_channels(job):
-        if ch in ("wordpress", "cms", "web", "blog"):
+        import content_engine_site_taxonomy as _T
+        if _T.is_website(ch):
             refs[ch] = PUBLISH_FN(job, piece) if PUBLISH_FN else f"pub_{job['job_id']}"
         else:
             refs[ch] = (SOCIAL_FN(job, piece, ch) if SOCIAL_FN
                         else f"social_{ch}_{job['job_id']}")
 
     # Primary ref = the CMS/web post if there is one, else the first channel.
-    primary = (refs.get("wordpress") or refs.get("cms") or refs.get("web")
-               or refs.get("blog") or next(iter(refs.values()), f"pub_{job['job_id']}"))
+    primary = (refs.get("website")
+               or next(iter(refs.values()), f"pub_{job['job_id']}"))
     payload["published_ref"] = primary
     payload["published_refs"] = refs
     return {"published_ref": primary, "channels": refs}

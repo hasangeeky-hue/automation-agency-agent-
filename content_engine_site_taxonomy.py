@@ -128,6 +128,59 @@ def wants_image(kind: str) -> bool:
     return str(kind or "blog").strip().lower() not in NO_IMAGE_TYPES
 
 
+# ===========================================================================
+# THE ONE CHANNEL VOCABULARY.
+#
+# The publisher's CMS branch accepted (wordpress, cms, web, blog). The preview
+# and image-rule layer used PLATFORMS, keyed (website, linkedin, instagram,
+# twitter, facebook, youtube). THOSE TWO LISTS SHARED NOTHING.
+#
+# So a job carrying deploy_channels=["website"] - the name every board shows -
+# missed the CMS branch entirely and was handed to the SOCIAL poster as though
+# "website" were a social network. A job carrying "wordpress" published fine
+# but was invisible to every preview and image rule, which looked it up in
+# PLATFORMS and found nothing.
+#
+# Same failure as the five content-type lists, one layer out.
+# ===========================================================================
+CHANNELS = ("website", "linkedin", "instagram", "twitter", "facebook",
+            "youtube")
+
+# every other name the same channel has been called, anywhere in this codebase
+CHANNEL_ALIASES = {
+    "wordpress": "website", "cms": "website", "web": "website",
+    "blog": "website", "wp": "website", "site": "website",
+    "x": "twitter", "tweet": "twitter",
+    "ig": "instagram", "meta": "facebook", "fb": "facebook",
+    "yt": "youtube", "li": "linkedin",
+}
+
+DEFAULT_CHANNELS = ("website",)
+
+
+def channel(name: str) -> str:
+    """The canonical name for a channel. Unknown names pass through unchanged
+    so a typo is visible rather than silently becoming the website."""
+    n = str(name or "").strip().lower()
+    return CHANNEL_ALIASES.get(n, n)
+
+
+def is_website(name: str) -> bool:
+    """Does this channel mean the WordPress site?"""
+    return channel(name) == "website"
+
+
+def channels_of(cfg: dict) -> list:
+    """The canonical channel list for a job config, defaulted and de-duped."""
+    raw = (cfg or {}).get("deploy_channels") or list(DEFAULT_CHANNELS)
+    out, seen = [], set()
+    for c in raw:
+        c = channel(c)
+        if c and c not in seen:
+            seen.add(c); out.append(c)
+    return out
+
+
 # WordPress top-level sections a piece can be routed to, by its 'kind'.
 KIND_CATEGORY = {"blog": "Blog", "guide": "Guides", "service": "Services",
                  "social_carousel": "Blog", "reel": "Blog", "email": "Blog"}

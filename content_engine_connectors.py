@@ -108,6 +108,9 @@ def set_settings_provider(fn) -> None:
 KEY_ALIASES = {
     "IMAGE_API_KEY": ("OPENAI_API_KEY", "OPENAI_KEY"),
     "IMAGE_MODEL": ("OPENAI_IMAGE_MODEL",),
+    # NOT LINKEDIN_API_KEY - that one feeds Prospeo lead sourcing and
+    # aliasing it here would quietly break a different wire to fix this one.
+    "LINKEDIN_POST_TOKEN": ("LINKEDIN_ACCESS_TOKEN", "LINKEDIN_OAUTH_TOKEN"),
 }
 
 _SHADOWED = {}          # name -> why the stored value was ignored

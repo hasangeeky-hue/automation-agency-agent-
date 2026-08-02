@@ -122,6 +122,25 @@ chk("_IMAGE_TIMEOUT" in _gi, "generate_image actually uses it",
     "defining a longer timeout and not passing it is the same as not "
     "having one")
 
+print("== the credential map must name fields that really exist ==")
+import credentials as _CR
+_all = set(_C.CONNECTOR_ENV_KEYS)
+for _wk, _w in _CR.WIRES.items():
+    for _n in _w["needs"]:
+        chk(_n in _all, f"{_wk}: {_n} is a real field",
+            "the map would tell you to set a field the engine never reads")
+    for _n in _w["confused_with"]:
+        chk(_n in _all, f"{_wk}: {_n} (the confusable) is a real field")
+chk("LINKEDIN_API_KEY" in _CR.WIRES["linkedin"]["confused_with"],
+    "LINKEDIN_API_KEY is flagged as NOT the posting token",
+    "it reads as the obvious field and feeds Prospeo lead sourcing")
+chk("getpass" in Path("credentials.py").read_text(encoding="utf-8"),
+    "--set works for ANY field, with no echo",
+    "the no-echo path existed for one hard-coded key only")
+_crs = Path("credentials.py").read_text(encoding="utf-8")
+chk("print(val" not in _crs and "{val}" not in _crs,
+    "and never prints the value back")
+
 print()
 if FAILS:
     print(f"{len(FAILS)} DIAGNOSTIC(S) READING THE WRONG PLACE: {FAILS}")

@@ -121,6 +121,45 @@ html = F.previews({"title": "t", "body": "b"}, ["wordpress"],
 chk("BECAUSE-X" in html, "the reason survives all the way into the HTML",
     "this is the assertion that would have caught the whole bug")
 
+print("\n== 9. the publisher and the boards mean the same thing by a CHANNEL ==")
+import content_engine_code_skills as CS
+
+chk(all(k in T.CHANNELS for k in F.PLATFORMS),
+    "every PLATFORMS key is a canonical channel", ", ".join(F.PLATFORMS))
+chk(T.channel("wordpress") == "website" and T.channel("website") == "website",
+    "'wordpress' and 'website' are the same channel",
+    "these two lists shared NOTHING: a job saying 'website' was handed to the "
+    "social poster as if it were a social network")
+chk(CS._target_channels({}) == ["website"],
+    "the publisher's default is a canonical channel",
+    str(CS._target_channels({})))
+src_cs = open("content_engine_code_skills.py", encoding="utf-8").read()
+chk('"cms", "web", "blog"' not in src_cs,
+    "the publisher no longer carries its own CMS name list",
+    "a second hand-written list is how this broke")
+chk("is_website" in src_cs, "it asks the vocabulary instead")
+
+# the behaviour, not just the wiring: every alias must reach the CMS branch
+_saved = (CS.PUBLISH_FN, CS.SOCIAL_FN)
+CS.PUBLISH_FN = lambda job, piece: "WP"
+CS.SOCIAL_FN = lambda job, piece, ch: "SOC-" + ch
+try:
+    for _alias in ("website", "wordpress", "wp", "cms", "blog"):
+        _j = {"job_id": "v", "payload": {"config": {"deploy_channels": [_alias]},
+                                         "content_producer": {"title": "t"}}}
+        _r = CS.publisher(_j)
+        chk(_r["channels"].get("website") == "WP",
+            f"deploy_channels=['{_alias}'] publishes to the SITE",
+            f"went to {_r['channels']} instead" if _r["channels"].get("website")
+            != "WP" else "")
+    _j = {"job_id": "v2", "payload": {"config": {"deploy_channels": ["X", "ig"]},
+                                      "content_producer": {"title": "t"}}}
+    _r = CS.publisher(_j)
+    chk(set(_r["channels"]) == {"twitter", "instagram"},
+        "social aliases route to the social poster", str(_r["channels"]))
+finally:
+    CS.PUBLISH_FN, CS.SOCIAL_FN = _saved
+
 print()
 if FAILS:
     print(f"{len(FAILS)} VOCABULARY BREAK(S): {FAILS}")

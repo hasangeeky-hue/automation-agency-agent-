@@ -273,7 +273,7 @@ def strategy_brief(store=None, seo=None, bi=None, outreach=None, sga=None,
 # ======================================================================
 def image_needed(piece_type="blog", channels=None) -> dict:
     """Which channels in this piece REQUIRE a visual to publish at all."""
-    chans = [_s(c).lower() for c in _L(channels)] or ["website"]
+    chans = [_TAX.channel(c) for c in _L(channels)] or ["website"]
     required = [c for c in chans if _D(PLATFORMS.get(c)).get("image_required")]
     wanted = [c for c in chans if c in PLATFORMS and c != "website"]
     return {"channels": chans, "required_by": required,
