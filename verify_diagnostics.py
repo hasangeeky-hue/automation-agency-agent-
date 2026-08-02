@@ -107,6 +107,21 @@ chk("OPENAI_API_KEY" in _C.KEY_ALIASES.get("IMAGE_API_KEY", ()),
     "IMAGE_API_KEY accepts the name everyone actually uses",
     "IMAGE_API_KEY is an invention of this engine; OPENAI_API_KEY is not")
 
+print("== a slow job must not inherit a fast job's timeout ==")
+chk(_C._IMAGE_TIMEOUT > _C._HTTP_TIMEOUT,
+    f"image generation gets its own budget ({_C._IMAGE_TIMEOUT:.0f}s vs "
+    f"{_C._HTTP_TIMEOUT:.0f}s for lookups)",
+    "one number for a status check and for drawing a picture is a claim "
+    "about duration that is simply false")
+chk(_C._IMAGE_TIMEOUT >= 60,
+    "and it is long enough for gpt-image-1 (30-90s typical)",
+    f"{_C._IMAGE_TIMEOUT:.0f}s would fail on every successful generation")
+_src = Path("content_engine_connectors.py").read_text(encoding="utf-8")
+_gi = _src[_src.index("def generate_image"):][:3000]
+chk("_IMAGE_TIMEOUT" in _gi, "generate_image actually uses it",
+    "defining a longer timeout and not passing it is the same as not "
+    "having one")
+
 print()
 if FAILS:
     print(f"{len(FAILS)} DIAGNOSTIC(S) READING THE WRONG PLACE: {FAILS}")

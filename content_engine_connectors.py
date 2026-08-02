@@ -68,6 +68,13 @@ log = logging.getLogger("connectors")
 
 # Sensible timeouts so a slow endpoint never hangs the worker.
 _HTTP_TIMEOUT = float(os.getenv("CONNECTOR_HTTP_TIMEOUT", "20"))
+# Image GENERATION is not an API lookup. gpt-image-1 routinely takes 30-90
+# seconds to draw a picture, and the 20-second connector timeout above was
+# applied to it unchanged - so the call could never have succeeded, whatever
+# key was in the slot. A timeout is a claim about how long the work takes;
+# using one number for a status check and for drawing an image was that claim
+# being wrong by a factor of four.
+_IMAGE_TIMEOUT = float(os.getenv("IMAGE_TIMEOUT_S", "180"))
 _UA = "AnthroposContentEngine/1.0 (+https://anthropos-automation.com)"
 
 
@@ -606,7 +613,7 @@ def _get_json(url: str, headers: Optional[dict] = None, params: Optional[dict] =
 
 
 def _post_json(url: str, payload: dict, headers: Optional[dict] = None,
-               capture: Optional[dict] = None):
+               capture: Optional[dict] = None, timeout: Optional[float] = None):
     """POST and return the parsed JSON, or None.
 
     `capture` is filled with what actually went wrong: the HTTP status and the
@@ -622,7 +629,7 @@ def _post_json(url: str, payload: dict, headers: Optional[dict] = None,
         return None
     try:
         r = rq.post(url, headers={**{"User-Agent": _UA}, **(headers or {})},
-                    json=payload, timeout=_HTTP_TIMEOUT)
+                    json=payload, timeout=(timeout or _HTTP_TIMEOUT))
         if capture is not None:
             capture["status"] = r.status_code
         if not r.ok:
@@ -2868,7 +2875,8 @@ def generate_image(prompt: str, size: str = "1024x1024") -> str:
         j = _post_json("https://api.openai.com/v1/images/generations",
                        {"model": _env("IMAGE_MODEL", "gpt-image-1"), "prompt": prompt,
                         "size": size, "n": 1},
-                       headers={"Authorization": f"Bearer {key}"}, capture=_cap)
+                       headers={"Authorization": f"Bearer {key}"}, capture=_cap,
+                       timeout=_IMAGE_TIMEOUT)
         d = (j.get("data") or [{}])[0] if j else {}
         transient_url = d.get("url") or ""
         b64 = d.get("b64_json") or ""
@@ -2892,11 +2900,11 @@ def generate_image(prompt: str, size: str = "1024x1024") -> str:
         if url:
             j = _post_json(url, {"prompt": prompt, "size": size},
                            headers={"Authorization": f"Bearer {key}"},
-                           capture=_cap)
+                           capture=_cap, timeout=_IMAGE_TIMEOUT)
             transient_url = (j or {}).get("url", "") if j else ""
     if transient_url and not img_bytes:      # download so we can host it durably
         try:
-            r = rq.get(transient_url, timeout=_HTTP_TIMEOUT)
+            r = rq.get(transient_url, timeout=_IMAGE_TIMEOUT)
             if r.ok:
                 img_bytes = r.content
         except Exception:

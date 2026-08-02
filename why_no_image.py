@@ -103,7 +103,17 @@ def live_test() -> int:
     print(f"    {C.last_image_error()}")
     print()
     why = C.last_image_error().lower()
-    if "verif" in why:
+    if "timeout" in why or "timed out" in why:
+        print(f"The call was made and the answer did not come back in time. "
+              f"The image budget is currently {C._IMAGE_TIMEOUT:.0f}s "
+              f"(IMAGE_TIMEOUT_S); ordinary API lookups get "
+              f"{C._HTTP_TIMEOUT:.0f}s. Drawing an image takes 30-90s, so if "
+              f"this timed out well under 30s the two budgets have not been "
+              f"separated on this container — rebuild with --build.")
+        print("NOTE: a timeout is on OUR side. OpenAI may have generated the "
+              "image anyway and billed for it. Check your usage before "
+              "retrying many times.")
+    elif "verif" in why:
         print("gpt-image-1 needs your OpenAI ORGANISATION verified. Either "
               "verify it at platform.openai.com/settings/organization/general, "
               "or set IMAGE_MODEL=dall-e-3 on the Connect board — dall-e-3 "
