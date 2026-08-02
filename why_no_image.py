@@ -166,11 +166,73 @@ def audit_all() -> int:
     return 1
 
 
+def find_key() -> int:
+    """WHERE IS THE OPENAI KEY. Scans every setting and every environment
+    variable for an OpenAI-shaped value and reports the NAMES it found them
+    under. Never prints a value, or any part of one.
+
+    "I already added it properly" is usually true. IMAGE_API_KEY is a name
+    this engine invented; anyone holding an OpenAI key calls it
+    OPENAI_API_KEY. Looking under one name and declaring the key missing was
+    my error, not a data-entry mistake."""
+    import os
+    import content_engine_api as API
+    import content_engine_connectors as C
+    API.get_store()
+
+    def openai_shaped(v):
+        v = (v or "").strip()
+        return v.startswith("sk-") and " " not in v and len(v) > 20
+
+    hits = []
+    for k in sorted(set(C.CONNECTOR_ENV_KEYS)):
+        try:
+            if C._SETTINGS_GET and openai_shaped(str(C._SETTINGS_GET(k) or "")):
+                hits.append((k, "the Connect board (database)"))
+        except Exception:
+            pass
+    for k, v in sorted(os.environ.items()):
+        if openai_shaped(v):
+            hits.append((k, "the environment (deploy/.env)"))
+
+    print("Scanning every setting and every environment variable for a value "
+          "shaped like an OpenAI key (starts sk-, no spaces).")
+    print()
+    if not hits:
+        print("NOT FOUND. There is no OpenAI-shaped value anywhere the engine "
+              "can see — not under IMAGE_API_KEY, not under OPENAI_API_KEY, "
+              "not under any other name, in either the database or "
+              "deploy/.env.")
+        print()
+        print("That means the key has not reached this container. If you saved "
+              "it on the Connect board, check it landed in the IMAGE_API_KEY "
+              "field and not another one. If you put it in deploy/.env, the "
+              "container needs `up -d` to pick the file up.")
+        return 1
+    print(f"FOUND {len(hits)}:")
+    for name, where in hits:
+        used = " <- the image generator uses this" if name in (
+            "IMAGE_API_KEY", "OPENAI_API_KEY", "OPENAI_KEY") else ""
+        print(f"  {name:<28} in {where}{used}")
+    print()
+    usable = [h for h in hits if h[0] in ("IMAGE_API_KEY", "OPENAI_API_KEY",
+                                          "OPENAI_KEY")]
+    if usable:
+        print("The engine can reach one. Run --test to make a real call.")
+        return 0
+    print("None of these are in a name the image generator reads. Copy the "
+          "value from one of the fields above into IMAGE_API_KEY on the "
+          "Connect board, or rename it in deploy/.env.")
+    return 1
+
+
 def main() -> int:
     if "--test" in sys.argv:
         return live_test()
     if "--audit" in sys.argv:
         return audit_all()
+    if "--find" in sys.argv:
+        return find_key()
     import content_engine_api as API
 
     store = API.get_store()

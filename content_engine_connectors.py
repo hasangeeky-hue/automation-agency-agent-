@@ -94,7 +94,17 @@ def set_settings_provider(fn) -> None:
     _SETTINGS_GET = fn
 
 
+# The SAME secret under a different, equally reasonable name. IMAGE_API_KEY
+# is an invention of this engine; anyone holding an OpenAI key calls it
+# OPENAI_API_KEY, and putting it there was never unreasonable. Falling back
+# costs nothing and removes a whole category of "I already added it".
+KEY_ALIASES = {
+    "IMAGE_API_KEY": ("OPENAI_API_KEY", "OPENAI_KEY"),
+    "IMAGE_MODEL": ("OPENAI_IMAGE_MODEL",),
+}
+
 _SHADOWED = {}          # name -> why the stored value was ignored
+_ALIASED = {}           # name -> the alternative name it was found under
 
 
 def _env(name: str, default: str = "") -> str:
@@ -133,7 +143,34 @@ def _env(name: str, default: str = "") -> str:
                     return ev
         _SHADOWED.pop(name, None)
         return sv
-    return (str(os.getenv(name, default) or "")).strip()
+    ev = (str(os.getenv(name, "") or "")).strip()
+    if ev:
+        return ev
+    # nothing under this name anywhere - try the names the same secret is
+    # commonly stored under before giving up and calling it missing
+    for alt in KEY_ALIASES.get(name, ()):
+        av = ""
+        if _SETTINGS_GET is not None:
+            try:
+                av = (str(_SETTINGS_GET(alt) or "")).strip()
+            except Exception:
+                av = ""
+        av = av or (str(os.getenv(alt, "") or "")).strip()
+        if av:
+            try:
+                if credential_problem(name, av):
+                    continue
+            except Exception:
+                pass
+            _ALIASED[name] = alt
+            return av
+    return (str(default or "")).strip()
+
+
+def aliased() -> dict:
+    """Fields resolved from a differently-named twin, e.g. IMAGE_API_KEY
+    satisfied by OPENAI_API_KEY."""
+    return dict(_ALIASED)
 
 
 def shadowed() -> dict:
