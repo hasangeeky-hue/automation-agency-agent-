@@ -692,6 +692,33 @@ JUDGE = {
 # Validator wrapper: .validate(obj) -> (ok: bool, errors: list[str])
 # Accepts either the skill schema OR the SECTION 6 error object.
 # ---------------------------------------------------------------------------
+def _trim_to_max(obj, schema, depth=0) -> bool:
+    """Cut any array longer than its maxItems, in place. True if anything was cut.
+
+    Walks the schema, not the data, so it only ever touches arrays the schema
+    actually caps. Mutating the object is deliberate: the trimmed value is what
+    gets stored and shown, so what you approve is what was validated."""
+    if depth > 8 or not isinstance(schema, dict) or not isinstance(obj, dict):
+        return False
+    cut = False
+    for key, sub in (schema.get("properties") or {}).items():
+        if key not in obj or not isinstance(sub, dict):
+            continue
+        val = obj[key]
+        if sub.get("type") == "array" and isinstance(val, list):
+            cap = sub.get("maxItems")
+            if isinstance(cap, int) and len(val) > cap:
+                obj[key] = val[:cap]
+                cut = True
+            item = sub.get("items")
+            if isinstance(item, dict):
+                for row in obj[key]:
+                    cut = _trim_to_max(row, item, depth + 1) or cut
+        elif isinstance(val, dict):
+            cut = _trim_to_max(val, sub, depth + 1) or cut
+    return cut
+
+
 class Schema:
     def __init__(self, name: str, schema: dict):
         self.name = name
@@ -708,6 +735,22 @@ class Schema:
         if _HAVE_JSONSCHEMA:
             errs = sorted(self._v.iter_errors(obj), key=lambda e: list(e.path))
             if not errs:
+                return True, []
+            # A LIST THAT IS ONE ITEM TOO LONG IS NOT A FAILED ANSWER.
+            #
+            # maxItems exists to bound GENERATION — it keeps the model from
+            # writing forever and blowing the token ceiling. Using it to
+            # REJECT a response that has already arrived throws away a
+            # perfectly good QA verdict because it flagged six claims instead
+            # of five, and kills the piece. That is what happened to
+            # qa_compliance: claims_check.flagged_claims caps at 5, the model
+            # returned more, and the whole result was discarded — the piece
+            # never reached the approval queue.
+            #
+            # Trim to the cap and re-check. Every other rule still applies;
+            # only over-length is forgiven, and only by dropping the surplus.
+            if _trim_to_max(obj, self.schema) and not list(
+                    self._v.iter_errors(obj)):
                 return True, []
             # Try the escape object before failing.
             if not list(self._err.iter_errors(obj)):
