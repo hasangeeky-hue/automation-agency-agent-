@@ -321,10 +321,15 @@ def image_status(status=None, image_key=None, provider=None, model=None) -> dict
 # ======================================================================
 #  ③ PREVIEWS — styled mockups, from the piece that actually publishes
 # ======================================================================
-def _shell(inner, width=520, bg="#0F1626", pad=14, radius=12):
+def _shell(inner, width=520, bg="#0F1626", pad=14, radius=12,
+           font="-apple-system,Segoe UI,Roboto,sans-serif"):
+    """A platform's chrome. `font` and `bg` exist so the WEBSITE preview can use
+    the site's OWN page background (--void) and body face (Instrument Sans)
+    instead of a panel colour and the system font — the two things that made a
+    preview of your article look like a generic card."""
     return (f"<div style='max-width:{width}px;background:{bg};border:1px solid "
             f"#1B2640;border-radius:{radius}px;padding:{pad}px;margin:6px auto;"
-            f"font-family:-apple-system,Segoe UI,Roboto,sans-serif'>{inner}</div>")
+            f"font-family:{font}'>{inner}</div>")
 
 
 def _cut(text, n):
@@ -391,29 +396,57 @@ def preview_website(piece=None, ci_text="", site="anthropos-automation.com") -> 
         else:
             blocks.append(("p", chunk))
             seen_w += len(chunk.split())
+    # THE THEME'S OWN VALUES, not a palette that merely looks similar.
+    # anthropos-design/style.css: .art h1 is --display 800 / -.02em, .art h2 is
+    # --display 21px 600 in --ink, .art p and .art ul are --muted, .art-cta is
+    # a glass band with a .btn-cta gradient button. The preview rendered
+    # headings in TEAL — a colour the article template never uses for a
+    # heading — and body in a grey that is not --muted. It looked like the
+    # brand and nothing like the page, which is why it read as a mock-up of
+    # unfinished work rather than the article.
+    # Sizes are scaled ~0.78 for the 560px card; every colour is verbatim.
+    INK, MUTED, FLOW = "#EAF0FF", "#9AA6C6", "#2FE3D2"
+    DISP = "'Sora',system-ui,sans-serif"
     parts = []
     for kind, text in blocks[:14]:
         t = _e(_plain(text)[:260])
-        if kind == "h":
-            parts.append(f"<h2 style='color:#2FE3D2;font-size:14px;"
-                         f"margin:14px 0 4px;font-weight:600'>{t}</h2>")
-        elif kind == "li":
-            parts.append(f"<p style='color:#C7D0E8;font-size:12.5px;"
-                         f"line-height:1.65;margin:2px 0 2px 14px'>• {t}</p>")
+        if kind == "h":                                  # .art h2
+            parts.append(f"<h2 style=\"font-family:{DISP};color:{INK};"
+                         f"font-size:16px;font-weight:600;margin:22px 0 0\">"
+                         f"{t}</h2>")
+        elif kind == "li":                               # .art ul
+            parts.append(f"<p style='color:{MUTED};font-size:12.5px;"
+                         f"line-height:1.65;margin:6px 0 0 18px'>• {t}</p>")
         elif kind == "q":
-            parts.append(f"<p style='color:#8E9BBE;font-size:12.5px;"
-                         f"line-height:1.6;border-left:3px solid #2FE3D2;"
-                         f"padding-left:10px;margin:8px 0'>{t}</p>")
-        else:
-            parts.append(f"<p style='color:#C7D0E8;font-size:12.5px;"
-                         f"line-height:1.65'>{t}</p>")
-    inner = (f"<div style='color:#8E9BBE;font-size:10px;letter-spacing:.14em'>"
+            parts.append(f"<p style='color:{MUTED};font-size:12.5px;"
+                         f"line-height:1.6;border-left:2px solid {FLOW};"
+                         f"padding-left:10px;margin:12px 0 0'>{t}</p>")
+        else:                                            # .art p
+            parts.append(f"<p style='color:{MUTED};font-size:12.5px;"
+                         f"line-height:1.65;margin-top:12px'>{t}</p>")
+    # publish() appends this band to every piece — .art-cta + .btn-cta.
+    cta_txt = _s(p.get("cta_text"))
+    cta = ("" if not cta_txt else
+           f"<div style='margin-top:24px;border:1px solid rgba(255,255,255,.09);"
+           f"border-radius:14px;background:linear-gradient(180deg,"
+           f"rgba(255,255,255,.035),transparent);padding:16px;text-align:center'>"
+           f"<p style=\"font-family:{DISP};color:{INK};font-size:15px;"
+           f"font-weight:700\">Ready to automate this?</p>"
+           f"<p style='color:{MUTED};font-size:12px;margin-top:6px'>"
+           f"{_e(cta_txt[:120])}</p>"
+           f"<span style='display:inline-block;margin-top:10px;padding:7px 16px;"
+           f"border-radius:999px;font-size:12px;font-weight:600;color:#1A0A12;"
+           f"background:linear-gradient(120deg,#FF5C8A,#FF7E5F)'>"
+           f"Book a call</span></div>")
+    inner = (f"<div style='color:#8891B8;font-size:10px;letter-spacing:.14em'>"
              f"{_e(site.upper())}</div>"
-             f"<h1 style='color:#EDF1FB;font-size:20px;line-height:1.25;margin:8px 0'>"
-             f"{_e(title)}</h1>"
+             f"<h1 style=\"font-family:{DISP};color:{INK};font-size:22px;"
+             f"font-weight:800;letter-spacing:-.02em;line-height:1.15;"
+             f"margin:10px 0 12px\">{_e(title)}</h1>"
              + _img_box(img, 1200, 630)
-             + "".join(parts))
-    return {"html": _shell(inner, 560),
+             + "".join(parts) + cta)
+    return {"html": _shell(inner, 560, bg="#080B14", pad=18,
+                           font="'Instrument Sans',system-ui,sans-serif"),
             "checks": [("Hero image", bool(img),
                         "present" if img else "missing — the article publishes flat"),
                        ("H2/H3 headings", len(heads) >= 2, f"{len(heads)} found"),
