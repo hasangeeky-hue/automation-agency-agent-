@@ -23,10 +23,43 @@ import content_engine_charts as CH   # BOS visual language (SVG, no libs)
 
 log = logging.getLogger("content_engine.dashboard")
 
-# Bumped on every deploy so the running build is VISIBLE on the page — no more
-# guessing from terminal hashes. If the badge in the top bar doesn't match this,
-# the new code isn't live yet (re-pull + rebuild).
-BUILD_TAG = ("2026-07-31 · v31 · THE CADENCE — the worker now queues the daily batch, runs the SEO engines when they are due, and drafts replies, without ever being able to publish or send. START is SUPERVISED: it no longer grants autonomy as a side effect, so nothing auto-publishes after 24h unless you deliberately choose it. Previously: THE RETURN ARROW — the engine can now find "
+def _code_fingerprint() -> str:
+    """A stamp that CHANGES when the deployed code changes. Computed, not typed.
+
+    BUILD_TAG was a hand-typed string with a comment saying it was bumped on
+    every deploy. Nothing enforced that and nobody bumped it, so the badge read
+    "2026-07-31 · v31" through a whole day of rebuilds. The operator's only
+    on-screen way to tell whether a fix had landed was a constant. That is
+    worse than no badge: it actively says "nothing changed".
+
+    Hashes the mtime+size of the engine modules, which the Dockerfile's
+    `COPY *.py ./` refreshes on every build. No git needed inside the image.
+    """
+    import hashlib
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    h = hashlib.sha1()
+    newest = 0.0
+    try:
+        for fn in sorted(os.listdir(here)):
+            if not fn.endswith(".py"):
+                continue
+            st = os.stat(os.path.join(here, fn))
+            h.update(f"{fn}:{st.st_size}:{int(st.st_mtime)}".encode())
+            newest = max(newest, st.st_mtime)
+    except Exception:
+        return "unknown"
+    from datetime import datetime, timezone
+    when = datetime.fromtimestamp(newest, timezone.utc).strftime("%Y-%m-%d %H:%M")
+    return f"{when}Z · {h.hexdigest()[:7]}"
+
+
+CODE_STAMP = _code_fingerprint()
+
+# The narrative note below is hand-written and describes intent. The STAMP
+# above is computed and is the thing to trust: if it does not change after a
+# rebuild, the new code is not running.
+BUILD_TAG = (CODE_STAMP + " · THE CADENCE — the worker now queues the daily batch, runs the SEO engines when they are due, and drafts replies, without ever being able to publish or send. START is SUPERVISED: it no longer grants autonomy as a side effect, so nothing auto-publishes after 24h unless you deliberately choose it. Previously: THE RETURN ARROW — the engine can now find "
              "out what happened. Real GA4 numbers for the exact page that was "
              "published (including conversions, which were structurally zero "
              "before), real opens and clicks per campaign, content measured at "
