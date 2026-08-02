@@ -25,11 +25,33 @@ def live_test() -> int:
     import content_engine_connectors as C
     import content_engine_site_taxonomy as T
 
+    # BIND THE SETTINGS STORE FIRST, exactly as the api and worker do.
+    # _env() reads Postgres settings, THEN os.environ. Nothing binds that
+    # reader automatically - api.py:90 and main.py:119 each call
+    # set_settings_provider at startup. The first version of this test
+    # returned before importing the api module, so the reader stayed None,
+    # _env fell through to os.environ, and it reported a key entered on the
+    # Connect board as NOT SET. The key was always fine. The test was not.
+    import content_engine_api as API
+    try:
+        API.get_store()
+    except Exception as e:
+        print(f"!! could not reach the settings store: {type(e).__name__}: {e}")
+        print("   Everything below reads OS environment only, so a key saved "
+              "on the Connect board will look missing when it is not.")
+    bound = C._SETTINGS_GET is not None
+
     key = C._env("IMAGE_API_KEY") or ""
+    src = ""
+    if key:
+        src = ("the Connect board (database)"
+               if bound and (C._SETTINGS_GET("IMAGE_API_KEY") or "")
+               else "an environment variable")
+    print(f"settings : {'connected' if bound else 'NOT CONNECTED — env only'}")
     print(f"provider : {C._env('IMAGE_PROVIDER', 'openai')}")
     print(f"model    : {C._env('IMAGE_MODEL', 'gpt-image-1')}  "
           f"(unset means gpt-image-1)")
-    print(f"key      : {'set, ' + str(len(key)) + ' chars, starts ' + key[:7] if key else 'NOT SET'}")
+    print(f"key      : {'set, ' + str(len(key)) + ' chars, starts ' + key[:7] + ', from ' + src if key else 'NOT SET'}")
     if key.startswith("sk-ant-"):
         print()
         print("!! That is an Anthropic key. Anthropic has no image API — this "
@@ -37,7 +59,15 @@ def live_test() -> int:
         return 1
     if not key:
         print()
-        print("!! Nothing to test. Add IMAGE_API_KEY on the Connect board.")
+        if not bound:
+            print("!! The settings store is not connected, so this only "
+                  "checked OS environment variables. A key saved on the "
+                  "Connect board lives in Postgres and would not show here. "
+                  "That is a fault in this test, not in your key.")
+        else:
+            print("!! The settings store IS connected and holds no "
+                  "IMAGE_API_KEY. Add it on the Connect board — it must be an "
+                  "OpenAI key; Anthropic has no image API.")
         return 1
 
     print()
