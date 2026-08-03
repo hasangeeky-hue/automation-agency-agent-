@@ -44,6 +44,17 @@ _CEILING_GROWTH = 2.0
 _CEILING_CAP = 16000
 
 
+def _supervise(skill, data, job) -> dict:
+    """Ask the supervisor whether the brief was met. Never blocks on its own
+    failure — a broken checker must not stop a good piece."""
+    try:
+        import content_engine_supervisor as SUP
+        return SUP.supervise(skill, data, job)
+    except Exception as e:
+        log.warning("supervisor unavailable for %s: %s", skill, e)
+        return {"ok": True, "failed": [], "note": ""}
+
+
 def _grow_ceiling(spec) -> bool:
     """Give a truncated skill more room for its retry. True if it grew.
 
@@ -623,8 +634,32 @@ def run_llm_skill(job: dict, skill: str, store: JobStore) -> tuple[dict, float]:
             total_cost += result.cost_usd
             ok, errs = schema.validate(result.data) if schema else (True, [])
             if ok and "error" not in result.data:
-                _stamp_run(job, skill, model)   # S7 version stamp
-                return result.data, total_cost
+                # THE SUPERVISOR. The schema says the shape is right; this asks
+                # whether the BRIEF was met — 4 sections, 4 image prompts, 650
+                # words, a CTA, the keyword. Nine skills each handed their work
+                # to the next one and nothing ever looked at it, so a blog with
+                # no images and two sections reached the founder looking
+                # finished. It counts; it never spends, publishes or sends.
+                verdict = _supervise(skill, result.data, job)
+                if verdict.get("ok"):
+                    _stamp_run(job, skill, model)   # S7 version stamp
+                    return result.data, total_cost
+                # Feed the SPECIFIC misses back in. Re-rolling the same prompt
+                # gets the same dice; telling the writer "1 of 4 sections" does
+                # not. revision_note is the existing path prepare_input already
+                # reads, so the correction reaches the prompt.
+                last_why = [f"brief not met: {', '.join(verdict['failed'])} "
+                            f"({'; '.join(verdict.get('detail', []))})"]
+                job.setdefault("payload", {})["revision_note"] = verdict["note"]
+                job["payload"]["supervisor_note"] = verdict["note"]
+                job["payload"]["supervisor_failed"] = verdict["failed"]
+                log.warning("%s: supervisor rejected attempt %d — %s",
+                            skill, attempts, ", ".join(verdict["failed"]))
+                try:                       # rebuild so the note reaches the prompt
+                    spec = build_prompt(skill, job)
+                except Exception:
+                    pass
+                continue
             # invalid shape or the {"error":...} escape -> retry/escalate.
             # KEEP the reason: this used to be , so every failure
             # reported "no model produced a valid result" and nothing else.

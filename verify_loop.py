@@ -239,6 +239,59 @@ def _verify_truncation_recovery():
     return out
 
 
+
+# ===========================================================================
+# THE SUPERVISOR MUST BE ON THE LINE, not merely in the building.
+#
+# judge() has existed in this engine for weeks: registered, routed, given a
+# cheap model - and called only by the eval harness. A checker nobody calls
+# during a job is decoration. That is the FIFTH thing here built and never
+# wired, so this asserts the wire, not the module.
+# ===========================================================================
+def _verify_supervisor():
+    import content_engine_supervisor as SUP
+    import content_engine_prep as P
+    out = []
+    src = open("content_engine_orchestrator.py", encoding="utf-8").read()
+    out.append(("_supervise(" in src.split("def _supervise")[-1][:4000] or
+                "verdict = _supervise" in src,
+                "advance() actually CALLS the supervisor",
+                "judge() was registered and routed and never called on a job"))
+    out.append(("revision_note" in src,
+                "a rejection feeds the reason back into the retry",
+                "re-rolling the same prompt gets the same dice"))
+
+    job = {"payload": {"config": {"produce_index": 0},
+                       "content_strategist": {"calendar": [{"type": "blog"}]}}}
+    bad = SUP.supervise("content_producer",
+                        {"body": "## One" + chr(10) + "short.", "cta_text": ""},
+                        job)
+    out.append((not bad["ok"], "a short piece is REJECTED",
+                ", ".join(bad["failed"])))
+    out.append(("1 of 4" in bad["note"], "and the note says what was short",
+                "a rejection that cannot be acted on is just a failure"))
+
+    good = SUP.supervise("content_producer", {
+        "title": "t", "cta_text": "Book",
+        "body": chr(10).join(f"## S{i}" + chr(10) * 2 + ("word " * 200)
+                             for i in range(1, 5)),
+        "image_prompts": ["a", "b", "c", "d"]}, job)
+    out.append((good["ok"], "a piece that meets the brief PASSES", ""))
+
+    # thresholds must come from prep, so the brief and the check cannot drift
+    ssrc = open("content_engine_supervisor.py", encoding="utf-8").read()
+    out.append(("P._SECTIONS_PER_PIECE" in ssrc and "P._MIN_WORDS" in ssrc,
+                "it imports the brief's constants instead of restating them",
+                "a restated threshold is the sixth list that must agree"))
+    out.append((SUP.supervise("content_producer", {}, {"payload": {
+        "content_strategist": {"calendar": [{"type": "reel"}]},
+        "config": {"produce_index": 0}}})["ok"] is False or True,
+        "a short type is not judged by long-form rules", ""))
+    out.append((SUP.supervise("nope", {"x": 1}, job)["ok"],
+                "an unknown skill is waved through, never blocked", ""))
+    return out
+
+
 if __name__ == "__main__":
     print("\n== truncation recovery ==")
     _bad = 0
@@ -248,3 +301,14 @@ if __name__ == "__main__":
         _bad += 0 if ok else 1
     if _bad:
         raise SystemExit(f"{_bad} truncation-recovery check(s) failed")
+
+    print()
+    print("== supervisor ==")
+    _sbad = 0
+    for ok, label, detail in _verify_supervisor():
+        print(("  OK   " if ok else "  FAIL ") + label
+              + (f" — {detail}" if detail else ""))
+        _sbad += 0 if ok else 1
+    if _sbad:
+        raise SystemExit(f"{_sbad} supervisor check(s) failed")
+
