@@ -557,6 +557,13 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
         cred_problems = _CC.credential_audit()
     except Exception:
         cred_problems = []
+    # What the section agents found on their last sweep. One store key, read
+    # here; no board computes its own health.
+    try:
+        import content_engine_agents as _AG
+        agent_findings = _AG.load_findings(store)
+    except Exception:
+        agent_findings = {}
     try:
         import content_engine_scheduler as SCH
         cadence = SCH.SEO_CADENCE
@@ -572,6 +579,7 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
     diag = diag if isinstance(diag, list) else []
     wires = SYS.wire_rows(status, diag)
     return {
+        "agent_findings": agent_findings,
         "cred_problems": cred_problems,
         "status": status, "diag": diag, "wires": wires,
         "summary": SYS.wire_summary(wires),

@@ -1990,6 +1990,28 @@ def build_app():
                                     spent_this_month=spent,
                                     note=d.get("note", ""))
 
+    @app.post("/fix/{fid}")
+    def run_one_fix(fid: str, arg: str = ""):
+        """ONE endpoint for every card-level fix.
+
+        Before this, 314 buttons posted to seven global endpoints and not one
+        card could repair its own problem. A handler per board is how a
+        codebase ends up with five capabilities that were built and never
+        wired; a registry with an import-time assertion cannot."""
+        import content_engine_fixes as FX
+        return FX.run_fix(fid, get_store(), arg)
+
+    @app.get("/fix")
+    def list_fixes():
+        """What the engine can repair, and which of those an agent may run."""
+        import content_engine_fixes as FX
+        s = FX.summary()
+        s["fixes"] = [{"id": f.id, "label": f.label, "cost": f.cost,
+                       "auto": f.auto, "reversible": f.reversible,
+                       "requires": list(f.requires), "section": f.section}
+                      for f in FX.REGISTRY.values()]
+        return s
+
     @app.post("/content/piece-image")
     def content_piece_image(job_id: str = ""):
         """Generate the hero image for a piece that has none, and ATTACH it.

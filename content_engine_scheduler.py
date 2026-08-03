@@ -264,6 +264,12 @@ def seo_auto_log(store, limit: int = 40) -> list:
 # seconds between attempts. Deliberately conservative: the SEO engines
 # self-throttle by their own per-day cadence, so checking hourly is plenty.
 CADENCE = {
+    # One section's agent per pass, round-robin through nine. At 10 minutes a
+    # full sweep of the OS takes an hour and a half and costs nothing — the
+    # sensors are pure code. Cheap enough to run often, which matters: a
+    # problem you learn about within the hour is a different thing from one
+    # you find yourself three days later.
+    "inspect": 600,
     "plan": 3600,      # queue today's work (plan_today is idempotent per day)
     "seo": 3600,       # run whichever SEO engines are due
     "replies": 900,    # DRAFT answers to inbound replies — never sends
@@ -364,6 +370,54 @@ def run_due_work(store, now=None) -> dict:
     if getset("paused", False):
         return {"skipped": "paused"}
     _seo_level = seo_auto_level(store)
+
+    # INSPECT — the fourth task. Six of the nine dashboard sections had no
+    # automatic behaviour of any kind: 1,531 of 2,227 cards were reports a
+    # person had to read and act on. One section's agent runs per cycle,
+    # round-robin, so a full sweep costs one cheap pass. Sensors are pure
+    # code, so the sweep itself spends nothing.
+    #
+    # IT RUNS ABOVE THE cadence_on GATE, ON PURPOSE.
+    # Everything below that gate is switched off when the content engine
+    # is stopped - and the engine on this box IS stopped. Inspection is
+    # read-only and free, and a stopped engine is exactly when you most
+    # need to know what is wrong with it. `paused` is still absolute:
+    # that check is above this one and nothing here runs past it.
+    _istate = cadence_state(store)
+    if _due(_istate, "inspect", now):
+        _stamp(store, _istate, "inspect", now)
+        try:
+            import content_engine_agents as AG
+            order = list(AG.AGENTS)
+            try:
+                i = int(store.get_setting("inspect_cursor", 0) or 0) % len(order)
+            except Exception:
+                i = 0
+            key = order[i]
+            try:
+                store.set_setting("inspect_cursor", (i + 1) % len(order))
+            except Exception:
+                pass
+            res = AG.inspect_one(key, store)
+            all_f = AG.load_findings(store) or {"sections": []}
+            keep = [s for s in (all_f.get("sections") or [])
+                    if isinstance(s, dict) and s.get("section") != key]
+            keep.append(res)
+            AG.save_findings(store, {
+                "at": res.get("at"), "sections": keep,
+                "total_findings": sum(len(s.get("findings") or [])
+                                      for s in keep),
+                "with_contract": len([s for s in keep
+                                      if s.get("has_contract")]),
+                "without_contract": len([s for s in keep
+                                         if not s.get("has_contract")])})
+            n = len(res.get("findings") or [])
+            log.info("cadence: inspected %s - %s finding(s)", key, n)
+            return {"ran": "inspect", "section": key, "findings": n}
+        except Exception as e:
+            log.exception("cadence: inspect failed")
+            return {"ran": "inspect", "error": f"{type(e).__name__}: {e}"}
+
     if not getset("cadence_on", False):
         # The CONTENT engine is stopped. Technical SEO can still run if it was
         # switched on separately - that is the whole point of a second switch.

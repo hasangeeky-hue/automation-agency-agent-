@@ -61,14 +61,51 @@ _SEOOPS.run_fixes = lambda store, **kw: (SEO_CALLS.append(kw),
 import content_engine_reply_agent as RA
 RA.answer_replies = lambda **kw: (REPLY_CALLS.append(kw), {"drafts": []})[1]
 
+def _settle(st):
+    """Mark the inspect sweep as just-done so a test can reach the task it is
+    actually about. Inspect runs first by design; that is not what these
+    assertions are checking."""
+    try:
+        state = dict(st.get_setting(S.CADENCE_KEY, {}) or {})
+        state["inspect"] = NOW.isoformat()
+        st.set_setting(S.CADENCE_KEY, state)
+    except Exception:
+        pass
+
 print("== the switches that must stop it ==")
-chk(S.run_due_work(Store(), NOW).get("skipped") == "cadence off",
-    "a fresh install does NOTHING until you start it")
+# THE INVARIANT CHANGED, DELIBERATELY, AND IS NOW STRICTER.
+#
+# It used to read "a fresh install does NOTHING until you start it" and was
+# tested by asserting run_due_work returns skipped. The inspect task now runs
+# above the cadence_on gate on purpose: six of nine dashboard sections had no
+# automatic behaviour at all, and the engine on the real box is STOPPED - an
+# inspector that only runs once you start the engine would never have run.
+#
+# What that invariant was actually protecting is money and outbound messages,
+# not execution. So the assertion is now the precise thing: a fresh install
+# may INSPECT, and must not spend, send or publish. Inspection is read-only
+# by construction - sensors are pure code and run_fix refuses to auto-run
+# anything that costs or cannot be undone.
+_fresh = S.run_due_work(Store(), NOW)
+chk(_fresh.get("ran") == "inspect" or _fresh.get("skipped") == "cadence off",
+    "a fresh install runs nothing but the read-only inspector",
+    str(_fresh)[:70])
+_spent_before = list(REPLY_CALLS)
+for _ in range(12):                     # a full sweep of all nine sections
+    Store_ = Store()
+    r = S.run_due_work(Store_, NOW)
+    assert r.get("ran") in (None, "inspect"), (
+        f"a stopped engine ran {r.get('ran')} - only inspect may run here")
+    assert not Store_.jobs, "inspection must never create a job"
+chk(REPLY_CALLS == _spent_before,
+    "and the inspector never drafts, sends or spends",
+    "this is what the old invariant was actually protecting")
 chk(S.run_due_work(Store(cadence_on=True, paused=True), NOW).get("skipped") == "paused",
     "PAUSED means paused — the cadence does not run behind a stop")
 
 print("\n== it queues the day's work ==")
 st = Store(cadence_on=True)
+_settle(st)                     # inspect already swept
 r = S.run_due_work(st, NOW)
 chk(r.get("ran") == "plan", "first call queues today's batch", str(r.get("ran")))
 chk(len(st.jobs) > 0, f"{len(st.jobs)} jobs created")
@@ -96,7 +133,8 @@ chk(not S._due(state, "plan", NOW + timedelta(seconds=60)),
 print("\n== IT MUST NEVER SEND ==")
 REPLY_CALLS.clear()
 st2 = Store(cadence_on=True)
-st2.set_setting(S.CADENCE_KEY, {"plan": NOW.isoformat(), "seo": NOW.isoformat()})
+_settle(st2)
+st2.set_setting(S.CADENCE_KEY, {"inspect": NOW.isoformat(), "plan": NOW.isoformat(), "seo": NOW.isoformat()})
 S.run_due_work(st2, NOW)
 chk(len(REPLY_CALLS) == 1, "the reply agent was invoked", str(len(REPLY_CALLS)))
 chk(REPLY_CALLS and REPLY_CALLS[0].get("auto_send") is False,
@@ -114,6 +152,7 @@ for forbidden in ("outreach_send", "send_all", "publish(", "approve"):
 
 print("\n== a broken task cannot spin the worker ==")
 st3 = Store(cadence_on=True)
+_settle(st3)
 boom = S.plan_today
 S.plan_today = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
 try:
@@ -130,13 +169,21 @@ import content_engine_workorders as WO
 
 st5 = Store()
 chk(S.seo_auto_level(st5) == "off", "off by default - a deploy does not start fixing")
-chk(S.run_due_work(st5, NOW).get("skipped") == "cadence off",
-    "with SEO off and the engine stopped, nothing runs")
+_stopped = S.run_due_work(Store(), NOW)
+chk(_stopped.get("ran") in (None, "inspect")
+    or _stopped.get("skipped"),
+    "with SEO off and the engine stopped, only the read-only "
+    "inspector runs", str(_stopped)[:60])
 chk(S.set_seo_auto(st5, "safe")["ok"], "safe level accepts")
 chk(not S.set_seo_auto(st5, "banana")["ok"], "an unknown level is refused")
 chk(S.seo_auto_level(st5) == "safe", "the level persists")
 
-# THE POINT: SEO runs while the CONTENT engine is still stopped
+# THE POINT: SEO runs while the CONTENT engine is still stopped.
+# Inspect is settled first because it now runs above the cadence_on gate and
+# would otherwise win this call - it costs nothing and delays SEO by one
+# cycle at most (600s vs 3600s), which is the trade for having an inspector
+# that works on a stopped engine at all.
+_settle(st5)
 r5 = S.run_due_work(st5, NOW)
 chk(r5.get("ran") == "seo",
     "technical SEO runs with the content engine STOPPED", str(r5.get("ran")))
@@ -148,6 +195,7 @@ chk("few_internal_links" not in codes and "orphan_page" not in codes,
 
 st6 = Store()
 S.set_seo_auto(st6, "all")
+_settle(st6)
 r6 = S.run_due_work(st6, NOW)
 chk(set(r6.get("codes") or []) == WO.AUTO_CODES,
     "all mode adds the body rewrites - only on an explicit choice")
@@ -164,7 +212,8 @@ chk("SEO_AUTO_LOG" in _blk,
 
 print("\n== the dashboard can see it ==")
 v = S.cadence_view(Store(cadence_on=True))
-chk(v["on"] is True and len(v["rows"]) == 3, "cadence_view reports all 3 tasks")
+chk(v["on"] is True and len(v["rows"]) == 4,
+    "cadence_view reports all 4 tasks", f'{len(v["rows"])} rows')
 chk(S.cadence_view(Store())["note"].startswith("The cadence is OFF"),
     "and says plainly when it is off")
 

@@ -172,6 +172,55 @@ def board_command(ctx) -> str:
 # ======================================================================
 #  (2) WIRES & CONNECTIONS  (24)
 # ======================================================================
+def agent_findings_cards(ctx, section) -> list:
+    """What this section's agent found, as cards that carry their own fix.
+
+    THE POINT OF THE WHOLE EXERCISE. Before this, a card could report a problem
+    and the only thing it could offer was a button to somewhere else - which is
+    how a person loses their place. A finding now arrives with the action that
+    repairs it attached, and pressing it never moves the page.
+
+    A section with a clean sweep produces ONE quiet card. A section whose agent
+    has no contract yet says exactly that, rather than implying all is well."""
+    import content_engine_fixes as FX
+    import content_engine_connectors as C
+
+    found = _D(ctx.get("agent_findings"))
+    mine = next((s for s in _L(found.get("sections"))
+                 if _D(s).get("section") == section), None)
+    if mine is None:
+        return [("Inspector", "not run yet", "no sweep recorded", "",
+                 "This section has not been inspected yet. The scheduler "
+                 "sweeps one section every ten minutes.",
+                 "agents", BLUE, "")]
+    mine = _D(mine)
+    when = str(mine.get("at", ""))[:16].replace("T", " ")
+    if not mine.get("has_contract"):
+        return [("Inspector", "no contract", "nothing checked yet", "",
+                 f"This agent runs but has no checks yet. {mine.get('note','')}"
+                 f" Writing checks against a data shape nobody verified is how "
+                 f"a report becomes confidently wrong, so it stays empty and "
+                 f"says so.",
+                 "agents", AMBER, "")]
+    fs = _L(mine.get("findings"))
+    if not fs:
+        return [("Inspector", "all clear", f"swept {when}", "",
+                 f"{mine.get('checks_run', 0)} checks ran and every one "
+                 f"passed.", "agents", GREEN, "")]
+
+    cards = []
+    for f in fs[:14]:
+        f = _D(f)
+        btn = FX.fix_button(f.get("fix_id", ""), arg=f.get("fix_arg", ""),
+                            env_get=C._env) if f.get("fix_id") else ""
+        cards.append((str(f.get("check", "finding"))[:46],
+                      "needs fixing", f"found {when}", "",
+                      str(f.get("detail", ""))[:200],
+                      "inspector", PINK if f.get("severity") == "bad" else AMBER,
+                      btn))
+    return cards
+
+
 def board_wires(ctx) -> str:
     ctx = _ctx(ctx)
     wires = ctx["wires"]
@@ -182,7 +231,9 @@ def board_wires(ctx) -> str:
                         for w in wires[:24]])
     down = [w for w in wires if not (w["live"] or w["always_on"])]
     bad = _L(ctx.get("cred_problems"))
-    cards = [
+    # THE INSPECTOR'S FINDINGS COME FIRST. A problem the agent found before you
+    # did, with the fix attached, is the whole reason this section exists.
+    cards = agent_findings_cards(ctx, "system") + [
         # A KEY THAT IS PRESENT BUT WRONG reads as connected everywhere else -
         # status() only asks whether the field is non-empty. IMAGE_API_KEY held
         # a pasted shell command for days and every board showed it green.
