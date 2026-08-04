@@ -79,6 +79,11 @@ CSS = """
 /* KEYBOARD FOCUS. There was no :focus-visible anywhere in 53KB of CSS, so a
    person tabbing through 2,227 cards could not see where they were. That is
    not a polish item, it is the difference between usable and not. */
+.navcount{float:right;min-width:18px;padding:0 5px;border-radius:9px;
+font-size:10.5px;font-weight:700;line-height:17px;text-align:center;
+background:var(--bad);color:#fff;display:none}
+.navcount.on{display:inline-block}
+.navcount.zero{background:rgba(255,255,255,.10);color:var(--mut)}
 *:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:4px}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,
 textarea:focus-visible{outline:2px solid var(--teal);outline-offset:3px}
@@ -4355,7 +4360,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     nav = "".join(
         f"<a class='navb{' act' if i==0 else ''}' id='nav-{pid}' href='#{pid}' "
         f"onclick=\"return nav('{pid}')\"><span class='ic'>{icon}</span>{_esc(short)}"
-        + ("" if pid in ("overview",) else "") + "</a>"
+        # WHERE THE WORK IS, WITHOUT OPENING ANYTHING. Filled by fillCounts()
+        # from what the inspector actually found, so it is never a guess.
+        + f"<span class='navcount' id='navcount-{pid}'></span></a>"
         for i, (pid, icon, short, title, sub, body) in enumerate(PAGES))
     pages = "".join(
         f"<section class='page{' on' if i==0 else ''}' id='sec-{pid}'><h2 class='ph'>{_esc(title)}</h2><p class='psub'>{_esc(sub)}</p>{body}</section>"
@@ -4416,7 +4423,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  + pause_btn + auto_btn + "</div></details>")
 
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
-    script = ("<script>var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi',leads:'outreach',email:'outreach',social:'sga',google:'sga',ads:'sga',mission:'cockpit',ops:'cockpit',appr:'cockpit',learn:'cockpit'};"
+    _af = (system_ctx or {}).get("agent_findings") or {}
+    _counts = {str((_s or {}).get("section")): len((_s or {}).get("findings") or [])
+               for _s in (_af.get("sections") or [])
+               if isinstance(_s, dict) and _s.get("has_contract")}
+    import json as _json
+    script = ("<script>window.AGENT_COUNTS=" + _json.dumps(_counts) + ";"
+              "var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi',leads:'outreach',email:'outreach',social:'sga',google:'sga',ads:'sga',mission:'cockpit',ops:'cockpit',appr:'cockpit',learn:'cockpit'};"
               # Every section is now ADDRESSABLE. Before this the whole dashboard lived
               # at one URL: no bookmark, no back button, no right-click "open in
               # new tab", no way to send someone a link to a board. quiet=true
@@ -4442,6 +4455,24 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               # you back to the top of the default tab. Where a reload is still
               # the right call, this remembers the tab and the scroll and puts
               # you back exactly where you were.
+              # WHERE THE WORK IS. AGENT_COUNTS is emitted from what the
+              # inspector actually found - never a guess, and absent entirely
+              # when a section has no contract yet, so an empty badge means
+              # "nothing checked" rather than "nothing wrong".
+              "var AGENTMAP={content:'content',seo:'seo',outreach:'outreach',"
+              "media:'media',bi:'bi',sga:'sga',risk:'riskinfra',"
+              "system:'system',cockpit:'cockpit'};"
+              "function fillCounts(){try{"
+              "var c=window.AGENT_COUNTS||{};"
+              "Object.keys(AGENTMAP).forEach(function(k){"
+              "var el=document.getElementById('navcount-'+AGENTMAP[k]);"
+              "if(!el)return;var v=c[k];"
+              "if(v===undefined){el.className='navcount';el.textContent='';return;}"
+              "el.textContent=v;el.className='navcount on'+(v?'':' zero');"
+              "el.title=v?(v+' thing(s) the inspector found here'):"
+              "'inspected, nothing found';});"
+              "}catch(e){}}"
+              "window.addEventListener('load',fillCounts);"
               "function keepPlace(){try{sessionStorage.setItem('_kp',"
               "JSON.stringify({h:location.hash,y:window.scrollY||0}));}"
               "catch(e){}location.reload();}"

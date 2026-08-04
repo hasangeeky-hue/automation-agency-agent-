@@ -284,6 +284,45 @@ def _f_retry_job(store, arg):
     return {"ok": True, "message": f"{arg} requeued from {prev}"}
 
 
+def _f_decline(store, arg):
+    """Send a piece back with your correction attached.
+
+    api_decline has existed the whole time and was reachable only from the
+    Cockpit - so judging a piece and acting on it happened on two different
+    screens. The note is the EDIT mechanism: prepare_input already reads
+    revision_note, so what you write here reaches the writer's next prompt."""
+    if not arg:
+        return {"ok": False, "message": "no piece named"}
+    jid, _, note = str(arg).partition("|")
+    import content_engine_api as API
+    r = API.api_decline(jid.strip(), note.strip()) or {}
+    if r.get("error"):
+        return {"ok": False, "message": str(r["error"])}
+    return {"ok": True,
+            "message": (f"sent back with your note" if note.strip()
+                        else "declined - it will not publish")}
+
+
+def _f_discard(store, arg):
+    """Take a piece out of the queue for good. Never automatic: 'delete' is in
+    NEVER_AUTO, so no agent can reach this however it is registered."""
+    if not arg or store is None:
+        return {"ok": False, "message": "no piece named"}
+    try:
+        job = store.get(str(arg).strip())
+    except Exception:
+        return {"ok": False, "message": f"no such job: {arg}"}
+    if job.get("status") == "published":
+        return {"ok": False,
+                "message": "already published - discarding here would not "
+                           "unpublish it, so this refuses rather than pretend"}
+    job["status"] = "discarded"
+    job["needs_human"] = False
+    job["halt_reason"] = "discarded by you"
+    store.save(job)
+    return {"ok": True, "message": f"{arg} taken out of the queue"}
+
+
 register("retest_wires", "Re-test every wire", _f_retest_wires,
          section="system")
 register("run_backup", "Run a backup now", _f_backup, section="risk")
@@ -293,6 +332,10 @@ register("submit_indexnow", "Submit to IndexNow", _f_indexnow, section="seo")
 register("retry_job", "Retry this job", _f_retry_job, section="content")
 register("piece_image", "Generate the image", _f_piece_image, cost=0.04,
          requires=("IMAGE_API_KEY",), section="content")
+register("decline_piece", "Send back with a note", _f_decline,
+         reversible=False, section="content")
+register("delete_piece", "Discard this piece", _f_discard,
+         reversible=False, section="content")
 
 
 # EVERY REGISTERED FIX MUST HAVE A CALLABLE HANDLER. This assertion is the

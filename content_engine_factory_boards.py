@@ -122,6 +122,25 @@ PLATFORM_META = {
 }
 
 
+def _piece_actions(ctx) -> str:
+    """Send back with a note, or discard. Both need the piece's job id, so they
+    render only when the context actually names one - a button that cannot know
+    what it acts on is worse than no button."""
+    import content_engine_fixes as FX
+    jid = str(ctx.get("piece_job_id") or "").strip()
+    if not jid:
+        return ""
+    e = _H()._esc
+    return (
+        f" <button class='cbtn' onclick=\"var n=prompt('What should change? "
+        f"This goes to the writer as your correction.');if(n===null)return;"
+        f"act('/fix/decline_piece?arg={e(jid)}|'+encodeURIComponent(n))\">"
+        f"Send back with a note</button>"
+        f" <button class='cbtn' onclick=\"if(confirm('Discard this piece? It "
+        f"leaves the queue and will not publish.'))"
+        f"act('/fix/delete_piece?arg={e(jid)}')\">Discard</button>")
+
+
 def _destination(ctx, platform) -> str:
     """WHERE THIS PIECE LANDS, AND WHAT YOU CAN DO ABOUT IT.
 
@@ -168,8 +187,14 @@ def _destination(ctx, platform) -> str:
            " <button class='cbtn' onclick='pieceImage()'>Generate the image "
            "now (&euro;0.04)</button>")
         + f" <button class='cbtn' onclick=\"nav('cfimage')\">Image settings</button>"
-        f" <button class='cbtn' onclick=\"nav('cfqa')\">See the checks</button>"
-        f"</div>")
+        # EDIT AND DELETE, on the screen where you judge the piece. api_decline
+        # has existed the whole time and was reachable only from the Cockpit,
+        # so judging and acting happened on two different screens. The note is
+        # the edit: prepare_input reads revision_note, so what you write here
+        # reaches the writer's next prompt.
+        + _piece_actions(ctx)
+        + f" <button class='cbtn' onclick=\"nav('cfqa')\">See the checks</button>"
+        + f"</div>")
 
 
 def _preview_board(platform):
