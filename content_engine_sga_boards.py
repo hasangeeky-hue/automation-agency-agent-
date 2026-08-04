@@ -346,7 +346,8 @@ def board_creative(ctx) -> str:
          "produced pieces", AMBER if _f(cr.get("text_only_rate")) > 50 else BLUE, ""),
         ("Formats in use", len(fmts), "of 5",
          _hbars([(f, n) for f, n in fmts]),
-         "Text, image, video, link, carousel.",
+         ("Text, image, video, link and carousel. Format variety matters "
+         "more than raw volume on most social platforms."),
          "produced pieces", BLUE, ""),
     ]
     cards += _slots(
@@ -430,7 +431,8 @@ def board_organic(ctx) -> str:
          "computed", BLUE, ""),
         ("Channels producing", _i(p.get("channels_live")), "of 6",
          _hbars([(c, n) for c, n in by_ch]),
-         "Ranked by delivered posts.",
+         ("Ranked by delivered posts. Delivery is not reach - a channel "
+         "can post often and still be seen rarely."),
          "published refs", BLUE, ""),
     ]
     cards += _slots(
@@ -444,7 +446,8 @@ def board_organic(ctx) -> str:
          "System & Wiring first."), "published refs")
     cards += [
         ("Approval before posting", "on", "nothing self-publishes", "",
-         "Every social piece waits in Approvals.",
+         ("Every social piece waits in Approvals. Nothing reaches a public "
+         "feed without you approving it first."),
          "engine", GREEN,
          "<button class='cta' onclick=\"nav('appr')\">Open Approvals</button>"),
         ("Repurposing", "automatic", "one piece per channel", "",
@@ -586,7 +589,8 @@ def board_targeting(ctx) -> str:
          "your ICP", VIOLET, ""),
         ("Target markets", len(MARKETS), "countries",
          _statusgrid([(m, True, "") for m in MARKETS]),
-         "USA, UK, Germany, Switzerland, Canada.",
+         ("USA, UK, Germany, Switzerland and Canada. Anything outside these "
+         "is not counted as a target market."),
          "your ICP", VIOLET, ""),
         ("Channels available", _i(ch.get("total")), "platforms",
          _statusgrid(_L(ch.get("statusgrid"))),
@@ -662,7 +666,8 @@ def board_blog(ctx) -> str:
           "followed by silence, for search and for social alike."),
          "published refs", BLUE if b.get("per_day") else AMBER, ""),
         ("Cost per piece", _money(b.get("per_piece")), "each", "",
-         "The unit cost of long-form content.",
+         ("The unit cost of long-form content in model spend. Your own time "
+         "is not part of this figure."),
          "computed", GREEN if b.get("per_piece") else AMBER, ""),
         ("Cost by piece", len(recent), "most recent",
          _hbars([(_D(r).get("title", "")[:20] or "untitled", _f(_D(r).get("cost")))
@@ -697,7 +702,8 @@ def board_blog(ctx) -> str:
          "The widest content gap you have, and it affects social too.",
          "site audit", PINK, ""),
         ("Where it is written", "Content Factory", "briefs and drafts", "",
-         "Plan and approve the next pieces there.",
+         ("Plan and approve the next pieces there. This card only reports - "
+         "the decision happens on that screen."),
          "navigation", VIOLET,
          "<button class='cta' onclick=\"nav('content')\">Open Content Factory</button>"),
     ]
@@ -1008,7 +1014,8 @@ def board_traffic(ctx) -> str:
          "navigation", VIOLET,
          "<button class='cta' onclick=\"nav('seo')\">Open SEO</button>"),
         ("Total sessions", _i(tr.get("total_sessions")), "all channels", "",
-         "The denominator for the share above.",
+         ("The denominator for the share above. A small denominator makes "
+         "the percentage move on very little movement."),
          "GA4", BLUE, ""),
         ("Posts made before UTM", "not attributable", "historic", "",
          ("Anything posted before UTM tagging existed cannot be credited "
@@ -1054,7 +1061,8 @@ def board_revenue(ctx) -> str:
          "computed", AMBER if rv.get("roi") is None else GREEN, ""),
         ("Share of all revenue", f"{rv.get('share_of_revenue', 0)}%", "from social",
          _donut(_f(rv.get("share_of_revenue"))),
-         "Against every deal you have recorded.",
+         ("Measured against every deal you have recorded. Deals never "
+         "entered do not exist to this calculation."),
          "recorded deals", BLUE, ""),
         ("Clients by source", len(_L(rv.get("matrix"))), "plotted",
          _riskmatrix([(a, b, c) for a, b, c in _L(rv.get("matrix"))]),
@@ -1095,7 +1103,8 @@ def board_revenue(ctx) -> str:
          "navigation", VIOLET,
          "<button class='cta' onclick=\"nav('outreach')\">Open Leads &amp; Outreach</button>"),
         ("Sessions that produced it", _i(tr.get("social_sessions")), "social visits",
-         "", "The traffic half of the equation.",
+         "", ("The traffic half of the equation. Revenue without sessions means "
+         "the attribution is incomplete, not that it arrived free."),
          "GA4", BLUE, ""),
     ]
     return _head("💶", "Social → revenue",
@@ -1115,7 +1124,8 @@ def board_budget(ctx) -> str:
          str(bg.get("note", "")),
          "computed", BLUE if bg.get("has_data") else AMBER, ""),
         ("Planned paid budget", _money(bg.get("planned_paid")), "your commitment",
-         "", "From the campaigns you marked paid.",
+         "", ("From the campaigns you marked as paid. A campaign left unmarked "
+         "contributes nothing to this figure."),
          "your campaigns", BLUE, ""),
         ("Measured paid spend",
          _money(bg.get("actual_paid") if pd_.get("measured") else None), "actual",
@@ -1163,7 +1173,8 @@ def board_budget(ctx) -> str:
         ("Budget by campaign", len(ctx["campaigns"]), "planned",
          _hbars([(_D(c).get("name", "")[:18], _f(_D(c).get("budget")))
                  for c in ctx["campaigns"] if _f(_D(c).get("budget"))]),
-         "Where the planned spend is allocated.",
+         ("Where the planned spend is allocated. Planned is not committed - "
+         "none of this has actually been spent yet."),
          "your campaigns", BLUE, ""),
         ("Organic is free to distribute", "yes", "not free to make", "",
          ("Organic posting costs no media spend, but the content still costs "
@@ -1222,7 +1233,8 @@ def board_hub(ctx) -> str:
          "send stamps", BLUE, ""),
         ("Google Drive", ("connected" if h.get("drive_connected") else "off"),
          "content store", "",
-         "Each finished piece is saved as a file.",
+         ("Each finished piece is saved as a file, so the content survives "
+         "independently of this engine."),
          "wire status", GREEN if h.get("drive_connected") else AMBER, ""),
         ("Gmail (Workspace)", ("connected" if h.get("gmail_connected") else "off"),
          "send and read", "",

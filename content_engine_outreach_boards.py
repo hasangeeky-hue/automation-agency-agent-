@@ -173,7 +173,8 @@ def board_launch(ctx) -> str:
          "Cold outreach at 5–10% is working. Under 2% is targeting, not volume.",
          "computed", _pct_color(100 - _f(rp.get("reply_rate")) * 5, 50), ""),
         ("Consultations booked", _i(bk.get("accepted")), "real calls", "",
-         "Read from Cal.com, not inferred.",
+         ("Read from Cal.com, not inferred from clicks. These are real "
+          "bookings on a real calendar."),
          "Cal.com", GREEN if bk.get("accepted") else AMBER, ""),
         ("Suppressed addresses", _i(dv.get("suppressed")), "never emailed again",
          "", (f"{_i(dv.get('bounces'))} bounces, "
@@ -274,7 +275,9 @@ def board_sourcing(ctx) -> str:
          "Each one sources, qualifies, writes and waits for your approval.",
          "jobs", BLUE, ""),
         ("Cost per lead", _money(_D(ctx["costs"]).get("per_lead")), "engine spend",
-         "", "Outreach spend divided by leads found.",
+         "", ("Outreach spend divided by leads found. It ignores lead quality "
+              "entirely, so a falling cost per lead can still mean a worse "
+              "pipeline."),
          "computed", GREEN if _D(ctx["costs"]).get("per_lead") else AMBER, ""),
     ]
     cards += _slots(
@@ -336,7 +339,9 @@ def board_quality(ctx) -> str:
          "email verifier", _pct_color(100 - _f(q.get("verify_rate")), 40), ""),
         ("Qualification rate", f"{q.get('qualify_rate', 0)}%", "of verified leads",
          _score_gauge(_f(q.get("qualify_rate")), 50),
-         "How many verified leads match the ICP.",
+         ("How many verified leads match your ICP. Narrowing the ICP "
+          "lowers this by definition, without anything actually getting "
+          "worse."),
          "lead qualifier", _pct_color(100 - _f(q.get("qualify_rate")), 50), ""),
         ("Enrichment completeness", f"{q.get('completeness', 0)}%",
          "of fields filled",
@@ -345,7 +350,8 @@ def board_quality(ctx) -> str:
           "a generic email, and generic emails do not get replies."),
          "lead records", _pct_color(100 - _f(q.get("completeness")), 50), ""),
         ("Leads on file", _i(q.get("leads")), "deduplicated", "",
-         "Distinct people across every campaign.",
+         ("Distinct people across every campaign. Someone in three "
+          "campaigns counts once, so this is your real list size."),
          "computed", BLUE, ""),
         ("Lost at verification", _i(sc.get("found")) - _i(sc.get("verified")),
          "no usable address", "",
@@ -425,7 +431,8 @@ def board_icp(ctx) -> str:
          "Green means at least one lead in that vertical has been sourced.",
          "your ICP", VIOLET, ""),
         ("ICP-matched leads", _i(ic.get("icp_matched")), "fit the profile", "",
-         "The only leads worth spending sends on.",
+         ("The only leads worth spending sends on. Sending outside this "
+          "set costs sender reputation as well as money."),
          "computed", GREEN if ic.get("icp_matched") else AMBER, ""),
     ]
     cards += _slots(
@@ -501,7 +508,8 @@ def board_territories(ctx) -> str:
          "lead records", BLUE if rows else AMBER, ""),
         ("Leads by market", len(rows), "ranked",
          _hbars([(k[:20], v) for k, v in rows[:8]]),
-         "Ranked by lead count.", "lead records", BLUE, ""),
+         ("Ranked by lead count. Volume by market says nothing about "
+          "which market actually converts."), "lead records", BLUE, ""),
         ("Top market", (rows[0][0] if rows else "—"),
          f"{rows[0][1]} leads" if rows else "no data", "",
          "Where sourcing is currently concentrated.",
@@ -556,14 +564,16 @@ def board_outbox(ctx) -> str:
          "Where every lead sits in the 3-email cycle.",
          "sent stamps", BLUE if sq.get("has_data") else AMBER, ""),
         ("Not started", _i(sq.get("not_started")), "no email sent yet", "",
-         "Sourced, approved and sitting still.",
+         ("Sourced, approved and sitting still. These cost nothing to "
+          "hold, and earn nothing either."),
          "computed", AMBER if sq.get("not_started") else GREEN, ""),
         ("In sequence",
          _i(at.get(1, 0)) + _i(at.get(2, 0)), "part way through", "",
          "Between touch 1 and touch 3. Most replies come from touches 2 and 3.",
          "computed", BLUE, ""),
         ("Finished", _i(sq.get("complete")), "all 3 sent", "",
-         "Nothing further will be sent to these.",
+         ("Nothing further will be sent to these. The sequence is "
+          "complete, whether or not it worked."),
          "computed", BLUE, ""),
         ("Due now", _i(sq.get("due_count")), "past the follow-up gap",
          _statusgrid([(e[:16], False, f"touch {t}") for e, t in _L(sq.get("due"))[:9]]),
@@ -578,7 +588,8 @@ def board_outbox(ctx) -> str:
          "Counted from real send timestamps, not campaign dates.",
          "sent stamps", GREEN if sd.get("total") else AMBER, ""),
         ("People reached", _i(sd.get("recipients")), "distinct addresses", "",
-         "Distinct people emailed at least once.",
+         ("Distinct people emailed at least once. Repeat sends to the "
+          "same person do not increase this number."),
          "computed", BLUE, ""),
         ("Touches per person", _n(sd.get("avg_per_recipient")), "average", "",
          "Below 2 means the follow-up sequence is not running.",
@@ -842,7 +853,9 @@ def board_deliverability(ctx) -> str:
          "tracking", BLUE, ""),
         ("Opens by touch", len(_L(tk.get("opens_by_step"))), "steps",
          _hbars([(s, v) for s, v in _L(tk.get("opens_by_step"))]),
-         "Which touch actually gets looked at.",
+         ("Which touch actually gets looked at. Opens are unreliable, "
+          "since privacy proxies fire them without a human reading "
+          "anything."),
          "tracking", BLUE, ""),
     ]
     cards += [
@@ -967,7 +980,8 @@ def board_bookings(ctx) -> str:
           "standing in for conversion rates."),
          "computed", BLUE, ""),
         ("Upcoming", _i(bk.get("upcoming")), "calls ahead", "",
-         "Your near-term pipeline.",
+         ("Your near-term pipeline - calls already on the calendar, "
+          "before any of them have actually happened."),
          "Cal.com", GREEN if bk.get("upcoming") else AMBER, ""),
         ("Held", _i(bk.get("past")), "already happened", "",
          "Each one should end recorded as won or lost.",
@@ -977,7 +991,8 @@ def board_bookings(ctx) -> str:
           else "Nothing scheduled ahead."),
          "Cal.com", GREEN if bk.get("next") else AMBER, ""),
         ("Total bookings", _i(bk.get("total")), "all statuses", "",
-         "Includes cancelled and pending.",
+         ("Includes cancelled and pending bookings, so this is larger "
+          "than the number of calls you will actually take."),
          "Cal.com", BLUE, ""),
         ("Cancelled or pending",
          max(0, _i(bk.get("total")) - _i(bk.get("accepted"))), "not accepted", "",
@@ -985,7 +1000,8 @@ def board_bookings(ctx) -> str:
          "computed", AMBER, ""),
         ("Bookings per day", len(_L(bk.get("per_day"))), "days with a booking",
          _trend([("bookings", [v for _d, v in _L(bk.get("per_day"))], GREEN)]),
-         "Bookings cluster after a send burst.",
+         ("Bookings cluster after a send burst, so a quiet day usually "
+          "reflects last week's sending rather than today's."),
          "Cal.com", BLUE, ""),
         ("Reply to booking", f"{bk.get('reply_to_booking', 0)}%", "conversion", "",
          "Of everyone who replied, how many put a call in the calendar.",
@@ -1111,7 +1127,8 @@ def board_costs(ctx) -> str:
          "What sourcing, verifying and sending has cost in total.",
          "job costs", BLUE if c.get("cost") else AMBER, ""),
         ("Cost per lead", _money(c.get("per_lead")), "sourced", "",
-         "Spend divided by leads found.",
+         ("Spend divided by leads found. It says nothing about whether "
+          "those leads were worth finding in the first place."),
          "computed", GREEN if c.get("per_lead") else AMBER, ""),
         ("Cost per send", _money(c.get("per_send")), "email", "",
          "Cheap per send. The number that matters is the next one down.",
@@ -1235,7 +1252,8 @@ def board_manager(ctx) -> str:
          "per-lead timestamp", GREEN if lpd.get("has_data") else AMBER, ""),
         ("Busiest day", _i(lpd.get("busiest")), "leads in one day",
          _histogram([_i(v) for v in _L(lpd.get("series"))]),
-         "What a good sourcing day looks like.",
+         ("What a good sourcing day looks like, so an ordinary day has "
+          "something to be compared against."),
          "per-lead timestamp", BLUE, ""),
         ("Daily average", _n(lpd.get("avg")), "leads per active day", "",
          f"Across {_i(lpd.get('days_active'))} days that produced any lead.",
@@ -1286,7 +1304,8 @@ def board_manager(ctx) -> str:
          "Every row shows which provider found that lead.",
          "lead source stamp", BLUE, ""),
         ("Where to act", "the table below", "edit, delete, open LinkedIn", "",
-         "The manager is under this board.",
+         ("The controls for this sit under this board, so you can act on "
+          "it without leaving the page."),
          "navigation", VIOLET, ""),
     ]
     return (_head("🗂", "Lead manager",

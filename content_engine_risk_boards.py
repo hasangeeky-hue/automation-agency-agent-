@@ -165,7 +165,8 @@ def board_command(ctx) -> str:
         ("Containers", f"{inf.get('containers_up', 0)}/3", "up",
          _statusgrid([(n, ok, "up" if ok else "check")
                       for n, ok in _L(inf.get("containers"))]),
-         "Database, API and worker.",
+         ("Database, API and worker. All three must be up; any one down "
+          "stops the engine from completing work."),
          "health probe", GREEN if inf.get("containers_up") == 3 else AMBER, ""),
         ("Settings size", f"{inf.get('settings_kb', 0):,.0f} KB", "in Postgres", "",
          (f"Largest: {_L(inf.get('largest'))[0] if inf.get('largest') else '—'}. "
@@ -221,7 +222,8 @@ def board_register(ctx) -> str:
          "risk history", VIOLET if ctx["bump"] else AMBER, ""),
         ("By category", len(ctx["by_category"]), "risk categories",
          _hbars(ctx["by_category"], AMBER) if ctx["by_category"] else "",
-         "Where the weight of risk actually sits.",
+         ("Where the weight of risk actually sits. Many small risks in "
+          "one category can outweigh a single large one elsewhere."),
          "computed", AMBER, ""),
         ("Severity spread", len(risks), "scored 1–9",
          _histogram([_D(r).get("score", 0) for r in risks]) if risks else "",

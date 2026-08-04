@@ -254,6 +254,59 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .cf-arrow{animation:cf-flow 1.8s ease-in-out infinite}
 .cf-live{animation:cf-pulse 2.2s ease-in-out infinite}
 .cf-station{transition:transform .25s}.cf-station:hover{transform:translateY(-4px)}
+
+/* ── EVIDENCE CLASS + DETAIL WINDOW ──────────────────────────────────────
+   A card sourced "GA4" and a card sourced "judgement" used to look
+   identical. The badge states which kind of thing the number is BEFORE you
+   read it; the detail window carries everything that will not fit on a
+   card face. 2,284 cards is too many to make each one bigger. */
+.evb{display:inline-flex;align-items:center;gap:4px;font-size:9px;
+font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+padding:1px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;
+border:1px solid currentColor;opacity:.85;white-space:nowrap}
+.dbtn{margin-top:8px;width:100%;font-size:11.5px;padding:6px 9px;
+border-radius:8px;cursor:pointer;background:rgba(76,141,255,.10);
+color:#9EC0FF;border:1px solid rgba(76,141,255,.30);font-weight:600;
+text-align:center;font-family:inherit}
+.dbtn:hover{background:rgba(76,141,255,.20);color:#CFE0FF}
+.dpane{display:none}
+#dlgwrap{position:fixed;inset:0;z-index:10000;display:none;
+background:rgba(4,7,14,.78);backdrop-filter:blur(3px);
+padding:24px;overflow-y:auto}
+#dlgwrap.on{display:block}
+.dlg{max-width:860px;margin:0 auto;background:var(--s1);
+border:1px solid var(--line);border-radius:16px;
+box-shadow:0 26px 80px rgba(0,0,0,.6);overflow:hidden}
+.dlghead{display:flex;align-items:flex-start;gap:12px;padding:18px 22px;
+border-bottom:1px solid var(--line);background:var(--s2);
+position:sticky;top:0}
+.dlghead h3{margin:0;font-size:18px;font-family:var(--disp,inherit);
+color:var(--ink);line-height:1.25}
+.dlgx{margin-left:auto;background:none;border:1px solid var(--line);
+color:var(--mut);border-radius:9px;width:32px;height:32px;cursor:pointer;
+font-size:17px;line-height:1;flex:none;font-family:inherit}
+.dlgx:hover{color:var(--ink);border-color:var(--mut)}
+.dlgbody{padding:18px 22px 24px}
+.dsec{margin-top:16px;padding-top:14px;border-top:1px solid var(--line2)}
+.dsec:first-child{margin-top:0;padding-top:0;border-top:0}
+.dsec h4{margin:0 0 7px;font-size:10.5px;letter-spacing:.09em;
+text-transform:uppercase;color:var(--dim);font-weight:700}
+.dsec p{margin:0 0 6px;font-size:13px;line-height:1.62;color:var(--ink)}
+.dsec .q{font-size:26px;font-weight:800;line-height:1.1}
+.dnum{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.dnum span{background:var(--s2);border:1px solid var(--line);
+border-radius:8px;padding:5px 10px;font-size:12px;color:var(--ink)}
+.dnum span b{color:var(--teal);font-variant-numeric:tabular-nums}
+.dwarn{background:rgba(245,177,76,.09);border-left:3px solid var(--warn);
+padding:9px 12px;border-radius:8px;font-size:12.5px;line-height:1.6;
+color:var(--ink);margin-top:6px}
+.dbad{background:rgba(255,107,147,.09);border-left:3px solid var(--bad)}
+.dgood{background:rgba(63,217,139,.09);border-left:3px solid var(--good)}
+.dmc{width:100%;min-height:76px;background:var(--s2);color:var(--ink);
+border:1px solid var(--line);border-radius:9px;padding:9px 11px;
+font-size:13px;font-family:inherit;line-height:1.55;resize:vertical}
+.dmc:focus{border-color:var(--teal);outline:none}
+@media(max-width:700px){#dlgwrap{padding:0}.dlg{border-radius:0;min-height:100%}}
 """
 
 
@@ -525,13 +578,28 @@ KEY_SOURCE = {
 }
 
 
+_FIELD_SEEN: dict = {}   # PAGE-scoped: the same key may be offered twice
+
+
 def _field(name, hint, saved=False, secret=None):
     """One credential field, with a label that SURVIVES TYPING.
 
     Every input on this dashboard was placeholder-only: 86 fields, 0 <label>
     elements. A placeholder disappears the moment you type, so six stacked
     password boxes became six identical dots-fields with no way to tell which
-    was which. The label sits above and stays."""
+    was which. The label sits above and stays.
+
+    A CREDENTIAL FIELD CAN APPEAR TWICE. The same key is offered both in the
+    per-wire connect forms and in the extra-keys groups, which gave two inputs
+    the id 'f-IMAGE_API_KEY'. focusKey() resolves by id, so "take me to that
+    field" scrolled to whichever copy came first in the document - often one
+    sitting in a tab that was not open, so the page appeared to do nothing.
+    The first copy keeps the plain id (existing links still resolve); later
+    copies get a suffix, and focusKey() now searches by NAME and picks the
+    copy that is actually visible."""
+    n = _FIELD_SEEN.get(name, 0) + 1
+    _FIELD_SEEN[name] = n
+    fid = f"f-{name}" if n == 1 else f"f-{name}--{n}"
     if secret is None:
         secret = any(x in name for x in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
     src = KEY_SOURCE.get(name)
@@ -546,9 +614,9 @@ def _field(name, hint, saved=False, secret=None):
     eye = (f"<button type='button' class='keye' onclick=\"keyEye(this)\" "
            f"title='Show or hide'>show</button>" if secret else "")
     return (f"<div class='kfield'>"
-            f"<label for='f-{_esc(name)}'>{_esc(hint)}{state}</label>"
+            f"<label for='{_esc(fid)}'>{_esc(hint)}{state}</label>"
             f"<div class='krow'>"
-            f"<input id='f-{_esc(name)}' name='{_esc(name)}' "
+            f"<input id='{_esc(fid)}' name='{_esc(name)}' "
             f"type='{'password' if secret else 'text'}' "
             f"autocomplete='off' autocapitalize='off' spellcheck='false' "
             f"placeholder='{'saved - type to replace' if saved else _esc(name)}'>"
@@ -2403,8 +2471,14 @@ def _exec_briefing(name, health, sub_kpis, risks, opportunities, actions):
         "</div></div>")
 
 
-def _viz(title, sub, svg, empty_msg):
-    """A titled visualization panel (chart or honest empty)."""
+def _chartpanel(title, sub, svg, empty_msg):
+    """A titled CHART PANEL - not a card.
+
+    Named _viz until it cost an hour: content_engine_seo_boards._viz is THE
+    card renderer (8 args) and this is a 4-arg chart wrapper. Two different
+    functions with one name in one codebase reads as a duplicate, and a
+    duplicate renderer is a feature that ships to half the cards.
+    """
     inner = svg or f"<div class='dim' style='padding:14px 0'>⚪ {_esc(empty_msg)}</div>"
     return (f"<div class='card'><p class='ct'>{_esc(title)}</p><p class='cc'>{_esc(sub)}</p>"
             f"<div style='margin-top:8px;overflow-x:auto'>{inner}</div></div>")
@@ -2453,7 +2527,7 @@ def _mod_business(c):
                        insight=f"{c['leads_emailed']} emailed → {c['replied']} replied → {c['booked']} booked.",
                        recommendation="Tighten follow-ups to lift reply→booked.", action_label="Open Sales", action="nav('sales')")
     return (m + "<div class='grid g2'>" + rev + growth + conv
-            + _viz("Growth forecast (confidence band)", "Output trend with a forecast envelope.",
+            + _chartpanel("Growth forecast (confidence band)", "Output trend with a forecast envelope.",
                    CH.confband([max(1, x) for x in c["content_series"]]), "Fills as pieces are made.")
             + "</div>" + _decision_strip(c["risks"], c["opps"], c["actions"]))
 
@@ -2487,9 +2561,9 @@ def _mod_marketing(c):
     if c["o_cust"]:
         flows += [("Booked", "Customers", c["o_cust"])]
     return (m + "<div class='grid g2'>" + seo + geo + ads
-            + _viz("Keyword visibility (Search Console)", "Where your queries rank — brighter = more visible.", heat,
+            + _chartpanel("Keyword visibility (Search Console)", "Where your queries rank — brighter = more visible.", heat,
                    "Connect Search Console to see ranking heat.")
-            + _viz("Attribution — how visits become customers", "Channel → lead → booked → won.", CH.sankey(flows),
+            + _chartpanel("Attribution — how visits become customers", "Channel → lead → booked → won.", CH.sankey(flows),
                    "Fills as leads and bookings flow in.")
             + "</div>" + _decision_strip(
                 ([f"“{topq}” has demand you're not fully capturing." for _ in [1] if topq]),
@@ -2524,7 +2598,7 @@ def _mod_sales(c):
     if c["booked"]:
         flows += [("Replied", "Booked", c["booked"])]
     return (m + "<div class='grid g2'>" + lead + out + close
-            + _viz("Pipeline flow", "Where prospects move — and where they drop.", CH.sankey(flows),
+            + _chartpanel("Pipeline flow", "Where prospects move — and where they drop.", CH.sankey(flows),
                    "Fills as the lead pipeline runs.")
             + "</div>" + _decision_strip(
                 ([f"{c['not_emailed']} qualified leads sitting un-emailed." for _ in [1] if c["not_emailed"]]
@@ -2548,7 +2622,7 @@ def _mod_customer(c):
     sat = _intel_card("Sentiment", "", dept="Customer",
                       empty="Connect Zendesk / Intercom / reviews to activate customer-sentiment intelligence.")
     return (m + "<div class='grid g2'>" + cust + ret + sat
-            + _viz("Retention cohorts", "How many customers stay, month over month.", "",
+            + _chartpanel("Retention cohorts", "How many customers stay, month over month.", "",
                    "Connect a CRM / payments source to populate cohorts.")
             + "</div>" + _decision_strip(
                 (["No customer/retention source connected — you're flying blind on LTV."]),
@@ -2577,7 +2651,7 @@ def _mod_workforce(c):
                       insight=f"${c['content_cost']:.2f} spent making {len(c['content_jobs'])} pieces.",
                       recommendation="Cheap per piece — safe to scale the cadence.", action_label="Open budget", action="nav('budget')")
     return (m + "<div class='grid g2'>" + agents + eff
-            + _viz("Agent dependency graph", "How the content agents hand off, and their health.",
+            + _chartpanel("Agent dependency graph", "How the content agents hand off, and their health.",
                    CH.digraph(nodes, edges), "No agents mapped.")
             + "</div>" + _decision_strip(
                 ([] if ok else ["A subsystem health check is failing."]),
@@ -2614,7 +2688,7 @@ def _mod_operations(c):
                       recommendation=("Approve or decline with notes." if c["waiting"] else "Nothing waiting."),
                       action_label="Open Approvals", action="nav('appr')")
     return (m + "<div class='grid g2'>" + thr + que
-            + _viz("This week's production schedule", "Each piece's target day.", CH.gantt(tasks),
+            + _chartpanel("This week's production schedule", "Each piece's target day.", CH.gantt(tasks),
                    "Plan a week to fill the schedule.")
             + "</div>" + _decision_strip(
                 ([f"{c['waiting']} pieces waiting on you." for _ in [1] if c["waiting"]]),
@@ -2645,9 +2719,9 @@ def _mod_finance(c):
     else:
         wf = [("Content", c["content_cost"]), ("Leads/email", (c["total_cost"] - c["content_cost"])), ("Total", 0)]
     return (m + "<div class='grid g2'>" + spend + rev
-            + _viz("Money flow", ("Revenue minus costs." if c["o_rev"] else "Where spend goes (connect revenue to see profit)."),
+            + _chartpanel("Money flow", ("Revenue minus costs." if c["o_rev"] else "Where spend goes (connect revenue to see profit)."),
                    CH.waterfall(wf), "Fills as spend + revenue are recorded.")
-            + _viz("Budget headroom", "How much of the cap remains.", _donut(max(0, 100 - pct), "#3FD98B"), "")
+            + _chartpanel("Budget headroom", "How much of the cap remains.", _donut(max(0, 100 - pct), "#3FD98B"), "")
             + "</div>" + _decision_strip(
                 ([f"Spend at {pct}% of cap." for _ in [1] if pct >= 85]),
                 (["Per-piece cost is low; output is affordable to scale."]),
@@ -2672,7 +2746,7 @@ def _mod_infra(c):
                        insight=("Claude API + database + connectors all responding." if c["healthy"] else "A component check is failing."),
                        recommendation=("Nothing to do." if c["healthy"] else "Open Agents & Health."), action_label="Open Agents", action="nav('agents')")
     return (m + "<div class='grid g2'>" + conn + sysh
-            + _viz("Connection status grid", "Green = live · amber = optional · red = down.", CH.statusgrid(items), "No connections mapped.")
+            + _chartpanel("Connection status grid", "Green = live · amber = optional · red = down.", CH.statusgrid(items), "No connections mapped.")
             + "</div>" + _decision_strip(
                 ([f"{c['total_conn']-c['live_conn']} connections down." for _ in [1] if c["live_conn"] < c["total_conn"]]),
                 (["Each connection you add lights up its intelligence cards."]),
@@ -2713,7 +2787,7 @@ def _mod_risk(c):
                                              "Deliverability": "Keep warm-up cap + suppression on."}.get(label, "Monitor."),
                              action_label="Act", action="nav('map')")
     return (m + "<div class='grid g2'>" + cards + "</div>"
-            + _viz("Risk matrix — likelihood × impact", "Top-right is act-now.", CH.risk_matrix(items), "No risks flagged.")
+            + _chartpanel("Risk matrix — likelihood × impact", "Top-right is act-now.", CH.risk_matrix(items), "No risks flagged.")
             + _decision_strip([l for l, lk, im in items if lk * im >= 6],
                               (["Fixing the top-right risk protects the most value."] if items else []),
                               [("Open System Map", "nav('map')"), ("Open budget", "nav('budget')")]))
@@ -2736,7 +2810,7 @@ def _mod_executive(c):
     return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>🏛️ Executive Intelligence</p>"
             "<p class='cc'>The whole business on one screen — every module's headline, plus the decisions that move "
             "the needle this week.</p>" + board + "</div>"
-            + _viz("Value flow — channel to customer", "How marketing turns into revenue.",
+            + _chartpanel("Value flow — channel to customer", "How marketing turns into revenue.",
                    CH.sankey([f for f in [
                        ("SEO / Web", "Leads", max(1, c["leads_found"] * 0.6)) if c["leads_found"] else None,
                        ("Outreach", "Leads", max(1, c["leads_found"] * 0.4)) if c["leads_found"] else None,
@@ -3063,6 +3137,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    system_ctx=None, risk_ctx=None, bi_ctx=None,
                    outreach_ctx=None, sga_ctx=None, factory_ctx=None,
                    cockpit_ctx=None, saved_keys=None):
+    # A card id is a deep link, so it must be unique across the whole PAGE.
+    # De-duplication is page-scoped; this is where a page begins.
+    import content_engine_seo_boards as _SB
+    _SB.reset_card_ids()
+    _FIELD_SEEN.clear()
     reply_drafts = reply_drafts or []
     competitor_intel = competitor_intel or {}
     google_insights = google_insights or {}
@@ -4535,6 +4614,60 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "n.textContent=(ok?'\\u2713 ':'\\u2717 ')+msg;}"
               "if(b){b.disabled=false;b.textContent=ok?'Done':'Try again';"
               "if(!ok)setTimeout(function(){b.textContent=lab;},6000);}}"
+              # THE DETAIL WINDOW. A card is ~200px wide; the evidence behind
+              # a decision is not. Rather than shrink the evidence or grow
+              # 2,284 cards, the full record lives in a hidden pane beside
+              # each card and opens over the page. No fetch, no navigation,
+              # no reload - so opening details never costs you your place.
+              "var _dlgFrom=null,_dlgPane=null,_dlgHome=null;"
+              # MOVE the pane into the dialog, never copy it. Copying innerHTML
+              # would put a second element with the same id on the page, and
+              # getElementById would then return the HIDDEN one - which is
+              # exactly how the calendar preview broke before.
+              "function seeDetails(id){try{"
+              "var pane=document.getElementById(id);if(!pane)return;"
+              "var w=document.getElementById('dlgwrap');"
+              "var b=document.getElementById('dlgbody');if(!w||!b)return;"
+              "if(_dlgPane)closeDetails();"
+              "_dlgFrom=document.activeElement;"
+              "_dlgPane=pane;_dlgHome=pane.parentNode;"
+              "b.appendChild(pane);pane.style.display='block';"
+              "var t=document.getElementById('dlgtitle');"
+              "if(t)t.textContent=pane.getAttribute('data-title')||'Details';"
+              "w.classList.add('on');document.body.style.overflow='hidden';"
+              "var x=document.getElementById('dlgx');if(x)x.focus();"
+              "}catch(e){}}"
+              "function closeDetails(){try{"
+              "var w=document.getElementById('dlgwrap');"
+              "if(_dlgPane&&_dlgHome){_dlgPane.style.display='';"
+              "_dlgHome.appendChild(_dlgPane);}"
+              "_dlgPane=null;_dlgHome=null;"
+              "if(w){w.classList.remove('on');}document.body.style.overflow='';"
+              "if(_dlgFrom&&_dlgFrom.focus)_dlgFrom.focus();_dlgFrom=null;"
+              "}catch(e){}}"
+              "document.addEventListener('keydown',function(e){"
+              "if(e.key==='Escape'){var w=document.getElementById('dlgwrap');"
+              "if(w&&w.classList.contains('on')){e.preventDefault();"
+              "closeDetails();}}});"
+              # micro-command: a real textarea, not a prompt(). A prompt is one
+              # line, cannot be edited, and vanishes on a mis-click.
+              "async function microCmd(jid,ta){try{"
+              "var el=document.getElementById(ta);if(!el)return;"
+              "var note=(el.value||'').trim();"
+              "if(!note){toast('Write what you want changed first.',false);"
+              "el.focus();return;}"
+              "var b=window.event&&window.event.target;"
+              "if(b){b.disabled=true;b.textContent='Sending\\u2026';}"
+              "var r=await fetch('/fix/decline_piece?arg='+"
+              "encodeURIComponent(jid+'|'+note),{method:'POST'});"
+              "var j=null;try{j=await r.json();}catch(e2){}"
+              "var ok=r.ok&&(!j||j.ok!==false);"
+              "toast(ok?('Sent back to the writer: \\u201c'+note.slice(0,60)+"
+              "'\\u201d'):((j&&(j.error||j.message))||'that did not work'),ok);"
+              "if(b){b.disabled=false;b.textContent=ok?'Sent':'Try again';}"
+              "if(ok)el.value='';"
+              "}catch(e){toast('could not reach the engine \\u2014 nothing "
+              "changed',false);}}"
               # was: toast() popups. A browser dialog is not feedback - it
               # tells you nothing about WHICH field saved and leaves no trace on
               # the form. The result now appears next to the button and the
@@ -4668,9 +4801,17 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               # preview felt missing when it was rendering all along.
               "function goPreview(tab){nav('content');"
               "setTimeout(function(){seoTab(tab||'cfpvweb');},140);}"
+              # BY NAME, AND THE VISIBLE ONE. Resolving by id took you to
+              # whichever copy of the field came first in the document, which
+              # is often the one in a tab that is not open - so the page
+              # scrolled nowhere and the button read as broken.
               "function focusKey(name){nav('system');sysTab('sysconnect');"
-              "setTimeout(function(){var el=document.getElementById('f-'+name);"
-              "if(!el){return;}"
+              "setTimeout(function(){"
+              "var all=document.getElementsByName(name);var el=null;"
+              "for(var i=0;i<all.length;i++){"
+              "if(all[i].offsetParent!==null){el=all[i];break;}}"
+              "if(!el)el=all[0]||document.getElementById('f-'+name);"
+              "if(!el){toast('Could not find the field for '+name,false);return;}"
               "var w=el.closest('.kfield')||el;"
               "w.scrollIntoView({block:'center',behavior:'smooth'});"
               "el.focus();"
@@ -4950,6 +5091,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         + "</span>" + logout + "</div></div>"
         "<div class='shell'><div class='side'>" + nav + "</div><div class='main'>"
         + ctrl_html + attn_html + onboarding + pages + "</div></div>"
+        # THE DETAIL WINDOW lives once, at the page root - not once per card.
+        # Clicking the backdrop closes it; clicking the panel does not.
+        "<div id='dlgwrap' onclick='if(event.target===this)closeDetails()' "
+        "role='dialog' aria-modal='true' aria-labelledby='dlgtitle'>"
+        "<div class='dlg'><div class='dlghead'>"
+        "<h3 id='dlgtitle'>Details</h3>"
+        "<button class='dlgx' id='dlgx' onclick='closeDetails()' "
+        "aria-label='Close details'>✕</button></div>"
+        "<div class='dlgbody' id='dlgbody'></div></div></div>"
         + script + "</body></html>")
 
 

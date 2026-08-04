@@ -29,9 +29,24 @@ def _svg(w, h, inner, defs=""):
             f"xmlns='http://www.w3.org/2000/svg'>{defs}{inner}</svg>")
 
 
-_GLOW = ("<defs><filter id='cg' x='-60%' y='-60%' width='220%' height='220%'>"
-         "<feGaussianBlur stdDeviation='3.2' result='b'/><feMerge>"
-         "<feMergeNode in='b'/><feMergeNode in='SourceGraphic'/></feMerge></filter></defs>")
+_GLOW_N = [0]
+
+
+def _glow():
+    """(id, defs) for one glow filter, with an id nobody else is using.
+
+    This was a module constant with a fixed id of 'cg', emitted once per SVG -
+    five identical <filter id='cg'> elements on one page. Identical definitions
+    made it render correctly, which is exactly why it survived: invalid markup
+    that happens to look right is the kind that stays.
+    """
+    _GLOW_N[0] += 1
+    gid = "cg%d" % _GLOW_N[0]
+    return gid, (
+        "<defs><filter id='%s' x='-60%%' y='-60%%' width='220%%' height='220%%'>"
+        "<feGaussianBlur stdDeviation='3.2' result='b'/><feMerge>"
+        "<feMergeNode in='b'/><feMergeNode in='SourceGraphic'/></feMerge>"
+        "</filter></defs>" % gid)
 
 
 # --- Glowing "model" architecture (the rendered neural-net look) -------------
@@ -39,6 +54,7 @@ def neural(layers, labels=None):
     """A glowing multi-layer node network — the AGENT NETWORK rendered like the
     reference model diagram. layers=[node counts]; nodes glow, edges are faint,
     signal pulses travel across. Pure SVG (no libs)."""
+    _gid, _glowdefs = _glow()
     layers = [max(1, int(n)) for n in layers]
     if len(layers) < 2:
         return ""
@@ -66,7 +82,7 @@ def neural(layers, labels=None):
             a = pos[li][k % len(pos[li])]
             b = pos[li + 1][k % len(pos[li + 1])]
             dur = 1.6 + (li + k) * 0.25
-            pulses += (f"<circle r='2.6' fill='{lcol(li+1)}' filter='url(#cg)'>"
+            pulses += (f"<circle r='2.6' fill='{lcol(li+1)}' filter='url(#{_gid})'>"
                        f"<animate attributeName='cx' from='{a[0]:.0f}' to='{b[0]:.0f}' dur='{dur:.2f}s' repeatCount='indefinite'/>"
                        f"<animate attributeName='cy' from='{a[1]:.0f}' to='{b[1]:.0f}' dur='{dur:.2f}s' repeatCount='indefinite'/>"
                        f"<animate attributeName='opacity' values='0;1;1;0' dur='{dur:.2f}s' repeatCount='indefinite'/></circle>")
@@ -74,14 +90,14 @@ def neural(layers, labels=None):
     for li, layer in enumerate(pos):
         c = lcol(li)
         for (x, y) in layer:
-            nodes += (f"<circle cx='{x:.0f}' cy='{y:.0f}' r='8' fill='#0B1220' stroke='{c}' stroke-width='2' filter='url(#cg)'/>"
+            nodes += (f"<circle cx='{x:.0f}' cy='{y:.0f}' r='8' fill='#0B1220' stroke='{c}' stroke-width='2' filter='url(#{_gid})'/>"
                       f"<circle cx='{x:.0f}' cy='{y:.0f}' r='3.4' fill='{c}'/>")
     labs = ""
     if labels:
         for li, lab in enumerate(labels[:nL]):
             labs += (f"<text x='{pad + li*colw:.0f}' y='{H-14}' text-anchor='middle' fill='{_MUT}' "
                      f"font-size='10' font-weight='600'>{_e(lab)}</text>")
-    return _svg(W, H, edges + nodes + pulses + labs, defs=_GLOW)
+    return _svg(W, H, edges + nodes + pulses + labs, defs=_glowdefs)
 
 
 # --- Grouped vertical bars (Precision/Recall style) ------------------------
@@ -139,6 +155,7 @@ def ring(segments, center=""):
 # --- Multi-series line chart ------------------------------------------------
 def lines(series, ymax=None):
     """series=[(name,[y...],color)]. Smooth-ish multi-line with legend + glow."""
+    _gid, _glowdefs = _glow()
     series = [(n, [float(x) for x in ys], c) for n, ys, c in series if ys]
     if not series:
         return ""
@@ -155,10 +172,10 @@ def lines(series, ymax=None):
     paths = ""
     for nm, ys, col in series:
         d = " ".join(f"{'M' if i==0 else 'L'}{X(i):.1f} {Y(v):.1f}" for i, v in enumerate(ys))
-        paths += (f"<path d='{d}' fill='none' stroke='{col}' stroke-width='2.5' filter='url(#cg)'/>"
+        paths += (f"<path d='{d}' fill='none' stroke='{col}' stroke-width='2.5' filter='url(#{_gid})'/>"
                   f"<circle cx='{X(len(ys)-1):.1f}' cy='{Y(ys[-1]):.1f}' r='3.5' fill='{col}'/>")
     leg = " ".join(f"<span style='color:{c}'>● {_e(n)}</span>" for n, _y, c in series)
-    return _svg(W, H, grid + paths, defs=_GLOW) + f"<div class='dim' style='font-size:11px;margin-top:4px'>{leg}</div>"
+    return _svg(W, H, grid + paths, defs=_glowdefs) + f"<div class='dim' style='font-size:11px;margin-top:4px'>{leg}</div>"
 
 
 # --- Infrastructure: status grid ------------------------------------------
@@ -446,6 +463,7 @@ def n8n_flow(lanes):
     | 'code' (blue, deterministic step). badge: live count string or ''. Nodes are
     rounded cards with in/out ports, connected by bezier wires that carry an
     animated signal dot — read left to right like an n8n canvas."""
+    _gid, _glowdefs = _glow()
     if not lanes:
         return ""
     NW, NH, GAP, LH, PAD = 158, 58, 46, 128, 16
@@ -471,7 +489,7 @@ def n8n_flow(lanes):
                 inner += (f"<path d='{path}' fill='none' stroke='{col}' stroke-opacity='.75' stroke-width='2.5'/>"
                           # arrowhead pointing into the next node's input port
                           f"<polygon points='{x2-11},{ym-5} {x2-3},{ym} {x2-11},{ym+5}' fill='{ncol}'/>"
-                          f"<circle r='3.6' fill='{col}' filter='url(#cg)'>"
+                          f"<circle r='3.6' fill='{col}' filter='url(#{_gid})'>"
                           f"<animateMotion dur='{1.6 + (ni % 3) * 0.4:.1f}s' repeatCount='indefinite' path='{path}'/>"
                           f"</circle>")
             # node card
@@ -492,7 +510,7 @@ def n8n_flow(lanes):
                           f"<text x='{x + NW - 15}' y='{y0 + 3}' text-anchor='middle' fill='#04121a' "
                           f"font-size='9.5' font-weight='800'>{_e(badge)[:4]}</text>")
     return (f"<svg viewBox='0 0 {W} {H}' width='{W}' style='max-width:none;height:auto' "
-            f"xmlns='http://www.w3.org/2000/svg'>{_GLOW}{inner}</svg>")
+            f"xmlns='http://www.w3.org/2000/svg'>{_glowdefs}{inner}</svg>")
 
 
 # --- API / tools / database tri-map (n8n-style, 3 columns) ------------------
@@ -501,6 +519,7 @@ def tri_map(apis, tools, stores, links_at, links_ts):
     apis/tools/stores: [(id, icon, label, on)]  (on: True live / False off / None n-a)
     links_at: [(api_id, tool_id)]   links_ts: [(tool_id, store_id)]
     Same visual language as n8n_flow: node chips, ports, bright bezier wires."""
+    _gid, _glowdefs = _glow()
     if not (apis and tools and stores):
         return ""
     NW, NH, VGAP, PAD = 172, 44, 14, 12
@@ -526,7 +545,7 @@ def tri_map(apis, tools, stores, links_at, links_ts):
         path = f"M{x1} {y1} C{x1+70} {y1} {x2-70} {y2} {x2} {y2}"
         w = f"<path d='{path}' fill='none' stroke='{col}' stroke-opacity='{op}' stroke-width='1.8'/>"
         if on:
-            w += (f"<circle r='2.6' fill='#2FE3D2' filter='url(#cg)'>"
+            w += (f"<circle r='2.6' fill='#2FE3D2' filter='url(#{_gid})'>"
                   f"<animateMotion dur='2.4s' repeatCount='indefinite' path='{path}'/></circle>")
         return w
     for a, t in links_at:
@@ -552,7 +571,7 @@ def tri_map(apis, tools, stores, links_at, links_ts):
         return out
     inner += draw(apis, pa) + draw(tools, pt) + draw(stores, ps)
     return (f"<svg viewBox='0 0 {W} {H}' width='{W}' style='max-width:none;height:auto' "
-            f"xmlns='http://www.w3.org/2000/svg'>{_GLOW}{inner}</svg>")
+            f"xmlns='http://www.w3.org/2000/svg'>{_glowdefs}{inner}</svg>")
 
 
 # --- Sales region: geographic distribution ---------------------------------

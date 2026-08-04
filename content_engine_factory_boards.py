@@ -252,7 +252,8 @@ def _preview_board(platform):
                          "The site template handles it; the preview shows desktop.",
                          "template", GREEN, ""),
                         ("Schema", "article", "structured data", "",
-                         "Added by the SEO fixer after approval.",
+                         ("Added by the SEO fixer after approval, so it will not appear "
+                          "on a piece that is still waiting for you."),
                          "SEO engine", BLUE, "")],
             "linkedin": [("Cut at", _i(v.get("cut_at")), "characters",
                           _donut(round(100 * min(1, _i(v.get("cut_at")) /
@@ -262,7 +263,8 @@ def _preview_board(platform):
                           "platform rule", VIOLET, ""),
                          ("Hidden behind 'see more'", _i(v.get("hidden_chars")),
                           "characters", "",
-                          "Most readers never expand it.",
+                          ("Most readers never expand it, so anything below this line is "
+                           "effectively unread. Put the point above it."),
                           "computed", AMBER if v.get("hidden_chars") else GREEN, ""),
                          ("Total length", _i(v.get("chars")), "of 3000", "",
                           "Long posts do work on LinkedIn — but only if the hook "
@@ -281,7 +283,8 @@ def _preview_board(platform):
                            "'… more'.",
                            "platform rule", VIOLET, ""),
                           ("Hidden caption", _i(v.get("hidden_chars")), "characters",
-                           "", "Put the point first.",
+                           "", ("Put the point first. The visible portion is all most people "
+                                "read before scrolling past."),
                            "computed", AMBER if v.get("hidden_chars") else GREEN, ""),
                           ("Square format", "1080×1080", "1:1", "",
                            "Portrait 4:5 reaches further, square is safest.",
@@ -344,7 +347,8 @@ def _preview_board(platform):
               "disagrees with the send is worse than no preview."),
              "principle", GREEN, ""),
             ("Where to act", "Approvals", "approve, edit or decline", "",
-             "Nothing publishes until you say so.",
+             ("Nothing publishes until you say so. This board is where that "
+              "decision actually gets made."),
              "navigation", VIOLET,
              "<button class='cta' onclick=\"nav('appr')\">Open Approvals</button>"),
         ]
@@ -411,7 +415,8 @@ def board_command(ctx) -> str:
          "Plan, write, SEO, your approval, published — the whole line.",
          "jobs", GREEN if pl.get("total") else AMBER, ""),
         ("Waiting for you", _i(pl.get("waiting")), "need approval", "",
-         "Nothing publishes without you.",
+         ("Nothing publishes without you. These are finished and waiting; "
+          "this screen is the only thing between them and live."),
          "jobs", AMBER if pl.get("waiting") else GREEN,
          "<button class='cta' onclick=\"nav('appr')\">Open Approvals</button>"),
         ("Preview readiness", f"{pv.get('score', 0)}%", "of platform checks pass",
@@ -663,12 +668,18 @@ def _calendar_list(ctx, prefix="cal") -> str:
                 f"this.textContent=e.style.display==='none'"
                 f"?'Preview':'Hide';\">"
                 f"{'Preview' if frame else 'Why not'}</button>"]
+        # THE FULL RECORD. The rewrite button used to be a browser prompt():
+        # one line, uneditable, gone on a mis-click, and offered with no idea
+        # WHY the piece exists, what QA said about it, or what it already
+        # cost. All of that was on the job the whole time. It now opens in the
+        # detail window, with the instruction box inside it.
+        dpid = f"dec-{prefix}-" + (jid or str(len(out)))
+        detail = ""
         if jid:
-            btns.append(
-                f"<button class='cbtn' onclick=\"var n=prompt('What should "
-                f"change? This goes to the writer as your instruction.');"
-                f"if(n===null)return;act('/fix/decline_piece?arg={H._esc(jid)}"
-                f"|'+encodeURIComponent(n))\">Rewrite with a note</button>")
+            import content_engine_decision as _DEC
+            detail = _DEC.decision_pane(dpid, _D(r.get("job")), r)
+            btns.append(f"<button class='cbtn' onclick=\"seeDetails('{dpid}')\">"
+                        f"See the full record</button>")
             btns.append(
                 f"<button class='cbtn' onclick=\"if(confirm('Remove this piece "
                 f"from the queue? It will not publish.'))"
@@ -687,7 +698,7 @@ def _calendar_list(ctx, prefix="cal") -> str:
             f"<p class='cc' style='margin:4px 0 8px'>{dest}"
             + (f" &middot; {H._esc(state)}" if state else "")
             + (f" &middot; not written yet" if not written else "")
-            + "</p>" + " ".join(btns) + body + "</div>")
+            + "</p>" + " ".join(btns) + body + detail + "</div>")
     return ("<div class='card full' style='margin-top:12px'>"
             "<p class='ct'>📅 The week</p><p class='cc'>Every piece that will "
             "publish, in date order. Preview, rewrite or remove any of them "
@@ -997,14 +1008,17 @@ def board_pipeline(ctx) -> str:
          "Every piece and where it sits on the line.",
          "jobs", GREEN if pl.get("total") else AMBER, ""),
         ("Waiting for approval", _i(pl.get("waiting")), "need you", "",
-         "The only stage that needs a human.",
+         ("The only stage in the whole pipeline that needs a human. "
+          "Everything before this point ran without you."),
          "jobs", AMBER if pl.get("waiting") else GREEN,
          "<button class='cta' onclick=\"nav('appr')\">Open Approvals</button>"),
         ("Published", _i(pl.get("published")), "live", "",
-         "Made it all the way through.",
+         ("Made it all the way through to live. Publishing is not the end "
+          "- measurement starts 21 days later."),
          "jobs", GREEN if pl.get("published") else AMBER, ""),
         ("Failed", _i(pl.get("failed")), "produced nothing", "",
-         "Consumed budget and returned no output.",
+         ("These consumed budget and returned no usable output. The money "
+          "is spent whether or not the piece was later salvaged."),
          "jobs", PINK if pl.get("failed") else GREEN, ""),
         ("Stage distribution", len(stages), "stages",
          _hbars([(s, n) for s, n in stages]),
@@ -1026,13 +1040,15 @@ def board_pipeline(ctx) -> str:
     cards += [
         ("Throughput", _n(tp.get("avg_per_day")), "pieces per day",
          _trend([("pieces", _L(tp.get("series")), TEAL)]),
-         "Measured from job creation dates.",
+         ("Measured from job creation dates, so it reflects how fast work "
+          "is started, not how fast it finishes."),
          "jobs", BLUE, ""),
         ("Cost per published piece", _money(tp.get("per_piece")), "each", "",
          "Total content spend divided by pieces that actually published.",
          "computed", GREEN if tp.get("per_piece") else AMBER, ""),
         ("Total content spend", _money(tp.get("cost")), "all pieces", "",
-         "What the library cost to produce.",
+         ("What the library cost to produce in model spend. Your own time "
+          "is not included, and it is usually the larger cost."),
          "job costs", BLUE, ""),
         ("Human gate", "one stage", "by design", "",
          ("Everything is automated up to approval. Nothing publishes without "
@@ -1105,7 +1121,8 @@ def board_quality(ctx) -> str:
           if serp.get("truncated") else "Fits without truncation."),
          "SERP preview", PINK if serp.get("truncated") else GREEN, ""),
         ("Meta description", _i(serp.get("meta_len")), "of 155 chars", "",
-         "Google rewrites anything longer.",
+         ("Google rewrites anything longer than this, so the extra words "
+          "are written but never seen by a searcher."),
          "SERP preview", BLUE, ""),
         ("CAN-SPAM / compliance", "checked", "before send", "",
          "The safety module validates every email before it can leave.",
@@ -1198,7 +1215,8 @@ def board_routing(ctx) -> str:
           "site cannot be taken away."),
          "principle", VIOLET, ""),
         ("UTM on every social link", "on", "so GA4 can credit the post", "",
-         "Tagged at post time by the SGA layer.",
+         ("Tagged at post time by the social layer. Without the tag a "
+          "visit arrives with no source and cannot be attributed."),
          "SGA", GREEN,
          "<button class='cta' onclick=\"nav('sga')\">Open SGA</button>"),
         ("Repurposed, not copied", "per channel", "native each time", "",
@@ -1292,7 +1310,8 @@ def board_cost(ctx) -> str:
     cards = [
         ("Content spend", _money(tp.get("cost")), "all pieces",
          _trend([("pieces/day", _L(tp.get("series")), TEAL)]),
-         "What the whole library cost to produce.",
+         ("What the whole library cost to produce in model spend, across "
+          "every piece ever written by this engine."),
          "job costs", BLUE if tp.get("cost") else AMBER, ""),
         ("Cost per published piece", _money(tp.get("per_piece")), "each",
          _score_gauge(min(100, round(_f(tp.get("per_piece")) * 100)), 100),
@@ -1301,7 +1320,8 @@ def board_cost(ctx) -> str:
          "computed", GREEN if tp.get("per_piece") else AMBER, ""),
         ("Pieces published", _i(tp.get("published")), "of "
          f"{_i(tp.get('total'))} started", "",
-         "The real denominator.",
+         ("The real denominator for every per-piece figure on this board. "
+          "A small denominator makes averages swing hard."),
          "jobs", GREEN if tp.get("published") else AMBER, ""),
         ("Output per day", _n(tp.get("avg_per_day")), "pieces",
          _histogram([_i(v) for v in _L(tp.get("series"))]),
@@ -1337,7 +1357,8 @@ def board_cost(ctx) -> str:
          "navigation", VIOLET,
          "<button class='cta' onclick=\"nav('bi')\">Open BI</button>"),
         ("Where the cap is set", "System & Wiring", "monthly and daily", "",
-         "Both are enforced, not advisory.",
+         ("Both caps are enforced, not advisory. Reaching one stops work "
+          "rather than slowing it down."),
          "navigation", VIOLET,
          "<button class='cta' onclick=\"nav('system')\">Open System &amp; Wiring</button>"),
         ("Spend by stage", "writing dominates", "images are marginal", "",

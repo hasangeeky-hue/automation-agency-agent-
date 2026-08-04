@@ -342,7 +342,9 @@ def board_markets(ctx) -> str:
          f"{rows[0][1]:.0f} sessions" if rows else "no data",
          _split_donut([(n, v, c) for (n, v), c in
                        zip(rows[:5], (TEAL, VIOLET, BLUE, AMBER, PINK))]),
-         "Your single largest source of visitors.",
+         ("Your single largest source of visitors. Concentration here is "
+          "a risk as much as a win: if this channel dips, total traffic "
+          "dips with it."),
          "GA4", BLUE if rows else AMBER, ""),
         ("Target-market share", f"{mk.get('target_share', 0)}%",
          "of traffic from your five markets",
@@ -533,7 +535,9 @@ def board_content(ctx) -> str:
          "computed", BLUE if fn.get("flows") else AMBER, ""),
         ("Best page", (pages[0][0] if pages else "—"),
          f"{pages[0][1]:.0f} sessions" if pages else "no data", "",
-         "The page to write three more like.",
+         ("The page to write three more like. Copy its structure and "
+          "angle before copying its topic - the format is usually what "
+          "worked."),
          "GA4", GREEN if pages else AMBER, ""),
         ("Revenue per published piece",
          (_money(_f(r.get("total")) / cn.get("published"))
@@ -544,12 +548,15 @@ def board_content(ctx) -> str:
          "computed", GREEN if r.get("total") else AMBER, ""),
         ("Pages by traffic", len(pages), "ranked",
          _hbars([(p[:24], v) for p, v in pages[:8]]),
-         "Ranked by sessions.", "GA4", BLUE, ""),
+         ("Ranked by sessions. Sessions measure arrival, not interest, so "
+          "read this next to time-on-page before deciding what to write "
+          "more of."), "GA4", BLUE, ""),
     ]
     cards += _slots(
         pages, 6,
         lambda i, r: (r[0][:28], f"{r[1]:.0f}", "sessions", "",
-                      "A published page earning traffic.", "GA4", BLUE,
+                      ("A published page that is actually earning traffic - evidence "
+                       "the topic works, not just that the piece shipped."), "GA4", BLUE,
                       _link("https://anthropos-automation.com" + r[0], r[0][:40])),
         "Page", "not in GA4's top pages",
         ("GA4 returns the fifteen busiest pages. This slot fills when another "
@@ -640,7 +647,8 @@ def board_leads(ctx) -> str:
         by_src, 5,
         lambda i, r: (f"Source: {r[0][:22]}", r[1], "leads",
                       _donut(round(100 * r[1] / max(lg.get("found", 1), 1))),
-                      "Contribution to total lead volume.", "outreach jobs", BLUE, ""),
+                      ("Its contribution to total lead volume. A large share from one "
+                       "source is fragile if that source changes."), "outreach jobs", BLUE, ""),
         "Lead source", "not in use yet",
         ("One source is a single point of failure. This slot fills when a "
          "campaign sources leads from another place."), "outreach jobs")
@@ -651,7 +659,9 @@ def board_leads(ctx) -> str:
          "rate rises while close rate falls.",
          "your ICP", VIOLET, ""),
         ("Cost per lead", _money(_D(ctx["cost"]).get("per_lead")), "engine cost ÷ leads",
-         "", "Outreach spend divided by leads found.",
+         "", ("Outreach spend divided by leads found. It ignores lead quality "
+              "entirely, so a falling cost per lead can still mean a worse "
+              "pipeline."),
          "computed", GREEN if _D(ctx["cost"]).get("per_lead") else AMBER, ""),
         ("Pipeline coverage",
          (f"{round(lg.get('qualified', 0) / max(_f(_D(ctx['targets']).get('leads_month')), 1) * 100)}%"
@@ -691,7 +701,8 @@ def board_outreach(ctx) -> str:
           if ou.get("has_data") else "Nothing has been sent yet."),
          "sent_at stamps", GREEN if ou.get("sent") else AMBER, ""),
         ("Replies", ou.get("replied", 0), "real responses", "",
-         "Read from the inbox, not inferred.",
+         ("Read from the live inbox, not inferred from send counts. A "
+          "reply here is a real message that actually arrived."),
          "IMAP", GREEN if ou.get("replied") else AMBER, ""),
         ("Reply rate", f"{ou.get('reply_rate', 0)}%", "replies ÷ sent",
          _score_gauge(min(100, _f(ou.get("reply_rate")) * 5), 50),
@@ -706,7 +717,8 @@ def board_outreach(ctx) -> str:
          "Sends by day. Gaps are days the sequence did not run.",
          "sent_at stamps", BLUE, ""),
         ("Busiest send day", max([v for _d, v in sd], default=0), "emails", "",
-         "Volume ceiling reached so far.",
+         ("The highest volume reached so far. Treat it as evidence the "
+          "ceiling is achievable, not as a target to hold every day."),
          "computed", BLUE, ""),
         ("Sending cadence",
          (round(sum(v for _d, v in sd) / len(sd), 1) if sd else "—"),
@@ -719,7 +731,8 @@ def board_outreach(ctx) -> str:
           if sd else "Nothing sent yet."),
          "computed", AMBER if not sd else GREEN, ""),
         ("Emailed people", ou.get("emailed", 0), "unique recipients", "",
-         "Distinct people reached at least once.",
+         ("Distinct people reached at least once. Someone emailed four "
+          "times counts once here, so this is reach, not effort."),
          "outreach jobs", BLUE, ""),
         ("Reply per recipient",
          (f"{round(100 * ou.get('replied', 0) / max(ou.get('emailed', 1), 1))}%"
@@ -1004,7 +1017,9 @@ def board_revenue(ctx) -> str:
         ranked, 6,
         lambda i, r: (f"Client: {r[0][:22]}", _money(r[1]), "total recorded",
                       _donut(round(100 * r[1] / max(_f(r_total), 1))),
-                      "Share of all recorded revenue.", "recorded deals", BLUE, ""),
+                      ("Share of all recorded revenue. Only deals you entered are "
+                       "counted, so unrecorded revenue silently inflates every other "
+                       "share."), "recorded deals", BLUE, ""),
         "Client", "not recorded yet",
         ("Each recorded deal carries a client name. This slot fills with your "
          "next distinct client."), "recorded deals", AMBER)
@@ -1055,7 +1070,9 @@ def board_customers(ctx) -> str:
          "computed", BLUE, ""),
         ("Client ranking", len(ranked), "by revenue",
          _hbars([(c[:20], v) for c, v in ranked[:8]]),
-         "Who actually pays the bills, ranked.",
+         ("Who actually pays the bills, ranked. If the top one or two "
+          "carry most of the total, that is concentration risk rather "
+          "than success."),
          "recorded deals", BLUE, ""),
         ("Top client share", f"{r.get('top_share', 0)}%", "of all revenue",
          _donut(_f(r.get("top_share"))),
@@ -1090,7 +1107,8 @@ def board_customers(ctx) -> str:
          "recorded deals", GREEN if cu.get("repeat") else AMBER, ""),
         ("Concentration risk", ("high" if _f(r.get("top_share")) > 33 else "contained"),
          "single-client exposure", "",
-         "Feeds the Risk register directly.",
+         ("This feeds the Risk register directly. Losing a single top "
+          "client would move every revenue figure on this dashboard."),
          "risk register", PINK if _f(r.get("top_share")) > 33 else GREEN,
          "<button class='cta' onclick=\"nav('riskinfra')\">Open Risk</button>"),
         ("Where to act", "record every win", "and every repeat", "",
@@ -1223,7 +1241,8 @@ def board_spend(ctx) -> str:
          f"100% rather than overspending.",
          "API meters", _pct_color(_f(s.get("pct")), 85), ""),
         ("Headroom", _money(s.get("headroom")), "left this month", "",
-         "What remains before the hard stop.",
+         ("What remains before the hard stop. When this reaches zero, "
+          "work stops rather than slowing down."),
          "computed", GREEN if _f(s.get("headroom")) > 0 else PINK, ""),
         ("Daily run rate", _money(s.get("run_rate")), "per day so far", "",
          f"Averaged across {s.get('days_elapsed', 0)} elapsed days.",
@@ -1253,7 +1272,8 @@ def board_spend(ctx) -> str:
         prov, 6,
         lambda i, r: (f"{r[0][:22]}", _money(r[1]), "this month",
                       _donut(round(100 * r[1] / max(_f(s.get("spent")), 1))),
-                      "Share of monthly spend.", "API meters", BLUE, ""),
+                      ("Share of the monthly spend. Read it against what that spend "
+                       "produced, never on its own."), "API meters", BLUE, ""),
         "Provider", "no spend recorded",
         ("Each provider bills separately and the meter records it. This slot "
          "fills when another provider is used this month."), "API meters")
@@ -1301,7 +1321,9 @@ def board_cost(ctx) -> str:
           "is still live in the old Finance cards this section replaces."),
          "computed", GREEN if c.get("per_piece") else AMBER, ""),
         ("Cost per lead", _money(c.get("per_lead")), "sourced", "",
-         "Outreach spend divided by leads found.",
+         ("Outreach spend divided by leads found. It ignores lead quality "
+          "entirely, so a falling cost per lead can still mean a worse "
+          "pipeline."),
          "computed", GREEN if c.get("per_lead") else AMBER, ""),
         ("Cost per booking", _money(c.get("per_booking")), "consultation", "",
          "Total engine spend divided by real Cal.com bookings.",
@@ -1458,7 +1480,8 @@ def board_exec(ctx) -> str:
     cards += _slots(
         heads, 4,
         lambda i, hd: (str(hd[0])[:26], str(hd[1])[:22], "section headline", "",
-                       "The one number that section leads with.", "cross-section",
+                       ("The one number that section leads with. Open the section for "
+                        "the working behind it before acting on this alone."), "cross-section",
                        BLUE,
                        f"<button class='cta' onclick=\"nav('{hd[2]}')\">Open</button>"),
         "Section", "not reporting",

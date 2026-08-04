@@ -123,7 +123,19 @@ BOARD_CTA = {
     "Work Orders": ("Apply safe fixes", "runFixes()"),
 }
 _CURRENT_BOARD = {"name": ""}      # set by _safe_board while rendering
-_SEEN = {"board": None, "ids": {}}   # per-board id de-duplication
+_SEEN = {"board": None, "ids": {}}   # PAGE-scoped id de-duplication
+
+
+def reset_card_ids() -> None:
+    """Start a fresh page render.
+
+    This used to reset whenever the BOARD NAME changed, which is not the same
+    thing: a board that renders in two places (the cost-per-outcome board does)
+    got its id counter wiped in between and re-issued ids it had already used.
+    Ten cards on the page carried a duplicate id, so their deep links resolved
+    to whichever copy came first. Scope is the page, so the reset is too.
+    """
+    _SEEN["board"], _SEEN["ids"] = None, {}
 VISIBLE_CARDS = 8                    # progressive disclosure: the rest is one click
 
 
@@ -345,6 +357,85 @@ def _waterfall(steps):
     return _CH().waterfall(steps) if steps else ""
 
 
+SEV_WHY = {
+    "critical": "Red, because this value has crossed the line where it needs "
+                "attention now rather than at some point.",
+    "warn": "Amber, because this value is outside the comfortable range but "
+            "has not failed. It is a watch item, not an emergency.",
+    "ok": "Green, because this value is inside the healthy range. Nothing "
+          "here is asking for a decision.",
+    "info": "Neutral, because this card reports a fact without passing "
+            "judgement on whether it is good or bad.",
+}
+
+
+def _evidence_badge(src):
+    """WHAT KIND of number this is, on the card face, before you read it."""
+    import content_engine_evidence as EV
+    ev = EV.classify(src)
+    if ev["cls"] == "measured":
+        return ""          # the default expectation needs no badge; the
+                           # exceptions do. Badging everything is badging
+                           # nothing.
+    return (f"<span class='evb' style='color:{ev['colour']}' "
+            f"title=\"{_H()._esc(ev['meaning'])}\">"
+            f"{_H()._esc(ev['label'])}</span>")
+
+
+def _detail_pane(pid, plain, jargon, big, sub, insight, src, sev, links):
+    """TIER 1 - the record behind every card, for all of them, automatically.
+
+    A card is about 200px wide. The evidence behind a number is not. Rather
+    than shrink the evidence or grow 2,284 cards, the full record lives here
+    and opens over the page. Everything in it is derived from what the card
+    already declares, so no board has to be edited for a card to gain one.
+    """
+    import content_engine_evidence as EV
+    H = _H()
+    e = H._esc
+    ev = EV.classify(src)
+    out = [f"<div class='dpane' id='{pid}' data-title=\"{e(plain)}\">"]
+
+    out.append("<div class='dsec'><h4>The number</h4>"
+               f"<p class='q'>{e(str(big))}</p>"
+               f"<p>{e(sub) or 'No unit was stated for this figure.'}</p></div>")
+
+    if jargon:
+        out.append("<div class='dsec'><h4>The technical name</h4>"
+                   f"<p>{e(jargon)}</p></div>")
+
+    cls_note = ("" if ev["cls"] in ("measured", "computed")
+                else "<p class='dwarn'>Do not read this as data.</p>")
+    out.append("<div class='dsec'><h4>What kind of number this is</h4>"
+               f"<p><b style='color:{ev['colour']}'>{e(ev['label'])}</b> "
+               f"&mdash; {e(ev['meaning'])}</p>{cls_note}</div>")
+
+    out.append("<div class='dsec'><h4>Where it comes from</h4>"
+               f"<p><b>{e(ev['token']) or 'not stated'}</b></p>"
+               f"<p>{e(ev['why'])}</p></div>")
+
+    if insight:
+        out.append("<div class='dsec'><h4>What it means</h4>"
+                   f"<p>{e(insight)}</p></div>")
+
+    out.append("<div class='dsec'><h4>Why this colour</h4>"
+               f"<p>{e(SEV_WHY.get(sev, SEV_WHY['info']))}</p></div>")
+
+    # WHERE THE BUTTON GOES. A link card used to be a button and nothing else
+    # - you found out what was on the other side by pressing it and looking.
+    where = EV.destination_of(links)
+    if where:
+        out.append("<div class='dsec'><h4>What is on the other side</h4>"
+                   f"<p>{e(where)}</p></div>")
+
+    out.append("<div class='dsec'><h4>What you can do from here</h4>"
+               + (links or "<p>This card carries no action of its own. It is "
+                           "here to be read.</p>")
+               + "</div>")
+    out.append("</div>")
+    return "".join(out)
+
+
 def _viz(title, big, sub, chart, insight, src, accent=BLUE, links=""):
     """THE card. One question, one number, the right chart, a plain-English
     read, clickable evidence, an action — and an address of its own.
@@ -358,8 +449,6 @@ def _viz(title, big, sub, chart, insight, src, accent=BLUE, links=""):
     # title on one board (reserved slots, repeated labels) used to produce the
     # same id and silently break linking — 214 cards, 175 ids.
     board = _CURRENT_BOARD["name"]
-    if _SEEN["board"] != board:
-        _SEEN["board"], _SEEN["ids"] = board, {}
     base = f"card-{_slug(board)}-{_slug(plain)}"
     n = _SEEN["ids"].get(base, 0) + 1
     _SEEN["ids"][base] = n
@@ -369,7 +458,8 @@ def _viz(title, big, sub, chart, insight, src, accent=BLUE, links=""):
     return (f"<div class='card sev-{sev}' id='{cid}' data-sev='{sev}' "
             f"data-w='{weight}' data-q=\"{search_blob}\">"
             + (f"<div class='sevbadge s-{sev}'>{badge}</div>" if badge else "")
-            + f"<p class='ct' style='margin:0'{tip}>{H._esc(plain)}</p>"
+            + f"<p class='ct' style='margin:0'{tip}>{H._esc(plain)}"
+            + _evidence_badge(src) + "</p>"
             f"<div style='display:flex;align-items:baseline;gap:8px;margin-top:7px'>"
             f"<span style='font-size:27px;font-weight:800;color:{accent}' class='tnum'>{H._esc(str(big))}</span>"
             f"<span class='dim'>{H._esc(sub)}</span></div>"
@@ -382,6 +472,13 @@ def _viz(title, big, sub, chart, insight, src, accent=BLUE, links=""):
             + (f"<div style='margin-top:8px'>{links}</div>" if links else "")
             + (f"<div class='dim' style='font-size:10px;margin-top:7px'>🔌 {H._esc(src)}</div>"
                if src else "")
+            # SEE DETAILS - on every card, from this one place. The pane is
+            # emitted hidden next to the card; the button moves it into the
+            # page-level dialog. No fetch, no navigation, no reload.
+            + f"<button class='dbtn' onclick=\"seeDetails('pane-{cid}')\">"
+            f"See details &rsaquo;</button>"
+            + _detail_pane(f"pane-{cid}", plain, jargon, big, sub, insight,
+                           src, sev, links)
             + "</div>")
 
 
@@ -1835,7 +1932,9 @@ def board_local(ctx) -> str:
     def _market_card(name):
         m = next((x for x in markets if x["market"] == name), None)
         if not m:
-            return (name, "—", "no data", "", "No Search Console data for this market.",
+            return (name, "—", "no data", "",
+                    ("No Search Console data for this market yet, which means "
+                     "unmeasured rather than performing badly."),
                     "Search Console", AMBER, "")
         lang_row = next((r for r in (lang.get("markets") or []) if r["market"] == name), {})
         return (name, f"{m['impressions']:,}", f"impressions · {m['clicks']} clicks",
@@ -2279,9 +2378,13 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         f"onclick=\"seoTab('{tid}')\"><span>{icon}</span>{H._esc(label)}"
         f"<span class='n'>{counts.get(tid, 0)}</span></button>"
         for i, (tid, icon, label) in enumerate(TABS))
+    # 'seosrc' is a declared tab but its panel is built separately below, so
+    # emitting it here too put TWO elements with id='spanel-seosrc' on the
+    # page - and seoTab() resolves by id, so the ④ Sources tab switched on the
+    # empty one and the Google boards looked missing.
     body = "".join(
         f"<div class='spanel{' on' if i == 0 else ''}' id='spanel-{tid}'>{panels.get(tid, '')}</div>"
-        for i, (tid, _, _) in enumerate(TABS))
+        for i, (tid, _, _) in enumerate(TABS) if tid != "seosrc")
     runbar = (
         "<div class='ctrl' style='margin:10px 0 2px;flex-wrap:wrap'>"
         "<button class='cbtn' onclick='runSeoAll()'>▶ Run every SEO engine</button>"

@@ -738,6 +738,11 @@ def _calendar_rows(jobs, content_plan=None):
             "why": (str(j.get("halt_reason") or "") if state == "failed"
                     else pv.get("why", "") or str(j.get("halt_reason") or "")),
             "preview_html": pv.get("html", ""),
+            # THE WHOLE JOB rides along so the decision detail can read the
+            # strategist's rationale, the QA issues and the real spend. All of
+            # it was already on the job; none of it reached the screen where
+            # the approve button is. In-memory only - nothing is serialised.
+            "job": j,
         })
     # plan items that have no job yet - they are coming, and they say so
     _items = _D(content_plan).get("items")

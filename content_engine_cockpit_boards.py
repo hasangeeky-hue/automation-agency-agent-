@@ -228,7 +228,8 @@ def board_decisions(ctx) -> str:
                        enumerate(zip(_L(d.get("by_system")),
                                      (PINK, AMBER, TEAL, BLUE, VIOLET, GREEN,
                                       PINK, BLUE))) if n]),
-         "Which system is asking for you most.",
+         ("Which system is asking for you most. A high count means volume "
+          "of requests, not that they are the most urgent."),
          "computed", BLUE, ""),
     ]
     cards += _slots(
@@ -255,7 +256,8 @@ def board_decisions(ctx) -> str:
           "offering the fix is noise."),
          "principle", GREEN, ""),
         ("Nothing acts by itself", "you press it", "by your decision", "",
-         "Every button here is a human action.",
+         ("Every button here is a human action. Nothing on this board "
+          "runs on its own, and nothing spends without you pressing it."),
          "your decision", GREEN, ""),
     ]
     return _head("⚡", "Decision queue",
@@ -457,7 +459,8 @@ def _approval_board(kind, label, icon, count, live_key, blurb):
               "name is on every piece, that is deliberate."),
              "engine", GREEN, ""),
             ("Decline with a reason", "teaches the engine", "not just no", "",
-             "The reason goes into the playbook.",
+             ("The reason you give goes into the playbook, so a specific "
+              "decline teaches the engine something and a blank one does not."),
              "learning", BLUE, ""),
             ("Where the work happens", "below", "the live queue", "",
              "The queue itself is under this board, unchanged.",
@@ -525,7 +528,8 @@ def board_budget(ctx) -> str:
           "halts rather than continuing."),
          "live caps", BLUE, set_btn),
         ("Headroom", _money(b.get("headroom")), "left this month", "",
-         "What remains before new LLM steps stop.",
+         ("What remains before new model steps stop being started. Work "
+          "already running is allowed to finish."),
          "computed", GREEN if _f(b.get("headroom")) > 20 else PINK, ""),
         ("Projected month end", _money(b.get("projected")), "at this run rate",
          "", (f"{_money(b.get('run_rate'))} a day across "
@@ -837,7 +841,8 @@ def board_jobs(ctx) -> str:
          "job queue", AMBER if a.get("waiting") else GREEN,
          "<button class='cta' onclick=\"seoTab('ckcontent')\">Review</button>"),
         ("Failed", _i(e.get("failed")), "produced nothing", "",
-         "Consumed budget and returned no output.",
+         ("These consumed budget and returned no usable output. The money "
+          "is spent whether or not the piece was later salvaged."),
          "job queue", PINK if e.get("failed") else GREEN, ""),
         ("Halted by a cap", _i(e.get("halted_by_budget")), "stopped, not broken",
          "", ("These hit a budget ceiling. Raising the cap releases them."),
@@ -973,7 +978,8 @@ def board_playbook(ctx) -> str:
          "learning module", GREEN if pb.get("entries") else AMBER, ""),
         ("Sections", len(secs), "kinds of learning",
          _hbars([(k[:20], n) for k, n in secs]),
-         "What the engine keeps notes on.",
+         ("What the engine keeps notes on. A section with no notes is not "
+          "necessarily healthy - it may simply never have been swept."),
          "learning module", BLUE if secs else AMBER, ""),
         ("Decisions recorded", _i(lg.get("total")), "actions taken",
          _trend([("decisions", _L(lg.get("series")), TEAL)]),
@@ -1054,7 +1060,8 @@ def board_works(ctx) -> str:
          "<button class='cta' onclick='biDeal()'>Record a won deal</button>"),
         ("Best source", (_s(verts[0][0]) if verts else "—"),
          (_money(verts[0][1]) if verts else "no deals yet"), "",
-         "Where to put the next hour of effort.",
+         ("Where to put the next hour of effort, based on what has "
+          "already produced results rather than on what feels promising."),
          "recorded deals", GREEN if verts else AMBER, ""),
     ]
     cards += _slots(
@@ -1100,7 +1107,8 @@ def board_works(ctx) -> str:
           "and none of them is revenue."),
          "principle", VIOLET, ""),
         ("One deal changes this board", "entirely", "from blank to ranked", "",
-         "Everything here keys on recorded deals.",
+         ("Everything on this board keys on recorded deals. One deal "
+          "entered or missed moves every figure here."),
          "recorded deals", AMBER,
          "<button class='cta' onclick='biDeal()'>Record a won deal</button>"),
         ("Ranked by money", "not by volume", "deliberately", "",
@@ -1136,10 +1144,12 @@ def board_experiments(ctx) -> str:
           if ex.get("due") else "Nothing is due."),
          "computed", AMBER if ex.get("due") else GREEN, ""),
         ("Open", _i(ex.get("open")), "still running", "",
-         "Waiting for their review date.",
+         ("Waiting for their review date. Nothing happens to these until "
+          "that date arrives - they are not stuck."),
          "experiments", BLUE, ""),
         ("Scored", _i(ex.get("scored")), "with a verdict", "",
-         "A scored experiment feeds the playbook.",
+         ("A scored experiment feeds the playbook. Until it is scored it "
+          "changes nothing about how the engine behaves."),
          "experiments", GREEN if ex.get("scored") else AMBER, ""),
     ]
     cards += _slots(
