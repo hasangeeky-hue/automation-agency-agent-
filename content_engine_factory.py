@@ -473,6 +473,56 @@ def preview_website(piece=None, ci_text="", site="anthropos-automation.com") -> 
             "words": words, "headings": len(heads), "has_image": bool(img)}
 
 
+def preview_for_job(job, *, compact=False) -> dict:
+    """THE PREVIEW FOLLOWS THE DESTINATION.
+
+    A piece bound for the website previews as WordPress; one bound for
+    LinkedIn previews as LinkedIn; one bound for both shows both. The channel
+    list comes from the SAME vocabulary the publisher uses, so the screen you
+    approve from and the code that posts can never disagree about where a
+    piece is going - they did this morning, and you approved a multi-image
+    post that published as a single.
+
+    Returns {html, platforms, destination, written, why} and NEVER raises. An
+    unwritten plan row is not a failure: it says so, because a preview that
+    invents words for a piece nobody has written is worse than an empty one.
+    """
+    import content_engine_site_taxonomy as _T
+    j = _D(job)
+    pl = _D(j.get("payload"))
+    piece = _D(pl.get("content_producer"))
+    cfg = _D(pl.get("config"))
+    chans = _T.channels_of(cfg)
+    labels = [PLATFORMS[c]["label"] for c in chans if c in PLATFORMS]
+    dest = " + ".join(labels) or "Website"
+
+    body = _s(piece.get("body"))
+    title = _s(piece.get("title"))
+    if not (body or title):
+        return {"html": "", "platforms": [], "destination": dest,
+                "written": False,
+                "why": "Planned, not written yet - there are no words to show."}
+
+    want = [c for c in chans if c in PLATFORMS] or ["website"]
+    if compact:                       # one frame: the primary destination
+        want = want[:1]
+    pv = previews(piece, want, image_reason=_s(pl.get("image_error")))
+    frames = []
+    for c in want:
+        f = _D(_D(pv.get("by_platform")).get(c))
+        if not f.get("html"):
+            continue
+        frames.append(
+            f"<div style='min-width:260px;flex:1'>"
+            f"<p class='cc' style='margin:0 0 6px;opacity:.75'>"
+            f"{_e(PLATFORMS[c]['icon'])} as {_e(PLATFORMS[c]['label'])} will "
+            f"show it</p>{f['html']}</div>")
+    return {"html": ("<div style='display:flex;gap:14px;flex-wrap:wrap'>"
+                     + "".join(frames) + "</div>") if frames else "",
+            "platforms": want, "destination": dest, "written": True,
+            "why": ""}
+
+
 def _li_images(piece) -> list:
     """Every image the piece carries, hero first, in body order.
 

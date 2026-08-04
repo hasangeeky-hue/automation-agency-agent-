@@ -667,6 +667,12 @@ def build_cockpit_ctx(store, *, jobs=None, status=None, health=None,
     except Exception:
         pass
     return {
+        # THE SAME ACTIONABLE ROWS THE CALENDAR USES, filtered to what is
+        # waiting. You were being asked to approve a piece you could not
+        # see - the Approve button and the words it applies to lived on
+        # two different screens.
+        "approval_rows": [r for r in _calendar_rows(jobs)
+                          if r.get("state") == "awaiting"],
         "decisions": CK.decisions(seo=seo, content=None, outreach=outreach,
                                   bi=bi, sga=sga, media=media, risk=risk,
                                   system=system, jobs=jobs),
@@ -688,6 +694,66 @@ def build_cockpit_ctx(store, *, jobs=None, status=None, health=None,
         "log": CK.decision_log(store),
         "live": live if isinstance(live, dict) else {},
     }
+
+
+def _calendar_rows(jobs, content_plan=None):
+    """ONE dated list: everything planned AND everything written.
+
+    The calendar showed plan items only, as bars. A piece that had already
+    been WRITTEN and was sitting in the approval queue never appeared there at
+    all - so the screen called "the week" was missing the only rows you could
+    actually act on.
+
+    Each row carries its own preview, rendered by destination. Never raises;
+    a row that cannot render says why instead of vanishing."""
+    import content_engine_factory as _FF
+    out = []
+    for j in (jobs or []):
+        j = _D(j)
+        if j.get("type") != "content_piece":
+            continue
+        st = str(j.get("status") or "")
+        if st in ("published", "optimized", "learned", "discarded"):
+            continue
+        state = ("awaiting" if st == "AWAITING_APPROVAL" else
+                 "failed" if st in ("failed", "revision_needed") else "planned")
+        try:
+            pv = _FF.preview_for_job(j)
+        except Exception as e:
+            pv = {"html": "", "destination": "", "written": False,
+                  "why": f"preview unavailable: {type(e).__name__}"}
+        pc = _D(_D(j.get("payload")).get("content_producer"))
+        out.append({
+            "job_id": str(j.get("job_id") or ""),
+            "title": str(pc.get("title") or j.get("job_id") or ""),
+            "destination": pv.get("destination", ""),
+            "when": str(j.get("created_at") or "")[:10],
+            "state": state,
+            "written": pv.get("written", False),
+            # THE REAL REASON WINS. This read `pv.why or halt_reason`, so a
+            # FAILED piece reported "planned, not written yet" - the generic
+            # no-body message - and buried the actual failure underneath it.
+            # A row that explains itself wrongly is worse than one that says
+            # nothing: it stops you looking.
+            "why": (str(j.get("halt_reason") or "") if state == "failed"
+                    else pv.get("why", "") or str(j.get("halt_reason") or "")),
+            "preview_html": pv.get("html", ""),
+        })
+    # plan items that have no job yet - they are coming, and they say so
+    _items = _D(content_plan).get("items")
+    for it in (_items if isinstance(_items, (list, tuple)) else []):
+        it = _D(it)
+        _ch = it.get("channels")
+        _ch = _ch if isinstance(_ch, (list, tuple)) else []
+        out.append({"job_id": "", "title": str(it.get("title") or ""),
+                    "destination": ", ".join(str(c) for c in _ch) or "Website",
+                    "when": str(it.get("date") or it.get("day") or "planned"),
+                    "state": "planned", "written": False,
+                    "why": "Planned, not written yet - approve the plan and "
+                           "the writer starts.",
+                    "preview_html": ""})
+    out.sort(key=lambda r: (r.get("when") or "9999"))
+    return out
 
 
 def build_factory_ctx(store, *, jobs=None, status=None, ci=None, piece=None,
@@ -746,6 +812,7 @@ def build_factory_ctx(store, *, jobs=None, status=None, ci=None, piece=None,
         "image_need": F.image_needed(_ptype, chans),
         "image_state": image_state,
         "piece_job_id": (_job.get("job_id") if "_job" in dir() else ""),
+        "calendar_rows": _calendar_rows(jobs, content_plan),
         "ci": F.ci_compliance(pc, ci),
         "pipeline": F.pipeline(jobs),
         "routing": F.routing(jobs, el),

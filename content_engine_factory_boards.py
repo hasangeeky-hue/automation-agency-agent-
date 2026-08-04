@@ -604,6 +604,96 @@ def board_brief(ctx) -> str:
 # ======================================================================
 #  (3) PLAN & CALENDAR  (20)
 # ======================================================================
+def _str(v):
+    return str(v or "").strip()
+
+
+def _calendar_list(ctx, prefix="cal") -> str:
+    """THE CALENDAR AS A LIST, one row per piece, each row actionable.
+
+    It was a Gantt bar chart: you could see WHEN something was coming and do
+    nothing about it - no preview, no edit, no approve, no remove. A bar is a
+    picture of a schedule; this is a place you work.
+
+    Every row carries the four things you asked for, and the preview opens
+    INLINE - pressing it never moves the page or costs you your place.
+    """
+    import content_engine_factory as _FF
+    H = _H()
+    rows = _L(ctx.get("calendar_rows"))
+    if not rows:
+        return ("<div class='card full' style='margin-top:12px'>"
+                "<p class='ct'>📅 The week</p><p class='cc'>Nothing planned or "
+                "written yet. Press <b>Plan a week</b> and every piece will "
+                "appear here with its preview and its buttons.</p></div>")
+
+    out = []
+    for r in rows:
+        r = _D(r)
+        jid = _str(r.get("job_id"))
+        title = H._esc(_str(r.get("title")) or "(untitled)")
+        dest = H._esc(_str(r.get("destination")))
+        when = H._esc(_str(r.get("when")))
+        state = _str(r.get("state"))
+        written = bool(r.get("written"))
+        why = H._esc(_str(r.get("why")))
+        # UNIQUE PER BOARD. This list renders in the Content Factory AND in
+        # the Cockpit approvals, so a bare "pv-<jobid>" appeared twice in one
+        # document. getElementById returns the FIRST match, so pressing
+        # Preview on the calendar opened the copy on a screen you were not
+        # looking at - the button did something, just not where you could see
+        # it. Caught in the DOM; it looked correct in the source.
+        pid = f"pv-{prefix}-" + (jid or str(len(out)))
+        tone = {"awaiting": GREEN, "failed": PINK,
+                "planned": BLUE}.get(state, AMBER)
+        # The preview is rendered but COLLAPSED - one click, no page move, no
+        # second request. A row you have to navigate away from to judge is the
+        # thing being fixed here.
+        frame = _str(r.get("preview_html"))
+        body = (f"<div id='{pid}' style='display:none;margin-top:10px;"
+                f"padding:10px;border-radius:10px;background:#0B1120;"
+                f"max-height:520px;overflow:auto'>{frame}</div>"
+                if frame else
+                f"<div id='{pid}' style='display:none;margin-top:10px'>"
+                f"<p class='cc'>{why or 'Nothing to show yet.'}</p></div>")
+
+        btns = [f"<button class='cbtn' onclick=\"var e=document"
+                f".getElementById('{pid}');e.style.display="
+                f"e.style.display==='none'?'block':'none';"
+                f"this.textContent=e.style.display==='none'"
+                f"?'Preview':'Hide';\">"
+                f"{'Preview' if frame else 'Why not'}</button>"]
+        if jid:
+            btns.append(
+                f"<button class='cbtn' onclick=\"var n=prompt('What should "
+                f"change? This goes to the writer as your instruction.');"
+                f"if(n===null)return;act('/fix/decline_piece?arg={H._esc(jid)}"
+                f"|'+encodeURIComponent(n))\">Rewrite with a note</button>")
+            btns.append(
+                f"<button class='cbtn' onclick=\"if(confirm('Remove this piece "
+                f"from the queue? It will not publish.'))"
+                f"act('/fix/delete_piece?arg={H._esc(jid)}')\">Remove</button>")
+        if state == "awaiting" and jid:
+            btns.insert(0, f"<button class='cta' onclick=\"act('/jobs/"
+                           f"{H._esc(jid)}/approve')\">Approve</button>")
+
+        out.append(
+            f"<div class='card full' style='margin-top:8px;border-left:3px "
+            f"solid {tone}'>"
+            f"<div style='display:flex;gap:10px;align-items:baseline;"
+            f"flex-wrap:wrap'>"
+            f"<p class='ct' style='margin:0;flex:1;min-width:220px'>{title}</p>"
+            f"<span class='dim' style='font-size:12px'>{when}</span></div>"
+            f"<p class='cc' style='margin:4px 0 8px'>{dest}"
+            + (f" &middot; {H._esc(state)}" if state else "")
+            + (f" &middot; not written yet" if not written else "")
+            + "</p>" + " ".join(btns) + body + "</div>")
+    return ("<div class='card full' style='margin-top:12px'>"
+            "<p class='ct'>📅 The week</p><p class='cc'>Every piece that will "
+            "publish, in date order. Preview, rewrite or remove any of them "
+            "here - the page does not move.</p></div>" + "".join(out))
+
+
 def board_plan(ctx) -> str:
     ctx = _ctx(ctx)
     pl, br = _D(ctx.get("plan")), ctx["brief"]
@@ -704,7 +794,7 @@ def board_plan(ctx) -> str:
     ]
     return _head("🗓", "Plan & calendar",
                  "The week ahead — what posts, which day, which channel, and "
-                 "why that piece.") + _vizcards(cards[:20])
+                 "why that piece.") + _calendar_list(ctx) + _vizcards(cards[:20])
 
 
 def _s2(v):

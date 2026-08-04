@@ -467,7 +467,25 @@ def _approval_board(kind, label, icon, count, live_key, blurb):
             cards.append(("Queue detail", "—", "no further items", "",
                           "This queue has nothing more to show right now.",
                           "job queue", BLUE, ""))
-        return (_head(icon, f"Approvals · {label}", blurb)
+        # THE PIECE ITSELF, ABOVE THE CARDS. You were asked to approve
+        # something you could not see: the Approve button lived here and the
+        # words lived on another screen. Every waiting piece now renders in
+        # the shape it will publish in - WordPress for the site, LinkedIn for
+        # LinkedIn - with Approve, Rewrite and Remove on the same row.
+        queue = ""
+        if kind == "content":
+            try:
+                import content_engine_factory_boards as _FBB
+                rows = _L(ctx.get("approval_rows"))
+                if rows:
+                    queue = _FBB._calendar_list({"calendar_rows": rows}, prefix="appr")
+            except Exception as e:
+                queue = ("<div class='card full' style='margin-top:12px'>"
+                         "<p class='ct'>⚠ the waiting pieces could not render"
+                         "</p><p class='cc'>"
+                         f"{type(e).__name__}: {str(e)[:160]}. The cards below "
+                         f"are unaffected.</p></div>")
+        return (_head(icon, f"Approvals · {label}", blurb) + queue
                 + _vizcards(cards[:count]) + _live(ctx, live_key))
     board.__name__ = f"board_appr_{kind}"
     return board
