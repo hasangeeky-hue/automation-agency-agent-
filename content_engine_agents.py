@@ -50,22 +50,88 @@ def _now():
     return datetime.now(timezone.utc)
 
 
+def _how_for(fix_id) -> str:
+    """What pressing this button will actually do, and what the alternative is.
+
+    Written once per fix rather than at every call site, so a finding can
+    never offer a button whose consequence is undescribed. If a fix has no
+    entry here it is named as unexplained rather than silently blank - a
+    missing explanation should be visible, not invisible."""
+    return {
+        "clear_setting":
+            "Empties the field. The engine then falls back to deploy/.env if "
+            "a value is there. Nothing else is touched.",
+        "retest_wires":
+            "Asks every connector to answer. Free, changes nothing - it only "
+            "re-reads what is already configured.",
+        "run_backup":
+            "Writes a backup now. Does not test that it restores - press "
+            "Test the restore for that.",
+        "test_restore":
+            "Reads the backup back to prove it can be. Free, changes nothing.",
+        "submit_indexnow":
+            "Pushes your new URLs to Bing and Yandex. Free. Google is not "
+            "included - it does not use IndexNow.",
+        "retry_job":
+            "Puts the piece back at the start of the line. It will spend "
+            "again on the model calls it already made.",
+        "piece_image":
+            "Generates one image and attaches it. Costs about EUR 0.04 and "
+            "cannot be undone, so it asks first.",
+        "refresh_replies":
+            "Re-reads the inbox and drafts answers. It NEVER sends - the "
+            "drafts wait for you.",
+        "run_seo_due":
+            "Runs only the engines that are overdue AND free. Paid ones are "
+            "skipped and named.",
+        "run_seo_fixes":
+            "Rewrites titles, metas and alt text - things a reader does not "
+            "see. It never touches your body copy.",
+        "enable_tracking":
+            "Turns opens and clicks on for future sends. Past sends stay "
+            "unmeasured; nothing is sent by this.",
+        "decline_piece":
+            "Sends the piece back with your note attached, which the writer "
+            "reads on its next attempt.",
+        "delete_piece":
+            "Takes the piece out of the queue for good. It will not publish. "
+            "This cannot be undone.",
+    }.get(str(fix_id or ""), "")
+
+
 class Finding:
-    """One failed check, and what can be done about it."""
+    """THE TRANSPARENCY CONTRACT — what, why, and which way.
+
+        check   WHAT is failing        "3 pieces failed"
+        detail  WHY                    "content_producer ran out of room"
+        how     WHICH WAY to fix it    "Raise the ceiling, or shorten the
+                                        brief. This button does the first."
+
+    A card that states a number and offers a button, without saying what the
+    button will do or what the alternative is, is the thing being fixed here.
+    In the founder's words: "it's just add some button which redirect me to
+    the other page without proper explanation ... otherwise I am fully blind."
+
+    `how` is REQUIRED whenever a fix is offered. inspect() records an error
+    and substitutes a visible placeholder rather than letting a button ship
+    with its consequence undescribed.
+    """
 
     def __init__(self, section, check, detail, *, severity="warn",
-                 fix_id="", fix_arg=""):
+                 fix_id="", fix_arg="", how=""):
         self.section = section
         self.check = check
         self.detail = detail
         self.severity = severity            # warn | bad
         self.fix_id = fix_id
         self.fix_arg = fix_arg
+        self.how = how
 
     def as_dict(self):
         return {"section": self.section, "check": self.check,
                 "detail": self.detail, "severity": self.severity,
-                "fix_id": self.fix_id, "fix_arg": self.fix_arg}
+                "fix_id": self.fix_id, "fix_arg": self.fix_arg,
+                "how": self.how or _how_for(self.fix_id)}
 
 
 class Agent:
@@ -94,6 +160,18 @@ class Agent:
                 continue
             for f in (r if isinstance(r, (list, tuple)) else [r]):
                 if isinstance(f, Finding):
+                    # A BUTTON MUST EXPLAIN ITSELF. A finding that offers an
+                    # action and cannot say what the action does is exactly
+                    # the "button which redirect me without proper
+                    # explanation" complaint. Caught here rather than left to
+                    # be noticed on screen.
+                    if f.fix_id and not (f.how or _how_for(f.fix_id)):
+                        errs.append(
+                            f"{getattr(fn, '__name__', 'check')}: offers "
+                            f"'{f.fix_id}' with no explanation of what it "
+                            f"does - add it to _how_for()")
+                        f.how = (f"This runs '{f.fix_id}'. What it does is "
+                                 f"not documented yet.")
                     out.append(f)
         return {"section": self.key, "label": self.label,
                 "has_contract": self.has_contract,
@@ -257,12 +335,21 @@ def _rsk_exposed(store, ctx):
     if ex:
         out.append(Finding("risk", f"{len(ex)} credential(s) known exposed",
                            ", ".join(_S(x) for x in ex[:5]),
-                           severity="bad"))
+                           severity="bad",
+                           how="Rotate each one in its provider's console, "
+                               "then set the new value with "
+                               "`credentials.py --set NAME` - it reads with no "
+                               "echo, so it never reaches a shell history. No "
+                               "button can do this for you; only you can log "
+                               "in to those providers."))
     if cr.get("never_rotated") and cr.get("set"):
         out.append(Finding("risk", "No credential has ever been rotated",
                            f"{cr.get('set')} of {cr.get('total')} fields hold "
                            f"a value and none has been replaced since setup.",
-                           severity="warn"))
+                           severity="warn",
+                           how="Not urgent on its own. Rotate anything that "
+                               "has been pasted into a chat, a ticket or a "
+                               "shared document first."))
     return out
 
 
@@ -357,7 +444,11 @@ def _seo_search_console(store, ctx):
     return [Finding("seo", "Search Console is not answering",
                     _S(ins.get("reason"))[:140]
                     or "the inspection engine could not reach Google",
-                    severity="bad")]
+                    severity="bad",
+                    how="Check GOOGLE_SERVICE_ACCOUNT_JSON and GSC_SITE_URL, "
+                        "and that the service account is added as a user on "
+                        "the Search Console property. The engine cannot grant "
+                        "itself that access.")]
 
 
 def _seo_indexnow(store, ctx):
@@ -408,7 +499,11 @@ def _bi_no_targets(store, ctx):
     return [Finding("bi", "No targets are set",
                     "Every card can state a number and none can say whether it "
                     "is good. A dashboard without a target reports, it does "
-                    "not judge.", severity="warn")]
+                    "not judge.", severity="warn",
+                    how="Set a monthly revenue, deals, leads or bookings "
+                        "target on the Business Intel board. One number is "
+                        "enough to start - every attainment card then has "
+                        "something to measure against.")]
 
 
 def _bi_wasted_spend(store, ctx):
@@ -457,7 +552,10 @@ def _sga_dead_channel(store, ctx):
     return [Finding("sga", f"{len(dead)} channel(s) posting but not connected",
                     ", ".join(_S(_D(r).get("label")) for r in dead[:5])
                     + " - scheduled posts there cannot be delivered.",
-                    severity="bad")]
+                    severity="bad",
+                    how="Either connect the channel on System & Wiring, or "
+                        "remove it from the posting plan. Leaving it means "
+                        "every scheduled post there fails silently.")]
 
 
 def _sga_empty_calendar(store, ctx):

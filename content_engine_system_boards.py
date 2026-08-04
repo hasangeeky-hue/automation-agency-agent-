@@ -231,9 +231,22 @@ def agent_findings_cards(ctx, section) -> list:
         f = _D(f)
         btn = FX.fix_button(f.get("fix_id", ""), arg=f.get("fix_arg", ""),
                             env_get=C._env) if f.get("fix_id") else ""
+        # WHAT / WHY / HOW, on the card itself. It showed a number, one
+        # sentence and a button - so "what needs to fix" and "which way"
+        # were both missing, which is the whole of "otherwise I am fully
+        # blind". A button now always sits under an explanation of itself.
+        # PLAIN TEXT, not markup. The card renderer escapes this field, so
+        # <b> tags would have shipped to the screen as literal &lt;b&gt;.
+        # Caught by rendering it rather than by reading the code.
+        _how = str(f.get("how", "")).strip()
+        _body = ("WHY — " + str(f.get("detail", ""))[:220]
+                 + "   ·   WHAT TO DO — "
+                 + (_how if _how else
+                    "Nothing automatic exists for this one yet. It is "
+                    "reported so you can judge it rather than discover it."))
         cards.append((str(f.get("check", "finding"))[:46],
                       "needs fixing", f"found {when}", "",
-                      str(f.get("detail", ""))[:200],
+                      _body,
                       "inspector", PINK if f.get("severity") == "bad" else AMBER,
                       btn))
     return cards
@@ -1062,7 +1075,31 @@ def board_agent_activity(ctx) -> str:
     auto = [r for r in led if _D(r).get("auto")]
     failed = [r for r in led if not _D(r).get("ok")]
 
+    # WHAT NEEDS YOU, FIRST. A notification surface that opens with "sections
+    # swept" is a status page. This opens with the things that will not move
+    # until a person acts, because those are the only ones that are actually
+    # waiting on anything.
+    needs_you = []
+    for s in secs:
+        for f in _L(_D(s).get("findings")):
+            f = _D(f)
+            if not f.get("fix_id"):          # nothing automatic exists
+                needs_you.append((str(_D(s).get("section") or "?"),
+                                  str(f.get("check") or ""),
+                                  str(f.get("how") or "")))
     cards = [
+        ("Needs you", len(needs_you), "nothing automatic can do these",
+         _statusgrid([(f"{sec}: {chk[:22]}", False, "you")
+                      for sec, chk, _h in needs_you[:8]]),
+         (("The engine found these and cannot act on them - a key only you "
+           "can rotate, a target only you can set, a decision only you can "
+           "make. Each card in its own section says which way to fix it.")
+          if needs_you else
+          "Nothing is waiting on a person. Everything the inspector found "
+          "either has a button or has already run."),
+         "the inspectors", PINK if needs_you else GREEN,
+         "<button class='cbtn' onclick=\"nav('cockpit')\">Open the "
+         "decision queue</button>" if needs_you else ""),
         ("Sections swept", f"{len(swept)}/9", "by the inspector",
          _statusgrid([(str(_D(s).get("section", "?"))[:12],
                        bool(_D(s).get("has_contract")),
@@ -1135,13 +1172,13 @@ _TAB_BOARDS = {
 CARD_COUNTS = {"command": 14, "wires": 24, "connect": 26, "agents": 22, "jobs": 20,
                "failures": 18, "cost": 18, "freshness": 16, "flow": 16, "deps": 14,
                "drift": 14, "deploy": 12, "loopmap": 26,
-               "activity": 8}
+               "activity": 9}
 TOTAL_CARDS = sum(CARD_COUNTS.values())
 
 _TAB_COUNTS = {"syscmd": 14, "syswires": 24, "sysconnect": 26, "sysagents": 22,
                "sysjobs": 20, "sysfail": 18, "syscost": 18, "sysfresh": 16,
                "sysflow": 16, "sysdeps": 14, "sysdrift": 14, "sysdeploy": 12, "sysloopmap": 26,
-               "sysactivity": 8}
+               "sysactivity": 9}
 
 
 def _safe_board(name, fn, ctx) -> str:
