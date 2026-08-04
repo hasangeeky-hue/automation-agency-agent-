@@ -20,15 +20,15 @@ and is not used here - "is this credential malformed" is not a matter of
 opinion.
 
 HONEST SCOPE OF THIS FILE
-    Content, Outreach, Risk and System have real contracts, each written
-    against data shapes read out of the live context builders first rather
-    than guessed.
+    SEVEN of the nine have real contracts - content, seo, outreach, bi, sga,
+    risk and system - each written against data shapes read out of the live
+    context builders BEFORE a single check was typed. The SEO cadence check
+    calls the scheduler's own seo_due() rather than counting days itself; a
+    second copy of that rule is the bug that started this whole day.
 
-    The other five are registered with NO CHECKS and say so. An agent with
-    invented checks against a data shape nobody confirmed is worse than an
-    empty one: it reports confidently and is wrong. Each needs one pass
-    against its real board before it gets a contract, and until then it
-    honestly reports that it has none.
+    The remaining two carry no checks ON PURPOSE. Media moves money and the
+    Cockpit is where you decide - an agent acting in either is a worse
+    machine, not a more capable one.
 
     python content_engine_agents.py
 """
@@ -317,14 +317,177 @@ register(Agent("outreach", "Leads & Outreach",
                [_out_tracking_off, _out_unclassified_replies, _out_suppression]))
 
 
+# ===========================================================================
+#  SEO AGENT
+#
+#  Every check below reuses the engine's OWN function or reads a return shape
+#  I looked up first. seo_due() is the cadence authority - reimplementing
+#  "which engines are overdue" here would be a second copy of a rule, which is
+#  the bug that started this whole day.
+# ===========================================================================
+def _seo_ctx(store):
+    import content_engine_seo_ops as OPS
+    return _D(OPS.build_ctx(store))
+
+
+def _seo_overdue(store, ctx):
+    """Which engines are past their cadence. Asks the scheduler, never counts
+    days itself."""
+    try:
+        import content_engine_scheduler as SCH
+        due = SCH.seo_due(store)
+    except Exception:
+        return []
+    if not due:
+        return []
+    free = [d for d in due
+            if SCH.SEO_CADENCE.get(d, {}).get("cost") == "free"]
+    return [Finding("seo", f"{len(due)} SEO engine(s) overdue",
+                    ", ".join(due[:8])
+                    + (f" - {len(free)} of them cost nothing" if free else ""),
+                    severity="warn" if free else "bad")]
+
+
+def _seo_search_console(store, ctx):
+    """run_inspect returns {connected, reason} - shape read from the source."""
+    ins = _D(_seo_ctx(store).get("inspect"))
+    if not ins or ins.get("connected"):
+        return []
+    return [Finding("seo", "Search Console is not answering",
+                    _S(ins.get("reason"))[:140]
+                    or "the inspection engine could not reach Google",
+                    severity="bad")]
+
+
+def _seo_indexnow(store, ctx):
+    """run_indexnow returns {status, ping, submitted, reason, at}."""
+    ix = _D(_seo_ctx(store).get("indexnow"))
+    if not ix:
+        return []
+    if int(ix.get("submitted") or 0):
+        return []
+    return [Finding("seo", "Nothing has been submitted to IndexNow",
+                    _S(ix.get("reason"))[:120]
+                    or f"status: {_S(ix.get('status')) or 'unknown'}",
+                    severity="warn", fix_id="submit_indexnow")]
+
+
+def _seo_crawl_issues(store, ctx):
+    """run_crawl returns {crawled, issues, scores, work_orders, ...}."""
+    cr = _D(_seo_ctx(store).get("crawl"))
+    n = int(cr.get("issues") or 0)
+    if not n:
+        return []
+    return [Finding("seo", f"{n} on-page issue(s) from the last crawl",
+                    f"{cr.get('crawled', 0)} page(s) crawled. Work orders "
+                    f"exist for the ones the engine can fix itself.",
+                    severity="warn")]
+
+
+register(Agent("seo", "SEO / AEO / GEO",
+               [_seo_overdue, _seo_search_console, _seo_indexnow,
+                _seo_crawl_issues]))
+
+
+# ===========================================================================
+#  BI AGENT — shapes read out of build_bi_ctx before a single check was typed
+#     targets    {revenue_month, deals_month, leads_month, bookings_month, set}
+#     cost       {total, produced, failed, wasted, wasted_pct, per_piece, ...}
+#     attainment {rows, set, behind, note}
+# ===========================================================================
+def _bi_ctx(store):
+    import content_engine_seo_ops as OPS
+    return _D(OPS.build_bi_ctx(store))
+
+
+def _bi_no_targets(store, ctx):
+    t = _D(_bi_ctx(store).get("targets"))
+    if t.get("set"):
+        return []
+    return [Finding("bi", "No targets are set",
+                    "Every card can state a number and none can say whether it "
+                    "is good. A dashboard without a target reports, it does "
+                    "not judge.", severity="warn")]
+
+
+def _bi_wasted_spend(store, ctx):
+    c = _D(_bi_ctx(store).get("cost"))
+    pct = float(c.get("wasted_pct") or 0)
+    if pct < 20 or not float(c.get("wasted") or 0):
+        return []
+    return [Finding("bi", f"{pct:.0f}% of content spend was wasted",
+                    f"{c.get('failed', 0)} piece(s) failed after costing money. "
+                    f"That is spend with nothing to show for it.",
+                    severity="bad" if pct >= 40 else "warn")]
+
+
+def _bi_behind(store, ctx):
+    a = _D(_bi_ctx(store).get("attainment"))
+    behind = _L(a.get("behind"))
+    if not (a.get("set") and behind):
+        return []
+    return [Finding("bi", f"Behind on {len(behind)} target(s)",
+                    ", ".join(_S(b) for b in behind[:5]), severity="warn")]
+
+
+register(Agent("bi", "Business Intel",
+               [_bi_no_targets, _bi_wasted_spend, _bi_behind]))
+
+
+# ===========================================================================
+#  SGA AGENT
+#     channels {rows: [{channel, label, connected, posts, posting, ...}]}
+#     calendar {tasks, live, planned, live_count, paid, organic, has_data}
+#     cadence  {daily_target, days_measured, days_on_target, adherence, ...}
+# ===========================================================================
+def _sga_ctx(store):
+    import content_engine_seo_ops as OPS
+    return _D(OPS.build_sga_ctx(store))
+
+
+def _sga_dead_channel(store, ctx):
+    """A channel being posted to that cannot receive. This was a PROPOSED check
+    in the plan; the shape is now read, so it is a real one."""
+    rows = _L(_D(_sga_ctx(store).get("channels")).get("rows"))
+    dead = [r for r in rows
+            if _D(r).get("posting") and not _D(r).get("connected")]
+    if not dead:
+        return []
+    return [Finding("sga", f"{len(dead)} channel(s) posting but not connected",
+                    ", ".join(_S(_D(r).get("label")) for r in dead[:5])
+                    + " - scheduled posts there cannot be delivered.",
+                    severity="bad")]
+
+
+def _sga_empty_calendar(store, ctx):
+    cal = _D(_sga_ctx(store).get("calendar"))
+    if cal.get("has_data") or int(cal.get("planned") or 0):
+        return []
+    return [Finding("sga", "Nothing is on the calendar",
+                    "No social task is planned, so the cadence cannot be met "
+                    "however well the channels are wired.", severity="warn")]
+
+
+def _sga_adherence(store, ctx):
+    cad = _D(_sga_ctx(store).get("cadence"))
+    days = int(cad.get("days_measured") or 0)
+    adh = float(cad.get("adherence") or 0)
+    if days < 3 or adh >= 60:
+        return []
+    return [Finding("sga", f"Posting cadence at {adh:.0f}%",
+                    f"{cad.get('days_on_target', 0)} of {days} day(s) hit the "
+                    f"target of {cad.get('daily_target', 0)} post(s).",
+                    severity="warn")]
+
+
+register(Agent("sga", "SGA",
+               [_sga_dead_channel, _sga_empty_calendar, _sga_adherence]))
+
+
 _PENDING = {
-    "seo": ("SEO / AEO / GEO",
-            "proposed: missing meta, alt, schema, canonical, IndexNow unsent"),
     "media": ("Media Buying",
               "proposed: campaign without a cap, creative without an image. "
               "READ-ONLY by design - this section touches money"),
-    "bi": ("Business Intel", "proposed: metric with no source wired, stale pull"),
-    "sga": ("SGA", "proposed: post scheduled to a dead channel, calendar gaps"),
     "cockpit": ("AI Cockpit",
                 "proposed: queue age, burn rate. READ-ONLY by design - this is "
                 "where you decide"),
@@ -374,7 +537,8 @@ if __name__ == "__main__":
 
     assert len(AGENTS) == 9, f"nine sections, got {len(AGENTS)}"
     withc = [k for k, a in AGENTS.items() if a.has_contract]
-    assert set(withc) == {"system", "content", "risk", "outreach"}, withc
+    assert set(withc) == {"system", "content", "risk", "outreach",
+                          "seo", "bi", "sga"}, withc
 
     # every fix an agent names must exist in the registry - the orphan check
     for a in AGENTS.values():
@@ -432,7 +596,7 @@ if __name__ == "__main__":
     assert len(rb["findings"]) == 1 and len(rb["errors"]) == 1, rb
 
     allr = inspect_all(St(jobs))
-    assert allr["with_contract"] == 4 and allr["without_contract"] == 5
+    assert allr["with_contract"] == 7 and allr["without_contract"] == 2
 
     st = St()
     save_findings(st, allr)
