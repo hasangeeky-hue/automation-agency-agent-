@@ -208,7 +208,25 @@ def agent_findings_cards(ctx, section) -> list:
                  f"{mine.get('checks_run', 0)} checks ran and every one "
                  f"passed.", "agents", GREEN, "")]
 
-    cards = []
+    # ITEM 8 + 9 — one press for everything safe, and WHEN it was last looked
+    # at. A count with no timestamp cannot be trusted: "3 findings" from four
+    # days ago is a different statement from "3 findings" ten minutes ago.
+    import content_engine_fixes as _FX
+    _safe = len([f for f in fs
+                 if (_FX.REGISTRY.get(_D(f).get("fix_id", "")) or
+                     _FX.Fix("x", "x", lambda *_a: None, reversible=False)).auto])
+    _needs_you = len([f for f in fs if _D(f).get("fix_id")]) - _safe
+    cards = [("Inspector", f"{len(fs)} to fix", f"swept {when}",
+              _statusgrid([("safe to run now", bool(_safe), f"{_safe}"),
+                           ("needs you", not _needs_you, f"{_needs_you}")]),
+              (f"{mine.get('checks_run', 0)} checks ran. "
+               + (f"{_safe} can be fixed in one press - free and undoable. "
+                  if _safe else "")
+               + (f"{_needs_you} cost money or cannot be undone, so they stay "
+                  f"behind their own button." if _needs_you else "")),
+              "agents", PINK if len(fs) else GREEN,
+              (f"<button class='cta' onclick=\"act('/fix-all/{section}')\">"
+               f"Fix the {_safe} safe one(s)</button>" if _safe else ""))]
     for f in fs[:14]:
         f = _D(f)
         btn = FX.fix_button(f.get("fix_id", ""), arg=f.get("fix_arg", ""),

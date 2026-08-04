@@ -198,6 +198,64 @@ def auto_fixes() -> list:
     return [f for f in REGISTRY.values() if f.auto]
 
 
+def run_safe_batch(store, section="") -> dict:
+    """Run every SAFE fix that a finding is asking for, in one press.
+
+    Safe means free, reversible, and not touching a forbidden verb - the same
+    test an agent has to pass. Anything that costs money or cannot be undone
+    is skipped and NAMED, so the button never quietly does something you would
+    have wanted to approve.
+
+    Findings come from the inspector, so this only ever runs fixes something
+    actually asked for. A "fix everything" button that invents work is worse
+    than no button."""
+    try:
+        import content_engine_agents as AG
+        found = AG.load_findings(store) or {}
+    except Exception:
+        return {"ok": False, "message": "no inspection results to act on"}
+
+    wanted, skipped = [], []
+    for sec in (found.get("sections") or []):
+        if not isinstance(sec, dict):
+            continue
+        if section and sec.get("section") != section:
+            continue
+        for f in (sec.get("findings") or []):
+            fid = (f or {}).get("fix_id") or ""
+            fx = REGISTRY.get(fid)
+            if not fx:
+                continue
+            if fx.auto:
+                wanted.append((fid, (f or {}).get("fix_arg", "")))
+            else:
+                skipped.append(fx.label)
+
+    if not wanted:
+        msg = "nothing safe to run"
+        if skipped:
+            msg += (f" - {len(skipped)} need you: "
+                    + ", ".join(sorted(set(skipped))[:3]))
+        return {"ok": True, "message": msg, "ran": 0, "skipped": len(skipped)}
+
+    ok = fail = 0
+    reasons = []
+    for fid, arg in wanted:
+        r = run_fix(fid, store, arg, auto=False)
+        if r.get("ok"):
+            ok += 1
+        else:
+            fail += 1
+            reasons.append(r.get("message", ""))
+    msg = f"{ok} fixed"
+    if fail:
+        msg += f", {fail} failed: {reasons[0][:70] if reasons else ''}"
+    if skipped:
+        msg += f" - {len(skipped)} left for you (they cost or cannot be undone)"
+    return {"ok": fail == 0, "message": msg, "ran": ok, "failed": fail,
+            "skipped": len(skipped)}
+
+
 def summary() -> dict:
     return {"total": len(REGISTRY),
             "auto": len(auto_fixes()),

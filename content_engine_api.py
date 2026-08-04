@@ -2001,6 +2001,13 @@ def build_app():
         import content_engine_fixes as FX
         return FX.run_fix(fid, get_store(), arg)
 
+    @app.post("/fix-all/{section}")
+    def run_safe_fixes(section: str = ""):
+        """Every SAFE fix a finding is asking for, in one press. Anything that
+        costs money or cannot be undone is skipped and named."""
+        import content_engine_fixes as FX
+        return FX.run_safe_batch(get_store(), "" if section == "all" else section)
+
     @app.get("/fix")
     def list_fixes():
         """What the engine can repair, and which of those an agent may run."""

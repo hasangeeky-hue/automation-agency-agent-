@@ -223,6 +223,52 @@ register(Agent("content", "Content Factory",
 #  becomes confidently wrong. Each of these needs one pass against its real
 #  board. Until then the agent exists, runs, and says it has no contract.
 # ===========================================================================
+def _risk_ctx(store):
+    """The sensor. Reads live risk state through the same builder the board
+    uses, so the agent and the screen can never disagree."""
+    import content_engine_seo_ops as OPS
+    return _D(OPS.build_risk_ctx(store))
+
+
+def _rsk_no_backup(store, ctx):
+    c = _D(_risk_ctx(store).get("continuity"))
+    if c.get("configured"):
+        return []
+    return [Finding("risk", "No backup is configured",
+                    _S(c.get("verdict"))[:140] or
+                    "every credential, job and audit is at risk",
+                    severity="bad", fix_id="run_backup")]
+
+
+def _rsk_restore_untested(store, ctx):
+    c = _D(_risk_ctx(store).get("continuity"))
+    if not c.get("configured") or c.get("restore_tested"):
+        return []
+    return [Finding("risk", "The restore has never been tested",
+                    "A backup nobody has restored from is a hope, not a "
+                    "backup.", severity="warn")]
+
+
+def _rsk_exposed(store, ctx):
+    cr = _D(_risk_ctx(store).get("credentials"))
+    ex = [x for x in _L(cr.get("known_exposed")) if _S(x)]
+    out = []
+    if ex:
+        out.append(Finding("risk", f"{len(ex)} credential(s) known exposed",
+                           ", ".join(_S(x) for x in ex[:5]),
+                           severity="bad"))
+    if cr.get("never_rotated") and cr.get("set"):
+        out.append(Finding("risk", "No credential has ever been rotated",
+                           f"{cr.get('set')} of {cr.get('total')} fields hold "
+                           f"a value and none has been replaced since setup.",
+                           severity="warn"))
+    return out
+
+
+register(Agent("risk", "Risk & Infrastructure",
+               [_rsk_no_backup, _rsk_restore_untested, _rsk_exposed]))
+
+
 _PENDING = {
     "seo": ("SEO / AEO / GEO",
             "proposed: missing meta, alt, schema, canonical, IndexNow unsent"),
@@ -233,8 +279,6 @@ _PENDING = {
               "READ-ONLY by design - this section touches money"),
     "bi": ("Business Intel", "proposed: metric with no source wired, stale pull"),
     "sga": ("SGA", "proposed: post scheduled to a dead channel, calendar gaps"),
-    "risk": ("Risk & Infrastructure",
-             "proposed: backup age, error rate"),
     "cockpit": ("AI Cockpit",
                 "proposed: queue age, burn rate. READ-ONLY by design - this is "
                 "where you decide"),
@@ -284,7 +328,7 @@ if __name__ == "__main__":
 
     assert len(AGENTS) == 9, f"nine sections, got {len(AGENTS)}"
     withc = [k for k, a in AGENTS.items() if a.has_contract]
-    assert set(withc) == {"system", "content"}, withc
+    assert set(withc) == {"system", "content", "risk"}, withc
 
     # every fix an agent names must exist in the registry - the orphan check
     for a in AGENTS.values():
@@ -341,14 +385,15 @@ if __name__ == "__main__":
     assert len(rb["findings"]) == 1 and len(rb["errors"]) == 1, rb
 
     allr = inspect_all(St(jobs))
-    assert allr["with_contract"] == 2 and allr["without_contract"] == 7
+    assert allr["with_contract"] == 3 and allr["without_contract"] == 6
 
     st = St()
     save_findings(st, allr)
     assert load_findings(st)["total_findings"] == allr["total_findings"]
 
     print(f"OK - agents self-check passed. {len(AGENTS)} sections registered: "
-          f"{allr['with_contract']} with a real contract (system, content) and "
+          f"{allr['with_contract']} with a real contract "
+          f"({', '.join(sorted(withc))}) and "
           f"{allr['without_contract']} that run and honestly report having "
           f"none. Every fix an agent names exists in the registry, a check "
           f"that raises cannot silence the others, and the two money-and-"
