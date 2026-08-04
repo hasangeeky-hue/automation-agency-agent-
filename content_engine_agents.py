@@ -247,7 +247,7 @@ def _rsk_restore_untested(store, ctx):
         return []
     return [Finding("risk", "The restore has never been tested",
                     "A backup nobody has restored from is a hope, not a "
-                    "backup.", severity="warn")]
+                    "backup.", severity="warn", fix_id="test_restore")]
 
 
 def _rsk_exposed(store, ctx):
@@ -281,7 +281,7 @@ def _out_tracking_off(store, ctx):
         return []
     return [Finding("outreach", "Open and click tracking is off",
                     "Every send goes out unmeasured, so nothing can be learned "
-                    "from it.", severity="warn")]
+                    "from it.", severity="warn", fix_id="enable_tracking")]
 
 
 def _out_unclassified_replies(store, ctx):
@@ -345,7 +345,8 @@ def _seo_overdue(store, ctx):
     return [Finding("seo", f"{len(due)} SEO engine(s) overdue",
                     ", ".join(due[:8])
                     + (f" - {len(free)} of them cost nothing" if free else ""),
-                    severity="warn" if free else "bad")]
+                    severity="warn" if free else "bad",
+                    fix_id="run_seo_due" if free else "")]
 
 
 def _seo_search_console(store, ctx):
@@ -381,7 +382,7 @@ def _seo_crawl_issues(store, ctx):
     return [Finding("seo", f"{n} on-page issue(s) from the last crawl",
                     f"{cr.get('crawled', 0)} page(s) crawled. Work orders "
                     f"exist for the ones the engine can fix itself.",
-                    severity="warn")]
+                    severity="warn", fix_id="run_seo_fixes")]
 
 
 register(Agent("seo", "SEO / AEO / GEO",

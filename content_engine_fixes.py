@@ -404,6 +404,73 @@ def _f_refresh_replies(store, arg):
 
 register("refresh_replies", "Classify the replies", _f_refresh_replies,
          section="outreach")
+
+
+def _f_run_seo_due(store, arg):
+    """Run the SEO engines that are overdue. FREE ones only.
+
+    include_paid=False is not a default I am relying on - it is passed
+    explicitly, because a button that quietly spends is a button you would
+    have to watch."""
+    import content_engine_scheduler as SCH
+    due = SCH.seo_due(store)
+    if not due:
+        return {"ok": True, "message": "nothing is due"}
+    free = [d for d in due if SCH.SEO_CADENCE.get(d, {}).get("cost") != "paid"]
+    if not free:
+        return {"ok": False,
+                "message": f"{len(due)} due, all of them paid - run those "
+                           f"deliberately from the SEO board"}
+    r = SCH.run_seo_due(store, include_paid=False) or {}
+    ran = [k for k in r if not str(k).startswith("_")]
+    return {"ok": True,
+            "message": f"{len(ran)} engine(s) ran: {', '.join(ran[:6])}"}
+
+
+def _f_run_seo_fixes(store, arg):
+    """Apply the on-page fixes a reader cannot see. auto_only=True keeps this
+    to titles, metas and alt text - never a body rewrite, which is a change to
+    your words and belongs behind your approval."""
+    import content_engine_seo_ops as OPS
+    r = OPS.run_fixes(store, auto_only=True, dry_run=False) or {}
+    n = r.get("applied", r.get("fixed", 0))
+    return {"ok": True, "message": f"{n} on-page fix(es) applied"}
+
+
+def _f_enable_tracking(store, arg):
+    """Turn open and click tracking on. Without it every send goes out
+    unmeasured, so the outreach loop can never close."""
+    import content_engine_outreach as OUT
+    OUT.set_tracking(store, True)
+    return {"ok": True,
+            "message": "tracking on - opens and clicks will be recorded from "
+                       "the next send"}
+
+
+def _f_test_restore(store, arg):
+    """Prove the backup can be read back. A backup nobody has restored from is
+    a hope, not a backup."""
+    import subprocess
+    try:
+        p = subprocess.run(["bash", "deploy/backup.sh", "--verify"],
+                           capture_output=True, text=True, timeout=300)
+        tail = (p.stdout or p.stderr or "").strip().splitlines()
+        return {"ok": p.returncode == 0,
+                "message": tail[-1][:150] if tail else
+                ("restore verified" if p.returncode == 0 else "verify failed")}
+    except FileNotFoundError:
+        return {"ok": False, "message": "deploy/backup.sh is not in the image"}
+    except Exception as e:
+        return {"ok": False, "message": f"{type(e).__name__}: {e}"[:150]}
+
+
+register("run_seo_due", "Run the overdue engines", _f_run_seo_due,
+         section="seo")
+register("run_seo_fixes", "Apply the on-page fixes", _f_run_seo_fixes,
+         section="seo")
+register("enable_tracking", "Turn tracking on", _f_enable_tracking,
+         section="outreach")
+register("test_restore", "Test the restore", _f_test_restore, section="risk")
 register("piece_image", "Generate the image", _f_piece_image, cost=0.04,
          requires=("IMAGE_API_KEY",), section="content")
 register("decline_piece", "Send back with a note", _f_decline,
