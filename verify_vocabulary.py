@@ -217,3 +217,26 @@ try:
         f"{_html.count('<img ')} rendered — the preview used to drop inline images")
 finally:
     _CC.generate_image = _orig
+
+
+print("\n== 11. every plannable type gets a ceiling it can actually write in ==")
+import content_engine_providers as PROV
+
+for t in T.PLANNABLE_TYPES:
+    _len = P._LENGTH_BY_TYPE.get(t, "")
+    _cap = PROV._max_tokens_for("content_producer", {"type": t, "length": _len})
+    _words = [int(x) for x in _re.findall(r"(\d{3,5})", _len)]
+    _need = int(max(_words) * 2.0) if _words else 0
+    chk(_cap >= max(900, _need),
+        f"{t}: {_cap} tokens for '{_len}'",
+        f"needs about {_need} to write {max(_words) if _words else '?'} words")
+
+# the exact production failure, as a test: a guide used to get 400 because the
+# rule was `2600 if type == "blog" else 400` - one word in a list.
+chk(PROV._max_tokens_for("content_producer",
+                         {"type": "guide",
+                          "length": P._LENGTH_BY_TYPE["guide"]}) > 4000,
+    "a guide is not sized like a tweet",
+    "it got 400 tokens in production and died before writing a sentence")
+chk(PROV._max_tokens_for("content_producer", {"structure": {"sections": 4}}) >= 4000,
+    "a long-form piece with no parsable length still gets room")

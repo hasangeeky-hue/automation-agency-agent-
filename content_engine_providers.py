@@ -170,9 +170,30 @@ def schema_token_estimate(schema: dict) -> int:
 
 
 def _max_tokens_for(skill_name: str, payload: dict) -> int:
-    # Content Producer copy: blog gets 2200, everything else 400.
+    # SIZE THE CEILING FROM THE BRIEF, not from a hand-written type check.
+    #
+    # This read `2600 if payload.get("type") == "blog" else 400` - a list of
+    # one word. The day guide and service became long-form (4 sections, 650+
+    # words, 4 image prompts) they kept getting FOUR HUNDRED tokens, which
+    # cannot hold a title, so the piece died before writing a sentence. The
+    # retry doubled 400 -> 800 -> 1600 and gave up, which is the
+    # "1600-token ceiling after 0 characters" in production.
+    #
+    # The brief already states the length ("blog:1500-2000w"). Read the upper
+    # bound from it and size to that, so a type added later is covered by
+    # having a length rather than by being added here too.
     if skill_name in ("content_producer", "content_producer_copy"):
-        return 2600 if payload.get("type") == "blog" else 400
+        import re as _re
+        length = str(payload.get("length") or "")
+        words = [int(x) for x in _re.findall(r"(\d{3,5})\s*w", length)] or \
+                [int(x) for x in _re.findall(r"(\d{3,5})", length)]
+        if words:
+            # ~2.2 tokens per word of prose, plus room for the JSON envelope,
+            # the meta fields and one image prompt per section.
+            return min(16000, int(max(words) * 2.2) + 900)
+        if payload.get("structure"):        # long-form but no parsable length
+            return 6000
+        return 2600 if payload.get("type") == "blog" else 900
     # Lead Qualifier: ~130 tokens per lead (now also business/pain/offer), 25-batch.
     if skill_name == "lead_qualifier":
         n = len(payload.get("leads", []) or [])
