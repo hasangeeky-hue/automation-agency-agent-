@@ -52,9 +52,24 @@ RULES = [
      re.compile(r"not set|no key|missing key|paste|needs? (a|your) key", re.I)),
     ("GREY", "is a decision you make, not a defect",
      re.compile(r"your decision|approve|decline|choose|you steer|budget|cap\b", re.I)),
-    ("GREEN", "has an action the engine can already run",
-     re.compile(r"onclick=\"act\(")),
 ]
+
+# WHAT THE GREEN RULE USED TO BE, AND WHY IT IS GONE.
+#
+#     ("GREEN", "has an action the engine can already run", onclick="act(")
+#
+# act() posts to seven GLOBAL endpoints - /health, /tick, /selftest and four
+# more. So a card titled "Idle" or "Postgres holds everything" was marked
+# fixable because it happened to sit beside a /tick button. On live data that
+# rule produced 45 of 46 greens and every one of them was wrong.
+#
+# There is no signal on a card that says "the engine could repair this". It is
+# not written anywhere, and no amount of HTML parsing will find it. It has to
+# be DECLARED by whoever wrote the card - which is what the fix registry is
+# for. So GREEN now means exactly one thing: the card already carries a
+# registered fix. That number starts near zero and grows as descriptors are
+# added, which is honest: it measures work done, not work possible.
+GLOBAL_ONLY = re.compile(r"onclick=\"act\('/(?!fix/)")
 
 
 def rule(title=""):
@@ -124,7 +139,10 @@ def main() -> int:
               "UNSURE": "cannot tell from the card"}
     for k in ("GREEN", "AMBER", "GREY", "UNSURE"):
         n = len(piles[k])
-        bar = "#" * min(40, n)
+        # PROPORTIONAL, not capped. The first version capped at 40 chars, so
+        # 46 and 273 drew the same bar - a chart that hid the only number that
+        # mattered.
+        bar = "#" * max(1, round(40 * n / max(1, max(len(v) for v in piles.values()))))
         print(f"  {k:<8}{n:>5}  {100 * n / len(cards):>5.1f}%  "
               f"{labels[k]:<28}{bar}")
 
@@ -164,12 +182,28 @@ def main() -> int:
             print(f"   x{n:<4} {title[:58]}")
 
     rule()
-    g = len(piles["GREEN"])
-    print(f"ANSWER: {g} of {len(cards)} real problems look automatable "
-          f"({100 * g / len(cards):.0f}%).")
-    print(f"There are {len(t)} distinct green problems - that is the number of "
-          f"fixes to build,\nnot {g}. Six exist today.")
-    print("\nRead-only. Nothing was changed, published or spent.")
+    g, a, gy, u = (len(piles[k]) for k in ("GREEN", "AMBER", "GREY", "UNSURE"))
+    print("WHAT THIS CAN AND CANNOT TELL YOU")
+    print()
+    print(f"  CAN: {len(cards)} cards report a real problem. The other "
+          f"{empties} are empty of data, not faulty.")
+    print(f"       {a} need a credential only you can supply.")
+    print(f"       {gy} are decisions rather than defects.")
+    print()
+    print(f"  CANNOT: how many of the remaining {u} are automatable.")
+    print("          There is no signal on a card that says so. The first")
+    print("          version guessed by looking for an act() button and was")
+    print("          wrong 45 times out of 46 - act() posts to seven GLOBAL")
+    print("          endpoints, so a card beside a /tick button looked fixable.")
+    print()
+    print(f"  So GREEN counts one thing: cards carrying a DECLARED fix. {g} today.")
+    print("  A coverage meter, not an estimate. It rises only when a fix")
+    print("  descriptor is actually attached to a card.")
+    print()
+    print(f"  COVERAGE: {g} of {len(cards)} real problems have a fix "
+          f"attached ({100 * g / max(1, len(cards)):.0f}%).")
+    print()
+    print("Read-only. Nothing was changed, published or spent.")
     return 0
 
 

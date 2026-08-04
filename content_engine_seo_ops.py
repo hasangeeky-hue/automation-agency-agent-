@@ -564,6 +564,13 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
         agent_findings = _AG.load_findings(store)
     except Exception:
         agent_findings = {}
+    # The receipt for anything an agent did on its own.
+    try:
+        import content_engine_fixes as _FXX
+        fix_ledger = _FXX.ledger(store, 30)
+        fix_ledger_summary = _FXX.ledger_summary(store)
+    except Exception:
+        fix_ledger, fix_ledger_summary = [], {}
     try:
         import content_engine_scheduler as SCH
         cadence = SCH.SEO_CADENCE
@@ -579,6 +586,8 @@ def build_system_ctx(store, *, status=None, health=None, meters=None,
     diag = diag if isinstance(diag, list) else []
     wires = SYS.wire_rows(status, diag)
     return {
+        "fix_ledger": fix_ledger,
+        "fix_ledger_summary": fix_ledger_summary,
         "agent_findings": agent_findings,
         "cred_problems": cred_problems,
         "status": status, "diag": diag, "wires": wires,

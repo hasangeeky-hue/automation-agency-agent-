@@ -76,6 +76,16 @@ CSS = """
 --ink:#EDF1FB;--mut:#8E9BBE;--dim:#59668A;--teal:#2FE3D2;--violet:#8B7CFF;
 --good:#3FD98B;--warn:#F5B14C;--bad:#FF6B93;--blue:#4C8DFF}
 *{box-sizing:border-box}
+/* KEYBOARD FOCUS. There was no :focus-visible anywhere in 53KB of CSS, so a
+   person tabbing through 2,227 cards could not see where they were. That is
+   not a polish item, it is the difference between usable and not. */
+*:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:4px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,
+textarea:focus-visible{outline:2px solid var(--teal);outline-offset:3px}
+/* Respect the OS setting. Someone who has asked their machine for less motion
+   has usually asked for a reason. */
+@media (prefers-reduced-motion:reduce){
+*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
 .tnum{font-variant-numeric:tabular-nums}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line2);position:sticky;top:0;background:var(--bg);z-index:5}

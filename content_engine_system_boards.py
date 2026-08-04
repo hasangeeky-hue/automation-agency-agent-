@@ -1007,6 +1007,7 @@ TABS = [
     ("sysdeps", "🕸", "Dependencies"),
     ("syscost", "💶", "Cost"),
     ("sysagents", "🤖", "Agents"),
+    ("sysactivity", "📋", "What the agents did"),
     ("sysfresh", "⏱", "Freshness"),
     ("sysdrift", "📉", "Drift"),
     ("sysflow", "🔀", "Data Flow"),
@@ -1016,13 +1017,85 @@ TABS = [
 
 GROUPS = [
     ("sysrun", "① IS IT RUNNING", "Is the engine working?",
-     ["syscmd", "sysjobs", "sysfail", "sysagents"]),
+     ["syscmd", "sysjobs", "sysfail", "sysagents", "sysactivity"]),
     ("syswired", "② IS IT WIRED", "Is everything connected?",
      ["syswires", "sysconnect", "sysdeps", "sysflow", "sysloopmap"]),
     ("syscost_g", "③ IS IT COSTING", "What does it cost?", ["syscost"]),
     ("sysdrift_g", "④ IS IT DRIFTING", "Is it still good?",
      ["sysfresh", "sysdrift", "sysdeploy"]),
 ]
+
+def board_agent_activity(ctx) -> str:
+    """WHAT THE AGENTS DID, WITHOUT BEING ASKED.
+
+    The inspect task now sweeps a section every ten minutes and free,
+    reversible fixes may run unattended. An agent that repairs something at
+    3am and leaves no trace is the same failure as one that does nothing -
+    you cannot trust what you cannot see. This is the receipt.
+    """
+    ctx = _ctx(ctx)
+    found = _D(ctx.get("agent_findings"))
+    led = _L(ctx.get("fix_ledger"))
+    lsum = _D(ctx.get("fix_ledger_summary"))
+    secs = _L(found.get("sections"))
+    swept = [s for s in secs if _D(s).get("at")]
+    withc = [s for s in secs if _D(s).get("has_contract")]
+    total = sum(len(_L(_D(s).get("findings"))) for s in secs)
+    auto = [r for r in led if _D(r).get("auto")]
+    failed = [r for r in led if not _D(r).get("ok")]
+
+    cards = [
+        ("Sections swept", f"{len(swept)}/9", "by the inspector",
+         _statusgrid([(str(_D(s).get("section", "?"))[:12],
+                       bool(_D(s).get("has_contract")),
+                       "checking" if _D(s).get("has_contract") else "no contract")
+                      for s in secs[:12]]),
+         ("One section is inspected every ten minutes, round-robin. A section "
+          "with no contract runs and reports having none rather than implying "
+          "all is well."),
+         "agents", GREEN if len(withc) >= 2 else AMBER, ""),
+        ("Open findings", total, "across every section", "",
+         ("Each one is a card on its own board, carrying its fix where a fix "
+          "exists." if total else "Every check that ran, passed."),
+         "agents", PINK if total else GREEN, ""),
+        ("Sections with a contract", f"{len(withc)}/9", "actually checking", "",
+         ("The rest run and honestly report having no checks yet. Writing "
+          "checks against a data shape nobody verified is how a report becomes "
+          "confidently wrong."),
+         "honest scope", AMBER if len(withc) < 9 else GREEN, ""),
+        ("Fixes run unattended", len(auto), "by an agent, no human", "",
+         ("Only free, reversible actions may run this way. Publishing, "
+          "sending, spending, credentials, deletion and budget caps can never "
+          "be automatic, however they are registered."
+          if not auto else
+          "Every one is listed below with its result."),
+         "the fix ledger", BLUE, ""),
+        ("Fixes that failed", len(failed), "and said why", "",
+         (("; ".join(str(_D(r).get("message", ""))[:60] for r in failed[:2]))
+          if failed else "Nothing has failed yet."),
+         "the fix ledger", PINK if failed else GREEN, ""),
+        ("Total fixes recorded", _D(lsum).get("runs", 0), "offered and run", "",
+         str(_D(lsum).get("note", "the ledger starts empty")),
+         "the fix ledger", BLUE, ""),
+        ("What an agent may never do", 6, "hard limits", "",
+         ("Publish. Send. Spend without asking. Overwrite a credential. "
+          "Delete content. Change a budget cap. These are refused in code, "
+          "not by convention."),
+         "safety", VIOLET, ""),
+        ("Recent activity", len(led), "most recent first", "",
+         ("Every fix leaves a trace: what ran, on what, whether it worked, "
+          "and why not."),
+         "the fix ledger", BLUE,
+         _rows(led[:10],
+               left_fmt=lambda r: f"{'auto' if _D(r).get('auto') else 'you'} · "
+                                  f"{str(_D(r).get('fix', '?'))[:20]}",
+               right_fmt=lambda r: ("ok" if _D(r).get("ok") else "failed"),
+               empty="Nothing has run yet.")),
+    ]
+    return _head("🤖", "What the agents did",
+                 "Every sweep and every unattended fix, with its result. An "
+                 "agent you cannot audit is one you cannot trust.")         + _vizcards(cards[:14])
+
 
 _TAB_BOARDS = {
     "syscmd": [("Health Command", board_command)],
@@ -1038,16 +1111,19 @@ _TAB_BOARDS = {
     "sysdrift": [("Drift", board_drift)],
     "sysdeploy": [("Deploy", board_deploy)],
     "sysloopmap": [("Loop Map", board_loopmap)],
+    "sysactivity": [("What the agents did", board_agent_activity)],
 }
 
 CARD_COUNTS = {"command": 14, "wires": 24, "connect": 26, "agents": 22, "jobs": 20,
                "failures": 18, "cost": 18, "freshness": 16, "flow": 16, "deps": 14,
-               "drift": 14, "deploy": 12, "loopmap": 26}
+               "drift": 14, "deploy": 12, "loopmap": 26,
+               "activity": 8}
 TOTAL_CARDS = sum(CARD_COUNTS.values())
 
 _TAB_COUNTS = {"syscmd": 14, "syswires": 24, "sysconnect": 26, "sysagents": 22,
                "sysjobs": 20, "sysfail": 18, "syscost": 18, "sysfresh": 16,
-               "sysflow": 16, "sysdeps": 14, "sysdrift": 14, "sysdeploy": 12, "sysloopmap": 26}
+               "sysflow": 16, "sysdeps": 14, "sysdrift": 14, "sysdeploy": 12, "sysloopmap": 26,
+               "sysactivity": 8}
 
 
 def _safe_board(name, fn, ctx) -> str:

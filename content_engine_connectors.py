@@ -2607,6 +2607,83 @@ class LinkedInPoster:
             return "linkedin_error"
         return "linkedin:" + str(j.get("id", "posted"))
 
+    def _upload_asset(self, image_url: str, H: dict) -> str:
+        """LinkedIn's 3-step asset flow for ONE image: register a slot, PUT the
+        bytes, return the asset URN. Empty string on any failure.
+
+        Factored out of post_image so a MULTI-image post can reuse it. The
+        preview has been drawing 2/3/4-up grids since the piece started
+        carrying a hero plus one image per section, while this class could only
+        ever attach one - so what you approved was not what posted."""
+        rq = _requests()
+        if not rq:
+            return ""
+        try:
+            reg = _post_json(
+                "https://api.linkedin.com/v2/assets?action=registerUpload",
+                {"registerUploadRequest": {
+                    "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                    "owner": self.author,
+                    "serviceRelationships": [{"relationshipType": "OWNER",
+                                              "identifier": "urn:li:userGeneratedContent"}]}},
+                headers=H)
+            val = (reg or {}).get("value") or {}
+            asset = val.get("asset") or ""
+            up = ((val.get("uploadMechanism") or {})
+                  .get("com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest") or {})
+            url = up.get("uploadUrl") or ""
+            if not (asset and url):
+                return ""
+            img = rq.get(image_url, timeout=_IMAGE_TIMEOUT)
+            if not img.ok:
+                return ""
+            put = rq.put(url, data=img.content,
+                         headers={"Authorization": f"Bearer {self.token}"},
+                         timeout=_IMAGE_TIMEOUT)
+            return asset if put.status_code in (200, 201) else ""
+        except Exception as e:
+            log.warning("linkedin asset upload failed: %s", e)
+            return ""
+
+    def post_images(self, text: str, image_urls) -> str:
+        """Post text plus EVERY image, as LinkedIn's multi-image share.
+
+        Falls back one step at a time: all images -> the ones that uploaded ->
+        a single image -> text only. A post always goes out, and the caller is
+        told which shape it actually took."""
+        urls = [u for u in (image_urls or []) if str(u or "").strip()][:9]
+        if not (self.available() and urls):
+            return self.post(text)
+        if len(urls) == 1:
+            return self.post_image(text, urls[0])
+        H = {"Authorization": f"Bearer {self.token}",
+             "X-Restli-Protocol-Version": "2.0.0"}
+        pairs = [(u, self._upload_asset(u, H)) for u in urls]
+        ok = [(u, a) for u, a in pairs if a]
+        assets = [a for _u, a in ok]
+        if not assets:
+            return self.post(text)
+        if len(assets) == 1:
+            # the url that WORKED, not urls[0] - which may be the one that
+            # failed, in which case the retry would fail identically
+            return self.post_image(text, ok[0][0])
+        body = {
+            "author": self.author,
+            "lifecycleState": "PUBLISHED",
+            "specificContent": {
+                "com.linkedin.ugc.ShareContent": {
+                    "shareCommentary": {"text": text},
+                    "shareMediaCategory": "IMAGE",
+                    "media": [{"status": "READY", "media": a} for a in assets],
+                }
+            },
+            "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+        }
+        j = _post_json("https://api.linkedin.com/v2/ugcPosts", body, headers=H)
+        if j is None:
+            return self.post_image(text, urls[0])
+        return f"linkedin_img{len(assets)}:" + str(j.get("id", "posted"))
+
     def post_image(self, text: str, image_url: str) -> str:
         """Post text + IMAGE CARD (LinkedIn's 3-step asset flow: register the
         upload -> PUT the bytes -> share with the asset attached). Falls back to
@@ -3027,8 +3104,16 @@ def post_social(job: dict, piece: dict, channel: str) -> str:
                 or repurpose_linkedin(piece, _env("EMAIL_WEBSITE", ""), _env("EMAIL_BOOKING_URL", "")))
         if not p.available():
             return f"linkedin_not_configured:{jid}"
-        img = piece.get("image_url", "")
-        return p.post_image(text, img) if img else p.post(text)
+        # EVERY image the piece carries, in body order - the same list the
+        # preview draws its grid from. Sending only image_url meant a 4-image
+        # piece previewed as a multi-image post and published as a single.
+        try:
+            import content_engine_factory as _FF
+            imgs = _FF._li_images(piece)
+        except Exception:
+            imgs = [piece.get("image_url", "")]
+        imgs = [u for u in imgs if u]
+        return p.post_images(text, imgs) if imgs else p.post(text)
     if ch in ("twitter", "x"):
         p = TwitterPoster()
         return p.post(_piece_to_social_text(piece, 280)) if p.available() \
@@ -3429,17 +3514,36 @@ class GoogleAds:
                     and self.client_id and self.client_secret and _requests())
 
     def _access_token(self) -> str:
+        _cap = {}
         j = _post_json("https://oauth2.googleapis.com/token", {
             "client_id": self.client_id, "client_secret": self.client_secret,
-            "refresh_token": self.refresh, "grant_type": "refresh_token"})
+            "refresh_token": self.refresh, "grant_type": "refresh_token"},
+            capture=_cap)
         tok = (j or {}).get("access_token", "")
         # Record the verdict. Google returns 401 for a dead refresh token, and
         # the dashboard used to show this wire green anyway.
-        note_auth("ads_api", bool(tok), 0 if tok else 401,
-                  "" if tok else
-                  "Google refused the Ads refresh token (401). Regenerate it — a "
-                  "refresh token expires if unused for six months, or if the "
-                  "OAuth consent was revoked. Everything else about Ads is set up.")
+        # NAME THE RIGHT CREDENTIAL. This used to say "regenerate the refresh
+        # token" for every 401 - but Google distinguishes two failures and they
+        # point at different fields:
+        #   invalid_client  the CLIENT ID or SECRET is not recognised
+        #   invalid_grant   the REFRESH TOKEN is expired or revoked
+        # Sending someone to regenerate a refresh token against invalid_client
+        # is advice that can never work, however many times they follow it.
+        _err = str(((j if isinstance(j, dict) else {}).get("error") or ""))             or str(_cap.get("error") or "") if isinstance(_cap, dict) else ""
+        if "invalid_client" in _err:
+            _why = ("Google does not recognise the Ads OAuth CLIENT (401 "
+                    "invalid_client). This is GOOGLE_ADS_CLIENT_ID or "
+                    "GOOGLE_ADS_CLIENT_SECRET - wrong value, wrong project, or "
+                    "the OAuth client was deleted. The refresh token is NOT the "
+                    "problem; regenerating it will not help.")
+        elif "invalid_grant" in _err:
+            _why = ("Google refused the Ads REFRESH TOKEN (401 invalid_grant). "
+                    "Regenerate it - a refresh token expires if unused for six "
+                    "months, or if the OAuth consent was revoked.")
+        else:
+            _why = (f"Google refused the Ads credentials (401). Google said: "
+                    f"{_err[:90] or 'no reason given'}")
+        note_auth("ads_api", bool(tok), 0 if tok else 401, "" if tok else _why)
         return tok
 
     def _headers(self, tok: str) -> dict:
