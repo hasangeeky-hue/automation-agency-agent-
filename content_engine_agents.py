@@ -20,10 +20,11 @@ and is not used here - "is this credential malformed" is not a matter of
 opinion.
 
 HONEST SCOPE OF THIS FILE
-    System and Content have real contracts, written against data shapes I
-    verified today.
+    Content, Outreach, Risk and System have real contracts, each written
+    against data shapes read out of the live context builders first rather
+    than guessed.
 
-    The other seven are registered with NO CHECKS and say so. An agent with
+    The other five are registered with NO CHECKS and say so. An agent with
     invented checks against a data shape nobody confirmed is worse than an
     empty one: it reports confidently and is wrong. Each needs one pass
     against its real board before it gets a contract, and until then it
@@ -269,11 +270,56 @@ register(Agent("risk", "Risk & Infrastructure",
                [_rsk_no_backup, _rsk_restore_untested, _rsk_exposed]))
 
 
+def _out_ctx(store):
+    import content_engine_seo_ops as OPS
+    return _D(OPS.build_outreach_ctx(store))
+
+
+def _out_tracking_off(store, ctx):
+    t = _D(_out_ctx(store).get("tracking"))
+    if t.get("enabled"):
+        return []
+    return [Finding("outreach", "Open and click tracking is off",
+                    "Every send goes out unmeasured, so nothing can be learned "
+                    "from it.", severity="warn")]
+
+
+def _out_unclassified_replies(store, ctx):
+    r = _D(_out_ctx(store).get("replies"))
+    n = int(r.get("unclassified") or 0)
+    if not n:
+        return []
+    return [Finding("outreach", f"{n} repl(ies) not classified",
+                    "They arrived and nothing decided what they were, so they "
+                    "are not in any queue.", severity="warn",
+                    fix_id="refresh_replies")]
+
+
+def _out_suppression(store, ctx):
+    d = _D(_out_ctx(store).get("deliverability"))
+    out = []
+    rate = float(d.get("suppression_rate") or 0)
+    if rate >= 5:
+        out.append(Finding("outreach", f"Suppression rate {rate:.1f}%",
+                           f"{d.get('bounces', 0)} bounce(s), "
+                           f"{d.get('unsubscribes', 0)} unsubscribe(s). A "
+                           f"climbing rate burns the sending domain.",
+                           severity="bad"))
+    if int(d.get("unrecorded") or 0):
+        out.append(Finding("outreach",
+                           f"{d.get('unrecorded')} send(s) with no outcome",
+                           "Sent, and nothing recorded what happened.",
+                           severity="warn"))
+    return out
+
+
+register(Agent("outreach", "Leads & Outreach",
+               [_out_tracking_off, _out_unclassified_replies, _out_suppression]))
+
+
 _PENDING = {
     "seo": ("SEO / AEO / GEO",
             "proposed: missing meta, alt, schema, canonical, IndexNow unsent"),
-    "outreach": ("Leads & Outreach",
-                 "proposed: leads unverified, tracking off, replies undrafted"),
     "media": ("Media Buying",
               "proposed: campaign without a cap, creative without an image. "
               "READ-ONLY by design - this section touches money"),
@@ -328,13 +374,14 @@ if __name__ == "__main__":
 
     assert len(AGENTS) == 9, f"nine sections, got {len(AGENTS)}"
     withc = [k for k, a in AGENTS.items() if a.has_contract]
-    assert set(withc) == {"system", "content", "risk"}, withc
+    assert set(withc) == {"system", "content", "risk", "outreach"}, withc
 
     # every fix an agent names must exist in the registry - the orphan check
     for a in AGENTS.values():
         for fn in a.checks:
             pass
-    for fid in ("clear_setting", "retest_wires", "piece_image", "retry_job"):
+    for fid in ("clear_setting", "retest_wires", "piece_image", "retry_job",
+                "refresh_replies"):
         assert fid in FX.REGISTRY, f"agent names a fix that does not exist: {fid}"
 
     # read-only sections may never carry an auto fix
@@ -385,7 +432,7 @@ if __name__ == "__main__":
     assert len(rb["findings"]) == 1 and len(rb["errors"]) == 1, rb
 
     allr = inspect_all(St(jobs))
-    assert allr["with_contract"] == 3 and allr["without_contract"] == 6
+    assert allr["with_contract"] == 4 and allr["without_contract"] == 5
 
     st = St()
     save_findings(st, allr)

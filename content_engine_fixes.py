@@ -388,6 +388,22 @@ register("clear_setting", "Clear this field", _f_clear_setting,
          reversible=False, section="system")
 register("submit_indexnow", "Submit to IndexNow", _f_indexnow, section="seo")
 register("retry_job", "Retry this job", _f_retry_job, section="content")
+
+
+def _f_refresh_replies(store, arg):
+    """Re-read the inbox and classify what arrived. Drafts only - the reply
+    agent's auto-send is forced off in the scheduler and nothing here sends."""
+    try:
+        import content_engine_reply_agent as RA
+        r = RA.answer_replies(store=store, auto_send=False) or {}
+        n = len(r.get("drafts") or [])
+        return {"ok": True, "message": f"{n} repl(ies) classified and drafted"}
+    except Exception as e:
+        return {"ok": False, "message": f"{type(e).__name__}: {str(e)[:120]}"}
+
+
+register("refresh_replies", "Classify the replies", _f_refresh_replies,
+         section="outreach")
 register("piece_image", "Generate the image", _f_piece_image, cost=0.04,
          requires=("IMAGE_API_KEY",), section="content")
 register("decline_piece", "Send back with a note", _f_decline,
