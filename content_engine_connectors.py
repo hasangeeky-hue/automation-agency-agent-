@@ -107,6 +107,11 @@ def set_settings_provider(fn) -> None:
 # costs nothing and removes a whole category of "I already added it".
 KEY_ALIASES = {
     "IMAGE_API_KEY": ("OPENAI_API_KEY", "OPENAI_KEY"),
+    # AND THE REVERSE. The ChatGPT visibility probe asks for OPENAI_API_KEY;
+    # the founder's key was pasted through the image flow and may be saved
+    # as IMAGE_API_KEY. One key, two names, and the probe reported "not
+    # connected" while the SAME key was generating images two wires over.
+    "OPENAI_API_KEY": ("IMAGE_API_KEY", "OPENAI_KEY"),
     "IMAGE_MODEL": ("OPENAI_IMAGE_MODEL",),
     # NOT LINKEDIN_API_KEY - that one feeds Prospeo lead sourcing and
     # aliasing it here would quietly break a different wire to fix this one.
@@ -3514,6 +3519,14 @@ class GoogleAds:
                     and self.client_id and self.client_secret and _requests())
 
     def _access_token(self) -> str:
+        # CIRCUIT BREAKER. A broken OAuth client is a configuration fact,
+        # not a transient blip - yet this retried on every worker loop and
+        # filled the logs with the same invalid_client stanza hundreds of
+        # times a day, burying real errors. One refusal buys an hour of
+        # silence; the wire stays honestly red the whole time.
+        import time as _time
+        if _time.time() < getattr(GoogleAds, "_oauth_break_until", 0):
+            return ""
         _cap = {}
         j = _post_json("https://oauth2.googleapis.com/token", {
             "client_id": self.client_id, "client_secret": self.client_secret,
@@ -3544,6 +3557,14 @@ class GoogleAds:
             _why = (f"Google refused the Ads credentials (401). Google said: "
                     f"{_err[:90] or 'no reason given'}")
         note_auth("ads_api", bool(tok), 0 if tok else 401, "" if tok else _why)
+        if not tok and ("invalid_client" in _err or "invalid_grant" in _err):
+            import time as _time
+            GoogleAds._oauth_break_until = _time.time() + 3600
+            log.warning("Google Ads OAuth refused (%s) - pausing attempts "
+                        "for an hour. Fix the credential on the Connect "
+                        "board; the wire stays red until then.",
+                        "invalid_client" if "invalid_client" in _err
+                        else "invalid_grant")
         return tok
 
     def _headers(self, tok: str) -> dict:
