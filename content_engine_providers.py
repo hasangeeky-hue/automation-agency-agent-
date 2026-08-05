@@ -585,7 +585,31 @@ def anthropic_call(model: str, spec: PromptSpec) -> SkillResult:
             "format": {"type": "json_schema",
                        "schema": _strip_for_structured_outputs(spec.schema)}
         }
-    resp = client.messages.create(**kwargs)
+    try:
+        resp = client.messages.create(**kwargs)
+    except Exception as e:
+        # A 400 SAYS "Invalid request data" AND NOTHING ELSE. One revived
+        # piece died on exactly that - a refusal with no named field is
+        # undiagnosable from the error alone. Record the request's SHAPE
+        # (never its content, never a key) so the next retry tells us what
+        # the API disliked instead of repeating the mystery.
+        if type(e).__name__ == "BadRequestError":
+            _blocks = kwargs.get("system") or []
+            def _btext(b):
+                return str((b.get("text") if isinstance(b, dict)
+                            else getattr(b, "text", "")) or "")
+            _msgs = kwargs.get("messages") or []
+            _ulen = sum(len(str(m.get("content", ""))) for m in _msgs
+                        if isinstance(m, dict))
+            raise RuntimeError(
+                f"the API refused the request (400) for {spec.skill_name}. "
+                f"Request shape: model={model}, max_tokens="
+                f"{kwargs.get('max_tokens')}, system_blocks={len(_blocks)}"
+                f" (empty: {sum(1 for b in _blocks if not _btext(b).strip())}),"
+                f" user_chars={_ulen}, structured_output="
+                f"{'yes' if spec.schema else 'no'}. Original: "
+                f"{str(e)[:180]}") from e
+        raise
 
     text = next((b.text for b in resp.content if b.type == "text"), "")
     # A structured-output schema guarantees the SHAPE, not that the model was
