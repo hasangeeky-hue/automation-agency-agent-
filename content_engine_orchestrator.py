@@ -920,7 +920,12 @@ def revive(job: dict) -> dict:
                                     or "QA asked for a revision.")
         job["status"] = ("planned" if flow_for(job) is FLOW_CONTENT
                          else "segmented")   # re-enter at the writing step
-    elif status == "failed":
+    elif status in ("failed", "halted_budget"):
+        # halted_budget is not a death - it is the daily cap saying "not
+        # today". It sat in TERMINAL with NOTHING anywhere reopening it, so
+        # "they resume tomorrow" was a promise no code kept: seven pieces
+        # were on their way to being a third corpse class. Same resume rule
+        # as failed - after the last completed step, never re-buying work.
         runs = job.get("_runs") or {}
         resume = "created"
         for st, step in flow_for(job).items():   # dicts keep pipeline order
@@ -930,7 +935,8 @@ def revive(job: dict) -> dict:
     else:
         return {"ok": False,
                 "message": f"{job.get('job_id')}: status is '{status}' - "
-                           f"only failed or revision_needed pieces revive"}
+                           f"only failed, revision_needed or halted_budget "
+                           f"pieces revive"}
     job["halt_reason"] = ""
     job["needs_human"] = False
     return {"ok": True, "job_id": str(job.get("job_id") or ""),

@@ -580,6 +580,26 @@ def _verify_phase2():
                 "a degraded reason keeps 400 chars - the old 200 cut the "
                 "API's explanation off at 'Original: Error cod'", ""))
 
+    # ---- budget dawn: halted_budget is deferred work, never a corpse ----
+    hjob = {"job_id": "hb1", "type": "content_piece",
+            "status": "halted_budget", "halt_reason": "cap", "payload": {},
+            "_runs": {"site_intelligence": {"at": "1"},
+                      "competitor_intel": {"at": "2"}}}
+    got_h = O.revive(dict(hjob))
+    out.append((got_h.get("ok") and got_h.get("resumed_at") == "competitor_ready",
+                "revive() accepts a budget-halted piece and resumes AFTER its "
+                "last completed step - 'they resume tomorrow' was a promise "
+                "no code kept", str(got_h)[:60]))
+    store4 = O.InMemoryJobStore()
+    store4.put(dict(hjob))
+    SCH.run_due_work(store4)                     # 1st: inspect claims the slot
+    dawn = SCH.run_due_work(store4)              # 2nd: the day's first dawn
+    out.append((dawn.get("ran") == "budget_dawn" and dawn.get("reopened") == 1
+                and store4.get("hb1")["status"] == "competitor_ready",
+                "on the first loop of a new day the scheduler REOPENS every "
+                "budget-halted piece; the budget check then rules afresh",
+                str(dawn)[:60]))
+
     # ---- II-E: approval and rejection teach the playbook ---------------
     import content_engine_learning as LN
     LN.record_outcome("gate-client", "approved_piece", "A Winning Title [kw: x]")

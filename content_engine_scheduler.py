@@ -446,6 +446,40 @@ def run_due_work(store, now=None) -> dict:
             log.exception("cadence: inspect failed")
             return {"ran": "inspect", "error": f"{type(e).__name__}: {e}"}
 
+    # BUDGET DAWN - runs above the cadence gate, once per day. A piece halted
+    # by the daily cap is deferred work, not dead work: the halt message has
+    # always said "resumes tomorrow" and NOTHING in the codebase kept that
+    # promise - halted_budget sat in TERMINAL with no reopening edge, so
+    # budget-halted pieces accumulated forever. This reopens them on the
+    # first loop of each new day. It spends nothing itself: each piece
+    # re-enters the queue and the same over_budget() check that halted it
+    # decides afresh - fresh day, fresh budget, they run; cap already spent,
+    # they re-halt until tomorrow. Bounded either way.
+    _today = now.strftime("%Y-%m-%d")
+    if str(getset("budget_unhalt_day", "") or "") != _today:
+        try:
+            store.set_setting("budget_unhalt_day", _today)
+        except Exception:
+            pass
+        try:
+            import content_engine_orchestrator as _orch
+            try:
+                halted = list(store.list_jobs(status="halted_budget"))
+            except TypeError:      # a store whose list_jobs has no filter
+                halted = [j for j in store.list_jobs()
+                          if j.get("status") == "halted_budget"]
+            n = 0
+            for j in halted:
+                out = _orch.revive(j)
+                if out.get("ok"):
+                    store.save(j)
+                    n += 1
+            if n:
+                log.info("budget dawn: reopened %d budget-halted piece(s)", n)
+                return {"ran": "budget_dawn", "reopened": n}
+        except Exception:
+            log.exception("budget dawn failed; continuing")
+
     if not getset("cadence_on", False):
         # The CONTENT engine is stopped. Technical SEO can still run if it was
         # switched on separately - that is the whole point of a second switch.
