@@ -382,6 +382,69 @@ def _evidence_badge(src):
             f"{_H()._esc(ev['label'])}</span>")
 
 
+# board-name keyword -> the registered fix that addresses that board's
+# problems. ONE table, checked against the real registry at lookup time -
+# a fix that is not registered renders the pointer, never a dead button.
+_BOARD_FIX = (
+    ("wire", "retest_wires"), ("connect", "retest_wires"),
+    ("fail", "retry_dead"), ("queue", "retry_dead"), ("jobs", "retry_dead"),
+    ("index", "submit_indexnow"), ("technical", "run_seo_fixes"),
+    ("on-page", "run_seo_fixes"), ("on_page", "run_seo_fixes"),
+    ("seo", "run_seo_due"), ("repl", "refresh_replies"),
+    ("inbox", "refresh_replies"), ("backup", "run_backup"),
+    ("continuity", "test_restore"), ("track", "enable_tracking"),
+)
+
+
+def _problem_action() -> str:
+    """The fix for THIS board's problems, or an honest jump to the decision."""
+    import content_engine_fixes as FX
+    board = str(_CURRENT_BOARD.get("name") or "").lower()
+    for kw, fid in _BOARD_FIX:
+        if kw in board and fid in FX.REGISTRY:
+            f = FX.REGISTRY[fid]
+            return (f"<p>This board's problems have a registered repair: "
+                    f"<b>{_H()._esc(f.label)}</b>.</p>"
+                    + FX.fix_button(fid))
+    return ("<p>No automated fix exists for this - it is a judgment call. "
+            "The decision lives in the Cockpit.</p>"
+            "<button class='cbtn' onclick=\"nav('cockpit')\">Open the "
+            "Cockpit &rsaquo; ① DECIDE</button>")
+
+
+def _panel(question, verdict, metrics, action_label, action_js,
+           accent=BLUE, note=""):
+    """P3 - THE QUESTION PANEL: what boards converge to.
+
+    One question, one judged verdict, a strip of supporting numbers, ONE
+    primary action. What today takes eight single-number cards ("opens",
+    "bounces", "replies"...) becomes one interactive unit; the numbers
+    survive as the strip. Boards convert to this shape one at a time -
+    Cockpit, Content Factory, SEO first.
+
+    metrics: [(label, value), ...] - up to ~6.
+    """
+    H = _H()
+    e = H._esc
+    sev, badge, _w = _severity(accent)
+    strip = " &middot; ".join(
+        f"{e(str(l))} <b style='color:{accent}'>{e(str(v))}</b>"
+        for l, v in (metrics or [])[:6])
+    return (f"<div class='card sev-{sev} panelcard' data-sev='{sev}'>"
+            + (f"<div class='sevbadge s-{sev}'>{badge}</div>" if badge else "")
+            + f"<p class='ct' style='margin:0'>{e(question)}</p>"
+            + (f"<p style='margin:7px 0 0;font-size:12.5px'>{strip}</p>"
+               if strip else "")
+            + f"<div style='margin-top:8px;padding:7px 10px;border-radius:8px;"
+              f"background:rgba(139,124,255,.08);border-left:3px solid "
+              f"{accent};font-size:12.5px'>{e(verdict)}</div>"
+            + (f"<p class='cc' style='margin-top:6px'>{e(note)}</p>"
+               if note else "")
+            + f"<div class='cta'><button class='cta' "
+              f"onclick=\"{action_js}\">{e(action_label)}</button></div>"
+            + "</div>")
+
+
 def _detail_pane(pid, plain, jargon, big, sub, insight, src, sev, links):
     """TIER 1 - the record behind every card, for all of them, automatically.
 
@@ -428,15 +491,25 @@ def _detail_pane(pid, plain, jargon, big, sub, insight, src, sev, links):
         out.append("<div class='dsec'><h4>What is on the other side</h4>"
                    f"<p>{e(where)}</p></div>")
 
-    out.append("<div class='dsec'><h4>What you can do from here</h4>"
-               + (links or "<p>This card carries no action of its own. It is "
-                           "here to be read.</p>")
-               + "</div>")
+    # P1: A PROBLEM CARD MAY NOT SHRUG. 793 red/amber cards answered "What
+    # can you do" with "nothing, this is here to be read" - the no-action
+    # rate was FLAT across severities, so whether a card could act had no
+    # relationship to whether it needed action. A problem card now offers
+    # its registered fix, or an honest pointer to where the decision lives.
+    if not links and sev in ("critical", "warn"):
+        out.append("<div class='dsec'><h4>What you can do from here</h4>"
+                   + _problem_action() + "</div>")
+    else:
+        out.append("<div class='dsec'><h4>What you can do from here</h4>"
+                   + (links or "<p>This is an instrument, not a lever - it "
+                               "informs the decisions above it.</p>")
+                   + "</div>")
     out.append("</div>")
     return "".join(out)
 
 
-def _viz(title, big, sub, chart, insight, src, accent=BLUE, links=""):
+def _viz(title, big, sub, chart, insight, src, accent=BLUE, links="",
+         compact=False):
     """THE card. One question, one number, the right chart, a plain-English
     read, clickable evidence, an action — and an address of its own.
 
@@ -455,6 +528,35 @@ def _viz(title, big, sub, chart, insight, src, accent=BLUE, links=""):
     cid = base if n == 1 else f"{base}-{n}"
     search_blob = H._esc(f"{plain} {jargon} {sub} {insight}".lower())[:400]
     tip = f" title='{H._esc(jargon)}'" if jargon else ""
+    # P2: A CARD MUST EARN ITS SPACE. Healthy or merely informational
+    # numbers with no action of their own render as ONE compact row - still
+    # present, still searchable, still deep-linkable, still carrying the
+    # full record behind a tap - but no longer a card-sized block of the
+    # founder's attention. 2,236 cards where 88% were read-only was a
+    # library pretending to be a control panel.
+    if compact:
+        # data-crow, NOT a class suffix: every board census matches the
+        # exact string "class='card sev-X'" and a suffix broke nine of them
+        return (f"<div class='card sev-{sev}' id='{cid}' data-crow='1' "
+                f"data-sev='{sev}' data-w='{weight}' data-q=\"{search_blob}\" "
+                f"role='button' onclick=\"seeDetails('pane-{cid}')\" "
+                f"title='Tap for the full record'>"
+                f"<span style='flex:1;min-width:150px;font-size:12.5px'{tip}>"
+                f"{H._esc(plain)}{_evidence_badge(src)}</span>"
+                f"<span class='tnum' style='font-size:14px;font-weight:700;"
+                f"color:{accent};white-space:nowrap'>{H._esc(str(big))}</span>"
+                f"<span class='dim' style='font-size:11px;max-width:230px;"
+                f"overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"
+                f"{H._esc(sub)}</span>"
+                # a REAL button (keyboard-reachable), inside a layout-neutral
+                # cta wrapper so the every-card-ends-in-a-verb census holds
+                f"<span class='cta' style='display:contents'>"
+                f"<button class='cbtn sm ghost' style='padding:2px 9px' "
+                f"onclick=\"event.stopPropagation();"
+                f"seeDetails('pane-{cid}')\">record &rsaquo;</button>"
+                f"</span></div>"
+                + _detail_pane(f"pane-{cid}", plain, jargon, big, sub,
+                               insight, src, sev, links))
     return (f"<div class='card sev-{sev}' id='{cid}' data-sev='{sev}' "
             f"data-w='{weight}' data-q=\"{search_blob}\">"
             + (f"<div class='sevbadge s-{sev}'>{badge}</div>" if badge else "")
@@ -491,14 +593,30 @@ def _vizcards(rows, cols=3):
     decorated = [(_severity(r[6])[2], i, r) for i, r in enumerate(rows)]
     decorated.sort(key=lambda t: (t[0], t[1]))
     gid = f"grid-{_slug(_CURRENT_BOARD['name'])}-{abs(hash(str(rows[0][0]))) % 9999}"
-    parts, hidden = [], 0
-    for n, (_w, _i, r) in enumerate(decorated):
-        card = _viz(*r)
-        # #20: only the first VISIBLE_CARDS render open; the rest are one click
-        # away. 46 cards in one view is past anyone's working memory.
-        if n >= VISIBLE_CARDS:
-            card = card.replace("<div class='card sev-", "<div class='card overflowcard sev-", 1)
-            hidden += 1
+    parts, hidden, n_full = [], 0, 0
+    for _w, _i, r in decorated:
+        # P2: healthy/informational cards WITHOUT an action of their own
+        # demote to compact rows. Severity sort already puts them last, so
+        # the board reads: problems and levers first, instruments in a
+        # quiet strip below. Rows never consume a visible-card slot and are
+        # never hidden behind "show all" - they are already small.
+        # some boards author 7-tuples (links omitted, defaulting to "") -
+        # index blindly and four boards die with IndexError
+        _acc = r[6] if len(r) > 6 else BLUE
+        _lnk = r[7] if len(r) > 7 else ""
+        # a chart EARNS card space - a trend you can read at a glance is not
+        # noise, and a row cannot hold one
+        is_compact = ((_severity(_acc)[0] in ("info", "ok"))
+                      and not _lnk and not r[3])
+        card = _viz(*r, compact=is_compact)
+        if not is_compact:
+            # #20: only the first VISIBLE_CARDS render open; the rest are
+            # one click away. 46 cards in one view is past anyone's memory.
+            if n_full >= VISIBLE_CARDS:
+                card = card.replace("<div class='card sev-",
+                                    "<div class='card overflowcard sev-", 1)
+                hidden += 1
+            n_full += 1
         parts.append(card)
     more = (f"<div class='morewrap' id='more-{gid}'>"
             f"<button class='cbtn' onclick=\"seoMore('{gid}')\">"
@@ -2707,19 +2825,27 @@ if __name__ == "__main__":
     # #20 progressive disclosure — no board may open with more than VISIBLE_CARDS
     assert "overflowcard" in html, "progressive disclosure not applied"
     assert "Show all" in html, "the 'show all' control must exist"
-    open_now = html.count("<div class='card sev-")          # without overflowcard
+    # P2: compact rows (data-crow) are exempt from the 8-open limit -
+    # one line each, deliberately never hidden behind "show all"
+    open_now = (html.count("<div class='card sev-")
+                - html.count("data-crow='1'"))     # without overflowcard
     grids = html.count("class='grid g3 cardgrid'") + html.count("class='grid g2 cardgrid'")
     assert grids, "no card grids found"
     assert open_now <= VISIBLE_CARDS * grids,         f"{open_now} cards open across {grids} grids (max {VISIBLE_CARDS} each)"
     hidden = html.count("overflowcard sev-")
-    assert hidden > 80, f"only {hidden} cards deferred — disclosure barely applied"
+    # P2 moved most former-overflow cards into compact rows (visible but
+    # one line each) - disclosure now defers only FULL cards
+    assert hidden > 30, f"only {hidden} cards deferred — disclosure barely applied"
     # #2 sub-menu chips inside the 46-card AEO tab
     assert "class='subnav'" in html and "class='subchip'" in html, "no sub-navigation"
     assert "id='sub-answer-presence'" in html, "sub-sections must be anchored"
 
     assert "title='AI crawler access'" in html, "the real term must survive as a tooltip"
     assert not _re.search(r"\b(nan|NaN|inf)\b", html), "a non-finite number reached the UI"
-    assert html.count("💡") >= TOTAL_CARDS * 0.85, "most cards must carry a qualitative read"
+    # rows carry their insight in the record pane, not inline - the 💡
+    # census applies to FULL cards only (rows are counted via data-crow)
+    _fulls = html.count("<div class='card sev-") - html.count("data-crow='1'")
+    assert html.count("💡") >= _fulls * 0.85, "most FULL cards must carry a qualitative read"
     # honest degradation, not fake numbers
     assert "DataForSEO not connected" in html, "must state WHY off-page is empty"
     assert "not connected" in html and "—" in html

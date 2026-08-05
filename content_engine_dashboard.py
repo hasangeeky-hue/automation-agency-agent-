@@ -306,6 +306,11 @@ color:var(--ink);margin-top:6px}
 border:1px solid var(--line);border-radius:9px;padding:9px 11px;
 font-size:13px;font-family:inherit;line-height:1.55;resize:vertical}
 .dmc:focus{border-color:var(--teal);outline:none}
+/* P2: demoted instrument rows - full-width, quiet, tappable */
+[data-crow='1']{grid-column:1/-1;display:flex;gap:10px;align-items:center;
+padding:7px 12px !important;cursor:pointer;min-height:0}
+[data-crow='1']:hover{background:rgba(76,141,255,.07)}
+[data-crow='1'] .tnum{font-size:14px !important}
 @media(max-width:700px){#dlgwrap{padding:0}.dlg{border-radius:0;min-height:100%}}
 """
 

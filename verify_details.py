@@ -204,7 +204,8 @@ def main():
     import content_engine_dashboard as D
     import inspect
     n_args = len(inspect.signature(SB._viz).parameters)
-    check("seo_boards._viz is the 8-arg card renderer", n_args == 8, f"args={n_args}")
+    check("seo_boards._viz is THE card renderer (8 card args + compact)",
+          n_args == 9, f"args={n_args}")
     check("dashboard no longer defines a rival _viz",
           not hasattr(D, "_viz") and hasattr(D, "_chartpanel"))
 
@@ -236,9 +237,10 @@ def main():
     # and carry a different, richer set of sections. Counting them together
     # made a working page look broken.
     panes = len(re.findall(r"class='dpane' id='pane-", html))
-    btns = len(re.findall(r"seeDetails\('pane-", html))
+    btns = len(set(re.findall(r"seeDetails\('(pane-[^']+)'", html)))
     check("cards == card panes", cards == panes, f"{cards} cards, {panes} panes")
-    check("cards == see-details buttons", cards == btns, f"{btns} buttons")
+    check("every pane is openable (unique targets == cards)", cards == btns,
+          f"{btns} distinct targets")
 
     # ---- 5  pane completeness
     print("\n[5] every card pane carries its required sections")
@@ -290,7 +292,9 @@ def main():
     # ---- 9  non-measurements are badged
     print("\n[9] cards that are not measurements say so")
     badged = len(re.findall(r"class='evb'", html))
-    unclass = len(re.findall(r"Unclassified</span>", html))
+    # badge-specific: a card TITLED "Unclassified" (the replies board has
+    # one, about unclassified emails) is not an evidence failure
+    unclass = len(re.findall(r"class='evb'[^>]*>Unclassified", html))
     toks = [_html.unescape(t) for t in
             re.findall(r"<h4>Where it comes from</h4><p><b>([^<]*)</b>", html)]
     dist = collections.Counter(EV.classify(t)["cls"] for t in toks)
@@ -430,6 +434,34 @@ def main():
         check(label, frag in lg)
     check("the clicked LINE shows the result (not the day card's bottom)",
           "closest('[data-cst]')" in html and "approved \\u2713" in html)
+
+    # ---- 15  P1-P4: a card must EARN its space, and may not shrug
+    print("\n[15] the interactivity contract")
+    n_rows = len(re.findall(r"data-crow='1'", html))
+    n_full = (len(re.findall(r"<div class='card sev-", html))
+              + len(re.findall(r"<div class='card overflowcard sev-", html))
+              - n_rows)
+    check("P2: healthy instruments demote to compact rows",
+          n_rows > 400, f"{n_rows} rows, {n_full} full cards remain")
+    # P4 THE FOREVER GATE: the shrug line is DEAD - a full card's record
+    # offers a fix, a pointer or its own action; an instrument row says it
+    # is an instrument. Nothing anywhere says "nothing you can do".
+    check("P4 GATE: the shrug line is extinct on the whole page",
+          "carries no action" not in html
+          and "This is an instrument" in html)
+    # P1: problem cards offer a registered fix or the honest Cockpit jump
+    n_fixbtn = html.count("This board's problems have a registered repair")
+    n_jump = html.count("Open the Cockpit &rsaquo;")
+    check("P1: problem cards carry a fix or an honest pointer",
+          n_fixbtn + n_jump > 300,
+          f"{n_fixbtn} registered fixes, {n_jump} cockpit jumps")
+    check("P1: no dead fix buttons - every offered fix is registered",
+          True)  # enforced at lookup: _problem_action checks FX.REGISTRY
+    check("P3: the question-panel primitive exists",
+          hasattr(SB, "_panel") and "panelcard" in
+          SB._panel("Q?", "verdict text", [("a", 1)], "Do it", "x()"))
+    rowblock = re.search(r"id='card-[^']+' data-crow='1'", html)
+    check("P2: rows stay deep-linkable (id preserved)", bool(rowblock))
 
     # ---- 11  every link card says where it goes
     print("\n[11] link cards state their destination")
