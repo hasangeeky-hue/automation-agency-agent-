@@ -353,7 +353,20 @@ def _run_seo(store, level: str, now) -> dict:
             log.info("unattended SEO (%s): applied %d fix(es)", level, len(applied))
     except Exception as e:
         log.exception("unattended SEO pass failed")
-        out["error"] = f"{type(e).__name__}: {e}"
+        out["error"] = f"{type(e).__name__}: {str(e)[:300]}"
+    # THE RESULT SURVIVES. The first-ever cadence run on the live box fired,
+    # died somewhere inside, and left nothing but a stamp - the outcome dict
+    # was returned to the worker loop and discarded, so "did the SEO pass
+    # work" was unanswerable an hour later. Persist a compact record.
+    try:
+        compact = {}
+        for k, v in out.items():
+            compact[k] = (v if isinstance(v, (str, int, float, bool))
+                          else str(v)[:300])
+        compact["at"] = now.isoformat()
+        store.set_setting("seo_cadence_last", compact)
+    except Exception:
+        pass
     return out
 
 

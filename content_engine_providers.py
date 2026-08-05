@@ -531,8 +531,21 @@ class OutputTruncated(RuntimeError):
     room, what its budget was, and what to change."""
 
 
-def _truncated(stop_reason: str, spec: "PromptSpec", chars: int) -> None:
+def _truncated(stop_reason: str, spec: "PromptSpec", chars: int,
+               blocks=None) -> None:
     if str(stop_reason) in ("max_tokens", "length"):
+        if chars == 0:
+            # Six pieces died saying "ran out of room after 0 characters" -
+            # the whole budget was spent and NO text came back. Growing the
+            # ceiling cannot fix what it cannot see; name where the tokens
+            # actually went (thinking blocks, a refusal, an empty response)
+            # so the fix targets the mechanism instead of the symptom.
+            raise OutputTruncated(
+                f"{spec.skill_name} spent its whole {spec.max_tokens}-token "
+                f"budget and returned NO text at all. Blocks received: "
+                f"{list(blocks) if blocks else '(none)'} - if these are "
+                f"thinking blocks, the model is reasoning away the budget; "
+                f"if empty, the response never started.")
         raise OutputTruncated(
             f"{spec.skill_name} ran out of room: it hit its {spec.max_tokens}-token "
             f"ceiling after {chars} characters, so the JSON was cut off mid-value. "
@@ -540,7 +553,8 @@ def _truncated(stop_reason: str, spec: "PromptSpec", chars: int) -> None:
             f"or cap the unbounded arrays in its schema.")
 
 
-def _parse_model_json(text: str, spec: "PromptSpec", stop_reason: str) -> dict:
+def _parse_model_json(text: str, spec: "PromptSpec", stop_reason: str,
+                      blocks=None) -> dict:
     """THE ONLY WAY MODEL OUTPUT BECOMES DATA.
 
     The stop_reason guard above catches truncation only when the provider
@@ -557,7 +571,7 @@ def _parse_model_json(text: str, spec: "PromptSpec", stop_reason: str) -> dict:
 
     Every *_call function must parse through here and nowhere else - a naked
     json.loads on model output fails the build (verify_loop's AST gate)."""
-    _truncated(stop_reason, spec, len(text))
+    _truncated(stop_reason, spec, len(text), blocks=blocks)
     try:
         return json.loads(text)
     except ValueError as e:   # JSONDecodeError subclasses ValueError
@@ -618,7 +632,9 @@ def anthropic_call(model: str, spec: PromptSpec) -> SkillResult:
     # opaque "Unterminated string at char 2293" that names neither the skill nor
     # the cause. Fifteen content jobs died on exactly that, all at step one,
     # for days. Say what actually happened instead.
-    data = _parse_model_json(text, spec, getattr(resp, "stop_reason", ""))
+    data = _parse_model_json(text, spec, getattr(resp, "stop_reason", ""),
+                             blocks=[getattr(b, "type", "?")
+                                     for b in resp.content])
 
     u = resp.usage
     usage = {

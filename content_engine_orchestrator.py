@@ -828,7 +828,11 @@ def advance(job: dict, store: JobStore) -> str:
         # agent must never crash the tick and take the whole engine down. Narrow
         # this one job to a clean stop, hand it to a human, and let the loop go on.
         job["status"] = "failed"
-        job["halt_reason"] = f"degraded ({type(e).__name__}): {str(e)[:200]}"
+        # 400 chars, not 200. Two API-refused jobs carried the request shape
+        # AND the API's own explanation - and the old cap cut the reason off
+        # exactly at "Original: Error cod". A diagnostic that truncates the
+        # diagnosis is the disease it treats.
+        job["halt_reason"] = f"degraded ({type(e).__name__}): {str(e)[:400]}"
         job["needs_human"] = True
         try:
             import logging as _lg

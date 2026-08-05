@@ -554,6 +554,31 @@ def _verify_phase2():
     out.append((second.get("ran") == "seo" and calls["fixes"] == 1,
                 "with the content engine STOPPED, the safe technical-SEO pass "
                 "still runs on its own cadence", str(second)[:60]))
+    last = store.get_setting("seo_cadence_last") or {}
+    out.append((isinstance(last, dict) and last.get("ran") == "seo",
+                "the cadence RESULT is persisted - the live box fired its "
+                "first run and the outcome vanished into a discarded dict",
+                str(last)[:60]))
+
+    # ---- evidence fixes: 0-char truncation names its blocks; 400s keep
+    # ---- the API's own words
+    import content_engine_providers as PR
+    spec = PR.PromptSpec(skill_name="t", system_blocks=[], user_content="u",
+                         max_tokens=100, schema={"type": "object"}) \
+        if hasattr(PR, "PromptSpec") else None
+    try:
+        PR._parse_model_json("", spec, "max_tokens", blocks=["thinking"])
+        zc = False, "no exception"
+    except PR.OutputTruncated as e:
+        zc = ("NO text at all" in str(e) and "thinking" in str(e)), str(e)[:60]
+    except Exception as e:
+        zc = False, f"{type(e).__name__}"
+    out.append((zc[0], "a zero-character truncation names the blocks that "
+                       "ate the budget", zc[1]))
+    _osrc = open("content_engine_orchestrator.py", encoding="utf-8").read()
+    out.append(("str(e)[:400]" in _osrc,
+                "a degraded reason keeps 400 chars - the old 200 cut the "
+                "API's explanation off at 'Original: Error cod'", ""))
 
     # ---- II-E: approval and rejection teach the playbook ---------------
     import content_engine_learning as LN
