@@ -540,6 +540,36 @@ def _truncated(stop_reason: str, spec: "PromptSpec", chars: int) -> None:
             f"or cap the unbounded arrays in its schema.")
 
 
+def _parse_model_json(text: str, spec: "PromptSpec", stop_reason: str) -> dict:
+    """THE ONLY WAY MODEL OUTPUT BECOMES DATA.
+
+    The stop_reason guard above catches truncation only when the provider
+    CONFESSES ("max_tokens"/"length"). Fifteen real jobs died because the
+    confession never came: the response was cut, stop_reason said something
+    else (or nothing), json.loads raised a raw JSONDecodeError two lines
+    later, and the retry machinery - which knows exactly how to recover from
+    truncation - never heard about it. The piece was filed as dead.
+
+    Under a structured-output request the schema guarantees the SHAPE, so an
+    unparseable response has exactly one realistic cause: the model was cut
+    off before it finished. Classify it as what it is, whatever the provider
+    claimed, so the recovery path always fires.
+
+    Every *_call function must parse through here and nowhere else - a naked
+    json.loads on model output fails the build (verify_loop's AST gate)."""
+    _truncated(stop_reason, spec, len(text))
+    try:
+        return json.loads(text)
+    except ValueError as e:   # JSONDecodeError subclasses ValueError
+        raise OutputTruncated(
+            f"{spec.skill_name} returned unparseable JSON under its "
+            f"{spec.max_tokens}-token ceiling ({len(text)} characters, "
+            f"stop_reason={str(stop_reason) or 'none'!r}; parser said: "
+            f"{str(e)[:90]}). With a structured-output schema enforcing the "
+            f"shape, this is a cut-off response - treating it as truncation "
+            f"so the retry can grow the ceiling and go again.") from e
+
+
 def anthropic_call(model: str, spec: PromptSpec) -> SkillResult:
     client = _get_anthropic()
     kwargs = dict(
@@ -564,8 +594,7 @@ def anthropic_call(model: str, spec: PromptSpec) -> SkillResult:
     # opaque "Unterminated string at char 2293" that names neither the skill nor
     # the cause. Fifteen content jobs died on exactly that, all at step one,
     # for days. Say what actually happened instead.
-    _truncated(getattr(resp, "stop_reason", ""), spec, len(text))
-    data = json.loads(text)
+    data = _parse_model_json(text, spec, getattr(resp, "stop_reason", ""))
 
     u = resp.usage
     usage = {
@@ -623,8 +652,7 @@ def openai_call(model: str, spec: PromptSpec) -> SkillResult:
 
     _ch = resp.choices[0]
     _content = _ch.message.content or ""
-    _truncated(getattr(_ch, "finish_reason", ""), spec, len(_content))
-    data = json.loads(_content)
+    data = _parse_model_json(_content, spec, getattr(_ch, "finish_reason", ""))
     u = resp.usage
     usage = {
         "input_tokens": getattr(u, "prompt_tokens", 0),
@@ -704,6 +732,20 @@ if __name__ == "__main__":
             assert "ran out of room" in str(e) and "site_intelligence" in str(e)
             assert "1400" in str(e), "the error must name the budget to change"
     _truncated("end_turn", _Spec(), 900)      # a normal finish must NOT raise
+
+    # ---- the confession-less cut: stop_reason lies, JSON is torn -----------
+    # Fifteen real jobs died as "degraded (JSONDecodeError)" because the
+    # provider did NOT say max_tokens and the raw parse error flew past the
+    # retry machinery. Any unparseable output must classify as truncation.
+    for bad, why in (('{"title": "cut mid-str', "unterminated string"),
+                     ('{"title": ', "value missing"),
+                     ("", "empty response")):
+        try:
+            _parse_model_json(bad, _Spec(), "end_turn")
+            raise AssertionError(f"{why}: must raise OutputTruncated")
+        except OutputTruncated as e:
+            assert "unparseable" in str(e) and "site_intelligence" in str(e), why
+    assert _parse_model_json('{"ok": 1}', _Spec(), "end_turn") == {"ok": 1}
 
     # ---- EVERY budget must cover what its schema can emit --------------
     # This was discovered one dead job at a time, at real cost: site_intelligence

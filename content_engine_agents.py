@@ -73,8 +73,14 @@ def _how_for(fix_id) -> str:
             "Pushes your new URLs to Bing and Yandex. Free. Google is not "
             "included - it does not use IndexNow.",
         "retry_job":
-            "Puts the piece back at the start of the line. It will spend "
-            "again on the model calls it already made.",
+            "Revives this one piece, resuming AFTER its last completed step "
+            "- finished work is not re-bought. A QA-rejected piece carries "
+            "QA's notes to the writer. Spends on the remaining steps only.",
+        "retry_dead":
+            "Revives EVERY dead piece the same way: each resumes after its "
+            "last completed step, QA-rejected ones carry QA's notes. Costs "
+            "about EUR 0.10 per piece; every piece still stops at your "
+            "approval gate before anything publishes.",
         "piece_image":
             "Generates one image and attaches it. Costs about EUR 0.04 and "
             "cannot be undone, so it asks first.",
@@ -259,13 +265,46 @@ def _con_no_image(store, ctx):
 
 
 def _con_failed(store, ctx):
-    bad = [j for j in _pieces(store)
-           if _D(j).get("status") in ("failed", "revision_needed")]
-    return [Finding("content", f"{len(bad)} piece(s) failed",
-                    "; ".join(_S(_D(j).get("halt_reason"))[:60]
-                              for j in bad[:3]) or "no reason recorded",
-                    severity="bad", fix_id="retry_job",
-                    fix_arg=_S(_D(bad[0]).get("job_id")))] if bad else []
+    """THE PIPELINE WATCHDOG. 37 pieces sat dead for nine days after their
+    underlying bugs were fixed, visible in one SQL query the whole time,
+    and no agent owned that number. This one now does: how many are dead,
+    how long the oldest has waited, what reviving them costs, and the one
+    button that does it. A graveyard can never again accumulate unseen."""
+    failed, revision, oldest_days = [], [], 0
+    now = _now()
+    for j in _pieces(store):
+        j = _D(j)
+        st = j.get("status")
+        if st not in ("failed", "revision_needed"):
+            continue
+        (failed if st == "failed" else revision).append(j)
+        try:
+            when = datetime.fromisoformat(
+                _S(j.get("updated_at") or j.get("created_at")
+                   ).replace("Z", "+00:00"))
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            oldest_days = max(oldest_days, (now - when).days)
+        except Exception:
+            pass
+    if not failed and not revision:
+        return []
+    n = len(failed) + len(revision)
+    reasons = "; ".join(_S(_D(j).get("halt_reason"))[:50]
+                        for j in failed[:2]) or "see each piece's record"
+    return [Finding(
+        "content",
+        f"{n} piece(s) dead in the pipeline"
+        + (f" — oldest {oldest_days} day(s)" if oldest_days else ""),
+        f"{len(failed)} failed ({reasons}) and {len(revision)} sent back by "
+        f"QA with notes nothing ever acted on. Reviving all of them costs "
+        f"about €{n * 0.10:.2f} in model spend.",
+        severity="bad", fix_id="retry_dead",
+        how="Puts every dead piece back on the line, each resuming AFTER its "
+            "last completed step (finished work is not re-bought). QA-"
+            "rejected pieces carry QA's own notes to the writer. Costs about "
+            "€0.10 per piece; nothing publishes without your approval. The "
+            "alternative is retrying one piece at a time from its card.")]
 
 
 def _con_stale_gate(store, ctx):
@@ -684,7 +723,12 @@ if __name__ == "__main__":
     rc = inspect_one("content", St(jobs))
     checks = [f["check"] for f in rc["findings"]]
     assert any("no image" in c for c in checks), checks
-    assert any("failed" in c for c in checks), checks
+    # the failure finding is now the WATCHDOG: count + age + cost + the one
+    # batch button, so a graveyard can never again accumulate unseen
+    assert any("dead in the pipeline" in c for c in checks), checks
+    _wd = next(f for f in rc["findings"] if "dead in the pipeline" in f["check"])
+    assert _wd["fix_id"] == "retry_dead", _wd
+    assert "€" in _wd["detail"], "the watchdog must state the revival cost"
     assert any("72h" in c for c in checks), checks
     assert not rc["errors"], rc["errors"]
 

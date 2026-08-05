@@ -324,22 +324,68 @@ def _f_indexnow(store, arg):
 
 
 def _f_retry_job(store, arg):
-    """Put a failed job back on the queue."""
+    """Put ONE dead piece back on the line, resuming where it stopped.
+
+    This used to hand-roll its own comeback map: failed -> 'created' (which
+    re-bought every step the piece had already paid for) and revision_needed
+    -> 'seo_checked' (which re-judged the SAME text with no note - an
+    infinite revise loop, since nothing changed between verdicts). The one
+    revival rule now lives in orchestrator.revive(): resume after the last
+    completed step, and carry QA's verdict to the writer. One rule, both
+    buttons - the shared-vocabulary rule."""
     if not arg or store is None:
         return {"ok": False, "message": "no job named"}
     try:
         job = store.get(arg)
     except Exception:
         return {"ok": False, "message": f"no such job: {arg}"}
-    prev = job.get("status")
-    if prev not in ("failed", "revision_needed"):
-        return {"ok": False, "message": f"job is '{prev}', not failed"}
-    back = {"failed": "created", "revision_needed": "seo_checked"}
-    job["status"] = back.get(prev, "created")
-    job.pop("halt_reason", None)
-    job["needs_human"] = False
+    import content_engine_orchestrator as orch
+    out = orch.revive(job)
+    if not out.get("ok"):
+        return out
     store.save(job)
-    return {"ok": True, "message": f"{arg} requeued from {prev}"}
+    return {"ok": True,
+            "message": f"{arg} revived: {prev} -> {out.get('resumed_at')} "
+                       f"(resumes where it stopped; nothing publishes "
+                       f"without you)"}
+
+
+def _f_retry_dead(store, arg):
+    """Revive the graveyard: every failed / revision_needed content piece.
+
+    37 real pieces sat dead for nine days AFTER their underlying bugs were
+    fixed, because resurrection was never a state transition and nothing
+    offered the batch. arg narrows it: a job_id revives just that piece (the
+    canary), 'failed' or 'revision_needed' revives one class, empty revives
+    all. Costs model spend when the worker re-runs them, so this can never
+    auto-run - it exists behind a human click only."""
+    if store is None:
+        return {"ok": False, "message": "no store"}
+    import content_engine_orchestrator as orch
+    arg = str(arg or "").strip()
+    if arg and arg not in ("failed", "revision_needed"):
+        return _f_retry_job(store, arg)          # canary: one named piece
+    dead = [j for j in store.list_jobs()
+            if (j or {}).get("type") == "content_piece"
+            and (j or {}).get("status") in
+            ((arg,) if arg else ("failed", "revision_needed"))]
+    if not dead:
+        return {"ok": True, "message": "nothing to revive - the graveyard "
+                                       "is empty"}
+    revived, refused = [], []
+    for job in dead:
+        out = orch.revive(job)
+        if out.get("ok"):
+            store.save(job)
+            revived.append(f"{job.get('job_id')}->{out.get('resumed_at')}")
+        else:
+            refused.append(str(out.get("message"))[:60])
+    return {"ok": bool(revived),
+            "message": (f"{len(revived)} piece(s) revived, resuming where "
+                        f"each stopped; {len(refused)} refused. The worker "
+                        f"re-runs them on the raised ceilings; every one "
+                        f"still stops at your approval gate."),
+            "revived": revived[:40], "refused": refused[:10]}
 
 
 def _f_decline(store, arg):
@@ -387,7 +433,17 @@ register("run_backup", "Run a backup now", _f_backup, section="risk")
 register("clear_setting", "Clear this field", _f_clear_setting,
          reversible=False, section="system")
 register("submit_indexnow", "Submit to IndexNow", _f_indexnow, section="seo")
-register("retry_job", "Retry this job", _f_retry_job, section="content")
+# cost=0.10: re-running a piece SPENDS on model calls, so neither retry may
+# ever run unattended. These were registered cost-free before, which made
+# retry_job auto=True - an inspector finding plus the safe-batch button could
+# have re-run failed jobs (= spent money) without a human click.
+register("retry_job", "Retry this job", _f_retry_job, section="content",
+         cost=0.10)
+register("retry_dead", "Revive every dead piece", _f_retry_dead,
+         section="content", cost=0.10,
+         confirm="Revive every failed and revision-needed piece? The engine "
+                 "re-runs them (model spend, roughly EUR 0.10 per piece); "
+                 "every piece still stops at your approval gate.")
 
 
 def _f_refresh_replies(store, arg):

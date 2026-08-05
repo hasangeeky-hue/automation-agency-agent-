@@ -223,8 +223,13 @@ def _verify_truncation_recovery():
                 "growth stops at the cap instead of looping for ever", ""))
 
     src = open("content_engine_orchestrator.py", encoding="utf-8").read()
-    out.append(("except OutputTruncated" in src,
-                "the retry loop actually CATCHES truncation",
+    # The catch widened on 2026-08-05: truncation arrives as OutputTruncated
+    # (provider confessed) OR as a raw JSONDecodeError (torn text hit the
+    # parser first). The loop must catch BOTH - 15 real pieces died in the
+    # gap between them.
+    out.append(("except (OutputTruncated, json.JSONDecodeError)" in src,
+                "the retry loop catches BOTH faces of truncation "
+                "(OutputTruncated and raw JSONDecodeError)",
                 "it was raised past the loop that existed to handle it"))
     out.append(("ok, _ = schema.validate" not in src,
                 "validation errors are kept, not discarded",
@@ -292,6 +297,167 @@ def _verify_supervisor():
     return out
 
 
+def _verify_forever_gates():
+    """THE FOREVER GATES — the truncation death class stays dead.
+
+    15 real pieces died as 'degraded (JSONDecodeError)' because a torn
+    response reached json.loads before anything recognised it as truncation.
+    Each check here guards one layer of the fix; reopening any layer fails
+    this file, not the founder's pieces."""
+    import ast
+    import io
+    import json as _json
+    out = []
+
+    # ---- L1: any unparseable output classifies as truncation ---------------
+    import content_engine_providers as P
+
+    class _Spec:
+        skill_name, max_tokens, schema = "content_strategist", 800, {"type": "object"}
+    for bad in ('{"title": "cut mid-str', '{"k": ', ""):
+        try:
+            P._parse_model_json(bad, _Spec(), "end_turn")
+            out.append((False, "unparseable output must raise OutputTruncated",
+                        repr(bad[:20])))
+        except P.OutputTruncated:
+            out.append((True, f"torn JSON {bad[:14]!r} + stop_reason=end_turn "
+                              f"-> OutputTruncated, never JSONDecodeError", ""))
+        except Exception as e:
+            out.append((False, "wrong exception class escaped the guard",
+                        f"{type(e).__name__}: {e}"))
+
+    # ---- L3: no naked json.loads inside any *_call provider function -------
+    src = io.open("content_engine_providers.py", encoding="utf-8").read()
+    tree = ast.parse(src)
+    naked = []
+    for fn in ast.walk(tree):
+        if isinstance(fn, ast.FunctionDef) and fn.name.endswith("_call"):
+            for node in ast.walk(fn):
+                if (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "loads"):
+                    naked.append(f"{fn.name}:L{node.lineno}")
+    out.append((not naked,
+                "zero naked json.loads inside *_call functions - every parse "
+                "goes through _parse_model_json",
+                ", ".join(naked)))
+    out.append((callable(getattr(P, "_parse_model_json", None)),
+                "_parse_model_json exists as the single parse door", ""))
+
+    # ---- L2: the retry loop recovers from a RAW JSONDecodeError ------------
+    # Even if a future provider path forgets L1, the loop must catch the
+    # class, grow the ceiling and go again - not let the piece die.
+    import content_engine_orchestrator as O
+    calls = []
+
+    class _FakeSpec:
+        skill_name, max_tokens, schema = "content_strategist", 500, None
+
+    def _fake_build(skill, job):
+        return _FakeSpec()
+
+    class _R:
+        data = {"week_of": "2026-08-05", "calendar": [], "notes": "x"}
+        usage, model, cost_usd, warnings = {}, "fake", 0.0, []
+
+    def _fake_provider(model, spec):
+        calls.append(spec.max_tokens)
+        if len(calls) == 1:
+            raise _json.JSONDecodeError("Unterminated string", '{"a', 3)
+        return _R()
+
+    real_bp, real_cp = O.build_prompt, O.call_provider
+    real_sup = O._supervise
+    try:
+        O.build_prompt = _fake_build
+        O.call_provider = _fake_provider
+        O._supervise = lambda *a, **k: {"ok": True}
+        store = O.InMemoryJobStore()
+        job = {"job_id": "gate_j1", "type": "content_piece",
+               "status": "competitor_ready", "payload": {}, "cost_so_far_usd": 0}
+        store.put(job)
+        data, cost = O.run_llm_skill(job, "content_strategist", store)
+        grew = len(calls) == 2 and calls[1] > calls[0]
+        out.append((grew,
+                    "raw JSONDecodeError from the provider -> retried with a "
+                    f"GROWN ceiling ({calls[0]} -> {calls[-1]})",
+                    "" if grew else f"calls={calls}"))
+    except Exception as e:
+        out.append((False, "retry loop must survive a raw JSONDecodeError",
+                    f"{type(e).__name__}: {e}"))
+    finally:
+        O.build_prompt, O.call_provider = real_bp, real_cp
+        O._supervise = real_sup
+
+    # ---- L4: a reasonless failure cannot be saved --------------------------
+    store = O.InMemoryJobStore()
+    j = {"job_id": "gate_j2", "type": "content_piece", "status": "failed",
+         "_runs": {"content_producer": {"at": "2026-08-05T00:00:00"}}}
+    store.save(j)
+    stamped = store.get("gate_j2").get("halt_reason", "")
+    out.append(("unknown failure" in stamped and "content_producer" in stamped,
+                "a failed job with no reason is STAMPED at the store, naming "
+                "its last completed step", stamped[:80]))
+    src_pg = io.open("content_engine_store_pg.py", encoding="utf-8").read()
+    out.append(("ensure_failure_reason" in src_pg,
+                "PgJobStore.save calls the SAME stamp (one rule, both stores)",
+                ""))
+
+    # ---- L5: the recovery edges ---------------------------------------------
+    j = {"job_id": "gate_j3", "type": "content_piece", "status": "failed",
+         "halt_reason": "x", "payload": {},
+         "_runs": {"site_intelligence": {"at": "1"}, "competitor_intel": {"at": "2"}}}
+    r = O.revive(j)
+    out.append((r.get("ok") and j["status"] == "competitor_ready",
+                "a failed piece resumes AFTER its last completed step "
+                "(competitor_intel done -> resumes at competitor_ready)",
+                f"got {j['status']}"))
+    j2 = {"job_id": "gate_j4", "type": "content_piece",
+          "status": "revision_needed", "halt_reason": "",
+          "payload": {"qa_compliance": {"issues": [
+              {"issue": "Unsourced 40% claim", "fix": "soften to a range"}]}}}
+    r2 = O.revive(j2)
+    note = j2["payload"].get("revision_note", "")
+    out.append((r2.get("ok") and j2["status"] == "planned"
+                and "soften to a range" in note,
+                "a QA-rejected piece re-enters at the writing step CARRYING "
+                "QA's note", note[:70]))
+    j3 = {"job_id": "gate_j5", "type": "content_piece",
+          "status": "published", "payload": {}}
+    out.append((not O.revive(j3).get("ok"),
+                "revive refuses a piece that is not dead", ""))
+
+    # ---- retry fixes can never run unattended ------------------------------
+    import content_engine_fixes as F
+    for fid in ("retry_job", "retry_dead"):
+        f = F.REGISTRY.get(fid)
+        out.append((f is not None and not f.auto,
+                    f"{fid} can NEVER auto-run - re-running spends money",
+                    "" if f else "not registered"))
+    got = F.run_fix("retry_dead", store=None, auto=True)
+    out.append((not got.get("ok"),
+                "an agent asking to auto-run retry_dead is refused", ""))
+
+    # ---- the watchdog raises the graveyard as a finding --------------------
+    import content_engine_agents as AG
+    store2 = O.InMemoryJobStore()
+    store2.put({"job_id": "w1", "type": "content_piece", "status": "failed",
+                "halt_reason": "boom", "payload": {},
+                "updated_at": "2026-07-27T00:00:00+00:00"})
+    store2.put({"job_id": "w2", "type": "content_piece",
+                "status": "revision_needed", "payload": {},
+                "updated_at": "2026-07-28T00:00:00+00:00"})
+    finds = AG._con_failed(store2, {})
+    f0 = finds[0].as_dict() if finds else {}
+    out.append((bool(finds) and f0.get("fix_id") == "retry_dead"
+                and "day" in f0.get("check", "")
+                and "€" in f0.get("detail", ""),
+                "the watchdog names the count, the age and the cost, and "
+                "offers the ONE batch button",
+                f0.get("check", "no finding")))
+    return out
+
+
 if __name__ == "__main__":
     print("\n== truncation recovery ==")
     _bad = 0
@@ -311,4 +477,17 @@ if __name__ == "__main__":
         _sbad += 0 if ok else 1
     if _sbad:
         raise SystemExit(f"{_sbad} supervisor check(s) failed")
+
+    print()
+    print("== forever gates (the truncation death class stays dead) ==")
+    _fbad = 0
+    for ok, label, detail in _verify_forever_gates():
+        print(("  OK   " if ok else "  FAIL ") + label
+              + (f" — {detail}" if detail else ""))
+        _fbad += 0 if ok else 1
+    if _fbad:
+        raise SystemExit(f"{_fbad} forever-gate check(s) failed")
+    print("\nEVERY LAYER HOLDS — torn output classifies as truncation, the "
+          "loop grows and retries, no job dies silent, the dead can be "
+          "revived, and neither retry can ever run unattended.")
 

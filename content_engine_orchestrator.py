@@ -28,6 +28,7 @@ job["payload"] through; fill them per skill when you wire real data sources.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -258,6 +259,32 @@ class BudgetExceeded(Exception):
 # ---------------------------------------------------------------------------
 # JobStore interface + in-memory implementation
 # ---------------------------------------------------------------------------
+def ensure_failure_reason(job: dict) -> None:
+    """NO JOB DIES WITHOUT SAYING WHY - enforced at the save choke point.
+
+    Nine real jobs sat in the database as failed with an empty halt_reason:
+    unfixable, because the first question about any failure is unanswerable.
+    Every failure site is SUPPOSED to stamp a reason, but 'supposed to' is a
+    convention, and conventions drift. The store is the one door every job
+    passes through, so the guarantee lives here: a failed job with no reason
+    gets an explicit 'unknown failure' stamp naming the last thing it did -
+    visible and searchable, never silent.
+
+    Defined ONCE and called by BOTH stores (in-memory and Postgres), per the
+    shared-vocabulary rule: two hand-written copies of a rule is how this
+    engine breaks."""
+    if job.get("status") == "failed" and not str(job.get("halt_reason") or "").strip():
+        runs = job.get("_runs") or {}
+        last = max(runs.items(), key=lambda kv: str((kv[1] or {}).get("at", "")),
+                   default=(None, None))[0] if runs else None
+        job["halt_reason"] = (
+            "unknown failure - no reason was recorded at the failure site "
+            + (f"(last completed step: {last})" if last
+               else "(no step ever completed)")
+            + ". Stamped by the store so this job is never silent.")
+        job["needs_human"] = True
+
+
 class JobStore:
     def get(self, job_id: str) -> dict: ...
     def save(self, job: dict) -> None: ...
@@ -285,6 +312,7 @@ class InMemoryJobStore(JobStore):
         return self._jobs[job_id]
 
     def save(self, job: dict) -> None:
+        ensure_failure_reason(job)
         self._jobs[job["job_id"]] = job
 
     def claim_next(self) -> Optional[dict]:
@@ -626,11 +654,23 @@ def run_llm_skill(job: dict, skill: str, store: JobStore) -> tuple[dict, float]:
             attempts += 1
             try:
                 result = call_provider(model, spec)
-            except OutputTruncated as e:
+            except (OutputTruncated, json.JSONDecodeError) as e:
+                # CATCH THE CLASS, NOT THE CONFESSION. Truncation arrives two
+                # ways: the provider admits it (OutputTruncated) or the torn
+                # text hits a parser first (JSONDecodeError). Both mean "ran
+                # out of room"; only one used to reach this recovery - the
+                # other flew past to the catch-all and the piece was filed
+                # dead. providers._parse_model_json now converts at the
+                # source; this belt stays in case a future provider path
+                # forgets, because 15 real pieces are why.
                 last_why = [str(e)[:180]]
                 if _grow_ceiling(spec):
                     continue          # same model, more room
-                raise                 # already at the cap: report it honestly
+                # at the cap: fail HONESTLY, with the reason, instead of the
+                # bare re-raise that landed as "degraded (OutputTruncated)"
+                raise SkillFailed(
+                    f"{skill}: still truncated at the {spec.max_tokens}-token "
+                    f"cap after growing. {str(e)[:200]}") from e
             total_cost += result.cost_usd
             ok, errs = schema.validate(result.data) if schema else (True, [])
             if ok and "error" not in result.data:
@@ -840,6 +880,57 @@ def _maybe_spawn_next_cycle(job: dict, store: JobStore) -> None:
             "analytics": {}, "performance": {},
         })
     store.save(child)
+
+
+def revive(job: dict) -> dict:
+    """THE ROAD OUT OF THE GRAVEYARD - a recovery edge, fired by a human click.
+
+    The state machine had forward gears only: 'failed' and 'revision_needed'
+    were TERMINAL, so 37 real pieces sat dead for nine days AFTER their
+    underlying bugs were fixed, because resurrection was never a transition.
+    Worse, revision_needed - QA literally saying "revise this" - was filed in
+    the same bucket as dead.
+
+    TERMINAL itself stays as the passive-loop guard: advance() raises on any
+    status with no step (L693), so simply shrinking the set would make the
+    worker crash-loop on revived states. The edge is this function instead,
+    and it only ever fires on a click, because re-running spends money.
+
+      revision_needed -> re-enters at the writing step, carrying QA's verdict
+                         as revision_note (the field prepare_input already
+                         feeds into the writer's next prompt)
+      failed          -> resumes at the step AFTER the last one that completed
+                         (from the _runs stamps), so finished work is not
+                         re-bought
+
+    Never raises; refuses anything not actually dead."""
+    status = str(job.get("status") or "")
+    payload = job.setdefault("payload", {})
+    if status == "revision_needed":
+        qa = (payload.get("qa_compliance") or {}) if isinstance(payload, dict) else {}
+        issues = qa.get("issues") if isinstance(qa.get("issues"), list) else []
+        notes = "; ".join(
+            f"{(i.get('issue') or '').strip()} -> {(i.get('fix') or '').strip()}"
+            for i in issues if isinstance(i, dict) and i.get("issue"))[:600]
+        payload["revision_note"] = (notes or str(job.get("qa_verdict") or "")
+                                    or "QA asked for a revision.")
+        job["status"] = ("planned" if flow_for(job) is FLOW_CONTENT
+                         else "segmented")   # re-enter at the writing step
+    elif status == "failed":
+        runs = job.get("_runs") or {}
+        resume = "created"
+        for st, step in flow_for(job).items():   # dicts keep pipeline order
+            if step.skill and step.skill in runs:
+                resume = step.next_status
+        job["status"] = resume
+    else:
+        return {"ok": False,
+                "message": f"{job.get('job_id')}: status is '{status}' - "
+                           f"only failed or revision_needed pieces revive"}
+    job["halt_reason"] = ""
+    job["needs_human"] = False
+    return {"ok": True, "job_id": str(job.get("job_id") or ""),
+            "resumed_at": job["status"]}
 
 
 def run_until_blocked(job: dict, store: JobStore, max_steps: int = 50) -> str:

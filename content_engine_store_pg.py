@@ -114,6 +114,11 @@ class PgJobStore:
         self.save(job)
 
     def save(self, job: dict) -> None:
+        # NO REASONLESS DEATH. The rule is defined once, in the orchestrator,
+        # and called by both stores - never copied (shared-vocabulary rule).
+        # Lazy import: this module must stay importable without the engine.
+        import content_engine_orchestrator as _orch
+        _orch.ensure_failure_reason(job)
         with self._conn.cursor() as cur:
             self._upsert(cur, job)
         self._conn.commit()
