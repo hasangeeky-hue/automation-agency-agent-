@@ -88,6 +88,12 @@ def _apply_optimizer(record: dict, optimizer_output: dict, at: Optional[str]) ->
 _OUTCOME_FIELD = {
     "email_subject": "winning_email_subjects",
     "campaign_theme": "winning_campaign_themes",
+    # An approval IS an outcome. The founder reading a piece and pressing
+    # Approve (or sending it back with a note) was the strongest quality
+    # signal the engine receives, and it taught the playbook nothing - the
+    # learning loop only listened to measurements that arrive 21 days later.
+    "approved_piece": "winning_piece_titles",
+    "rejected_piece": "piece_rejection_notes",
 }
 
 

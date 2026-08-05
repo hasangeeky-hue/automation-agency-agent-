@@ -221,8 +221,23 @@ SEO_AUTO_LEVELS = ("off", "safe", "all")
 
 
 def seo_auto_level(store) -> str:
+    """DEFAULT IS "safe", NOT "off".
+
+    The whole unattended-SEO layer - the second switch, the level ladder,
+    _run_seo, the audit log - was built to honour a standing instruction
+    ("technical seo fix dont wait for my command i need 24/7 fix") and then
+    shipped with its default set to off. Result: seo_last_run stayed None
+    forever; fourteen engines, zero runs, an SEO section reporting on work
+    that never happened.
+
+    "safe" runs the free crawl and the machine-readable fixes only (schema,
+    internal links, alt text, IndexNow - the auto-push set the founder
+    approved). It never touches copy a visitor reads, never publishes,
+    never sends. An explicit "off" saved from the dashboard still wins -
+    this default applies only when the switch was never touched.
+    """
     try:
-        v = str(store.get_setting(SEO_AUTO_KEY, "off") or "off").lower()
+        v = str(store.get_setting(SEO_AUTO_KEY, "safe") or "safe").lower()
     except Exception:
         return "off"
     return v if v in SEO_AUTO_LEVELS else "off"

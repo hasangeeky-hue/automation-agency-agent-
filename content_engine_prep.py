@@ -536,6 +536,11 @@ def _in_qa_compliance(job: dict) -> dict:
         }
 
     # Pipeline A: the produced content piece, typed from its calendar row.
+    # SEO'S VERDICT NOW HAS HANDS: the mechanical part of "not SEO-ready"
+    # is repaired by code before QA ever reads the piece, so QA reviews the
+    # polished version and the founder never sees "add a meta_title" as a
+    # finding a machine could have fixed.
+    _ensure_seo_ready(job)
     ptype = _chosen_row(job).get("type", "blog")
     content_type = "blog" if ptype == "blog" else (
         "email_outreach" if ptype == "email" else "social")
@@ -546,6 +551,98 @@ def _in_qa_compliance(job: dict) -> dict:
         "is_regulated": regulated,
         "required_disclaimers": disclaimers,
     }
+
+
+_KW_STOP = {"the", "a", "an", "and", "or", "for", "of", "to", "in", "on",
+            "with", "your", "how", "why", "what", "can", "is", "are", "vs",
+            "that", "this", "you", "we", "our", "their", "it", "its", "at",
+            "by", "from", "into", "without", "small"}
+
+
+def _derive_keyword(title: str) -> str:
+    """A primary keyword from the title, by code. Not as good as a planned
+    one - but 'none provided' reaching the founder's approval screen when
+    the title contains a perfectly usable phrase is worse."""
+    words = [w for w in re.findall(r"[A-Za-z][A-Za-z-]+", str(title or ""))
+             if w.lower() not in _KW_STOP]
+    return " ".join(words[:3]).lower()
+
+
+def _ensure_seo_ready(job: dict) -> None:
+    """Apply the MECHANICAL SEO fixes by code, and record what remains.
+
+    seo_optimizer wrote 'Add meta_title (<=60 chars, keyword-first)' on a
+    piece and the pipeline carried that instruction, unexecuted, straight to
+    the approval queue - seo_ready appears zero times in the orchestrator, so
+    the agent's verdict gated nothing. The fixes a machine can make (keyword,
+    meta title, meta description) are made here, free, before QA reads the
+    piece; what genuinely needs a writer is recorded honestly in
+    payload['seo_polish'] and shown on the decision record. Never a loop:
+    this runs in-place, once per QA pass, and is idempotent.
+    """
+    if job.get("type") != "content_piece":
+        return
+    payload = job.setdefault("payload", {})
+    prod = payload.get("content_producer") or {}
+    body = str(prod.get("body") or "")
+    if not body:
+        return
+    applied, remaining = [], []
+
+    # 1. the keyword - from the plan row first, derived from the title last
+    row = _chosen_row(job)
+    if not isinstance(payload.get("config"), dict):
+        payload["config"] = {}
+    cfg = payload["config"]
+    kw = str(row.get("primary_keyword") or cfg.get("primary_keyword")
+             or "").strip()
+    if not kw:
+        kw = _derive_keyword(prod.get("title", ""))
+        if kw:
+            cfg["primary_keyword"] = kw
+            applied.append(f"primary_keyword derived from the title: '{kw}'")
+
+    # 2. meta_title: exists, <=60, keyword-first when there is a keyword
+    title = str(prod.get("title") or "").strip()
+    mt = str(prod.get("meta_title") or "").strip()
+    kw_first = (not kw) or mt.lower().startswith(kw.split()[0].lower())
+    if title and (not mt or len(mt) > 60 or not kw_first):
+        base = (f"{kw.title()}: {title}" if kw
+                and not title.lower().startswith(kw.split()[0].lower())
+                else title)
+        if len(base) > 60:
+            base = base[:60].rsplit(" ", 1)[0]
+        prod["meta_title"] = base
+        applied.append("meta_title rebuilt (<=60 chars, keyword-first)")
+
+    # 3. meta_description: exists, <=155, ends in the CTA
+    md = str(prod.get("meta_description") or "").strip()
+    if not md or len(md) > 155:
+        # first real PARAGRAPH - headings and image lines are not prose
+        prose = "\n".join(ln for ln in body.splitlines()
+                          if ln.strip() and not ln.lstrip().startswith(
+                              ("#", "!", ">", "-", "*", "|")))
+        first = re.sub(r"[!*\[\]()>`_]", "", prose).strip()
+        first = re.split(r"(?<=[.!?])\s", first, 1)[0].strip()
+        cta = str(prod.get("cta_text") or "Book a free consultation").strip()
+        desc = (first[:155 - len(cta) - 2].rsplit(" ", 1)[0].rstrip(".")
+                + ". " + cta)[:155]
+        prod["meta_description"] = desc
+        applied.append("meta_description rebuilt (<=155 chars, CTA included)")
+
+    # 4. what code CANNOT fix stays on the record, honestly
+    if kw and kw.lower() not in body[:700].lower():
+        remaining.append(f"'{kw}' does not appear in the opening - working "
+                         f"it in is a writer's job, not a code patch")
+    for f in (payload.get("seo_optimizer") or {}).get("fixes") or []:
+        fl = str(f).lower()
+        if not any(t in fl for t in ("meta_title", "meta_description",
+                                     "primary_keyword", "keyword density",
+                                     "keyword is set")):
+            remaining.append(str(f))
+
+    payload["seo_polish"] = {"applied": applied, "remaining": remaining[:6],
+                             "keyword": kw}
 
 
 def _in_analytics_funnel(job: dict) -> dict:

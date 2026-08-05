@@ -247,7 +247,36 @@ def api_approve(job_id: str, note: str = "") -> dict:
         job.setdefault("payload", {})["approval_note"] = note
     job["approved"] = True
     store.save(job)
-    return {"job_id": job_id, "approved": True, "status": job.get("status"), "note": note}
+    # YOUR APPROVAL IS AN OUTCOME. The founder reading a piece and pressing
+    # Approve is the strongest quality signal this engine receives, and it
+    # taught the playbook nothing - the learning loop only listened to
+    # measurements arriving 21 days later. Best-effort: a learning hiccup
+    # must never block an approval.
+    p = job.get("payload", {}) or {}
+    title = (p.get("content_producer") or {}).get("title") or ""
+    try:
+        import content_engine_learning as L
+        client = job.get("client_id") or (job.get("brand", {}) or {}).get(
+            "brand_name", "")
+        if title:
+            kw = (p.get("config") or {}).get("primary_keyword") or ""
+            L.record_outcome(client, "approved_piece",
+                             f"{title}" + (f" [kw: {kw}]" if kw else ""))
+    except Exception:
+        pass
+    # THE TRAIL. Approving moved the piece out of the "awaiting" filter, so
+    # it vanished from the queue with no explanation of where it went.
+    try:
+        import content_engine_site_taxonomy as _T
+        chans = _T.channels_of(p.get("config") or {})
+        dest = " + ".join(c.title() for c in chans) or "Website"
+    except Exception:
+        dest = "Website"
+    return {"job_id": job_id, "approved": True, "status": job.get("status"),
+            "note": note,
+            "message": f"Approved — publishing to {dest} next. Track it on "
+                       f"the calendar under Published; the learning agent "
+                       f"recorded what you liked."}
 
 
 def api_decline(job_id: str, note: str = "") -> dict:
@@ -264,6 +293,18 @@ def api_decline(job_id: str, note: str = "") -> dict:
     p.setdefault("revision_notes", []).append(
         {"note": note, "at": datetime.now(timezone.utc).isoformat()})
     p["revision_note"] = note                      # latest — fed into the rewrite
+    # A REJECTION TEACHES TOO. What the founder sends back - and why - is
+    # exactly what the playbook needs to stop producing. Best-effort.
+    if note.strip():
+        try:
+            import content_engine_learning as L
+            _client = job.get("client_id") or (job.get("brand", {}) or {}).get(
+                "brand_name", "")
+            _t = (p.get("content_producer") or {}).get("title") or job_id
+            L.record_outcome(_client, "rejected_piece",
+                             f"'{_t}': {note.strip()[:140]}")
+        except Exception:
+            pass
     job.pop("approved", None)
     job.pop("qa_verdict", None)
     if job.get("type") == "outreach_campaign":

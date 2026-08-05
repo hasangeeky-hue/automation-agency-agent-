@@ -330,7 +330,11 @@ def main():
             ("no model produced a valid result", "FAILED: real halt_reason"),
             ("Send back to the writer", "micro-command button"),
             ("<textarea class='dmc'", "micro-command is a textarea"),
-            ("See the full record", "opens the detail window")):
+            ("See the full record", "opens the detail window"),
+            ("Search readiness — SEO", "readiness block: SEO"),
+            ("Search readiness — AEO", "readiness block: AEO per piece"),
+            ("Search readiness — GEO", "readiness block: GEO per piece"),
+            ("question-style heading", "AEO checks name what they check")):
         check(label, frag in h2)
     # scoped to the calendar rows - other screens legitimately still use
     # confirm(), and a page-wide search would fail on those

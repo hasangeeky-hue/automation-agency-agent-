@@ -172,9 +172,70 @@ def seo(job) -> dict:
     s = _result(job, "seo_optimizer")
     checks = _d(s.get("checks"))
     passed = sum(1 for v in checks.values() if v)
+    polish = _d(_d(job.get("payload")).get("seo_polish"))
     return {"state": "present", "ready": bool(s.get("seo_ready")),
             "passed": passed, "total": len(checks),
-            "fixes": [_s(f) for f in _l(s.get("fixes"))]}
+            "fixes": [_s(f) for f in _l(s.get("fixes"))],
+            "applied": [_s(a) for a in _l(polish.get("applied"))],
+            "remaining": [_s(r) for r in _l(polish.get("remaining"))]}
+
+
+# per-piece ANSWER-ENGINE and MARKET readiness - computed by code from the
+# piece itself, free, per the Anthropos article framework: question-style
+# H2s + a direct answer up top + FAQ (AEO); a quotable stat (GEO/AEO); the
+# target market named (GEO). The SITE-level AEO/GEO engines are a different
+# thing - they probe live answer engines and run on the SEO section's own
+# schedule; this is about THIS piece, before it publishes.
+
+TARGET_MARKETS = ("USA", "United States", "UK", "United Kingdom", "Germany",
+                  "Switzerland", "Canada")
+
+
+def aeo_checks(job) -> list:
+    """(ok, what, why-it-matters) - can an answer engine quote this piece?"""
+    body = _s(_result(job, "content_producer").get("body"))
+    if not body:
+        return []
+    h2s = re.findall(r"^##\s*(.+)$", body, re.M)
+    q_h2 = any("?" in h or h.split(" ")[0].lower() in
+               ("how", "why", "what", "when", "which", "who", "can", "should")
+               for h in h2s)
+    first_para = next((ln for ln in body.splitlines()
+                       if ln.strip() and not ln.lstrip().startswith(
+                           ("#", "!", ">", "-", "*"))), "")
+    quick = 0 < len(first_para.split()) <= 60
+    faq = "faq" in body.lower() or sum("?" in h for h in h2s) >= 2
+    stat = bool(re.search(r"\d+(?:\.\d+)?\s*(?:%|percent|hours?|minutes?|"
+                          r"days?|€|\$)", body))
+    return [
+        (q_h2, "A question-style heading",
+         "Answer engines match questions people actually ask."),
+        (quick, "A direct answer in the first paragraph (under 60 words)",
+         "Engines quote the opening; a slow build-up never gets cited."),
+        (faq, "An FAQ or multiple question headings",
+         "Each question is one more chance to be the quoted answer."),
+        (stat, "A quotable number (a %, hours, a cost)",
+         "A concrete figure is what an engine lifts and attributes."),
+    ]
+
+
+def geo_checks(job) -> list:
+    """(ok, what, why) - is this piece aimed at a market you actually target?"""
+    body = _s(_result(job, "content_producer").get("body"))
+    if not body:
+        return []
+    named = [m for m in TARGET_MARKETS if m.lower() in body.lower()]
+    seg = _s(_d(why_it_exists(job)).get("segment"))
+    return [
+        (bool(named),
+         ("Names a target market: " + ", ".join(named[:3])) if named
+         else "Names none of your five target markets",
+         "A piece that names its market ranks in that market; a placeless "
+         "piece competes everywhere and wins nowhere."),
+        (bool(seg), f"Aimed at a segment: {seg}" if seg
+         else "No target segment recorded",
+         "The strategist's segment ties the piece to your ICP."),
+    ]
 
 
 # ------------------------------------------------------------------ if I click
@@ -312,7 +373,9 @@ def decision_pane(pid, job, row=None) -> str:
             f"act('/fix/retry_job?arg={_esc(jid)}')" if jid
             else "toast('No job id on this row.',false)")))
 
-    # 5 SEO
+    # 5 SEARCH READINESS - SEO, then AEO, then GEO. "Only seo parameters are
+    # there" was right: answer-engine and market readiness were never
+    # computed per piece anywhere in the codebase.
     s = seo(job)
     if s.get("state") == "present":
         inner = (f"<p class='dwarn {'dgood' if s['ready'] else ''}'>"
@@ -320,13 +383,45 @@ def decision_pane(pid, job, row=None) -> str:
                  f"</b>"
                  + (f" &middot; {s['passed']} of {s['total']} checks pass"
                     if s.get("total") else "") + "</p>")
-        for f in s.get("fixes") or []:
-            inner += f"<p>&middot; {_esc(f)}</p>"
-        parts.append(_sec("Search readiness", inner))
+        if s.get("applied"):
+            inner += ("<p class='dwarn dgood'><b>"
+                      f"{len(s['applied'])} fix(es) applied by code before "
+                      f"QA:</b></p>")
+            for a in s["applied"]:
+                inner += f"<p>&middot; {_esc(a)}</p>"
+        rem = s.get("remaining") if s.get("applied") else s.get("fixes")
+        if rem:
+            inner += (f"<p class='dwarn'><b>{len(rem)} need(s) a writer or "
+                      f"your call:</b></p>")
+            for f in rem:
+                inner += f"<p>&middot; {_esc(f)}</p>"
+        parts.append(_sec("Search readiness — SEO", inner))
     else:
-        parts.append(_sec("Search readiness", _absent(
+        parts.append(_sec("Search readiness — SEO", _absent(
             s.get("state", "not_run"), s.get("halt", ""), "The SEO check",
             "Run the SEO fixes", "act('/fix/run_seo_fixes')")))
+
+    def _readiness(checks):
+        n_ok = sum(1 for ok, _w, _y in checks if ok)
+        inner = (f"<p class='dwarn {'dgood' if n_ok == len(checks) else ''}'>"
+                 f"<b>{n_ok} of {len(checks)} checks pass</b></p>")
+        for ok, what, why_ in checks:
+            inner += (f"<p>{'✓' if ok else '✗'} {_esc(what)}"
+                      f"<br><span style='color:{DIM};font-size:12px'>"
+                      f"{_esc(why_)}</span></p>")
+        return inner
+
+    aeo = aeo_checks(job)
+    parts.append(_sec("Search readiness — AEO (answer engines)",
+                      _readiness(aeo) if aeo else
+                      "<p class='dwarn'><b>Nothing written yet</b> — "
+                      "answer-engine readiness is checked on the real "
+                      "body.</p>"))
+    geo = geo_checks(job)
+    parts.append(_sec("Search readiness — GEO (your markets)",
+                      _readiness(geo) if geo else
+                      "<p class='dwarn'><b>Nothing written yet</b> — market "
+                      "readiness is checked on the real body.</p>"))
 
     # 6 PREVIEW - exactly as it will publish
     frame = _s(row.get("preview_html"))

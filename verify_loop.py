@@ -481,6 +481,100 @@ def _verify_forever_gates():
     return out
 
 
+def _verify_phase2():
+    """II-A..II-E: the SEO gate has hands, the engines fire, approval teaches."""
+    out = []
+    import content_engine_prep as P
+
+    # ---- II-B: mechanical SEO fixes applied by code before QA ----------
+    job = {"type": "content_piece", "payload": {
+        "content_producer": {
+            "title": "Small Service Business Automation Without a Tech Team",
+            "body": "## Why this matters\n\n"
+                    + "Owners lose 10 hours a week to repetitive admin. " * 8,
+            "cta_text": "Book a free review"},
+        "seo_optimizer": {"seo_ready": False, "fixes": [
+            "Define primary_keyword; none provided",
+            "Add meta_title (<=60 chars, keyword-first)",
+            "Add internal links to related workflows"]}}}
+    P._in_qa_compliance(dict(job, payload=job["payload"]))
+    sp = job["payload"].get("seo_polish") or {}
+    pr = job["payload"]["content_producer"]
+    out.append((bool(sp.get("keyword")) and len(sp.get("applied") or []) >= 2,
+                "a keywordless piece gets its keyword, meta_title and "
+                "meta_description FIXED BY CODE before QA reads it",
+                f"kw={sp.get('keyword')!r}, {len(sp.get('applied') or [])} applied"))
+    out.append((0 < len(pr.get("meta_title", "")) <= 60
+                and 0 < len(pr.get("meta_description", "")) <= 155,
+                "the rebuilt meta fields respect Google's limits",
+                f"{len(pr.get('meta_title', ''))}/{len(pr.get('meta_description', ''))} chars"))
+    out.append(("internal links" in " ".join(sp.get("remaining") or []).lower(),
+                "what needs a WRITER is recorded honestly, not claimed fixed",
+                "; ".join(sp.get("remaining") or [])[:60]))
+
+    # ---- II-C: per-piece AEO + GEO readiness, computed by code ---------
+    import content_engine_decision as DEC
+    aeo = DEC.aeo_checks(job)
+    geo = DEC.geo_checks(job)
+    out.append((len(aeo) == 4 and any(ok for ok, _w, _y in aeo),
+                "AEO readiness is computed per piece (question H2, quick "
+                "answer, FAQ, quotable stat)",
+                f"{sum(1 for ok, _w, _y in aeo if ok)}/4 pass"))
+    out.append((len(geo) == 2,
+                "GEO readiness is computed per piece (market named, segment "
+                "set)", f"{sum(1 for ok, _w, _y in geo if ok)}/2 pass"))
+    pane = DEC.decision_pane("t2", job, {})
+    out.append((all(t in pane for t in ("Search readiness — SEO",
+                                        "Search readiness — AEO",
+                                        "Search readiness — GEO")),
+                "the decision record shows all THREE readiness blocks - 'only "
+                "seo parameters are there' is closed", ""))
+    out.append(("applied by code" in pane,
+                "the pane says which fixes code already made", ""))
+
+    # ---- II-D: the SEO cadence actually fires with the engine stopped --
+    import content_engine_scheduler as SCH
+    import content_engine_seo_ops as OPS
+    store = O.InMemoryJobStore()
+    out.append((SCH.seo_auto_level(store) == "safe",
+                "unattended technical SEO defaults to 'safe' - fourteen "
+                "engines can no longer sit unrun forever behind an off "
+                "switch nobody flipped", SCH.seo_auto_level(store)))
+    calls = {"crawl": 0, "fixes": 0}
+    _oc, _of = OPS.run_crawl, OPS.run_fixes
+    OPS.run_crawl = lambda s, **k: calls.__setitem__("crawl", 1) or {"urls": 1}
+    OPS.run_fixes = (lambda s, **k: calls.__setitem__("fixes", 1)
+                     or {"attempted": 0, "done": 0, "failed": 0,
+                         "awaiting_approval": 0, "details": []})
+    try:
+        first = SCH.run_due_work(store)          # inspect claims the first slot
+        second = SCH.run_due_work(store)         # seo fires despite cadence OFF
+    finally:
+        OPS.run_crawl, OPS.run_fixes = _oc, _of
+    out.append((second.get("ran") == "seo" and calls["fixes"] == 1,
+                "with the content engine STOPPED, the safe technical-SEO pass "
+                "still runs on its own cadence", str(second)[:60]))
+
+    # ---- II-E: approval and rejection teach the playbook ---------------
+    import content_engine_learning as LN
+    LN.record_outcome("gate-client", "approved_piece", "A Winning Title [kw: x]")
+    LN.record_outcome("gate-client", "rejected_piece", "'B': too salesy")
+    pb = LN.get_playbook("gate-client")
+    out.append(("A Winning Title [kw: x]" in (pb.get("winning_piece_titles") or [])
+                and any("too salesy" in r for r in
+                        (pb.get("piece_rejection_notes") or [])),
+                "an approval AND a send-back note both land in the playbook",
+                ""))
+
+    # ---- II-A: approve leaves a trail ----------------------------------
+    import content_engine_api as API
+    _src = open("content_engine_api.py", encoding="utf-8").read()
+    out.append(("Track it on " in _src and "approved_piece" in _src,
+                "approve answers WHERE the piece went and records what you "
+                "liked - no more vanishing from the board", ""))
+    return out
+
+
 if __name__ == "__main__":
     print("\n== truncation recovery ==")
     _bad = 0
@@ -510,7 +604,19 @@ if __name__ == "__main__":
         _fbad += 0 if ok else 1
     if _fbad:
         raise SystemExit(f"{_fbad} forever-gate check(s) failed")
+    print()
+    print("== phase II gates (the agents work FOR you, not near you) ==")
+    _p2bad = 0
+    for ok, label, detail in _verify_phase2():
+        print(("  OK   " if ok else "  FAIL ") + label
+              + (f" — {detail}" if detail else ""))
+        _p2bad += 0 if ok else 1
+    if _p2bad:
+        raise SystemExit(f"{_p2bad} phase-II check(s) failed")
+
     print("\nEVERY LAYER HOLDS — torn output classifies as truncation, the "
           "loop grows and retries, no job dies silent, the dead can be "
-          "revived, and neither retry can ever run unattended.")
+          "revived, neither retry runs unattended, mechanical SEO is fixed "
+          "by code before QA, AEO/GEO are checked per piece, the safe SEO "
+          "pass fires on its own, and your approvals teach the playbook.")
 
