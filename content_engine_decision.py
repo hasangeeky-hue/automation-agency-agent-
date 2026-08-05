@@ -289,8 +289,16 @@ def _absent(state, halt, what, fix_label, fix_call):
             f"</button>")
 
 
-def decision_pane(pid, job, row=None) -> str:
-    """TIER 2 - the whole record behind one approve/publish decision."""
+def decision_pane(pid, job, row=None, *, row_has_preview=False) -> str:
+    """TIER 2 - the whole record behind one approve/publish decision.
+
+    row_has_preview: the row this pane belongs to already renders the full
+    platform preview inline. Embedding it AGAIN here doubled every preview
+    on the page - 112 full WordPress+LinkedIn frames on a 49-piece board -
+    and the dashboard grew past what a browser will quietly swallow. The
+    founder reported it as "crashing, taking long time to load". One
+    preview per piece; this pane carries the reasoning, the row carries
+    the picture."""
     row = _d(row)
     job = _d(job)
     jid = _s(job.get("job_id")) or _s(row.get("job_id"))
@@ -423,9 +431,15 @@ def decision_pane(pid, job, row=None) -> str:
                       "<p class='dwarn'><b>Nothing written yet</b> — market "
                       "readiness is checked on the real body.</p>"))
 
-    # 6 PREVIEW - exactly as it will publish
+    # 6 PREVIEW - exactly as it will publish, embedded AT MOST ONCE per piece
     frame = _s(row.get("preview_html"))
-    if frame:
+    if row_has_preview:
+        parts.append(_sec("How it will look where it publishes",
+                          "<p>Use the <b>Preview</b> button on this piece's "
+                          "row - the full platform preview is there. This "
+                          "record carries the reasoning so the page stays "
+                          "fast enough to open.</p>"))
+    elif frame:
         parts.append(_sec("How it will look where it publishes",
                           f"<div style='max-height:520px;overflow:auto;"
                           f"border-radius:10px;background:#0B1120;padding:8px'>"

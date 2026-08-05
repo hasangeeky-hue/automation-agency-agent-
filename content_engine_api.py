@@ -1737,6 +1737,16 @@ def build_app():
 
     app = FastAPI(title="Content Engine", version="1.0")
 
+    # THE PAGE SHIPPED RAW. The dashboard is ~6 MB of HTML and no middleware
+    # compressed it, so every load pushed all 6 MB over the founder's
+    # connection - reported as "crashing, taking long time to load". Gzip
+    # takes the same page to ~0.5 MB. Three lines, 12x faster transfer.
+    try:
+        from starlette.middleware.gzip import GZipMiddleware
+        app.add_middleware(GZipMiddleware, minimum_size=2048)
+    except Exception:
+        pass
+
     @app.middleware("http")
     async def _auth_gate(request, call_next):
         # When DASHBOARD_PASSWORD is set, EVERY endpoint requires auth, so the

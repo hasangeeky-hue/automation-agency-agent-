@@ -702,6 +702,13 @@ def _calendar_list(ctx, prefix="cal") -> str:
         # strategist chose it. "Nothing to show yet" was a refusal to say
         # what IS known.
         frame = _str(r.get("preview_html"))
+        # PUBLISHED IS ARCHIVAL. Fifteen published pieces each carried their
+        # full WordPress+LinkedIn frames on every page load - 60 frames for
+        # decisions already made - and the dashboard grew past what a browser
+        # will quietly swallow ("crashing, taking long time to load"). The
+        # live site IS a published piece's preview.
+        if state == "published":
+            frame = ""
         if frame:
             body = (f"<div id='{pid}' style='display:none;margin-top:10px;"
                     f"padding:10px;border-radius:10px;background:#0B1120;"
@@ -741,9 +748,13 @@ def _calendar_list(ctx, prefix="cal") -> str:
         # not a prompt()).
         dpid = f"dec-{prefix}-" + (jid or str(len(out)))
         detail = ""
-        if jid:
+        # No record pane on published rows - the decision is made, and 15
+        # archival panes per board was pure page weight. Actionable rows keep
+        # theirs, with the preview embedded ONCE per piece (the row has it).
+        if jid and state != "published":
             import content_engine_decision as _DEC
-            detail = _DEC.decision_pane(dpid, _D(r.get("job")), r)
+            detail = _DEC.decision_pane(dpid, _D(r.get("job")), r,
+                                        row_has_preview=bool(frame))
             btns.append(f"<button class='cbtn' onclick=\"seeDetails('{dpid}')\">"
                         f"See the full record</button>")
             if state != "published":
