@@ -4,12 +4,15 @@ content_engine_scheduler.py
 Daily production scheduler (Phase 2). Turns the founder's cadence targets into
 actual jobs, once per day, cold-email-FIRST (so paid marketing later is smoother).
 
-Targets (env, with the founder's defaults):
+Targets (settings-first, then env; the founder's spec is the default):
   SCHED_OUTREACH_PER_DAY   cold-email campaigns per day     (default 1)
   SCHED_BLOGS_PER_DAY      blog pieces to the website/day   (default 2)
-  SCHED_SOCIAL_PER_CHANNEL social posts per channel per day (default 3)
-  SCHED_CHANNELS           comma list (default linkedin,twitter,facebook,instagram,tiktok)
+  SCHED_GUIDES_PER_DAY     guides to the website/day        (default 2)
+  SCHED_SOCIAL_PER_CHANNEL social posts per channel per day (default 4)
+  SCHED_CHANNELS           comma list (default linkedin — only connected
+                           channels; plan_today reads settings first)
   BRAND_NAME               brand for the jobs
+Daily total at defaults: 1 outreach + 2 blogs + 2 guides + 4 LinkedIn = 9.
 
 plan_today(store) is IDEMPOTENT per calendar day (guards on a store setting), so
 an n8n cron can hit POST /schedule/run as often as it likes without duplicating.
@@ -98,8 +101,24 @@ def plan_today(store, force: bool = False) -> dict:
                          "deploy_channels": ["wordpress"], "pieces_this_week": 14},
               "audit": {}, "competitors": [], "_scheduled": True})
 
-    # 3) SOCIAL posts per channel.
-    per = _isval(getset, "SCHED_SOCIAL_PER_CHANNEL", 1)
+    # 2b) GUIDES to the website. The founder's spec is 2 blogs + 2 GUIDES
+    # per day and the planner could only make blogs - "guide" existed in the
+    # type vocabulary, the templates and the site sections, but no job was
+    # ever created asking for one. requested_type rides in config and
+    # _chosen_row falls back to it, so the whole pipeline (producer, QA,
+    # preview, publisher section) treats it as a guide.
+    for i in range(_isval(getset, "SCHED_GUIDES_PER_DAY", 2)):
+        make("content_piece", f"guide_{i}",
+             {"config": {"business_goal": "authority", "produce_index": 0,
+                         "requested_type": "guide",
+                         "deploy_channels": ["wordpress"],
+                         "pieces_this_week": 14},
+              "audit": {}, "competitors": [], "_scheduled": True})
+
+    # 3) SOCIAL posts per channel. Default raised 1 -> 4: the founder's spec
+    # is 4 LinkedIn pieces per day, and these route to the copywriter agent
+    # (content_producer_copy), not the long-form writer.
+    per = _isval(getset, "SCHED_SOCIAL_PER_CHANNEL", 4)
     for ch in channels:
         for i in range(per):
             make("content_piece", f"social_{ch}_{i}",
@@ -330,13 +349,38 @@ def _run_seo(store, level: str, now) -> dict:
     codes = _seo_codes(level)
     out = {"ran": "seo", "level": level, "codes": codes}
     try:
-        if not _get_crawl(store):
-            # nothing to work from yet - crawl first, or the pass reports
-            # success having found zero orders and done nothing
+        # A WEEK-OLD CRAWL IS NOT A TO-DO LIST. The live receipt showed the
+        # pass firing hourly with attempted:0 forever - the stored crawl was
+        # six days old, its work orders long consumed, and "a crawl exists"
+        # was treated as "the crawl is current". Orders are refreshed by
+        # run_crawl (crawl -> audit -> WO.refresh), so a stale crawl means a
+        # permanently empty fix queue. Re-crawl weekly.
+        from datetime import datetime as _dtt, timedelta as _td
+        _crawl_at = str(store.get_setting("seo_safe_crawl_at", "") or "")
+        _stale = True
+        if _crawl_at:
+            try:
+                _stale = (now - _dtt.fromisoformat(_crawl_at)) > _td(days=7)
+            except Exception:
+                _stale = True
+        if _stale or not _get_crawl(store):
             out["crawl"] = SEO.run_crawl(store)
+            try:
+                store.set_setting("seo_safe_crawl_at", now.isoformat())
+            except Exception:
+                pass
         rep = SEO.run_fixes(store, auto_only=True, types=codes, limit=20)
         out["fixes"] = {k: rep.get(k) for k in
                         ("attempted", "done", "failed", "awaiting_approval")}
+        # receipt honesty: attempted:0 must be readable as "the queue was
+        # empty", never mistaken for "the pass is broken"
+        try:
+            import content_engine_workorders as WO
+            out["open_safe_orders"] = sum(
+                1 for o in WO.load(store)
+                if o.get("status") == "open" and o.get("code") in set(codes))
+        except Exception:
+            pass
         applied = [d for d in (rep.get("details") or [])
                    if str(d.get("status")) == "done"]
         if applied:
@@ -573,15 +617,18 @@ if __name__ == "__main__":
                        "SCHED_CHANNELS": "linkedin,twitter,facebook,instagram,tiktok"})
     store = orch.InMemoryJobStore()
     r = plan_today(store)
-    # 1 outreach + 2 blogs + 3*5 social = 18 jobs
-    assert r["status"] == "planned" and r["created"] == 18, r
-    # cold-email job created before blog jobs (ordering)
+    # 1 outreach + 2 blogs + 2 guides + 3*5 social = 20 jobs
+    assert r["status"] == "planned" and r["created"] == 20, r
+    # cold-email job created before blog jobs (ordering); guides typed as such
     ids = [j["job_id"] for j in store.list_jobs()]
     assert any("outreach" in i for i in ids) and sum("social" in i for i in ids) == 15
+    assert sum("guide" in i for i in ids) == 2, ids
+    _g = store.get("auto_%s_guide_0" % date.today().isoformat())
+    assert _g["payload"]["config"]["requested_type"] == "guide", _g
     # idempotent: second call same day creates nothing new
     r2 = plan_today(store)
     assert r2["status"] == "already_planned", r2
-    assert len(store.list_jobs()) == 18
+    assert len(store.list_jobs()) == 20
     # ---- SEO cadence: self-throttling, cheapest-first ----
     class _S:
         def __init__(self, runs): self._r = runs

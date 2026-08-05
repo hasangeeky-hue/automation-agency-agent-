@@ -2073,6 +2073,33 @@ def build_app():
                       for f in FX.REGISTRY.values()]
         return s
 
+    @app.get("/content/record/{job_id}")
+    def content_record(job_id: str):
+        """THE DECISION RECORD, SERVED ON DEMAND.
+
+        Every calendar row used to embed its full record (preview frames,
+        QA notes, the lot) inline - 112 platform previews on one page load,
+        which the founder experienced as "crashing, taking long time to
+        load". The page now carries one compact line per piece; tapping it
+        fetches THIS. At the founder's target volume (8 pieces/day) inline
+        embedding would re-break monthly; on-demand cannot."""
+        store = get_store()
+        try:
+            job = store.get(job_id)
+        except KeyError:
+            return HTMLResponse("<p style='padding:16px'>No such piece.</p>",
+                                status_code=404)
+        import content_engine_seo_ops as _OPS9
+        import content_engine_decision as _DEC9
+        rows = _OPS9._calendar_rows([job])
+        row = rows[0] if rows else {}
+        html = _DEC9.decision_pane("rec-live", job, row)
+        # the pane class is display:none for the inline flow; served alone
+        # it must be visible
+        return HTMLResponse(html.replace("class='dpane'",
+                                         "class='dpane' "
+                                         "style='display:block'", 1))
+
     @app.post("/content/piece-image")
     def content_piece_image(job_id: str = ""):
         """Generate the hero image for a piece that has none, and ATTACH it.

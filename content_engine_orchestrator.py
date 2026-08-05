@@ -616,6 +616,21 @@ def _stamp_run(job: dict, skill: str, model: str) -> None:
 
 
 def run_llm_skill(job: dict, skill: str, store: JobStore) -> tuple[dict, float]:
+    # PLATFORM-NATIVE PIECES GET THE COPYWRITER. content_producer_copy was
+    # fully registered - schema, prompt, budget, input builder (it shares
+    # content_producer's exact output shape, so nothing downstream changes) -
+    # and never invoked once: LinkedIn posts were written by the long-form
+    # blog writer and read like shortened blogs. A piece whose channels never
+    # touch the website routes to the copy agent instead.
+    if skill == "content_producer" and "content_producer_copy" in ROUTES:
+        try:
+            import content_engine_site_taxonomy as _T
+            _chans = _T.channels_of((job.get("payload") or {}).get("config")
+                                    or {})
+            if _chans and not any(_T.is_website(c) for c in _chans):
+                skill = "content_producer_copy"
+        except Exception:
+            pass
     route = ROUTES[skill]
     # Stage the skill-specific INPUT into the job payload the builder reads.
     staged = dict(job)

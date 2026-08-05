@@ -309,13 +309,21 @@ def main():
     check("every row carries its job", all("job" in r for r in rows),
           f"{len(rows)} rows")
 
-    # THE PAGE, not the renderer. Checking _calendar_list() in isolation said
-    # the decision record worked while the actual dashboard shipped zero of
-    # them, because nothing built factory_ctx. Assert against `html`.
+    # LAZY RECORDS. The page now carries ZERO inline decision panes - each
+    # is served by /content/record/{id} when tapped. Inline embedding at 49
+    # pieces meant 112 preview frames on one load ("crashing, taking long
+    # time to load"); at the 8/day target it would re-break monthly.
     n_dec = len(re.findall(r"id='dec-", html))
-    check("decision panes reach the rendered page", n_dec > 0,
-          f"{n_dec} on the page")
-    h2 = html
+    check("the page embeds NO inline decision panes", n_dec == 0,
+          f"{n_dec} found")
+    check("tapping a piece fetches its record", "seeDetailsFetch" in html)
+    _api_src = open("content_engine_api.py", encoding="utf-8").read()
+    check("the record endpoint exists", "/content/record/" in _api_src)
+    # The record itself - exactly what the endpoint serves per state.
+    import content_engine_decision as DEC10
+    h2 = "".join(
+        DEC10.decision_pane("r%d" % i, j, (OPS._calendar_rows([j]) or [{}])[0])
+        for i, j in enumerate((JOB_FULL, JOB_BARE, JOB_FAILED)))
 
     for frag, label in (
             ("Competitor brand term", "PRESENT: strategist rationale"),
@@ -330,7 +338,7 @@ def main():
             ("no model produced a valid result", "FAILED: real halt_reason"),
             ("Send back to the writer", "micro-command button"),
             ("<textarea class='dmc'", "micro-command is a textarea"),
-            ("See the full record", "opens the detail window"),
+            ("data-title=", "the record carries its title for the window"),
             ("Search readiness — SEO", "readiness block: SEO"),
             ("Search readiness — AEO", "readiness block: AEO per piece"),
             ("Search readiness — GEO", "readiness block: GEO per piece"),
@@ -369,17 +377,18 @@ def main():
             ("Needs you (2)", "filter rail: Needs you counts awaiting+rewrite"),
             ("Published (1)", "filter rail: published is visible again"),
             ("Failed (2)", "filter rail: failures one click away"),
-            ("QA said:", "QA notes shown on the rejected row"),
-            ("Rewrite now (uses QA&#x27;s notes)" , ""),
-            ("Retry from where it stopped", "failed row offers the resume"),
-            ("Target keyword", "the planned brief renders"),
-            ("Preview as it will publish", "written rows preview by platform"),
-            ("data-cst='published'", "published rows are in the DOM"),
+            ("QA:", "QA's notes on the rejected line"),
+            (">Rewrite<", "rejected line offers one-tap rewrite"),
+            (">Retry<", "failed line offers the resume"),
+            (">Approve<", "awaiting line approves without leaving the day"),
+            ("<b>Keyword</b>", "the planned brief renders"),
+            ("seeDetailsFetch('j_full')", "a line taps through to its record"),
+            ("📅", "the schedule renders day cards"),
+            ("data-cst='published'", "published lines are in the DOM"),
             ("calFilter('c12'", "the rail drives the filter")):
-        if not label:
-            label = "rejected row offers rewrite-with-notes"
-            frag = "Rewrite now"
         check(label, frag in h12)
+    check("no inline preview frames on the schedule",
+          "as Website will show it" not in h12)
     check("failed rows land hidden (Coming up is the default view)",
           "data-cst='failed' data-coming='0' " in h12
           and ";display:none'" in h12)

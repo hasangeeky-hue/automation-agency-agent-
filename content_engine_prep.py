@@ -77,10 +77,21 @@ def _result(job: dict, skill: str) -> dict:
 
 
 def _chosen_row(job: dict) -> dict:
-    """The single calendar row this job is producing (Strategist output)."""
+    """The single calendar row this job is producing (Strategist output).
+
+    config.requested_type overlays a missing row type: the scheduler can now
+    ask for a GUIDE (or any taxonomy type) and the request survives even
+    when the strategist's row didn't state one - previously every scheduled
+    piece silently defaulted to "blog" and the founder's 2-guides-a-day spec
+    was unexpressible."""
     calendar = _result(job, "content_strategist").get("calendar", []) or []
     idx = _cfg(job).get("produce_index", 0)
-    return calendar[idx] if 0 <= idx < len(calendar) else {}
+    row = calendar[idx] if 0 <= idx < len(calendar) else {}
+    want = str(_cfg(job).get("requested_type") or "").strip()
+    if want and not row.get("type"):
+        row = dict(row)
+        row["type"] = want
+    return row
 
 
 def _piece_content(job: dict) -> str:
@@ -862,7 +873,61 @@ def prepare_input(skill: str, job: dict) -> dict:
     """Shape one skill's INPUT from the job blackboard. Falls back to the raw
     payload for any skill without a dedicated mapper."""
     mapper = _MAPPERS.get(skill)
-    return mapper(job) if mapper else job.get("payload", {})
+    out = mapper(job) if mapper else job.get("payload", {})
+    try:
+        if skill in ("content_producer", "content_producer_copy") \
+                and job.get("type") == "content_piece":
+            _enrich_serp(out, job)
+        elif skill == "content_strategist":
+            want = str(_cfg(job).get("requested_type") or "").strip()
+            if want and isinstance(out, dict):
+                out["requested_type"] = want
+                out["type_note"] = (f"The founder scheduled this slot as a "
+                                    f"'{want}' - plan the calendar row as "
+                                    f"that type.")
+    except Exception:
+        pass
+    return out
+
+
+def _enrich_serp(out: dict, job: dict) -> None:
+    """REAL SERP EVIDENCE IN THE WRITER'S HANDS.
+
+    'Creating blog without deep research, not applying seo principle' - the
+    writer received competitor angles and a web-research brief, but never
+    once saw what actually RANKS for its keyword. Serper is live on this
+    box; the top results and their framing now ride into the prompt, with
+    the principles stated as instructions rather than hoped for. Cached on
+    the job so it costs one search per piece. Best-effort: absent Serper,
+    the piece still writes - it just says the brief was unavailable."""
+    if not isinstance(out, dict):
+        return
+    kw = str(out.get("primary_keyword") or out.get("working_title") or "").strip()
+    if not kw:
+        return
+    cache = job.setdefault("payload", {}).setdefault("_serp", {})
+    key = str(_cfg(job).get("produce_index", 0))
+    if key not in cache:
+        try:
+            import content_engine_connectors as _C
+            hits = _C.Serper().search(kw) or []
+            cache[key] = [{"title": str(h.get("title") or "")[:120],
+                           "snippet": str(h.get("snippet") or "")[:160]}
+                          for h in hits[:8]]
+        except Exception:
+            cache[key] = []
+    if cache[key]:
+        out["serp_top"] = cache[key]
+        out["seo_principles"] = (
+            "Write to OUTRANK serp_top: cover what they cover and one thing "
+            "they miss; primary keyword in the title, H1 and first 100 "
+            "words; question-style H2s matching what searchers ask; a "
+            "direct answer in the opening paragraph; one quotable, sourced "
+            "number.")
+    else:
+        out["serp_note"] = ("Live SERP data unavailable for this piece - "
+                            "written from competitor intel and research "
+                            "brief only.")
 
 
 # ---------------------------------------------------------------------------

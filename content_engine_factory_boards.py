@@ -679,145 +679,112 @@ def _calendar_list(ctx, prefix="cal") -> str:
             + _chip("all", "All", len(rows))
             + "</div>")
 
-    out = []
+    # THE SCHEDULE VIEW. "I have to scroll down - I need it vertical like
+    # Google Calendar, inside the day card I can preview, plan and approve
+    # without scrolling." Day cards stacked vertically, today first; every
+    # piece is ONE compact line with its action right there; tapping the
+    # line fetches the full record (preview, QA, rewrite box) into the
+    # window over the page. Nothing heavy is embedded inline any more -
+    # which is also what stopped the page crashing.
+    import datetime as _dt
+    today = _dt.date.today().isoformat()
+    days = {}
     for r in rows:
-        r = _D(r)
+        days.setdefault(_str(_D(r).get("when")) or "unscheduled",
+                        []).append(_D(r))
+    upcoming = sorted(k for k in days if k >= today)
+    earlier = sorted((k for k in days if k < today), reverse=True)
+
+    def _line(r, idx):
         jid = _str(r.get("job_id"))
         title = H._esc(_str(r.get("title")) or "(untitled)")
         dest = H._esc(_str(r.get("destination")))
-        when = H._esc(_str(r.get("when")))
         state = _str(r.get("state")) or "planned"
         label, tone, coming = STATES.get(state, ("planned", BLUE, True))
-        written = bool(r.get("written"))
-        why = H._esc(_str(r.get("why")))
-        # UNIQUE PER BOARD. This list renders in the Content Factory AND in
-        # the Cockpit approvals, so a bare "pv-<jobid>" appeared twice in one
-        # document and getElementById opened the copy on the screen you were
-        # NOT looking at. Caught in the DOM; it looked correct in the source.
-        pid = f"pv-{prefix}-" + (jid or str(len(out)))
-
-        # THE PREVIEW, per state. A written piece previews AS IT WILL PUBLISH
-        # (the WordPress/LinkedIn frame preview_for_job already renders). A
-        # planned piece previews its BRIEF - what it will be and why the
-        # strategist chose it. "Nothing to show yet" was a refusal to say
-        # what IS known.
-        frame = _str(r.get("preview_html"))
-        # PUBLISHED IS ARCHIVAL. Fifteen published pieces each carried their
-        # full WordPress+LinkedIn frames on every page load - 60 frames for
-        # decisions already made - and the dashboard grew past what a browser
-        # will quietly swallow ("crashing, taking long time to load"). The
-        # live site IS a published piece's preview.
-        if state == "published":
-            frame = ""
-        if frame:
-            body = (f"<div id='{pid}' style='display:none;margin-top:10px;"
-                    f"padding:10px;border-radius:10px;background:#0B1120;"
-                    f"max-height:520px;overflow:auto'>{frame}</div>")
-            pv_label = "Preview as it will publish"
-        else:
-            brief = []
-            if r.get("kind"):
-                brief.append(f"<b>Type</b> {H._esc(_str(r.get('kind')))}")
-            if dest:
-                brief.append(f"<b>Publishes to</b> {dest}")
-            if r.get("keyword"):
-                brief.append(f"<b>Target keyword</b> "
-                             f"{H._esc(_str(r.get('keyword')))}")
-            if r.get("rationale"):
-                brief.append(f"<b>Why this piece</b> "
-                             f"{H._esc(_str(r.get('rationale')))}")
-            inner = ("<p class='cc' style='margin:2px 0'>"
-                     + "</p><p class='cc' style='margin:2px 0'>".join(brief)
-                     + "</p>" if brief else "")
-            body = (f"<div id='{pid}' style='display:none;margin-top:10px;"
-                    f"padding:10px;border-radius:10px;background:#0B1120'>"
-                    + inner
-                    + f"<p class='cc' style='margin:6px 0 0'>"
-                      f"{why or 'Nothing further is known about this piece yet.'}"
-                      f"</p></div>")
-            pv_label = "The brief" if (brief or state == "planned") else "Why not"
-
-        btns = [f"<button class='cbtn' onclick=\"var e=document"
-                f".getElementById('{pid}');e.style.display="
-                f"e.style.display==='none'?'block':'none';"
-                f"this.textContent=e.style.display==='none'"
-                f"?'{pv_label}':'Hide';\">{pv_label}</button>"]
-        # THE FULL RECORD opens in the detail window: the strategist's
-        # rationale, QA's issues with their fixes, the real spend, what is
-        # reversible per channel, and the send-back box (a real textarea,
-        # not a prompt()).
-        dpid = f"dec-{prefix}-" + (jid or str(len(out)))
-        detail = ""
-        # No record pane on published rows - the decision is made, and 15
-        # archival panes per board was pure page weight. Actionable rows keep
-        # theirs, with the preview embedded ONCE per piece (the row has it).
-        if jid and state != "published":
-            import content_engine_decision as _DEC
-            detail = _DEC.decision_pane(dpid, _D(r.get("job")), r,
-                                        row_has_preview=bool(frame))
-            btns.append(f"<button class='cbtn' onclick=\"seeDetails('{dpid}')\">"
-                        f"See the full record</button>")
-            if state != "published":
-                btns.append(
-                    f"<button class='cbtn' onclick=\"if(confirm('Remove this "
-                    f"piece from the queue? It will not publish.'))"
-                    f"act('/fix/delete_piece?arg={H._esc(jid)}')\">Remove"
-                    f"</button>")
+        acts = []
         if state == "awaiting" and jid:
-            btns.insert(0, f"<button class='cta' onclick=\"act('/jobs/"
-                           f"{H._esc(jid)}/approve')\">Approve</button>")
-        # THE RECOVERY EDGES, on the row that needs them: a rejected piece
-        # re-runs carrying QA's notes; a failed one resumes where it stopped.
-        # Both spend (~EUR 0.10), so both are buttons, never automatic.
+            acts.append(f"<button class='cta' style='padding:3px 10px;"
+                        f"font-size:11.5px' onclick=\"event.stopPropagation();"
+                        f"act('/jobs/{H._esc(jid)}/approve')\">Approve</button>")
         if state == "needs_rewrite" and jid:
-            btns.insert(0, f"<button class='cta' onclick=\"act('/fix/"
-                           f"retry_job?arg={H._esc(jid)}')\">Rewrite now "
-                           f"(uses QA's notes)</button>")
+            acts.append(f"<button class='cbtn sm' onclick=\"event."
+                        f"stopPropagation();act('/fix/retry_job?arg="
+                        f"{H._esc(jid)}')\">Rewrite</button>")
         if state == "failed" and jid:
-            btns.insert(0, f"<button class='cta' onclick=\"act('/fix/"
-                           f"retry_job?arg={H._esc(jid)}')\">Retry from where "
-                           f"it stopped</button>")
-
-        # QA'S NOTES, visible on the row - not buried in a field no screen
-        # read. This is what "needs a rewrite" MEANS; hiding it made 9
-        # salvageable pieces indistinguishable from dead ones.
+            acts.append(f"<button class='cbtn sm' onclick=\"event."
+                        f"stopPropagation();act('/fix/retry_job?arg="
+                        f"{H._esc(jid)}')\">Retry</button>")
         qa = _str(r.get("qa_notes"))
-        qa_html = (f"<div style='margin:6px 0;padding:7px 10px;border-radius:"
-                   f"8px;background:rgba(245,177,76,.09);border-left:3px "
-                   f"solid {AMBER};font-size:12px'>QA said: "
-                   f"{H._esc(qa)}</div>" if qa and state == "needs_rewrite"
-                   else "")
-        fail_html = (f"<div style='margin:6px 0;padding:7px 10px;"
-                     f"border-radius:8px;background:rgba(255,107,147,.09);"
-                     f"border-left:3px solid {PINK};font-size:12px'>"
-                     f"{why or 'No reason recorded (pre-fix corpse).'}"
-                     f"</div>" if state == "failed" else "")
+        note = (f"<div class='dim' style='font-size:11px;margin-top:2px'>"
+                f"QA: {H._esc(qa[:110])}</div>"
+                if qa and state == "needs_rewrite" else "")
+        if jid:
+            opener = f"seeDetailsFetch('{H._esc(jid)}')"
+            hint = "Tap for the full record: preview, QA, send-back"
+        else:
+            pid = f"pv-{prefix}-plan-{idx}"
+            brief = []
+            for lab2, key in (("Type", "kind"), ("Keyword", "keyword"),
+                              ("Why", "rationale")):
+                if r.get(key):
+                    brief.append(f"<p><b>{lab2}</b> "
+                                 f"{H._esc(_str(r.get(key)))}</p>")
+            note += (f"<div class='dpane' id='{pid}' data-title=\"{title}\">"
+                     f"<div class='dsec'><h4>The brief</h4>"
+                     + ("".join(brief) or "<p>Planned - approve the plan and "
+                                          "the writer starts.</p>")
+                     + "</div></div>")
+            opener = f"seeDetails('{pid}')"
+            hint = "Tap for the brief"
+        return (f"<div class='calrow-{prefix}' data-cst='{state}' "
+                f"data-coming='{1 if coming else 0}' role='button' "
+                f"title=\"{hint}\" onclick=\"{opener}\" "
+                f"style='display:flex;gap:9px;align-items:center;padding:"
+                f"7px 10px;margin-top:6px;border-left:3px solid {tone};"
+                f"border-radius:8px;background:var(--s2);cursor:pointer"
+                + (";opacity:.7" if state == "published" else "")
+                + (";display:none" if not coming else "") + "'>"
+                f"<span style='flex:1;min-width:180px'>"
+                f"<span class='ct' style='font-size:13px'>{title}</span>"
+                f"{note}</span>"
+                f"<span class='pill' style='font-size:10px;color:{tone};"
+                f"border:1px solid {tone};border-radius:7px;padding:1px 7px;"
+                f"white-space:nowrap'>{H._esc(label)}</span>"
+                f"<span class='dim' style='font-size:11px'>{dest}</span>"
+                + "".join(acts) + "</div>")
 
-        out.append(
-            f"<div class='card full calrow-{prefix}' data-cst='{state}' "
-            f"data-coming='{1 if coming else 0}' "
-            f"style='margin-top:8px;border-left:3px solid {tone}"
-            + (";opacity:.75" if state == "published" else "")
-            + f"{';display:none' if not coming else ''}'>"
-            f"<div style='display:flex;gap:10px;align-items:baseline;"
-            f"flex-wrap:wrap'>"
-            f"<p class='ct' style='margin:0;flex:1;min-width:220px'>{title}</p>"
-            f"<span class='pill' style='font-size:10.5px;color:{tone};"
-            f"border:1px solid {tone};border-radius:7px;padding:1px 7px'>"
-            f"{H._esc(label)}</span>"
-            f"<span class='dim' style='font-size:12px'>{when}</span></div>"
-            f"<p class='cc' style='margin:4px 0 8px'>{dest}"
-            + (" &middot; not written yet" if not written
-               and state in ("planned", "writing") else "")
-            + "</p>" + qa_html + fail_html
-            + " ".join(btns) + body + detail + "</div>")
+    def _daycard(day, rs):
+        try:
+            nice = _dt.date.fromisoformat(day).strftime("%a %d %b")
+        except Exception:
+            nice = day
+        badge = (" <span class='pill' style='color:#04121a;background:"
+                 f"{GREEN};border-radius:7px;padding:1px 7px;font-size:10px'>"
+                 "today</span>" if day == today else "")
+        n_act = sum(1 for r in rs if _str(r.get("state"))
+                    in ("awaiting", "needs_rewrite"))
+        need = (f" <span class='dim' style='font-size:11px'>{n_act} need "
+                f"you</span>" if n_act else "")
+        return (f"<div class='card full' style='margin-top:10px'>"
+                f"<p class='ct' style='margin:0'>📅 {H._esc(nice)}{badge}"
+                f"{need}</p>"
+                + "".join(_line(r, f"{day}-{i}") for i, r in enumerate(rs))
+                + "</div>")
+
+    out = [_daycard(d, days[d]) for d in upcoming]
+    if earlier:
+        n_old = sum(len(days[d]) for d in earlier)
+        out.append(f"<p class='cc' style='margin:14px 0 2px'>Earlier "
+                   f"({n_old} piece(s), newest first)</p>")
+        out.extend(_daycard(d, days[d]) for d in earlier)
 
     return ("<div class='card full' style='margin-top:12px'>"
-            "<p class='ct'>📅 What will publish</p><p class='cc'>Every piece "
-            "in date order — coming up first, published and failed one click "
-            "away. Preview any of them exactly as it will look, or send it "
-            "back with your note. The page never moves.</p>" + rail
-            + "</div>" + "".join(out))
+            "<p class='ct'>📅 What will publish</p><p class='cc'>Day by day, "
+            "today first. Tap any piece for its full record - preview "
+            "exactly as it will publish, QA's notes, and the send-back box "
+            "- and approve right from the line. Nothing here makes you "
+            "scroll through previews.</p>" + rail + "</div>"
+            + "".join(out))
 
 
 def board_plan(ctx) -> str:
