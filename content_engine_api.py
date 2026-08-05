@@ -1641,7 +1641,10 @@ def api_dashboard_html() -> str:
             image_key=_safe_image_key())
     except Exception as e:
         log.warning("Content Factory context unavailable: %s", e)
-        factory_ctx = None
+        # NOT None. A None context made the Content Factory render "Nothing
+        # planned or written yet" over a live database - a wrong explanation,
+        # visible only in a log line nobody reads. The board now prints WHY.
+        factory_ctx = {"_ctx_error": f"{type(e).__name__}: {str(e)[:200]}"}
     try:
         import content_engine_seo_ops as _SEO9
         cockpit_ctx = _SEO9.build_cockpit_ctx(

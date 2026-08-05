@@ -4649,6 +4649,23 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "if(e.key==='Escape'){var w=document.getElementById('dlgwrap');"
               "if(w&&w.classList.contains('on')){e.preventDefault();"
               "closeDetails();}}});"
+              # the calendar's filter rail: Coming up / Needs you / Published /
+              # Failed / All. Pure show-hide - no fetch, no reload, no page
+              # move. Failures are one click away, never the landing view and
+              # never hidden.
+              "function calFilter(prefix,key,btn){try{"
+              "var rows=document.querySelectorAll('.calrow-'+prefix);"
+              "rows.forEach(function(r){var st=r.getAttribute('data-cst');"
+              "var coming=r.getAttribute('data-coming')==='1';"
+              "var show=(key==='all')||(key==='coming'&&coming)||"
+              "(key==='needsyou'&&(st==='awaiting'||st==='needs_rewrite'))||"
+              "(key==='published'&&st==='published')||"
+              "(key==='failed'&&st==='failed');"
+              "r.style.display=show?'':'none';});"
+              "document.querySelectorAll(\"[data-calchip='\"+prefix+\"']\")"
+              ".forEach(function(b){b.classList.add('ghost');});"
+              "if(btn)btn.classList.remove('ghost');"
+              "}catch(e){}}"
               # micro-command: a real textarea, not a prompt(). A prompt is one
               # line, cannot be edited, and vanishes on a mis-click.
               "async function microCmd(jid,ta){try{"

@@ -97,7 +97,45 @@ JOB_FAILED = {"job_id": "j_fail", "type": "content_piece", "status": "failed",
                              "after 3 attempts",
               "payload": {"content_producer": _PRODUCER, "config": _CFG}}
 
-JOBS = [JOB_FULL, JOB_BARE, JOB_FAILED,
+# the four states Phase III must render honestly, plus a title-fallback case
+JOB_REWRITE = {"job_id": "j_rw", "type": "content_piece",
+               "status": "revision_needed", "cost_so_far_usd": 0.22,
+               "created_at": "2026-08-04",
+               "payload": {"content_producer": dict(_PRODUCER),
+                           "content_strategist": _STRAT, "config": _CFG,
+                           "qa_compliance": {
+                               "verdict": "revise",
+                               "issues": [{"issue": "Intro buries the point",
+                                           "severity": "medium",
+                                           "fix": "Lead with the cost of "
+                                                  "waiting"}]}}}
+JOB_INFLIGHT = {"job_id": "j_run", "type": "content_piece",
+                "status": "seo_checked", "cost_so_far_usd": 0.18,
+                "created_at": "2026-08-05",
+                "payload": {"content_producer": dict(_PRODUCER),
+                            "config": _CFG}}
+JOB_LIVE = {"job_id": "j_live", "type": "content_piece",
+            "status": "published", "cost_so_far_usd": 0.29,
+            "created_at": "2026-08-01",
+            "payload": {"content_producer": dict(_PRODUCER), "config": _CFG}}
+JOB_NOTITLE = {"job_id": "auto_2026-07-28_blog_9", "type": "content_piece",
+               "status": "failed", "cost_so_far_usd": 0.02,
+               "created_at": "2026-07-28",
+               "halt_reason": "degraded (JSONDecodeError): Unterminated "
+                              "string starting at: line 1 column 2294",
+               "payload": {"content_strategist": {"calendar": [
+                   {"working_title": "The Working Title Test",
+                    "primary_keyword": "kw", "rationale": "r"}]},
+                   "config": dict(_CFG, produce_index=0)}}
+PLAN = {"items": [{"title": "How to automate price monitoring",
+                   "date": "2026-08-08", "channels": ["website"],
+                   "type": "blog",
+                   "primary_keyword": "price monitoring automation",
+                   "rationale": "High-intent query with no ranking page "
+                                "of ours."}]}
+
+JOBS = [JOB_FULL, JOB_BARE, JOB_FAILED, JOB_REWRITE, JOB_INFLIGHT, JOB_LIVE,
+        JOB_NOTITLE,
         {"job_id": "job_b2", "type": "content_piece", "status": "optimized",
          "payload": {}, "cost_so_far_usd": 0.11},
         {"job_id": "job_e5", "type": "outreach_campaign", "status": "sent",
@@ -136,7 +174,8 @@ def render():
     health = {"healthy": True, "anthropic": {"status": "ok"},
               "postgres": {"status": "ok"}}
     try:
-        factory_ctx = OPS.build_factory_ctx(store, jobs=jobs)
+        factory_ctx = OPS.build_factory_ctx(store, jobs=jobs,
+                                            content_plan=PLAN)
     except Exception as e:
         print(f"  (build_factory_ctx raised {type(e).__name__}: {e})")
         factory_ctx = None
@@ -299,6 +338,51 @@ def main():
     check("no browser prompt() left on the approval row",
           "prompt(" not in row_html)
     check("the row still offers Approve", "/approve'" in row_html)
+
+    # ---- 12  THE CALENDAR: six honest states, previews, recovery edges
+    print("\n[12] the calendar - what will publish, honestly labelled")
+    rows12 = OPS._calendar_rows(
+        [JOB_FULL, JOB_FAILED, JOB_REWRITE, JOB_INFLIGHT, JOB_LIVE,
+         JOB_NOTITLE], PLAN)
+    states12 = collections.Counter(r["state"] for r in rows12)
+    check("six states mapped from real statuses",
+          states12 == {"awaiting": 1, "failed": 2, "needs_rewrite": 1,
+                       "writing": 1, "published": 1, "planned": 1},
+          str(dict(states12)))
+    nt = next(r for r in rows12 if r["job_id"] == "auto_2026-07-28_blog_9")
+    check("title falls back to the strategist's working title, not the "
+          "job id", nt["title"] == "The Working Title Test", nt["title"])
+    rw = next(r for r in rows12 if r["state"] == "needs_rewrite")
+    check("QA's notes reach the rejected row",
+          "Lead with the cost of waiting" in rw["qa_notes"], rw["qa_notes"][:60])
+    pl12 = next(r for r in rows12 if r["state"] == "planned")
+    check("a planned row carries its brief (keyword + rationale)",
+          pl12["keyword"] and pl12["rationale"], pl12["keyword"])
+
+    h12 = FB._calendar_list({"calendar_rows": rows12}, prefix="c12")
+    for frag, label in (
+            ("Coming up (4)", "filter rail: Coming up counts 4"),
+            ("Needs you (2)", "filter rail: Needs you counts awaiting+rewrite"),
+            ("Published (1)", "filter rail: published is visible again"),
+            ("Failed (2)", "filter rail: failures one click away"),
+            ("QA said:", "QA notes shown on the rejected row"),
+            ("Rewrite now (uses QA&#x27;s notes)" , ""),
+            ("Retry from where it stopped", "failed row offers the resume"),
+            ("Target keyword", "the planned brief renders"),
+            ("Preview as it will publish", "written rows preview by platform"),
+            ("data-cst='published'", "published rows are in the DOM"),
+            ("calFilter('c12'", "the rail drives the filter")):
+        if not label:
+            label = "rejected row offers rewrite-with-notes"
+            frag = "Rewrite now"
+        check(label, frag in h12)
+    check("failed rows land hidden (Coming up is the default view)",
+          "data-cst='failed' data-coming='0' " in h12
+          and ";display:none'" in h12)
+    err12 = FB._calendar_list({"_ctx_error": "RuntimeError: boom"}, prefix="e")
+    check("a dead context builder prints its reason on the board",
+          "data unavailable" in err12 and "boom" in err12)
+    check("calFilter is defined in the page JS", "function calFilter" in html)
 
     # ---- 11  every link card says where it goes
     print("\n[11] link cards state their destination")

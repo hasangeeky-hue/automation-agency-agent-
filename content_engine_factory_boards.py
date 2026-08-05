@@ -625,12 +625,59 @@ def _calendar_list(ctx, prefix="cal") -> str:
     """
     import content_engine_factory as _FF
     H = _H()
+    # A CONTEXT THAT DIED MUST SAY SO. api.py used to swallow a builder's
+    # exception into ctx=None, and this board rendered "Nothing planned or
+    # written yet" over a live database - a wrong explanation that stopped
+    # anyone looking. The error now rides in on the ctx and prints here.
+    _err = _str(_D(ctx).get("_ctx_error"))
+    if _err:
+        return ("<div class='card full' style='margin-top:12px;border-left:"
+                f"3px solid {PINK}'><p class='ct'>📅 The week — data "
+                "unavailable</p><p class='cc'>The Content Factory context "
+                f"failed to build, so this board has NO data (which is not "
+                f"the same as there being none). The engine said: "
+                f"<b>{H._esc(_err)}</b></p></div>")
     rows = _L(ctx.get("calendar_rows"))
     if not rows:
         return ("<div class='card full' style='margin-top:12px'>"
                 "<p class='ct'>📅 The week</p><p class='cc'>Nothing planned or "
                 "written yet. Press <b>Plan a week</b> and every piece will "
                 "appear here with its preview and its buttons.</p></div>")
+
+    # SIX STATES, one vocabulary: chip label, row tone, sort weight, and
+    # which filter shows it - defined once, right here.
+    STATES = {                    # state -> (label, tone, coming?)
+        "planned":       ("planned",          BLUE,  True),
+        "writing":       ("being written",    AMBER, True),
+        "awaiting":      ("waiting for you",  GREEN, True),
+        "needs_rewrite": ("needs a rewrite",  AMBER, True),
+        "published":     ("published",        TEAL,  False),
+        "failed":        ("failed",           PINK,  False),
+    }
+    counts = {}
+    for r in rows:
+        st = _str(_D(r).get("state")) or "planned"
+        counts[st] = counts.get(st, 0) + 1
+    n_coming = sum(n for s, n in counts.items()
+                   if STATES.get(s, ("", "", True))[2])
+
+    # THE FILTER RAIL. Default = what is COMING. Failures and published are
+    # one click away - never hidden, never the landing view. Hiding failures
+    # entirely would repeat the old sin in reverse; showing 37 of them first
+    # made the schedule read as a graveyard.
+    def _chip(key, label, n, on=False):
+        return (f"<button class='cbtn sm{' ' if on else ' ghost '}'"
+                f" data-calchip='{prefix}' data-key='{key}'"
+                f" onclick=\"calFilter('{prefix}','{key}',this)\">"
+                f"{label} ({n})</button>")
+    rail = ("<div style='display:flex;gap:6px;flex-wrap:wrap;margin:8px 0'>"
+            + _chip("coming", "Coming up", n_coming, on=True)
+            + _chip("needsyou", "Needs you",
+                    counts.get("awaiting", 0) + counts.get("needs_rewrite", 0))
+            + _chip("published", "Published", counts.get("published", 0))
+            + _chip("failed", "Failed", counts.get("failed", 0))
+            + _chip("all", "All", len(rows))
+            + "</div>")
 
     out = []
     for r in rows:
@@ -639,40 +686,59 @@ def _calendar_list(ctx, prefix="cal") -> str:
         title = H._esc(_str(r.get("title")) or "(untitled)")
         dest = H._esc(_str(r.get("destination")))
         when = H._esc(_str(r.get("when")))
-        state = _str(r.get("state"))
+        state = _str(r.get("state")) or "planned"
+        label, tone, coming = STATES.get(state, ("planned", BLUE, True))
         written = bool(r.get("written"))
         why = H._esc(_str(r.get("why")))
         # UNIQUE PER BOARD. This list renders in the Content Factory AND in
         # the Cockpit approvals, so a bare "pv-<jobid>" appeared twice in one
-        # document. getElementById returns the FIRST match, so pressing
-        # Preview on the calendar opened the copy on a screen you were not
-        # looking at - the button did something, just not where you could see
-        # it. Caught in the DOM; it looked correct in the source.
+        # document and getElementById opened the copy on the screen you were
+        # NOT looking at. Caught in the DOM; it looked correct in the source.
         pid = f"pv-{prefix}-" + (jid or str(len(out)))
-        tone = {"awaiting": GREEN, "failed": PINK,
-                "planned": BLUE}.get(state, AMBER)
-        # The preview is rendered but COLLAPSED - one click, no page move, no
-        # second request. A row you have to navigate away from to judge is the
-        # thing being fixed here.
+
+        # THE PREVIEW, per state. A written piece previews AS IT WILL PUBLISH
+        # (the WordPress/LinkedIn frame preview_for_job already renders). A
+        # planned piece previews its BRIEF - what it will be and why the
+        # strategist chose it. "Nothing to show yet" was a refusal to say
+        # what IS known.
         frame = _str(r.get("preview_html"))
-        body = (f"<div id='{pid}' style='display:none;margin-top:10px;"
-                f"padding:10px;border-radius:10px;background:#0B1120;"
-                f"max-height:520px;overflow:auto'>{frame}</div>"
-                if frame else
-                f"<div id='{pid}' style='display:none;margin-top:10px'>"
-                f"<p class='cc'>{why or 'Nothing to show yet.'}</p></div>")
+        if frame:
+            body = (f"<div id='{pid}' style='display:none;margin-top:10px;"
+                    f"padding:10px;border-radius:10px;background:#0B1120;"
+                    f"max-height:520px;overflow:auto'>{frame}</div>")
+            pv_label = "Preview as it will publish"
+        else:
+            brief = []
+            if r.get("kind"):
+                brief.append(f"<b>Type</b> {H._esc(_str(r.get('kind')))}")
+            if dest:
+                brief.append(f"<b>Publishes to</b> {dest}")
+            if r.get("keyword"):
+                brief.append(f"<b>Target keyword</b> "
+                             f"{H._esc(_str(r.get('keyword')))}")
+            if r.get("rationale"):
+                brief.append(f"<b>Why this piece</b> "
+                             f"{H._esc(_str(r.get('rationale')))}")
+            inner = ("<p class='cc' style='margin:2px 0'>"
+                     + "</p><p class='cc' style='margin:2px 0'>".join(brief)
+                     + "</p>" if brief else "")
+            body = (f"<div id='{pid}' style='display:none;margin-top:10px;"
+                    f"padding:10px;border-radius:10px;background:#0B1120'>"
+                    + inner
+                    + f"<p class='cc' style='margin:6px 0 0'>"
+                      f"{why or 'Nothing further is known about this piece yet.'}"
+                      f"</p></div>")
+            pv_label = "The brief" if (brief or state == "planned") else "Why not"
 
         btns = [f"<button class='cbtn' onclick=\"var e=document"
                 f".getElementById('{pid}');e.style.display="
                 f"e.style.display==='none'?'block':'none';"
                 f"this.textContent=e.style.display==='none'"
-                f"?'Preview':'Hide';\">"
-                f"{'Preview' if frame else 'Why not'}</button>"]
-        # THE FULL RECORD. The rewrite button used to be a browser prompt():
-        # one line, uneditable, gone on a mis-click, and offered with no idea
-        # WHY the piece exists, what QA said about it, or what it already
-        # cost. All of that was on the job the whole time. It now opens in the
-        # detail window, with the instruction box inside it.
+                f"?'{pv_label}':'Hide';\">{pv_label}</button>"]
+        # THE FULL RECORD opens in the detail window: the strategist's
+        # rationale, QA's issues with their fixes, the real spend, what is
+        # reversible per channel, and the send-back box (a real textarea,
+        # not a prompt()).
         dpid = f"dec-{prefix}-" + (jid or str(len(out)))
         detail = ""
         if jid:
@@ -680,29 +746,67 @@ def _calendar_list(ctx, prefix="cal") -> str:
             detail = _DEC.decision_pane(dpid, _D(r.get("job")), r)
             btns.append(f"<button class='cbtn' onclick=\"seeDetails('{dpid}')\">"
                         f"See the full record</button>")
-            btns.append(
-                f"<button class='cbtn' onclick=\"if(confirm('Remove this piece "
-                f"from the queue? It will not publish.'))"
-                f"act('/fix/delete_piece?arg={H._esc(jid)}')\">Remove</button>")
+            if state != "published":
+                btns.append(
+                    f"<button class='cbtn' onclick=\"if(confirm('Remove this "
+                    f"piece from the queue? It will not publish.'))"
+                    f"act('/fix/delete_piece?arg={H._esc(jid)}')\">Remove"
+                    f"</button>")
         if state == "awaiting" and jid:
             btns.insert(0, f"<button class='cta' onclick=\"act('/jobs/"
                            f"{H._esc(jid)}/approve')\">Approve</button>")
+        # THE RECOVERY EDGES, on the row that needs them: a rejected piece
+        # re-runs carrying QA's notes; a failed one resumes where it stopped.
+        # Both spend (~EUR 0.10), so both are buttons, never automatic.
+        if state == "needs_rewrite" and jid:
+            btns.insert(0, f"<button class='cta' onclick=\"act('/fix/"
+                           f"retry_job?arg={H._esc(jid)}')\">Rewrite now "
+                           f"(uses QA's notes)</button>")
+        if state == "failed" and jid:
+            btns.insert(0, f"<button class='cta' onclick=\"act('/fix/"
+                           f"retry_job?arg={H._esc(jid)}')\">Retry from where "
+                           f"it stopped</button>")
+
+        # QA'S NOTES, visible on the row - not buried in a field no screen
+        # read. This is what "needs a rewrite" MEANS; hiding it made 9
+        # salvageable pieces indistinguishable from dead ones.
+        qa = _str(r.get("qa_notes"))
+        qa_html = (f"<div style='margin:6px 0;padding:7px 10px;border-radius:"
+                   f"8px;background:rgba(245,177,76,.09);border-left:3px "
+                   f"solid {AMBER};font-size:12px'>QA said: "
+                   f"{H._esc(qa)}</div>" if qa and state == "needs_rewrite"
+                   else "")
+        fail_html = (f"<div style='margin:6px 0;padding:7px 10px;"
+                     f"border-radius:8px;background:rgba(255,107,147,.09);"
+                     f"border-left:3px solid {PINK};font-size:12px'>"
+                     f"{why or 'No reason recorded (pre-fix corpse).'}"
+                     f"</div>" if state == "failed" else "")
 
         out.append(
-            f"<div class='card full' style='margin-top:8px;border-left:3px "
-            f"solid {tone}'>"
+            f"<div class='card full calrow-{prefix}' data-cst='{state}' "
+            f"data-coming='{1 if coming else 0}' "
+            f"style='margin-top:8px;border-left:3px solid {tone}"
+            + (";opacity:.75" if state == "published" else "")
+            + f"{';display:none' if not coming else ''}'>"
             f"<div style='display:flex;gap:10px;align-items:baseline;"
             f"flex-wrap:wrap'>"
             f"<p class='ct' style='margin:0;flex:1;min-width:220px'>{title}</p>"
+            f"<span class='pill' style='font-size:10.5px;color:{tone};"
+            f"border:1px solid {tone};border-radius:7px;padding:1px 7px'>"
+            f"{H._esc(label)}</span>"
             f"<span class='dim' style='font-size:12px'>{when}</span></div>"
             f"<p class='cc' style='margin:4px 0 8px'>{dest}"
-            + (f" &middot; {H._esc(state)}" if state else "")
-            + (f" &middot; not written yet" if not written else "")
-            + "</p>" + " ".join(btns) + body + detail + "</div>")
+            + (" &middot; not written yet" if not written
+               and state in ("planned", "writing") else "")
+            + "</p>" + qa_html + fail_html
+            + " ".join(btns) + body + detail + "</div>")
+
     return ("<div class='card full' style='margin-top:12px'>"
-            "<p class='ct'>📅 The week</p><p class='cc'>Every piece that will "
-            "publish, in date order. Preview, rewrite or remove any of them "
-            "here - the page does not move.</p></div>" + "".join(out))
+            "<p class='ct'>📅 What will publish</p><p class='cc'>Every piece "
+            "in date order — coming up first, published and failed one click "
+            "away. Preview any of them exactly as it will look, or send it "
+            "back with your note. The page never moves.</p>" + rail
+            + "</div>" + "".join(out))
 
 
 def board_plan(ctx) -> str:

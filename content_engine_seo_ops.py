@@ -713,38 +713,73 @@ def _calendar_rows(jobs, content_plan=None):
         if j.get("type") != "content_piece":
             continue
         st = str(j.get("status") or "")
-        if st in ("published", "optimized", "learned", "discarded"):
+        if st == "discarded":
             continue
-        state = ("awaiting" if st == "AWAITING_APPROVAL" else
-                 "failed" if st in ("failed", "revision_needed") else "planned")
+        # SIX HONEST STATES, not three. Two lies are being retired here:
+        # revision_needed rendered as "failed" (QA saying "revise this" was
+        # filed next to dead - 9 salvageable pieces looked like corpses), and
+        # published/optimized excluded entirely (the founder's ONLY complete
+        # pieces were the only ones the calendar refused to show).
+        state = ("published" if st in ("published", "optimized", "learned")
+                 else "awaiting" if st == "AWAITING_APPROVAL"
+                 else "needs_rewrite" if st == "revision_needed"
+                 else "failed" if st == "failed"
+                 else "writing")
         try:
             pv = _FF.preview_for_job(j)
         except Exception as e:
             pv = {"html": "", "destination": "", "written": False,
                   "why": f"preview unavailable: {type(e).__name__}"}
-        pc = _D(_D(j.get("payload")).get("content_producer"))
+        payload = _D(j.get("payload"))
+        pc = _D(payload.get("content_producer"))
+        # A REAL TITLE, not a job id. Before the writer runs, the strategist's
+        # working title already exists on the job - "auto_2026-07-28_blog_1"
+        # was shown while the actual title sat one key away.
+        _cal = _D(payload.get("content_strategist")).get("calendar")
+        _idx = _D(payload.get("config")).get("produce_index", 0)
+        _row = (_D(_cal[_idx]) if isinstance(_cal, (list, tuple))
+                and 0 <= int(_idx or 0) < len(_cal) else {})
+        title = str(pc.get("title") or _row.get("working_title")
+                    or j.get("job_id") or "")
+        # QA'S NOTES REACH THE ROW. For a rejected piece the reason is QA's
+        # verdict - it was stored in qa_compliance/qa_verdict and never read,
+        # which is why 9 rejections probed as "NO REASON RECORDED".
+        qa_notes = ""
+        if state == "needs_rewrite":
+            _iss = _D(payload.get("qa_compliance")).get("issues")
+            qa_notes = "; ".join(
+                f"{str(_D(x).get('issue') or '').strip()}"
+                + (f" — fix: {str(_D(x).get('fix') or '').strip()}"
+                   if _D(x).get("fix") else "")
+                for x in (_iss if isinstance(_iss, (list, tuple)) else [])
+                if _D(x).get("issue"))[:500] or str(j.get("qa_verdict") or "")
         out.append({
             "job_id": str(j.get("job_id") or ""),
-            "title": str(pc.get("title") or j.get("job_id") or ""),
+            "title": title,
             "destination": pv.get("destination", ""),
             "when": str(j.get("created_at") or "")[:10],
             "state": state,
+            "status": st,
             "written": pv.get("written", False),
-            # THE REAL REASON WINS. This read `pv.why or halt_reason`, so a
-            # FAILED piece reported "planned, not written yet" - the generic
-            # no-body message - and buried the actual failure underneath it.
-            # A row that explains itself wrongly is worse than one that says
-            # nothing: it stops you looking.
+            # THE REAL REASON WINS, per state: a failure shows its
+            # halt_reason, a rejection shows QA's notes, everything else
+            # shows the preview's own explanation.
             "why": (str(j.get("halt_reason") or "") if state == "failed"
+                    else qa_notes if state == "needs_rewrite"
                     else pv.get("why", "") or str(j.get("halt_reason") or "")),
+            "qa_notes": qa_notes,
             "preview_html": pv.get("html", ""),
+            "keyword": str(_row.get("primary_keyword") or ""),
+            "rationale": str(_row.get("rationale") or ""),
             # THE WHOLE JOB rides along so the decision detail can read the
             # strategist's rationale, the QA issues and the real spend. All of
             # it was already on the job; none of it reached the screen where
             # the approve button is. In-memory only - nothing is serialised.
             "job": j,
         })
-    # plan items that have no job yet - they are coming, and they say so
+    # plan items that have no job yet - they are coming, and they say so.
+    # A planned piece IS describable before it is written: its brief (type,
+    # channel, keyword, the strategist's reason) is the preview.
     _items = _D(content_plan).get("items")
     for it in (_items if isinstance(_items, (list, tuple)) else []):
         it = _D(it)
@@ -753,9 +788,15 @@ def _calendar_rows(jobs, content_plan=None):
         out.append({"job_id": "", "title": str(it.get("title") or ""),
                     "destination": ", ".join(str(c) for c in _ch) or "Website",
                     "when": str(it.get("date") or it.get("day") or "planned"),
-                    "state": "planned", "written": False,
+                    "state": "planned", "status": "planned", "written": False,
                     "why": "Planned, not written yet - approve the plan and "
                            "the writer starts.",
+                    "qa_notes": "",
+                    "kind": str(it.get("type") or it.get("kind") or ""),
+                    "keyword": str(it.get("primary_keyword")
+                                   or it.get("keyword") or ""),
+                    "rationale": str(it.get("rationale")
+                                     or it.get("why") or ""),
                     "preview_html": ""})
     out.sort(key=lambda r: (r.get("when") or "9999"))
     return out
