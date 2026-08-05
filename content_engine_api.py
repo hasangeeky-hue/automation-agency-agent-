@@ -235,6 +235,25 @@ def _set_flag(job_id: str, flag: str) -> dict:
     return {"job_id": job_id, flag: True, "status": job["status"]}
 
 
+def _log_decision(store, action: str, what: str, detail: str = "") -> None:
+    """EVERY DECISION LEAVES A DATED LINE.
+
+    The founder clicked Approve, the backend obeyed, and no screen anywhere
+    recorded that it happened - "it does not tell its really approved or
+    not". One append-only list, written at the endpoints where decisions
+    actually land, read by the Cockpit's Decision Log. Best-effort: a
+    logging hiccup must never block the decision itself."""
+    try:
+        from datetime import datetime, timezone
+        rows = list(store.get_setting("decision_log", []) or [])
+        rows.append({"at": datetime.now(timezone.utc).isoformat(),
+                     "action": action, "what": str(what)[:140],
+                     "detail": str(detail)[:200]})
+        store.set_setting("decision_log", rows[-200:])
+    except Exception:
+        pass
+
+
 def api_approve(job_id: str, note: str = "") -> dict:
     """Approve a piece for publish/send. An optional note is recorded on the job
     (and shown in the approval log) so your instruction is on the record."""
@@ -272,11 +291,13 @@ def api_approve(job_id: str, note: str = "") -> dict:
         dest = " + ".join(c.title() for c in chans) or "Website"
     except Exception:
         dest = "Website"
+    _log_decision(store, "approved", title or job_id,
+                  f"publishing to {dest}" + (f" · note: {note}" if note else ""))
     return {"job_id": job_id, "approved": True, "status": job.get("status"),
             "note": note,
-            "message": f"Approved — publishing to {dest} next. Track it on "
-                       f"the calendar under Published; the learning agent "
-                       f"recorded what you liked."}
+            "message": f"Approved — publishing to {dest} next. Logged in the "
+                       f"Cockpit's Decision Log; the learning agent recorded "
+                       f"what you liked."}
 
 
 def api_decline(job_id: str, note: str = "") -> dict:
@@ -295,12 +316,13 @@ def api_decline(job_id: str, note: str = "") -> dict:
     p["revision_note"] = note                      # latest — fed into the rewrite
     # A REJECTION TEACHES TOO. What the founder sends back - and why - is
     # exactly what the playbook needs to stop producing. Best-effort.
+    # (title captured HERE - two lines down the payload pops it)
+    _t = (p.get("content_producer") or {}).get("title") or job_id
     if note.strip():
         try:
             import content_engine_learning as L
             _client = job.get("client_id") or (job.get("brand", {}) or {}).get(
                 "brand_name", "")
-            _t = (p.get("content_producer") or {}).get("title") or job_id
             L.record_outcome(_client, "rejected_piece",
                              f"'{_t}': {note.strip()[:140]}")
         except Exception:
@@ -316,6 +338,7 @@ def api_decline(job_id: str, note: str = "") -> dict:
             p.pop(k, None)
         job["status"] = "planned"                  # re-run the writer with the note
     store.save(job)
+    _log_decision(store, "sent_back", _t, note.strip()[:120] or "declined")
     return {"ok": True, "job_id": job_id, "status": job["status"], "note": note,
             "message": "sent back for a rewrite using your note"}
 
@@ -1408,8 +1431,14 @@ def api_seo_approve_all(kind: str = "title", limit: int = 250) -> dict:
                 applied += 1
             else:
                 failed.append({"url": o.get("url"), "why": out.get("result", "")})
+        _log_decision(store, "seo_fix_approved",
+                      f"bulk: every drafted '{kind}' rewrite",
+                      f"{applied} published, {len(failed)} failed")
         return {"ok": True, "applied": applied, "failed": len(failed),
-                "details": failed[:10], "type": kind}
+                "details": failed[:10], "type": kind,
+                "message": f"{applied} '{kind}' rewrite(s) published to the "
+                           f"live site; {len(failed)} failed. Logged in the "
+                           f"Decision Log."}
     except Exception as e:
         log.exception("bulk approve failed")
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
@@ -1426,6 +1455,9 @@ def api_seo_apply(order_id: str) -> dict:
             return {"ok": False, "error": "work order not found"}
         out = FIX.apply_proposal(order)
         WO.mark(store, order_id, out["status"], out.get("result", ""))
+        _log_decision(store, "seo_fix_approved",
+                      f"{order.get('code')} on {str(order.get('url'))[:80]}",
+                      str(out.get("result", ""))[:120])
         return {"ok": out["status"] == "done", **out}
     except Exception as e:
         log.exception("apply fix failed")

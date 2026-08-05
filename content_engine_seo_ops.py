@@ -61,6 +61,29 @@ def _get(store, key, default=None):
         return default
 
 
+def _wo_waiting(store, limit: int = 15) -> list:
+    """SEO rewrites drafted and waiting for the founder, compact - for the
+    Cockpit's Decision Log, so a title fix can be approved from the same
+    sheet as a content piece. Never raises."""
+    try:
+        import content_engine_workorders as WO
+        out = []
+        for o in WO.load(store):
+            if o.get("status") != "awaiting_approval":
+                continue
+            p = (o.get("extra") or {}).get("proposal") or {}
+            out.append({"id": str(o.get("id") or ""),
+                        "code": str(o.get("code") or ""),
+                        "url": str(o.get("url") or "")[:90],
+                        "new": str(p.get("title") or p.get("meta")
+                                   or p)[:110]})
+            if len(out) >= limit:
+                break
+        return out
+    except Exception:
+        return []
+
+
 def _set(store, key, value):
     try:
         store.set_setting(key, value)
@@ -673,6 +696,11 @@ def build_cockpit_ctx(store, *, jobs=None, status=None, health=None,
         # two different screens.
         "approval_rows": [r for r in _calendar_rows(jobs)
                           if r.get("state") == "awaiting"],
+        # THE DECISION LOG: what was approved/sent back, when, plus what is
+        # waiting right now - so quick decisions happen from ONE sheet
+        # without diving into sections.
+        "decision_log": list(_get(store, "decision_log", []) or [])[-60:],
+        "wo_waiting": _wo_waiting(store),
         "decisions": CK.decisions(seo=seo, content=None, outreach=outreach,
                                   bi=bi, sga=sga, media=media, risk=risk,
                                   system=system, jobs=jobs),

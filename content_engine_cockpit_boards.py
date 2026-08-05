@@ -1199,9 +1199,122 @@ def board_experiments(ctx) -> str:
 # ======================================================================
 #  SECTION
 # ======================================================================
+def board_decision_log(ctx) -> str:
+    """ONE SHEET, EVERY DECISION - taken and pending, dated to the minute.
+
+    "I click approve and the front end does not tell its really approved or
+    not... I demand an approval log with approved / waiting so I can quick
+    approve and keep decision track, not go so much inside." Every approve,
+    send-back and SEO fix now writes a dated line (api._log_decision); this
+    sheet shows them newest-first, and everything WAITING sits at the top
+    with its button right there.
+    """
+    ctx = _ctx(ctx)
+    H = _H()
+    e = H._esc
+    log_rows = [r for r in _L(ctx.get("decision_log")) if isinstance(r, dict)]
+    waiting_c = [r for r in _L(ctx.get("approval_rows")) if isinstance(r, dict)]
+    waiting_w = [r for r in _L(ctx.get("wo_waiting")) if isinstance(r, dict)]
+    n_appr = sum(1 for r in log_rows if r.get("action") == "approved")
+    n_seo = sum(1 for r in log_rows if r.get("action") == "seo_fix_approved")
+    n_back = sum(1 for r in log_rows if r.get("action") == "sent_back")
+    n_wait = len(waiting_c) + len(waiting_w)
+
+    def _when(iso):
+        t = str(iso or "")
+        return f"{t[:10]} {t[11:16]}" if len(t) >= 16 else t
+
+    CHIP = {"approved": ("✅ approved", GREEN),
+            "seo_fix_approved": ("🛠 SEO fix approved", GREEN),
+            "sent_back": ("↩ sent back", AMBER)}
+
+    out = [(f"<div class='card full' style='margin-top:12px'>"
+            f"<p class='ct'>🧾 Decision Log</p>"
+            f"<p class='cc'>Every decision, dated to the minute - and "
+            f"everything waiting for one, with its button right here.</p>"
+            f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:6px'>"
+            f"<span class='pill' style='color:{BLUE};border:1px solid {BLUE};"
+            f"border-radius:7px;padding:2px 9px'>🕐 waiting {n_wait}</span>"
+            f"<span class='pill' style='color:{GREEN};border:1px solid "
+            f"{GREEN};border-radius:7px;padding:2px 9px'>✅ approved "
+            f"{n_appr + n_seo}</span>"
+            f"<span class='pill' style='color:{AMBER};border:1px solid "
+            f"{AMBER};border-radius:7px;padding:2px 9px'>↩ sent back "
+            f"{n_back}</span></div></div>")]
+
+    # ---- WAITING, buttons attached (renders even at zero - an empty
+    # ---- waiting list is information, and the board census counts on it)
+    if True:
+        rows = []
+        for r in waiting_c:
+            jid = e(str(r.get("job_id") or ""))
+            rows.append(
+                f"<div data-cst='awaiting' style='display:flex;gap:9px;"
+                f"align-items:center;padding:7px 10px;margin-top:6px;"
+                f"border-left:3px solid {BLUE};border-radius:8px;"
+                f"background:var(--s2)'>"
+                f"<span style='flex:1'>📝 {e(str(r.get('title'))[:80])}"
+                f"<span class='dim' style='font-size:11px'> · "
+                f"{e(str(r.get('destination')))}</span></span>"
+                f"<button class='cbtn sm' onclick=\"seeDetailsFetch('{jid}')\">"
+                f"Preview</button>"
+                f"<button class='cta' style='padding:3px 10px;font-size:11.5px'"
+                f" onclick=\"act('/jobs/{jid}/approve')\">Approve</button>"
+                f"</div>")
+        for w in waiting_w:
+            oid = e(str(w.get("id")))
+            rows.append(
+                f"<div data-cst='awaiting' style='display:flex;gap:9px;"
+                f"align-items:center;padding:7px 10px;margin-top:6px;"
+                f"border-left:3px solid {AMBER};border-radius:8px;"
+                f"background:var(--s2)'>"
+                f"<span style='flex:1'>🛠 {e(w.get('code'))} · "
+                f"<span class='dim' style='font-size:11px'>"
+                f"{e(w.get('url'))}</span><br>"
+                f"<span style='font-size:12px'>new: {e(w.get('new'))}</span>"
+                f"</span>"
+                f"<button class='cta' style='padding:3px 10px;font-size:11.5px'"
+                f" onclick=\"act('/seo/fix/{oid}')\">Approve fix</button>"
+                f"</div>")
+        out.append("<div class='card full' style='margin-top:10px'>"
+                   f"<p class='ct'>🕐 Waiting for you ({n_wait})</p>"
+                   + ("".join(rows) or "<p class='cc'>Nothing is waiting "
+                      "for a decision right now.</p>") + "</div>")
+
+    # ---- THE LOG, newest first ------------------------------------------
+    if log_rows:
+        lines = []
+        for r in reversed(log_rows[-40:]):
+            lab, tone = CHIP.get(str(r.get("action")),
+                                 (str(r.get("action")), BLUE))
+            lines.append(
+                f"<div style='display:flex;gap:10px;align-items:baseline;"
+                f"padding:6px 10px;margin-top:5px;border-left:3px solid "
+                f"{tone};border-radius:8px;background:var(--s2)'>"
+                f"<span class='dim' style='font-size:11px;white-space:nowrap'>"
+                f"{e(_when(r.get('at')))}</span>"
+                f"<span class='pill' style='font-size:10px;color:{tone};"
+                f"border:1px solid {tone};border-radius:7px;padding:0 7px;"
+                f"white-space:nowrap'>{e(lab)}</span>"
+                f"<span style='flex:1;font-size:12.5px'>{e(r.get('what'))}"
+                + (f" <span class='dim' style='font-size:11px'>— "
+                   f"{e(r.get('detail'))}</span>" if r.get("detail") else "")
+                + "</span></div>")
+        out.append("<div class='card full' style='margin-top:10px'>"
+                   "<p class='ct'>📜 Decisions taken</p>"
+                   + "".join(lines) + "</div>")
+    else:
+        out.append("<div class='card full' style='margin-top:10px'>"
+                   "<p class='ct'>📜 Decisions taken</p><p class='cc'>None "
+                   "recorded yet - the log starts with your next approve or "
+                   "send-back.</p></div>")
+    return "".join(out)
+
+
 TABS = [
     ("ckcmd", "🧠", "Cockpit Command"),
     ("ckdecide", "⚡", "Decision Queue"),
+    ("cklog", "🧾", "Decision Log"),
     ("ckrouter", "🔀", "Signal Router"),
     ("ckcontent", "📝", "Approvals · Content"),
     ("ckoutreach", "✉️", "Approvals · Outreach"),
@@ -1219,7 +1332,7 @@ TABS = [
 
 GROUPS = [
     ("ckdec", "① DECIDE", "What needs me now?",
-     ["ckcmd", "ckdecide", "ckrouter"]),
+     ["ckcmd", "ckdecide", "cklog", "ckrouter"]),
     ("ckapp", "② APPROVE", "Release the work",
      ["ckcontent", "ckoutreach", "ckplan"]),
     ("ckctl", "③ CONTROL", "Set the limits",
@@ -1231,6 +1344,7 @@ GROUPS = [
 _TAB_BOARDS = {
     "ckcmd": [("Cockpit Command", board_command)],
     "ckdecide": [("Decision Queue", board_decisions)],
+    "cklog": [("Decision Log", board_decision_log)],
     "ckrouter": [("Signal Router", board_router)],
     "ckcontent": [("Approvals Content", board_appr_content)],
     "ckoutreach": [("Approvals Outreach", board_appr_outreach)],
@@ -1246,7 +1360,11 @@ _TAB_BOARDS = {
     "ckexp": [("Experiments", board_experiments)],
 }
 
-_TAB_COUNTS = {"ckcmd": 16, "ckdecide": 20, "ckrouter": 18, "ckcontent": 20,
+_TAB_COUNTS = {"ckcmd": 16, "ckdecide": 20,
+               # the Decision Log is a SHEET (full-width panels), not a card
+               # grid - the census counts viz-cards, so its count is 0
+               "cklog": 0, "ckrouter": 18,
+               "ckcontent": 20,
                "ckoutreach": 18, "ckplan": 16, "ckbudget": 20, "ckauto": 18,
                "ckkeys": 16, "ckloops": 21, "ckjobs": 18, "ckengine": 16,
                "ckplaybook": 18, "ckworks": 18, "ckexp": 16}

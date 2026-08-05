@@ -4594,7 +4594,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "async function act(u,btn){"
               "var b=btn||(window.event&&window.event.target)||null;"
               "if(b&&b.tagName!=='BUTTON')b=b.closest?b.closest('button'):null;"
-              "var card=b&&b.closest?b.closest('.card'):null;"
+              # the ✓ lands on the LINE you clicked, not the bottom of the
+              # whole day card - "it does not tell its really approved or
+              # not" was the result appearing a screen-height away
+              "var row=b&&b.closest?b.closest('[data-cst]'):null;"
+              "var card=row||(b&&b.closest?b.closest('.card'):null);"
               "var lab=b?b.textContent:'';"
               "if(b){b.disabled=true;b.textContent='Working\\u2026';}"
               "if(card)card.style.borderLeft='3px solid #6BA8FF';"
@@ -4604,6 +4608,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               "var ok=r.ok&&(!j||j.ok!==false);"
               "var msg=(j&&(j.message||j.error||j.detail))||(ok?'done':'that did not work');"
               "actResult(card,b,ok,msg,lab);"
+              # an APPROVED line says so where you look: pill flips green,
+              # the border follows, the buttons' work is visibly done
+              "if(ok&&row&&u.indexOf('/approve')>-1){"
+              "var pl=row.querySelector('.pill');"
+              "if(pl){pl.textContent='approved \\u2713';"
+              "pl.style.color='#3FD98B';pl.style.borderColor='#3FD98B';}"
+              "row.style.borderLeft='3px solid #3FD98B';}"
+              "if(ok&&row&&u.indexOf('/seo/fix/')>-1){"
+              "row.style.borderLeft='3px solid #3FD98B';"
+              "row.style.opacity='.65';}"
               "}catch(e){actResult(card,b,false,'could not reach the engine \\u2014 nothing changed',lab);}}"
               "function actResult(card,b,ok,msg,lab){"
               "if(card){card.style.borderLeft='3px solid '+(ok?'#46E08B':'#FFC24B');"

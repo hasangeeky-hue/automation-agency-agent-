@@ -614,9 +614,10 @@ def _verify_phase2():
     # ---- II-A: approve leaves a trail ----------------------------------
     import content_engine_api as API
     _src = open("content_engine_api.py", encoding="utf-8").read()
-    out.append(("Track it on " in _src and "approved_piece" in _src,
-                "approve answers WHERE the piece went and records what you "
-                "liked - no more vanishing from the board", ""))
+    out.append(("Decision Log" in _src and "approved_piece" in _src
+                and "_log_decision(store" in _src,
+                "approve confirms, teaches the playbook AND writes the "
+                "dated Decision Log - no more vanishing without a trace", ""))
     return out
 
 

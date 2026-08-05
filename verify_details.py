@@ -397,6 +397,40 @@ def main():
           "data unavailable" in err12 and "boom" in err12)
     check("calFilter is defined in the page JS", "function calFilter" in html)
 
+    # ---- 14  THE DECISION LOG: every click leaves a dated line
+    print("\n[14] the decision log - dated, chipped, quick-approve attached")
+    _asrc = open("content_engine_api.py", encoding="utf-8").read()
+    n_hooks = _asrc.count("_log_decision(store")
+    check("approve/send-back/SEO-fix endpoints all write the log",
+          n_hooks >= 4, f"{n_hooks} hooks")
+    import content_engine_cockpit_boards as CKB
+    check("Decision Log tab registered in the Cockpit",
+          any(t[0] == "cklog" for t in CKB.TABS)
+          and "cklog" in CKB._TAB_BOARDS
+          and any("cklog" in g[3] for g in CKB.GROUPS))
+    lg = CKB.board_decision_log({
+        "decision_log": [
+            {"at": "2026-08-06T09:15:00+00:00", "action": "approved",
+             "what": "Pricefy Alternative", "detail": "publishing to Website"},
+            {"at": "2026-08-06T09:20:00+00:00", "action": "sent_back",
+             "what": "Slow Replies piece", "detail": "too salesy"}],
+        "approval_rows": [{"job_id": "j9", "title": "A Waiting Piece",
+                           "destination": "Website"}],
+        "wo_waiting": [{"id": "wo1", "code": "title_long",
+                        "url": "https://x/page", "new": "A Shorter Title"}]})
+    for frag, label in (
+            ("2026-08-06 09:15", "decisions carry date AND time"),
+            ("✅ approved", "approved chip"),
+            ("↩ sent back", "sent-back chip"),
+            ("Waiting for you (2)", "waiting count spans pieces AND SEO fixes"),
+            ("act('/jobs/j9/approve')", "quick-approve from the log sheet"),
+            ("act('/seo/fix/wo1')", "SEO fix approvable from the log sheet"),
+            ("A Shorter Title", "the drafted rewrite is readable before "
+                                "approving")):
+        check(label, frag in lg)
+    check("the clicked LINE shows the result (not the day card's bottom)",
+          "closest('[data-cst]')" in html and "approved \\u2713" in html)
+
     # ---- 11  every link card says where it goes
     print("\n[11] link cards state their destination")
     targets = collections.Counter(re.findall(r"nav\('(\w+)'", html))
