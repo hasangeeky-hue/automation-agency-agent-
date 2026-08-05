@@ -438,6 +438,29 @@ def _verify_forever_gates():
     out.append((not got.get("ok"),
                 "an agent asking to auto-run retry_dead is refused", ""))
 
+    # ---- and their SUCCESS paths actually execute --------------------------
+    # The canary on the founder's box died on a NameError in retry_job's
+    # success path - because these gates tested revive() directly and never
+    # ran the one function the button actually calls. Test the wiring, not
+    # just the parts.
+    store3 = O.InMemoryJobStore()
+    store3.put({"job_id": "sp1", "type": "content_piece", "status": "failed",
+                "halt_reason": "x", "payload": {},
+                "_runs": {"site_intelligence": {"at": "1"}}})
+    store3.put({"job_id": "sp2", "type": "content_piece",
+                "status": "revision_needed", "payload": {"qa_compliance": {
+                    "issues": [{"issue": "flat intro", "fix": "sharpen it"}]}}})
+    got1 = F.run_fix("retry_job", store3, arg="sp1")
+    out.append((got1.get("ok") and store3.get("sp1")["status"] == "site_ready",
+                "retry_job's SUCCESS path runs end-to-end (the canary's "
+                "actual code path)", str(got1.get("message"))[:70]))
+    got2 = F.run_fix("retry_dead", store3)
+    out.append((got2.get("ok") and store3.get("sp2")["status"] == "planned"
+                and "sharpen it" in str(store3.get("sp2")["payload"]
+                                        .get("revision_note", "")),
+                "retry_dead's batch SUCCESS path revives the rest, carrying "
+                "QA's note", str(got2.get("message"))[:70]))
+
     # ---- the watchdog raises the graveyard as a finding --------------------
     import content_engine_agents as AG
     store2 = O.InMemoryJobStore()

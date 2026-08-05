@@ -339,6 +339,7 @@ def _f_retry_job(store, arg):
         job = store.get(arg)
     except Exception:
         return {"ok": False, "message": f"no such job: {arg}"}
+    prev = str(job.get("status") or "")
     import content_engine_orchestrator as orch
     out = orch.revive(job)
     if not out.get("ok"):
