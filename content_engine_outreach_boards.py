@@ -1319,20 +1319,23 @@ def board_manager(ctx) -> str:
 #  SECTION
 # ======================================================================
 TABS = [
-    ("olaunch", "🚀", "Launch Pad"),
-    ("osourcing", "🧲", "Lead Sourcing"),
-    ("omanager", "🗂", "Lead Manager"),
-    ("oquality", "🔬", "Lead Quality"),
-    ("oicp", "🎯", "ICP & Scoring"),
-    ("oterr", "🌍", "Territories"),
-    ("ooutbox", "📬", "The Outbox"),
-    ("osequence", "🔁", "Sequence"),
-    ("orouting", "📮", "Routing"),
-    ("odeliver", "🛡", "Deliverability"),
-    ("oreplies", "💬", "Replies"),
-    ("obookings", "📅", "Bookings"),
-    ("oattrib", "🔗", "Attribution"),
-    ("ocost", "🧾", "Cost per Outcome"),
+    # KLAVIYO'S WORDS (founder's order, 2026-08-06). The labels used to read
+    # "Launch Pad", "The Outbox", "ICP & Scoring", "Routing" - the engine's
+    # internal vocabulary. Ids are unchanged so every link still lands.
+    ("olaunch", "\U0001F4CA", "Dashboard"),
+    ("ooutbox", "\U0001F4E8", "Campaigns"),
+    ("osequence", "\U0001F501", "Flows"),
+    ("omanager", "\U0001F464", "Profiles"),
+    ("oicp", "\U0001F3AF", "Segments"),
+    ("orouting", "\U0001F441", "Preview"),
+    ("osourcing", "\U0001F50D", "Lists"),
+    ("oquality", "\U0001F9F9", "Data quality"),
+    ("oterr", "\U0001F30D", "Geography"),
+    ("odeliver", "\U0001F4EE", "Deliverability"),
+    ("oreplies", "\U0001F4AC", "Inbox"),
+    ("obookings", "\U0001F4C5", "Conversions"),
+    ("oattrib", "\U0001F517", "Attribution"),
+    ("ocost", "\U0001F4C9", "Benchmarks"),
 ]
 
 GROUPS = [
@@ -1387,35 +1390,56 @@ def outreach_pages(ctx) -> dict:
             for tab, boards in _TAB_BOARDS.items()}
 
 
-def outreach_section(ctx) -> str:
+def outreach_section(ctx, live=None) -> str:
+    """Klaviyo grammar: one band, one tab strip, one panel.
+
+    THE LEGACY CHROME IS GONE. The group rail and the run bar were a second
+    and third navigation grammar stacked on the section - the exact
+    fragmentation the founder scored 0/10 on SGA. The band carries what the
+    run bar used to.
+
+    `live` keeps its old meaning: pre-rendered interactive blocks (the real
+    send controls) that must not be re-implemented here. They are appended
+    to the Campaigns panel so no send path changes.
+    """
     H = _H()
-    ctx = _ctx(ctx)
-    panels = outreach_pages(ctx)
-    gof = {t: gid for gid, _l, _q, ts in GROUPS for t in ts}
+    ctx = ctx if isinstance(ctx, dict) else {}
+    import content_engine_outreach_screens as OLS
+    import content_engine_seo_screens as SSCR
+    panels = OLS.build_panels(ctx)
+    if live:
+        panels["ooutbox"] = (panels.get("ooutbox", "")
+                             + "<p class='ol-k'>Send controls</p>"
+                             + str(live))
+    # A chip counts a real thing or nothing at all.
+    _camps = ctx.get("campaigns") or []
+    _q = ctx.get("flow_queue") or []
+    _dr = ctx.get("reply_drafts") or []
+    _sg = ctx.get("segments") or []
+    _chips = {"ooutbox": len(_camps) or None, "osequence": len(_q) or None,
+              "oreplies": len(_dr) or None, "oicp": len(_sg) or None}
     bar = "".join(
         f"<button class='stab{' on' if i == 0 else ''}' id='stab-{tid}' "
-        f"data-grp='{gof.get(tid, 'ofind')}' onclick=\"seoTab('{tid}')\">"
-        f"<span>{icon}</span>{H._esc(label)}"
-        f"<span class='n'>{_TAB_COUNTS.get(tid, 0)}</span></button>"
+        f"onclick=\"seoTab('{tid}')\"><span>{icon}</span>{H._esc(label)}"
+        + (f"<span class='n'>{_chips[tid]}</span>"
+           if _chips.get(tid) is not None else "")
+        + "</button>"
         for i, (tid, icon, label) in enumerate(TABS))
-    grouprail = "".join(
-        f"<button class='sgrp{' on' if i == 0 else ''}' id='sgrp-{gid}' "
-        f"onclick=\"seoGroup('{gid}')\"><b>{H._esc(label)}</b>"
-        f"<span class='gq'>{H._esc(question)}</span></button>"
-        for i, (gid, label, question, _t) in enumerate(GROUPS))
     body = "".join(
-        f"<div class='spanel{' on' if i == 0 else ''}' id='spanel-{tid}'>{panels.get(tid, '')}</div>"
+        f"<div class='spanel{' on' if i == 0 else ''}' id='spanel-{tid}'>"
+        f"{panels.get(tid, '')}</div>"
         for i, (tid, _, _) in enumerate(TABS))
-    runbar = ("<div class='ctrl' style='margin:10px 0 2px;flex-wrap:wrap'>"
-              "<button class='cbtn' onclick=\"act('/outreach/send_all')\">🚀 Send today's batch</button>"
-              "<button class='cbtn' onclick=\"act('/replies/refresh')\">💬 Refresh replies</button>"
-              "<button class='cbtn' onclick='trackToggle()'>👁 Toggle open tracking</button>"
-              "</div>")
-    return (_TAB_CSS
-            + "<div class='sgroups'>" + grouprail + "</div>"
-            + runbar
+    bridge = ("<style>.seoscr{--pap:var(--s2);--card:var(--s1);"
+              "--ln:var(--line);--tx:var(--ink);--dm:var(--mut);"
+              "--ft:var(--dim);--ac:var(--blue);--warnc:var(--warn);"
+              "--okc:var(--good);--badbg:rgba(255,107,147,.09);"
+              "--warnbg:rgba(245,177,76,.09);--okbg:rgba(63,217,139,.09);"
+              "--hov:rgba(76,141,255,.07)}"
+              + SSCR.CSS + OLS.CSS + "</style>")
+    return ("<div class='seoscr'>" + bridge + SSCR.JS + OLS.JS
+            + _TAB_CSS + OLS.band(ctx)
             + "<div class='stabs'>" + bar + "</div>"
-            + "<div class='spanels'>" + body + "</div>")
+            + "<div class='spanels'>" + body + "</div></div>")
 
 
 # ---------------------------------------------------------------- self-check

@@ -2808,6 +2808,94 @@ def build_app():
         return {"ok": True, **{k: out.get(k) for k in
                                ("at", "live", "message")}}
 
+    @app.post("/outreach/segment")
+    async def outreach_segment(request: Request):
+        """Save or remove a segment. One condition vocabulary, validated."""
+        import content_engine_email_segments as ES
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        store = get_store()
+        name = str(d.get("name") or "")
+        if d.get("remove"):
+            return ES.delete_segment(store, name)
+        out = ES.save_segment(store, name, d.get("conditions") or [],
+                              d.get("match") or "all")
+        if out.get("ok"):
+            _log_decision(store, "segment_saved", name[:50],
+                          out.get("message", ""))
+        return out
+
+    @app.post("/outreach/preview")
+    async def outreach_preview(request: Request):
+        """Build the preview for a campaign and store it for the screen.
+
+        This is also the GATE: the send path reads email_preview.blocking
+        and refuses while a personalisation token would render empty."""
+        import content_engine_email_preview as EP
+        import content_engine_email_campaigns as EC
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        store = get_store()
+        jobs = store.list_jobs(status=None) if hasattr(store, "list_jobs") else []
+        cid = str(d.get("id") or "")
+        job = next((j for j in jobs
+                    if str((j or {}).get("job_id")) == cid), None)
+        p = ((job or {}).get("payload") or {})
+        lead = (p.get("leads") or [{}])[0]
+        subject = d.get("subject") or p.get("subject") or ""
+        html = d.get("html") or p.get("html") or p.get("body") or ""
+        if not (subject or html):
+            return {"ok": False,
+                    "message": "that campaign carries no subject or body "
+                               "yet, so there is nothing to preview"}
+        import content_engine_connectors as C
+        base = C._env("PUBLIC_BASE_URL") or C._env("ENGINE_PUBLIC_URL") or ""
+        prev = EP.render(subject, html, lead, base=base,
+                         from_name=C._env("EMAIL_FROM_NAME") or "",
+                         preheader=p.get("preheader") or "")
+        store.set_setting("email_preview", prev)
+        return {"ok": True, "blocking": prev["blocking"],
+                "message": (prev["block_reason"] if prev["blocking"]
+                            else f"preview built: {len(prev['links'])} link(s), "
+                                 f"{len(prev['failing'])} spam check(s) to "
+                                 f"look at")}
+
+    @app.post("/outreach/flow/run")
+    def outreach_flow_run():
+        """Queue who is due. Sends nothing."""
+        import content_engine_seo_ops as O
+        store = get_store()
+        jobs = store.list_jobs(status=None) if hasattr(store, "list_jobs") else []
+        out = O.run_email_flow(store, jobs)
+        _log_decision(store, "flow_run", f"{out.get('queued')} queued",
+                      out.get("message", ""))
+        return {"ok": True, **out}
+
+    @app.post("/outreach/flow/approve")
+    def outreach_flow_approve():
+        """Approve the queue. THE PREVIEW GATE APPLIES: if the stored
+        preview is blocking, nothing is approved and the reason is
+        returned, because a token that renders empty cannot be unsent."""
+        import content_engine_email_segments as ES
+        store = get_store()
+        prev = store.get_setting("email_preview", {}) or {}
+        if prev.get("blocking"):
+            return {"ok": False, "error": prev.get("block_reason"),
+                    "message": "refused: " + str(prev.get("block_reason"))}
+        q = ES.flow_queue(store)
+        if not q:
+            return {"ok": True, "message": "the queue is empty; run the flow "
+                                           "first"}
+        store.set_setting("email_flow_approved", q)
+        _log_decision(store, "flow_approved", f"{len(q)} person-step(s)", "")
+        return {"ok": True, "approved": len(q),
+                "message": f"{len(q)} person-step(s) approved. The sender "
+                           f"picks them up on its next pass."}
+
     @app.post("/social/competitors")
     def social_measure_competitors():
         """Read every tracked rival's public profile."""

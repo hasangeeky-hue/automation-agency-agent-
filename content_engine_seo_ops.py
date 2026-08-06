@@ -1044,6 +1044,30 @@ def build_sga_ctx(store, *, jobs=None, status=None, insights=None, deals=None,
     }
 
 
+import content_engine_email_campaigns as _EC
+import content_engine_email_segments as _ES
+
+
+def _profiles_cached(store, jobs, reply_drafts):
+    """Profiles are assembled from every job's leads plus the token and
+    event stores. Built once per page, never cached across requests - a
+    stale profile is a person you think you have not emailed."""
+    try:
+        return _EC.profiles(store, jobs, reply_drafts)
+    except Exception as e:
+        log.warning("profiles unavailable: %s", e)
+        return []
+
+
+def run_email_flow(store, jobs=None) -> dict:
+    """Work out who is due and QUEUE them. Sends nothing, by design."""
+    people = _profiles_cached(store, jobs, None)
+    flows = _ES.flows(store)
+    out = _ES.run_flow(store, flows[0] if flows else _ES.DEFAULT_FLOW, people)
+    _stamp(store, "emailflow")
+    return out
+
+
 def build_outreach_ctx(store, *, jobs=None, reply_drafts=None, bookings=None,
                        deals=None, live=None) -> dict:
     """Everything the 13 Leads & Outreach boards read.
@@ -1085,6 +1109,18 @@ def build_outreach_ctx(store, *, jobs=None, reply_drafts=None, bookings=None,
         "leads_per_day": O.leads_per_day(jobs),
         "field_coverage": O.lead_field_coverage(jobs),
         "live": live if isinstance(live, dict) else {},
+        # THE KLAVIYO LAYER - additive; the old boards ignore what they
+        # never read, so nothing that worked before changes.
+        "campaigns": _EC.campaigns(store, jobs),
+        "campaign_links": _EC.campaign_links(store),
+        "open_curve": _EC.open_curve(store),
+        "profiles": _profiles_cached(store, jobs, reply_drafts),
+        "segments": _ES.segments(store),
+        "flows": _ES.flows(store),
+        "flow_queue": _ES.flow_queue(store),
+        "reply_drafts": reply_drafts if isinstance(reply_drafts, list) else [],
+        "preview": _get(store, "email_preview", {}) or {},
+        "auth_checks": _get(store, "email_auth_checks", []) or [],
     }
 
 
