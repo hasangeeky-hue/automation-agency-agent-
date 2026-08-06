@@ -274,18 +274,20 @@ def _g15():
     return "all five platforms inside Media Command"
 
 
-@gate(16, "the other fifteen Media Buying subsections are untouched")
+@gate(16, "the other fifteen Media Buying subsections stay plain readouts")
 def _g16():
     subs = [m for m in V.MANIFEST if m["module"] == "media"]
     assert len(subs) == 16, f"{len(subs)} media subsections, expected 16"
     for m in subs:
         if m["tab"] == "mbcmd":
             continue
-        html = V.special(m, {}, {})
+        # the default screen is the Level 3 readout, not special()
+        html = V.readout_page(m["tab"], {})
         assert "a3swbar" not in html, (
             f"{m['tab']} unexpectedly rendered the ads environment")
-        assert "v2head" in html
-    return "1 rebuilt, 15 unchanged"
+        assert "v2crumb" in html and "v2readbody" in html, (
+            f"{m['tab']} did not render as a readout")
+    return "1 rebuilt as the ad manager, 15 plain readouts"
 
 
 # ---------------------------------------------------------------------------

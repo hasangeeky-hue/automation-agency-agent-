@@ -219,20 +219,85 @@ def _g12():
 # ---------------------------------------------------------------------------
 # 13-16  THE PAGE ITSELF
 # ---------------------------------------------------------------------------
-@gate(13, "one board is sent, not four")
+@gate(13, "LEVEL 2: a board is an answer and a list, never a dump")
 def _g13():
-    loaded = PAGE.count("data-loaded='1'")
-    lazy = PAGE.count("data-loaded='0'")
-    assert loaded == 1 and lazy == 3, (
-        f"{loaded} board(s) rendered and {lazy} deferred; expected 1 and 3")
-    return "1 rendered, 3 fetched on first open"
+    # the stylesheet names v2readbody; the first-paint MARKUP must not
+    assert "class='v2readbody'" not in PAGE, (
+        "a readout body is rendered inline on a board page - the scroll wall "
+        "this design exists to kill")
+    for bid, label, _q, _s in V.BOARDS:
+        i = PAGE.find(f"id='vx2-{bid}'")
+        j = PAGE.find("id='vx2-", i + 10)
+        seg = PAGE[i:j if j > 0 else None]
+        assert "v2ans" in seg, f"{label} has no answer block"
+        assert "v2reading" in seg, f"{label} has no plain reading"
+        assert "subsections</p>" in seg, f"{label} has no subsection list"
+        n_li = seg.count("v2li")
+        want = sum(1 for m in V.MANIFEST if m["board"] == bid)
+        assert n_li == want, (
+            f"{label} lists {n_li} subsections, the manifest says {want}")
+    return "4 boards: answer, reading, full list, zero inline readouts"
 
 
-@gate(14, "first paint is under 400 KB with an empty context")
+@gate(14, "first paint is under 200 KB with an empty context")
 def _g14():
     kb = len(PAGE) / 1024
-    assert kb < 400, f"first paint is {kb:.0f} KB"
-    return f"{kb:.0f} KB (the old dashboard shipped 5,700 KB)"
+    assert kb < 200, f"first paint is {kb:.0f} KB"
+    return f"{kb:.0f} KB, all four boards (the old dashboard shipped 5,700 KB)"
+
+
+@gate(14.2, "LEVEL 3: every one of the 127 readouts renders by its URL")
+def _g142():
+    ok, empty_notes = 0, 0
+    for m in V.MANIFEST:
+        html = V.readout_page(m["tab"], {})
+        assert "v2crumb" in html, f"{m['tab']} has no breadcrumb"
+        assert "v2readbody" in html, f"{m['tab']} has no body"
+        board_label = next(b[1] for b in V.BOARDS if b[0] == m["board"])
+        assert board_label in html, f"{m['tab']} breadcrumb misses its board"
+        ok += 1
+        if m["fn"] is None:
+            empty_notes += 1
+            assert "own panel" in html, f"{m['tab']} lost its honest note"
+    assert ok == 127
+    return f"127 of 127, {empty_notes} carrying an honest note"
+
+
+@gate(14.4, "LEVEL 4: every line carries its full record")
+def _g144():
+    html = V.readout_page("syscmd", {})
+    rows = re.findall(r"<div class='v2row[^>]*>", html)
+    carrying = [r for r in rows if "data-nm=" in r]
+    assert carrying, "no line carries a record"
+    for r in carrying:
+        for field in ("data-nm", "data-val", "data-why", "data-src",
+                      "data-kind", "data-kmean", "vx2rec"):
+            assert field in r, f"a line is missing {field}: {r[:120]}"
+    assert "function vx2rec(" in PAGE, "the record builder is not on the page"
+    for f in ("The reading", "Where it comes from", "What kind of number"):
+        assert f in PAGE, f"the record never shows '{f}'"
+    return f"{len(carrying)} lines sampled, all four record fields present"
+
+
+@gate(14.6, "the shapes are drawn, not just named")
+def _g146():
+    import content_engine_vx2_shapes as SH
+    ring = SH.hero("SCORE", "54")
+    assert "<circle" in ring and ">54<" in ring, "SCORE does not draw a ring"
+    bar = SH.hero("RATIO", "189/257")
+    assert "<rect" in bar and "189/257" in bar, "RATIO does not draw a bar"
+    st = SH.hero("STATE", "live")
+    assert "shp-state" in st, "STATE is not a dot and a word"
+    assert "<circle" not in SH.hero("SCORE", "clean"), (
+        "a SCORE with a word value drew a ring anyway - a shape is a claim "
+        "about the data, and the data was not there")
+    assert SH.sparkline([5]) == "", "a sparkline from one point is fiction"
+    # and they actually appear: the market board answers with the score ring
+    # when a crawl has scored the site
+    seeded = V.page(active="market",
+                    seo_ctx={"scores": {"overall": 78}, "orders": []})
+    assert "<circle" in seeded, "the market board never draws its score ring"
+    return "ring, bar, dot-and-word drawn; fictions refused"
 
 
 @gate(15, "no duplicate element ids on the page")

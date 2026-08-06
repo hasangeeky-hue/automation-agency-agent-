@@ -1892,7 +1892,7 @@ def build_app():
 
     @app.get("/vx2/board/{bid}", response_class=HTMLResponse)
     def vx2_board(bid: str, request: Request):
-        """One board's HTML, fetched when you first open that board."""
+        """One board's Level 2 HTML on its own."""
         if not dash_authed(request.cookies):
             return HTMLResponse("<p>Session expired. Reload the page.</p>",
                                 status_code=401)
@@ -1906,6 +1906,27 @@ def build_app():
                 "<p class='v2empty'>This board could not be read: "
                 f"{type(ex).__name__}. The other boards are unaffected.</p>",
                 headers=_NO_CACHE)
+
+    @app.get("/vx2/read/{tab}", response_class=HTMLResponse)
+    def vx2_read(tab: str, request: Request):
+        """LEVEL 3: one subsection's readout, fetched when you enter it.
+
+        One screen at a time is the design: nothing pre-rendered into hidden
+        panes, so the page never carries 53,000 invisible elements again.
+        """
+        if not dash_authed(request.cookies):
+            return HTMLResponse("<p>Session expired. Reload the page.</p>",
+                                status_code=401)
+        import content_engine_vx2 as VX2
+        try:
+            return HTMLResponse(VX2.readout_page(tab, _dashboard_kwargs()),
+                                headers=_NO_CACHE)
+        except Exception as ex:
+            log.warning("vx2 readout %s failed: %s", tab, ex)
+            return HTMLResponse(
+                "<p class='v2empty'>This readout could not be built: "
+                f"{type(ex).__name__}. The other subsections are "
+                "unaffected.</p>", headers=_NO_CACHE)
 
     @app.post("/login")
     async def login(request: Request):
