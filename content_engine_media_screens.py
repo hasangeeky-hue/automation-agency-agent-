@@ -320,18 +320,32 @@ def terms_screen(ctx) -> str:
 
 def budget_screen(ctx) -> str:
     econ = ctx.get("econ") or {}
+    tg = ctx.get("targets") or {}
     ads = ctx.get("ads") or {}
     rows = [("Monthly ad cap", econ.get("monthly_budget"), "&euro;"),
             ("Spend so far", ads.get("spend"), "&euro;"),
-            ("CPA target", econ.get("target_cpa"), "&euro;"),
-            ("LTV", econ.get("ltv"), "&euro;")]
-    tiles = "".join(f"<div class='s3stat'><span class='s3k'>{k}</span>"
-                    + _n(v, u) + "</div>" for k, v, u in rows)
-    return ("<div class='s3stats'>" + tiles + "</div>"
-            "<p class='s2empty'>Caps live in Economics; the agent's pacing "
-            "rule fires against them daily. "
-            "<button class='cta' onclick=\"openEcon()\">Set unit economics"
-            "</button></p>")
+            ("Target CPA per lead", tg.get("target_cpa_lead"), "&euro;"),
+            ("Break-even CPA", tg.get("break_even_cpa_consult"), "&euro;"),
+            ("Target ROAS", tg.get("target_roas"), "x"),
+            ("Gross per client", tg.get("gross_per_client"), "&euro;")]
+    tiles = "".join("<div class='s3stat'><span class='s3k'>" + k
+                    + "</span>" + _n(v, u) + "</div>" for k, v, u in rows)
+    per = ""
+    plats = ctx.get("platforms") or {}
+    if isinstance(plats, dict) and plats:
+        per = "".join(
+            "<div class='s3fx'><span class='s3fxn'>" + e(pid) + "</span>"
+            "<span class='s3fxw'>"
+            + (e((v or {}).get("reason"))[:90]
+               if not (v or {}).get("connected")
+               else str(len((v or {}).get("campaigns") or ())) + " campaign(s)")
+            + "</span></div>" for pid, v in plats.items())
+        per = ("<p class='s3k' style='margin-top:12px'>Per platform</p>"
+               + per)
+    return ("<div class='s3stats'>" + tiles + "</div>" + per
+            + "<p class='s2empty'>Caps live in Economics; the pacing rule "
+              "fires against them daily. <button class='cta' "
+              "onclick=\"openEcon()\">Set unit economics</button></p>")
 
 
 def work_screen(ctx) -> str:
@@ -423,18 +437,20 @@ def simple_screen(title, body) -> str:
 
 
 def bid_screen(ctx) -> str:
-    rows = []
+    """Each platform's real bidding strategies, each with why you would pick
+    it - what the agent reasons over when it proposes a bid change."""
+    blocks = []
     for pid in MP.ORDER:
         p = MP.PLATFORMS[pid]
-        strat = " &middot; ".join(e(n) for n, _w in p["bidding"][:4])
-        rows.append(f"<div class='s3fx'><span class='s3fxn'><b>"
-                    f"{e(p['name'])}</b></span>"
-                    f"<span class='s3fxw'>{strat}</span></div>")
-    return simple_screen(
-        "Each platform's real bidding vocabulary",
-        "".join(rows) + "<p class='s2empty'>Bid changes are drafted by the "
-        "agent's rules and executed only after your approval; there is no "
-        "hand-tuning surface here by design.</p>")
+        rows = "".join("<div class='s3fx'><span class='s3fxn'>" + e(nm)
+                       + "</span><span class='s3fxw'>" + e(why)
+                       + "</span></div>" for nm, why in p["bidding"])
+        blocks.append("<p class='s3k' style='margin-top:12px'>"
+                      + e(p["name"]) + "</p>" + rows)
+    return ("".join(blocks)
+            + "<p class='s2empty'>Bid changes are drafted by the agent's "
+              "rules and executed only after your approval; there is no "
+              "hand-tuning surface here by design.</p>")
 
 
 def land_screen(ctx) -> str:
@@ -455,50 +471,160 @@ def land_screen(ctx) -> str:
     return simple_screen("Landing pages, from GA4", "".join(rows))
 
 
+def _ads_arg(ctx) -> dict:
+    """What the platform managers read: Google's campaigns plus every other
+    platform's pulled campaigns, in one object."""
+    return {"campaigns": ((ctx.get("ads") or {}).get("campaigns") or []),
+            "platforms": (ctx.get("platforms") or {})}
+
+
+def ad_manager(ctx, legacy_campaigns: str = "") -> str:
+    """THE ONE ADS ENVIRONMENT. Five platforms behind one switcher, each
+    drawn as its own manager: account bar, campaign tree, and the four tabs
+    (Performance, Ad preview, Bidding & budget, Targeting) plus create.
+
+    THE FOUNDER'S VERDICT, 2026-08-06: the managers had been split across
+    four unrelated tabs - Google behind "Campaign Types", Meta behind
+    "Audiences", LinkedIn behind "Targeting", TikTok behind "Ads & Assets".
+    Nobody finds Meta by clicking "Audiences", and four fragments are not an
+    environment. One door, five platforms, nothing to hunt for.
+    """
+    return (agent_band(ctx)
+            + "<p class='s3k'>Every paid channel, one environment. Switch "
+              "platform below; each is drawn the way its own manager draws "
+              "it, with its real formats, bidding vocabulary and targeting."
+              "</p>"
+            + MP.ads_screen(_ads_arg(ctx))
+            + (("<p class='s3k' style='margin-top:18px'>Campaign drafts "
+                "&middot; your AI media buyer</p>" + legacy_campaigns)
+               if legacy_campaigns else ""))
+
+
+def creative_library(ctx) -> str:
+    """Every platform's creative, previewed as it renders where it runs."""
+    arg = _ads_arg(ctx)
+    blocks = []
+    for pid in MP.ORDER:
+        p = MP.PLATFORMS[pid]
+        camps, real = MP.campaigns_for(pid, arg)
+        blocks.append(f"<p class='s3k' style='margin-top:14px'>"
+                      f"{e(p['name'])} &middot; {'live' if real else 'sample'}"
+                      f" &middot; {len(p['formats'])} formats</p>"
+                      + MP.preview_tab(pid, camps))
+    return ("<p class='s3k'>The creative, as each platform renders it</p>"
+            + "".join(blocks))
+
+
+def audiences_screen(ctx) -> str:
+    """Who each platform can aim at - its real dimensions, not a generic
+    list. LinkedIn targets a job title and Google cannot; Google targets a
+    keyword and LinkedIn cannot. This is what a channel decision rests on."""
+    rows = []
+    for pid in MP.ORDER:
+        p = MP.PLATFORMS[pid]
+        rows.append("<div class='s3fx'><span class='s3fxn'><b>"
+                    + e(p["name"]) + "</b></span>"
+                    "<span class='s3fxw'>"
+                    + e(" \u00b7 ".join(p["targeting"]))[:130] + "</span>"
+                    "<span class='s2act'><button class='cta' onclick=\""
+                    + "mediaGoto('" + pid + "')\">Open its manager"
+                    "</button></span></div>")
+    return ("<p class='s3k'>Audience dimensions each platform really offers"
+            "</p>" + "".join(rows)
+            + "<p class='s2empty'>Saved audience lists arrive with each "
+              "platform's key; the dimensions above are what you will aim "
+              "with.</p>")
+
+
+def targeting_screen(ctx) -> str:
+    """Objectives and formats side by side, so the agent's channel choice is
+    a comparison rather than a guess."""
+    rows = []
+    for pid in MP.ORDER:
+        p = MP.PLATFORMS[pid]
+        rows.append("<div class='s3fx'><span class='s3fxn'><b>"
+                    + e(p["name"]) + "</b></span>"
+                    "<span class='s3fxw'>for: "
+                    + e(", ".join(p["objectives"][:4])) + "</span>"
+                    "<span class='s3fxw'>formats: "
+                    + e(", ".join(p["formats"][:4])) + "</span></div>")
+    return ("<p class='s3k'>What each channel is FOR - the comparison behind "
+            "a channel decision</p>" + "".join(rows))
+
+
+def crosschannel_screen(ctx) -> str:
+    """Organic vs paid vs the rest, from GA4 - which channel to fund next."""
+    ga4 = (ctx.get("insights") or {}).get("ga4") or {}
+    chans = ga4.get("channels") or ga4.get("sources") or []
+    rows = []
+    for c in (chans if isinstance(chans, list) else [])[:12]:
+        if not isinstance(c, dict):
+            continue
+        rows.append("<div class='s3fx'><span class='s3fxn'>"
+                    + e(c.get("channel") or c.get("source")) + "</span>"
+                    "<span class='s3fxw'>" + e(c.get("sessions"))
+                    + " sessions \u00b7 " + e(c.get("conversions"))
+                    + " conversions</span></div>")
+    head = ("<p class='s3k'>Where your results actually come from "
+            "&middot; GA4</p>")
+    if not rows:
+        head += ("<p class='s2empty'>No GA4 channel rows on record yet; the "
+                 "daily pull fills this.</p>")
+    burn = _burn_list(ctx.get("interlock") or {})
+    tail = ""
+    if burn:
+        tail = ("<p class='s3k' style='margin-top:12px'>Paying for what you "
+                "already win &middot; " + str(len(burn)) + "</p>"
+                + "".join("<div class='s3fx'><span class='s3fxn'>"
+                          + e(t.get("term") if isinstance(t, dict) else t)
+                          + "</span><span class='s3fxw'>organic top 3 - stop "
+                            "paying for it</span></div>" for t in burn[:10]))
+    return head + "".join(rows) + tail
+
+
 def build_panels(ctx, *, legacy_campaigns: str = "",
                  legacy_tracking: str = "") -> dict:
-    """tab id -> screen html. THE one mapping, imported by media_section."""
+    """tab id -> screen html. THE one mapping, imported by media_section.
+
+    Tab ids are unchanged so every existing link keeps landing; what each
+    one CONTAINS now matches the label the founder reads.
+    """
     return {
         "mbcmd": cmd_screen(ctx),
-        "mbhealth": health_screen(ctx),
-        # The Google manager, then the AI media buyer's own drafting flow -
-        # draft a campaign, read its reasoning, chat, deploy. That flow is
-        # real function, so it moved in here rather than being deleted with
-        # the card wall it used to sit under.
-        "mbtypes": (platform_screen_for("google", ctx)
-                    + (("<p class='s3k' style='margin-top:18px'>Campaign drafts &middot; your AI media buyer</p>"
-                        + legacy_campaigns)
-                       if legacy_campaigns else "")),
-        "mbaud": meta_screen(ctx),
-        "mbtarget": platform_screen_for("linkedin", ctx),
-        "mbads": platform_screen_for("tiktok", ctx),
-        "mbconv": (tracking_screen(ctx)
-                   + (("<p class='s3k' style='margin-top:18px'>What GA4 and Search Console actually recorded</p>"
-                       + legacy_tracking)
-                      if legacy_tracking else "")),
+        "mbtypes": ad_manager(ctx, legacy_campaigns),
+        "mbads": creative_library(ctx),
+        "mbaud": audiences_screen(ctx),
+        "mbtarget": targeting_screen(ctx),
         "mbterms": terms_screen(ctx),
         "mbkw": table_screen(
-            "Paid keywords & quality score",
-            (ctx.get("kw") or {}),
-            reason_key="reason",
-            rows_keys=("keywords", "rows"),
-            empty="Fills from the Google pull; quality score needs the Google Ads key."),
+            "Paid keywords & quality score", (ctx.get("kw") or {}),
+            reason_key="reason", rows_keys=("keywords", "rows"),
+            empty="Fills from the Google pull; quality score needs the "
+                  "Google Ads key."),
         "mbbid": bid_screen(ctx),
         "mbbudget": budget_screen(ctx),
+        "mbconv": (tracking_screen(ctx)
+                   + (("<p class='s3k' style='margin-top:18px'>What GA4 and "
+                       "Search Console actually recorded</p>"
+                       + legacy_tracking) if legacy_tracking else "")),
         "mbland": land_screen(ctx),
         "mbcomp": comp_screen(ctx),
         "mbresearch": table_screen(
-            "Keyword research",
-            (ctx.get("kw_ideas") or {}),
-            reason_key="reason",
-            rows_keys=("ideas", "keywords", "rows"),
-            empty="Search volumes need the Google Ads key; free research runs on the SEO side."),
-        "mblink": terms_screen(ctx),
+            "Keyword research", (ctx.get("kw_ideas") or {}),
+            reason_key="reason", rows_keys=("ideas", "keywords", "rows"),
+            empty="Search volumes need the Google Ads key; free research "
+                  "runs on the SEO side."),
+        "mblink": crosschannel_screen(ctx),
+        "mbhealth": health_screen(ctx),
         "mbwork": work_screen(ctx),
     }
 
 
 JS = ("<script>"
+      "function mediaGoto(pid){try{seoTab('mbtypes');"
+      "if(window.a3plat)a3plat(pid);"
+      "var el=document.getElementById('spanel-mbtypes');"
+      "if(el)el.scrollIntoView({block:'start'});}catch(e){}return false;}"
       "async function mediaAutoSet(level,btn){"
       "try{var r=await fetch('/media/auto',{method:'POST',"
       "headers:{'Content-Type':'application/json'},"

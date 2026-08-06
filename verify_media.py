@@ -361,6 +361,76 @@ def _g23():
     return f"{panel.count('s3ladder')} bands, one source of truth"
 
 
+@gate(21, "ONE ads environment: all five platforms behind one switcher")
+def _g21():
+    import content_engine_media_boards as MB
+    panels = MS.build_panels({"media_auto_level": "observe"})
+    holders = [t for t, h in panels.items() if "a3swbar" in h]
+    assert holders == ["mbtypes"], (
+        f"the environment must live on exactly one tab, found: {holders}. "
+        f"Splitting the managers across tabs is what the founder scored 0/10")
+    env = panels["mbtypes"]
+    for pid in MP.ORDER:
+        assert f"a3plat-{pid}" in env, f"{pid} is not in the environment"
+    assert len(env) > 20000, f"the environment is only {len(env)} chars"
+    return f"5 platforms, one switcher, {len(env)//1024} KB"
+
+
+@gate(22, "every tab label matches what the panel behind it contains")
+def _g22():
+    import content_engine_media_boards as MB
+    panels = MS.build_panels({"media_auto_level": "observe"})
+    labels = {t: l for t, _i, l in MB.TABS}
+    # the four that were catastrophically mislabelled
+    assert labels["mbtypes"] == "Ad Manager"
+    assert labels["mbaud"] == "Audiences"
+    assert labels["mbads"] == "Creative Library"
+    assert labels["mbconv"] == "Tracking & Tag Manager"
+    # and no platform manager hides behind an unrelated word
+    for t, l in labels.items():
+        if "a3bar" in panels[t] and t != "mbtypes":
+            raise AssertionError(f"a platform manager hides behind '{l}'")
+    return "16 labels, none lying about its panel"
+
+
+@gate(23, "Tag Manager connects from the Connect board like every other API")
+def _g23():
+    import content_engine_dashboard as D
+    keys = {k for _t, _s, _w, fs in D.EXTRA_KEY_GROUPS for k, _h in fs}
+    for need in ("GTM_CONTAINER_PATH", "GTM_PUBLIC_ID", "GA4_MEASUREMENT_ID"):
+        assert need in keys, (
+            f"{need} has no field on the Connect board, so there is no way "
+            f"to set it from the front end - the founder's exact complaint")
+    titles = [t for t, _s, _w, _f in D.EXTRA_KEY_GROUPS]
+    assert any("Tag Manager" in t for t in titles), "no Tag Manager group"
+    import content_engine_gtm as G
+    assert G.CONTAINER_KEY == "GTM_CONTAINER_PATH", (
+        "the field on the board and the key the module reads must be the "
+        "same string")
+    return "3 fields on the board, read by the module"
+
+
+@gate(24, "the campaign-draft flow and the real GA4 panel survived")
+def _g24():
+    panels = MS.build_panels({}, legacy_campaigns="<b>DRAFTFLOW</b>",
+                             legacy_tracking="<b>GA4REAL</b>")
+    assert "DRAFTFLOW" in panels["mbtypes"], (
+        "the AI media buyer's drafting flow was dropped")
+    assert "GA4REAL" in panels["mbconv"], (
+        "the real GA4/Search Console panel was dropped")
+    return "both legacy flows still injected"
+
+
+@gate(25, "no duplicate element ids anywhere in the section")
+def _g25():
+    import content_engine_media_boards as MB
+    sec = MB.media_section({"media_auto_level": "observe"})
+    ids = re.findall(r"\sid='([^']+)'", sec)
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    assert not dup, f"duplicate ids: {dup[:8]}"
+    return f"{len(ids)} ids, all unique"
+
+
 if __name__ == "__main__":
     print("=" * 74)
     print("MEDIA + TAG MANAGER GATES")

@@ -548,6 +548,24 @@ EXTRA_KEY_GROUPS = [
      [("IMAGE_PROVIDER", "Image provider (openai)"),
       ("IMAGE_API_KEY", "Image API key (sk-…)"),
       ("IMAGE_MODEL", "Image model (gpt-image-1)")]),
+    # TAG MANAGER CONNECTS LIKE EVERY OTHER API - from this board, not from
+    # a config file the founder has no way to edit. His words: "google tag
+    # manager will connect via api the way other app connect via frontend".
+    # The service account is the one already reading GSC and GA4.
+    ("\U0001F4D0 Tag Manager", "gtm",
+     "Paste your container path and public id. The engine then audits, "
+     "drafts and publishes tags for every channel, so you never open "
+     "tagmanager.google.com. Grant the SAME service account that reads your "
+     "GSC and GA4 Edit + Publish rights on the container first.",
+     [("GTM_CONTAINER_PATH",
+       "accounts/<account id>/containers/<container id> - copy it from the "
+       "Tag Manager address bar"),
+      ("GTM_PUBLIC_ID",
+       "GTM-XXXXXXX - the public id; the paste-ready base snippet then "
+       "renders on Media Buying > Tracking"),
+      ("GA4_MEASUREMENT_ID",
+       "G-XXXXXXXXXX - so the GA4 config tag the engine creates points at "
+       "your property")]),
     ("⚙️ Advanced", "adv",
      "Overrides and pins. Every one is optional — blank uses the default.",
      [("CI_JSON", "Brand CI as JSON (or use the CI upload)"),

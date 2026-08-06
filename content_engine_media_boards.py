@@ -1305,22 +1305,27 @@ def board_work(ctx) -> str:
 #  ASSEMBLY
 # ======================================================================
 TABS = [
-    ("mbcmd", "🎯", "Media Command"),
-    ("mbhealth", "🩺", "Account Health"),
-    ("mbtypes", "🗂", "Campaign Types"),
-    ("mbterms", "🔍", "Search Terms"),
-    ("mbkw", "🔑", "Keywords & QS"),
-    ("mbbid", "⚖️", "Bidding"),
-    ("mbbudget", "💰", "Budget & Pacing"),
-    ("mbtarget", "🌍", "Targeting"),
-    ("mbaud", "👥", "Audiences"),
-    ("mbads", "✍️", "Ads & Assets"),
-    ("mbconv", "🎣", "Conversion"),
-    ("mbland", "🛬", "Landing Pages"),
-    ("mbcomp", "⚔️", "Competition"),
-    ("mbresearch", "🔬", "Keyword Research"),
-    ("mblink", "🔗", "Cross-Channel"),
-    ("mbwork", "🛠", "Work Orders"),
+    # RENAMED ON THE FOUNDER'S VERDICT (2026-08-06). The labels used to say
+    # "Campaign Types", "Audiences", "Targeting", "Ads & Assets" while the
+    # panels behind them held the Google, Meta, LinkedIn and TikTok ad
+    # managers. Nobody finds Meta by clicking "Audiences". A tab now says
+    # what is behind it, and the four managers live on ONE screen.
+    ("mbcmd", "\U0001F3AF", "Media Command"),
+    ("mbtypes", "\U0001F680", "Ad Manager"),
+    ("mbads", "\U0001F3A8", "Creative Library"),
+    ("mbaud", "\U0001F465", "Audiences"),
+    ("mbtarget", "\U0001F4CD", "Targeting"),
+    ("mbterms", "\U0001F50D", "Search Terms"),
+    ("mbkw", "\U0001F511", "Keywords"),
+    ("mbbid", "\u2696\uFE0F", "Bidding"),
+    ("mbbudget", "\U0001F4B6", "Budget & Pacing"),
+    ("mbconv", "\U0001F4D0", "Tracking & Tag Manager"),
+    ("mbland", "\U0001F6EC", "Landing Pages"),
+    ("mbcomp", "\U0001F94A", "Competition"),
+    ("mbresearch", "\U0001F52C", "Research"),
+    ("mblink", "\U0001F517", "Cross-Channel"),
+    ("mbhealth", "\U0001F50C", "Accounts & Wiring"),
+    ("mbwork", "\U0001F4CB", "Work Orders"),
 ]
 
 GROUPS = [
