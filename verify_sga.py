@@ -196,6 +196,116 @@ def _g12():
     return "renderer only, no side effects"
 
 
+_POSTS = [{"id": "1", "channel": "instagram", "title": "A", "format": "REEL",
+           "at": "2026-08-03T09:15:00", "likes": 210, "comments": 18,
+           "shares": 12, "engagement": 240, "reach": 5400,
+           "impressions": 7200},
+          {"id": "2", "channel": "instagram", "title": "B", "format": "IMAGE",
+           "at": "2026-08-05T19:00:00", "likes": 90, "comments": 6,
+           "shares": 4, "engagement": 100, "reach": 2100,
+           "impressions": 2600}]
+_RICH = {"social": {"at": "2026-08-06T12:00", "live": ["instagram"],
+         "channels": {"instagram": {
+             "channel": "instagram", "name": "Instagram", "connected": True,
+             "followers": 980, "reach": 15300, "impressions": 22100,
+             "engagement": 740, "clicks": 95, "posts": 52,
+             "reactions": {"likes": 600, "comments": 90, "shares": 50},
+             "posts_rows": _POSTS, "best_time": SI.best_time(_POSTS),
+             "demographics": {"age": {"25-34": 420, "35-44": 300},
+                              "gender": {"F": 520, "M": 440},
+                              "country": {"DE": 610, "US": 210}},
+             "inbox": [{"channel": "instagram", "who": "Dr. Weber",
+                        "text": "Do you work outside Munich?",
+                        "at": "2026-08-06T08:40:00"}],
+             "paid": {"spend": 240, "cpm": 6.2, "cpc": 0.41,
+                      "cost_per_result": 21.8, "results": 11}}}},
+         "social_history": [{"date": f"2026-08-{d:02d}",
+                             "instagram": 950 + d * 3} for d in range(1, 8)],
+         "competitors": [{"channel": "instagram", "handle": "rival.io",
+                          "followers": None, "posts": None,
+                          "engagement": None}]}
+
+
+@gate(13, "the post table shows each post's OWN measured metrics")
+def _g13():
+    h = SGS.build_panels(_RICH)["sgaorganic"]
+    assert "210" in h and "5.4k" in h, "per-post metrics did not render"
+    assert h.count("class='sg-tr'") == 2, "both posts must be rows"
+    for col in ("Likes", "Comments", "Shares", "Reach", "Engagement"):
+        assert col in h, f"the {col} column is missing"
+    blank = SGS.build_panels({})["sgaorganic"]
+    assert "sg-none" in blank or "No posts on record" in blank
+    return "2 posts, 5 metric columns, honest when empty"
+
+
+@gate(14, "the best-time heatmap is computed from real posts, never faked")
+def _g14():
+    assert SI.best_time([]) == {}, "an empty heatmap must stay empty"
+    bt = SI.best_time(_POSTS)
+    assert len(bt["grid"]) == 7 and len(bt["grid"][0]) == 6
+    assert bt["grid"][0][2] == 100, "the busiest slot must be the strongest"
+    h = SGS.build_panels(_RICH)["sgaaudience"]
+    assert "<svg" in h and "from 2 posts" in h, "the heatmap did not draw"
+    empty = SGS.build_panels({})["sgaaudience"]
+    assert "as soon as a channel reports" in empty
+    return "7x6 grid from 2 real posts; empty stays empty"
+
+
+@gate(15, "demographics render from what the platforms really return")
+def _g15():
+    h = SGS.build_panels(_RICH)["sgaaudience"]
+    assert h.count("class='sg-chart'") >= 4, "demographic charts missing"
+    for want in ("Age", "Gender", "Top countries"):
+        assert want in h, f"{want} chart missing"
+    empty = SGS.build_panels({})["sgaaudience"]
+    assert "Nothing is estimated here" in empty, (
+        "the empty state must refuse to estimate")
+    return "age, gender, country drawn; nothing estimated when absent"
+
+
+@gate(16, "the social inbox reads comments and never answers for you")
+def _g16():
+    h = SGS.build_panels(_RICH)["sgaengage"]
+    assert "Dr. Weber" in h and "outside Munich" in h
+    assert "never answers as you" in h, (
+        "the inbox must state that it does not reply on your behalf")
+    src = io.open("content_engine_social_insights.py", encoding="utf-8").read()
+    assert "def _meta_inbox" in src
+    empty = SGS.build_panels({})["sgaengage"]
+    assert "Social inbox" in empty and "read-only by design" in empty
+    return "comments read; replying stays yours"
+
+
+@gate(17, "paid tiles show per-channel CPM, CPC and cost per result")
+def _g17():
+    h = SGS.build_panels(_RICH)["sgapaid"]
+    for want in ("CPM", "CPC", "Cost per result", "6.2", "21.8"):
+        assert want in h, f"{want} missing from the paid screen"
+    empty = SGS.build_panels({})["sgapaid"]
+    assert "ADS key" in empty or "ads key" in empty, (
+        "the empty state must name the ads key as separate from analytics")
+    return "3 cost metrics per channel, averages on the tiles"
+
+
+@gate(18, "competitors are tracked, listed, and never invented")
+def _g18():
+    h = SGS.build_panels(_RICH)["sgatarget"]
+    assert "rival.io" in h and "sgAddComp" in h and "sgDropComp" in h
+    assert h.count("sg-none") >= 3, (
+        "a tracked rival with no key must show dashes, not zeros")
+    s = _S()
+    assert SI.track_competitor(s, "myspace", "x")["ok"] is False
+    assert SI.track_competitor(s, "linkedin", "")["ok"] is False
+    assert SI.track_competitor(s, "linkedin", "@rival")["ok"] is True
+    assert SI.competitors(s)[0]["followers"] is None
+    assert len(SI.competitors(s)) == 1
+    SI.track_competitor(s, "linkedin", "rival")
+    assert len(SI.competitors(s)) == 1, "tracking twice duplicated"
+    api = io.open("content_engine_api.py", encoding="utf-8").read()
+    assert '"/social/competitor"' in api
+    return "add, list, remove; no invented follower counts"
+
+
 if __name__ == "__main__":
     print("=" * 74)
     print("SOCIAL ANALYTICS GATES")

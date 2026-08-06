@@ -88,6 +88,65 @@ def _chan(ctx, cid) -> dict:
     return ch if isinstance(ch, dict) else SI._blank(cid, SI.reason_for(cid))
 
 
+def _all_posts(ctx) -> list:
+    """Every measured post across every reporting channel, newest first.
+    Falls back to your own publishing log for channels that cannot report,
+    so the table is never empty while you are publishing."""
+    rows = []
+    for cid, c in _channels(ctx).items():
+        for r in (c.get("posts_rows") or []):
+            if isinstance(r, dict):
+                rows.append(dict(r, channel=r.get("channel") or cid))
+    if not rows:
+        own = (ctx.get("posts") or {})
+        own = own.get("rows") if isinstance(own, dict) else None
+        rows = [r for r in (own or []) if isinstance(r, dict)]
+    rows.sort(key=lambda r: str(r.get("at") or ""), reverse=True)
+    return rows
+
+
+def _best_time(ctx) -> dict:
+    """The strongest per-channel heatmap, or the pooled one. Computed from
+    real posts by the socket - never a decorative grid."""
+    best = {}
+    for c in _channels(ctx).values():
+        bt = c.get("best_time") or {}
+        if isinstance(bt, dict) and bt.get("grid") and \
+                bt.get("posts", 0) > best.get("posts", 0):
+            best = bt
+    if best:
+        return best
+    return SI.best_time(_all_posts(ctx))
+
+
+def _demo(ctx) -> dict:
+    """Demographics merged across channels that report them."""
+    out = {}
+    for cid, c in _channels(ctx).items():
+        d = c.get("demographics") or {}
+        if not isinstance(d, dict):
+            continue
+        for k, v in d.items():
+            if isinstance(v, dict) and v:
+                bag = out.setdefault(k, {})
+                for kk, vv in v.items():
+                    try:
+                        bag[kk] = bag.get(kk, 0) + float(vv or 0)
+                    except Exception:
+                        continue
+    return out
+
+
+def _inbox(ctx) -> list:
+    rows = []
+    for cid, c in _channels(ctx).items():
+        for m in (c.get("inbox") or []):
+            if isinstance(m, dict):
+                rows.append(dict(m, channel=m.get("channel") or cid))
+    rows.sort(key=lambda r: str(r.get("at") or ""), reverse=True)
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # THE COMMAND BAND
 # ---------------------------------------------------------------------------
@@ -269,7 +328,27 @@ def engagement_screen(ctx) -> str:
     bars = chart("Engagement by channel",
                  CH.vbars(["30 days"], per[:5]) if per else "",
                  "Fills as channels report.")
-    return t + "<div class='sg-row'>" + donut + bars + "</div>"
+    inbox = _inbox(ctx)
+    ibx = ""
+    if inbox:
+        ibx = ("<p class='s3k' style='margin-top:14px'>Comments waiting on a "
+               f"reply &middot; {len(inbox)}</p><div class='sg-tbl'>"
+               + "".join(
+                   "<div class='sg-tr'>"
+                   f"<span>{e(str(m.get('at'))[:16])}</span>"
+                   f"<span>{e(SI.NAME.get(m.get('channel'), m.get('channel')))}</span>"
+                   f"<span>{e(m.get('who'))}</span>"
+                   f"<span>{e(m.get('text'))[:70]}</span></div>"
+                   for m in inbox[:25]) + "</div>"
+               "<p class='sg-empty'>Replying happens on the platform: the "
+               "engine reads comments, and never answers as you without "
+               "your words.</p>")
+    else:
+        ibx = ("<p class='s3k' style='margin-top:14px'>Social inbox</p>"
+               "<p class='sg-empty'>Comments arrive here once Facebook or "
+               "Instagram is connected. Your reply agent handles email; this "
+               "is the social side, read-only by design.</p>")
+    return t + "<div class='sg-row'>" + donut + bars + "</div>" + ibx
 
 
 def audience_screen(ctx) -> str:
@@ -277,12 +356,18 @@ def audience_screen(ctx) -> str:
     fol = [float(c["followers"]) for c in chans.values()
            if isinstance(c, dict) and c.get("followers") is not None]
     hist = _hist(ctx)
+    net = None
+    if len(hist) >= 2:
+        first = sum(float(v) for k, v in hist[0].items() if k != "date")
+        last = sum(float(v) for k, v in hist[-1].items() if k != "date")
+        net = last - first
     t = tiles([("Total followers", sum(fol) if fol else None, ""),
                ("Channels reporting", len(fol) or None,
                 f"of {len(SI.ORDER)}"),
                ("Days of history", len(hist) or None, "one row a day"),
-               ("Net growth", None, "needs two days of history"
-                if len(hist) < 2 else "")])
+               ("Net growth", net,
+                "since the first recorded day" if net is not None
+                else "needs two days of history")])
     series = []
     for cid in SI.ORDER:
         ys = [float(h[cid]) for h in hist if isinstance(h, dict) and h.get(cid)]
@@ -290,68 +375,124 @@ def audience_screen(ctx) -> str:
             series.append((SI.NAME[cid], ys, SI.COLOUR[cid]))
     growth = chart("Follower growth", CH.lines(series) if series else "",
                    "Builds one point a day per connected channel.")
-    best = (ctx.get("engagement") or {})
-    hm = ""
-    if isinstance(best, dict) and best.get("heat"):
-        try:
-            hm = CH.heatmap(best.get("heat_rows") or [],
-                            best.get("heat_cols") or [], best["heat"])
-        except Exception:
-            hm = ""
-    heat = chart("Best time to post", hm,
-                 "Needs per-post engagement, which arrives with the "
-                 "channel keys.")
-    return t + "<div class='sg-row'>" + growth + heat + "</div>"
+    bt = _best_time(ctx)
+    heat = chart(
+        "Best time to post"
+        + (f" &middot; from {bt['posts']} posts" if bt.get("posts") else ""),
+        CH.heatmap(bt["rows"], bt["cols"], bt["grid"]) if bt.get("grid") else "",
+        "Computed from your posts' own engagement. It fills as soon as a "
+        "channel reports per-post metrics.")
+    d = _demo(ctx)
+    demo_charts = []
+    for key, title, cols in (
+            ("age", "Age", ("#1B57F0", "#7A9BE8", "#B9C6EE", "#DDE3F5",
+                            "#EEF1FA")),
+            ("gender", "Gender", ("#1B57F0", "#C13584", "#9AA0A5")),
+            ("country", "Top countries", ("#1B57F0", "#7A9BE8", "#B9C6EE",
+                                          "#DDE3F5", "#EEF1FA")),
+            ("seniority", "Seniority", ("#0A66C2", "#4E8FD1", "#8FB8E3",
+                                        "#C4D9F0", "#E3EDF9"))):
+        v = d.get(key) or {}
+        top5 = sorted(v.items(), key=lambda kv: -kv[1])[:5]
+        segs = [(str(k), float(n), c) for (k, n), c in zip(top5, cols) if n]
+        if segs:
+            demo_charts.append(chart(title, CH.ring(segs, center="")))
+    if not demo_charts:
+        demo_charts = [chart(
+            "Who follows you", "",
+            "Age, gender, country and seniority come from Meta and LinkedIn "
+            "once their keys are on Connect. Nothing is estimated here.")]
+    return (t + "<div class='sg-row'>" + growth + heat + "</div>"
+            + "<div class='sg-row'>" + "".join(demo_charts[:2]) + "</div>"
+            + ("<div class='sg-row'>" + "".join(demo_charts[2:4]) + "</div>"
+               if len(demo_charts) > 2 else ""))
 
 
 def posts_screen(ctx) -> str:
-    p = ctx.get("posts") or {}
-    rows = p.get("rows") if isinstance(p, dict) else None
-    rows = rows if isinstance(rows, list) else []
-    by_ch = {}
+    """The Metricool post table: every post, its channel, its own metrics.
+    A column a channel cannot measure shows a dash on that row, never a 0."""
+    rows = _all_posts(ctx)
+    measured = [r for r in rows if r.get("engagement") is not None]
+    by_ch, by_fmt = {}, {}
     for r in rows:
-        if isinstance(r, dict):
-            by_ch[r.get("channel") or "?"] = by_ch.get(r.get("channel") or "?", 0) + 1
-    t = tiles([("Posts published", p.get("total") if isinstance(p, dict) else None,
-                "from your own log"),
-               ("Channels posted to", len(by_ch) or None, ""),
-               ("With measured metrics", None,
-                "arrives with the channel keys")])
+        by_ch[r.get("channel") or "?"] = by_ch.get(r.get("channel") or "?", 0) + 1
+        f = str(r.get("format") or "post").lower()
+        by_fmt[f] = by_fmt.get(f, 0) + 1
+    top = max(measured, key=lambda r: float(r["engagement"]), default=None)
+    t = tiles([("Posts", len(rows) or None, "newest first"),
+               ("With measured metrics", len(measured) or None,
+                "needs each channel's key"),
+               ("Channels", len(by_ch) or None, ""),
+               ("Best post", (top or {}).get("engagement"),
+                (top or {}).get("title", "")[:28] if top else "none measured")])
     segs = [(k, float(v), c) for (k, v), c in
-            zip(sorted(by_ch.items(), key=lambda kv: -kv[1])[:5],
+            zip(sorted(by_fmt.items(), key=lambda kv: -kv[1])[:5],
                 ("#1B57F0", "#7A9BE8", "#B9C6EE", "#DDE3F5", "#EEF1FA"))]
-    donut = chart("Where you published", CH.ring(segs, center="") if segs else "",
+    donut = chart("Format mix", CH.ring(segs, center="") if segs else "",
                   "No posts on record yet.")
-    body = ""
-    if rows:
-        body = ("<div class='sg-tbl'><div class='sg-tr sg-th'>"
-                "<span>When</span><span>Channel</span><span>Piece</span>"
-                "<span>Reach</span><span>Engagement</span></div>"
-                + "".join(
-                    "<div class='sg-tr'>"
-                    f"<span>{e(str(r.get('at') or r.get('date'))[:16])}</span>"
-                    f"<span>{e(r.get('channel'))}</span>"
-                    f"<span>{e(r.get('title') or r.get('piece'))[:52]}</span>"
-                    f"<span>{_num(r.get('reach'))}</span>"
-                    f"<span>{_num(r.get('engagement'))}</span></div>"
-                    for r in rows[:40]) + "</div>")
-    else:
-        body = ("<p class='sg-empty'>No posts on record. Every piece the "
-                "engine publishes to a channel lands here with its own "
-                "metrics once that channel reports.</p>")
-    return t + donut + body
+    if not rows:
+        return (t + donut + "<p class='sg-empty'>No posts on record. Every "
+                "piece the engine publishes lands here, and its real metrics "
+                "arrive with that channel's key.</p>")
+    body = ("<div class='sg-tbl'><div class='sg-tr sg-th'>"
+            "<span>When</span><span>Channel</span><span>Post</span>"
+            "<span>Likes</span><span>Comments</span><span>Shares</span>"
+            "<span>Reach</span><span>Engagement</span></div>"
+            + "".join(
+                "<div class='sg-tr'>"
+                f"<span>{e(str(r.get('at'))[:16])}</span>"
+                f"<span>{e(SI.NAME.get(r.get('channel'), r.get('channel')))}</span>"
+                f"<span>{e(r.get('title') or r.get('piece'))[:46]}</span>"
+                f"<span>{_num(r.get('likes'))}</span>"
+                f"<span>{_num(r.get('comments'))}</span>"
+                f"<span>{_num(r.get('shares'))}</span>"
+                f"<span>{_num(r.get('reach') or r.get('impressions'))}</span>"
+                f"<span>{_num(r.get('engagement'))}</span></div>"
+                for r in rows[:50]) + "</div>")
+    more = ("" if len(rows) <= 50 else
+            f"<p class='sg-empty'>and {len(rows) - 50} more</p>")
+    return t + donut + body + more
 
 
 def paid_screen(ctx) -> str:
     paid = ctx.get("paid") or {}
-    by = paid.get("by_platform") if isinstance(paid, dict) else None
+    paid = paid if isinstance(paid, dict) else {}
+    by = paid.get("by_platform")
     by = by if isinstance(by, list) else []
-    t = tiles([("Paid social spend", paid.get("spend") if isinstance(paid, dict) else None, "30 days"),
-               ("Planned campaigns", paid.get("planned_count") if isinstance(paid, dict) else None, ""),
-               ("Planned budget", paid.get("planned_budget") if isinstance(paid, dict) else None, "&euro;"),
-               ("Platforms spending", len(by) or None, ""),
-               ("Cost per result", None, "needs each platform's ads key"),
-               ("CPM", None, "needs each platform's ads key")])
+    per = {}
+    for cid, c in _channels(ctx).items():
+        pd = c.get("paid") or {}
+        if isinstance(pd, dict) and any(v is not None for v in pd.values()):
+            per[cid] = pd
+    spend = paid.get("spend")
+    cpm = cpc = cpr = None
+    if per:
+        def _avg(k):
+            vals = [float(v[k]) for v in per.values() if v.get(k) is not None]
+            return sum(vals) / len(vals) if vals else None
+        cpm, cpc, cpr = _avg("cpm"), _avg("cpc"), _avg("cost_per_result")
+    t = tiles([("Paid social spend", spend, "30 days"),
+               ("Planned campaigns", paid.get("planned_count"), ""),
+               ("Planned budget", paid.get("planned_budget"), "&euro;"),
+               ("CPM", cpm, "needs each platform's ads key"
+                if cpm is None else "average across channels"),
+               ("CPC", cpc, "needs each platform's ads key"
+                if cpc is None else "average across channels"),
+               ("Cost per result", cpr, "needs each platform's ads key"
+                if cpr is None else "average across channels")])
+    rows = ""
+    if per:
+        rows = ("<div class='sg-tbl'><div class='sg-tr sg-th'>"
+                "<span>Channel</span><span>Spend</span><span>CPM</span>"
+                "<span>CPC</span><span>Cost/result</span></div>"
+                + "".join(
+                    "<div class='sg-tr'>"
+                    f"<span>{e(SI.NAME.get(cid, cid))}</span>"
+                    f"<span>{_num(v.get('spend'))}</span>"
+                    f"<span>{_num(v.get('cpm'))}</span>"
+                    f"<span>{_num(v.get('cpc'))}</span>"
+                    f"<span>{_num(v.get('cost_per_result'))}</span></div>"
+                    for cid, v in per.items()) + "</div>")
     bars = chart(
         "Spend by platform",
         CH.vbars(["30 days"],
@@ -359,14 +500,12 @@ def paid_screen(ctx) -> str:
                    SI.COLOUR.get(str(r.get("platform")).lower(), "#1B57F0"))
                   for r in by[:5] if isinstance(r, dict)])
         if by else "",
-        "Paid social spend arrives with each platform's ads key. Google Ads "
-        "has its own section under Media Buying.")
-    return t + bars
+        "Paid social spend arrives with each platform's ADS key, which is "
+        "separate from its analytics key. Google Ads has its own section "
+        "under Media Buying.")
+    return t + rows + bars
 
 
-# ---------------------------------------------------------------------------
-# 7-14 THE SCREENS THAT ALREADY RUN LIVE
-# ---------------------------------------------------------------------------
 def traffic_screen(ctx) -> str:
     tr = ctx.get("traffic") or {}
     chans = tr.get("channels") if isinstance(tr, dict) else None
@@ -481,11 +620,46 @@ def targeting_screen(ctx) -> str:
         f"<div class='sg-tr'><span><b>{e(SI.NAME[cid])}</b></span>"
         f"<span>{e(', '.join(_TARGETING.get(cid, ())))}</span></div>"
         for cid in SI.ORDER)
+    comps = ctx.get("competitors") or []
+    comps = [c for c in comps if isinstance(c, dict)]
+    add = ("<div class='sg-add'>"
+           "<select id='sg-cc'>"
+           + "".join(f"<option value='{cid}'>{e(SI.NAME[cid])}</option>"
+                     for cid in SI.ORDER)
+           + "</select>"
+           "<input id='sg-ch' placeholder='their handle, e.g. rival.io'>"
+           "<button class='cta s3go' onclick='sgAddComp()'>Track</button>"
+           "</div>")
+    if comps:
+        crows = ("<div class='sg-tbl'><div class='sg-tr sg-th'>"
+                 "<span>Channel</span><span>Who</span><span>Followers</span>"
+                 "<span>Posts</span><span>Engagement</span><span></span></div>"
+                 + "".join(
+                     "<div class='sg-tr'>"
+                     f"<span>{e(SI.NAME.get(c.get('channel'), c.get('channel')))}</span>"
+                     f"<span>{e(c.get('handle'))}</span>"
+                     f"<span>{_num(c.get('followers'))}</span>"
+                     f"<span>{_num(c.get('posts'))}</span>"
+                     f"<span>{_num(c.get('engagement'))}</span>"
+                     f"<span><button class='cta' onclick=\"sgDropComp("
+                     f"'{e(c.get('channel'))}','{e(c.get('handle'))}')\">"
+                     f"Stop</button></span></div>" for c in comps[:25])
+                 + "</div>"
+                 "<p class='sg-empty'>A rival's numbers are read by the same "
+                 "channel key that reads yours; until that key is on Connect "
+                 "these stay blank rather than guessed.</p>")
+    else:
+        crows = ("<p class='sg-empty'>No rivals tracked. Name one and the "
+                 "engine watches its public profile with the same key that "
+                 "reads your own channel.</p>")
     return ("<p class='s3k'>Who each channel can reach</p>"
             "<div class='sg-tbl'>" + rows + "</div>"
             "<p class='sg-empty'>These are the dimensions each platform "
             "really offers. Saved audiences arrive with each channel's "
-            "key.</p>")
+            "key.</p>"
+            f"<p class='s3k' style='margin-top:16px'>Competitors &middot; "
+            f"{len(comps)} tracked</p>" + add + crows)
+
 
 
 _TARGETING = {
@@ -578,6 +752,11 @@ gap:10px;padding:8px 13px;border-bottom:1px solid var(--ln);font-size:12.5px}
 letter-spacing:.08em;text-transform:uppercase;color:var(--ft)}
 .sg-tr b{font-family:ui-monospace,Menlo,monospace}
 .sg-cp{margin-top:12px}
+.sg-add{display:flex;gap:8px;margin:0 0 10px;flex-wrap:wrap}
+.sg-add select,.sg-add input{padding:7px 10px;border:1px solid var(--ln);
+border-radius:7px;background:var(--pap);color:var(--tx);font-family:inherit;
+font-size:12.5px}
+.sg-add input{flex:1;min-width:180px}
 .a3sw i{font-style:normal;font-size:9.5px;letter-spacing:.08em;
 text-transform:uppercase;color:var(--warnc);border:1px solid var(--warnc);
 border-radius:3px;padding:1px 4px}
@@ -585,6 +764,21 @@ border-radius:3px;padding:1px 4px}
 """
 
 JS = ("<script>"
+      "async function sgAddComp(){var c=document.getElementById('sg-cc'),"
+      "h=document.getElementById('sg-ch');if(!c||!h)return;"
+      "if(!h.value.trim()){toast('Type a handle first.');return;}"
+      "try{var r=await fetch('/social/competitor',{method:'POST',"
+      "headers:{'Content-Type':'application/json'},"
+      "body:JSON.stringify({channel:c.value,handle:h.value})});"
+      "var j=await r.json();toast((j&&(j.message||j.error))||'added',"
+      "j&&j.ok!==false);if(j&&j.ok)h.value='';}"
+      "catch(e){toast('could not reach the engine',false);}}"
+      "async function sgDropComp(ch,handle){"
+      "try{var r=await fetch('/social/competitor',{method:'POST',"
+      "headers:{'Content-Type':'application/json'},"
+      "body:JSON.stringify({channel:ch,handle:handle,remove:true})});"
+      "var j=await r.json();toast((j&&j.message)||'removed',true);}"
+      "catch(e){toast('could not reach the engine',false);}}"
       "function sgChan(cid){try{"
       "document.querySelectorAll('.sg-cp').forEach(function(p){"
       "p.style.display=(p.id==='sg-c-'+cid)?'':'none';});"

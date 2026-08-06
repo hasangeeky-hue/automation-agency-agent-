@@ -102,7 +102,12 @@ def _blank(cid: str, reason: str) -> dict:
     return {"channel": cid, "name": NAME.get(cid, cid), "connected": False,
             "reason": reason, "at": _now(),
             **{s: None for s in SLOTS},
-            "series": [], "top_posts": [], "reactions": {}, "best_time": []}
+            "series": [], "top_posts": [], "reactions": {}, "best_time": {},
+            # every later-built layer has its slot from the start, so a
+            # screen never has to ask whether a key exists before reading
+            "posts_rows": [], "demographics": {}, "inbox": [],
+            "paid": {"spend": None, "cpm": None, "cpc": None,
+                     "cost_per_result": None, "results": None}}
 
 
 def missing_keys(cid: str) -> list:
@@ -330,12 +335,327 @@ def _sum_ts(payload, metric) -> float | None:
 
 
 # ---------------------------------------------------------------------------
+# PER-POST METRICS, DEMOGRAPHICS, INBOX, BEST TIME - the layers a key unlocks
+# ---------------------------------------------------------------------------
+def _meta_posts(cid, obj_id):
+    """Recent posts with their real metrics. Facebook and Instagram share
+    the Graph API; the metric names differ, so each asks for its own."""
+    r, tok = _requests(), _env("META_ACCESS_TOKEN")
+    v = _env("META_API_VERSION") or "v21.0"
+    edge = "media" if cid == "instagram" else "posts"
+    fields = ("id,caption,timestamp,media_type,permalink,like_count,"
+              "comments_count" if cid == "instagram" else
+              "id,message,created_time,permalink_url,shares,"
+              "reactions.summary(true),comments.summary(true)")
+    j = r.get(f"https://graph.facebook.com/{v}/{obj_id}/{edge}",
+              params={"fields": fields, "limit": 25, "access_token": tok},
+              timeout=30).json()
+    out = []
+    for m in (j.get("data") or []):
+        if cid == "instagram":
+            likes, comments = m.get("like_count"), m.get("comments_count")
+            title, when = (m.get("caption") or "")[:90], m.get("timestamp")
+            fmt = m.get("media_type")
+        else:
+            likes = ((m.get("reactions") or {}).get("summary")
+                     or {}).get("total_count")
+            comments = ((m.get("comments") or {}).get("summary")
+                        or {}).get("total_count")
+            title, when = (m.get("message") or "")[:90], m.get("created_time")
+            fmt = "post"
+        shares = (m.get("shares") or {}).get("count")
+        eng = sum(float(x or 0) for x in (likes, comments, shares))
+        out.append({"id": m.get("id"), "channel": cid, "title": title,
+                    "at": when, "format": fmt,
+                    "url": m.get("permalink") or m.get("permalink_url"),
+                    "likes": likes, "comments": comments, "shares": shares,
+                    "engagement": eng or None, "reach": None,
+                    "impressions": None})
+    return out
+
+
+def _meta_demographics(cid, obj_id):
+    """Age, gender and country splits, as Meta really returns them:
+    lifetime breakdowns keyed 'M.25-34' or by country code."""
+    r, tok = _requests(), _env("META_ACCESS_TOKEN")
+    v = _env("META_API_VERSION") or "v21.0"
+    metric = ("follower_demographics" if cid == "instagram"
+              else "page_fans_gender_age,page_fans_country")
+    j = r.get(f"https://graph.facebook.com/{v}/{obj_id}/insights",
+              params={"metric": metric, "period": "lifetime",
+                      "access_token": tok}, timeout=30).json()
+    age, gender, country = {}, {}, {}
+    for row in (j.get("data") or []):
+        vals = (row.get("values") or [{}])[-1].get("value") or {}
+        if not isinstance(vals, dict):
+            continue
+        for k, n in vals.items():
+            if "." in str(k):
+                g, band = str(k).split(".", 1)
+                gender[g] = gender.get(g, 0) + float(n or 0)
+                age[band] = age.get(band, 0) + float(n or 0)
+            elif len(str(k)) == 2:
+                country[k] = float(n or 0)
+    return {"age": age, "gender": gender, "country": country}
+
+
+def _linkedin_demographics():
+    r = _requests()
+    urn = _env("LINKEDIN_ORG_URN")
+    H = {"Authorization": "Bearer " + _env("LINKEDIN_ORG_TOKEN"),
+         "LinkedIn-Version": _env("LINKEDIN_API_VERSION") or "202409",
+         "X-Restli-Protocol-Version": "2.0.0"}
+    j = r.get("https://api.linkedin.com/rest/"
+              "organizationalEntityFollowerStatistics"
+              f"?q=organizationalEntity&organizationalEntity={urn}",
+              headers=H, timeout=30).json()
+    el = (j.get("elements") or [{}])[0]
+
+    def _pick(key, label):
+        out = {}
+        for row in (el.get(key) or []):
+            n = ((row.get("followerCounts") or {})
+                 .get("organicFollowerCount") or 0)
+            out[str(row.get(label) or "?").split(":")[-1]] = float(n)
+        return out
+
+    return {"seniority": _pick("followerCountsBySeniority", "seniority"),
+            "function": _pick("followerCountsByFunction", "function"),
+            "industry": _pick("followerCountsByIndustry", "industry"),
+            "company_size": _pick("followerCountsByStaffCountRange",
+                                  "staffCountRange")}
+
+
+def _meta_inbox(cid, obj_id):
+    """Comments waiting on a reply - the social equivalent of an inbox."""
+    r, tok = _requests(), _env("META_ACCESS_TOKEN")
+    v = _env("META_API_VERSION") or "v21.0"
+    edge = "media" if cid == "instagram" else "posts"
+    j = r.get(f"https://graph.facebook.com/{v}/{obj_id}/{edge}",
+              params={"fields": "id,comments{id,message,from,created_time}",
+                      "limit": 10, "access_token": tok}, timeout=30).json()
+    out = []
+    for m in (j.get("data") or []):
+        for c in ((m.get("comments") or {}).get("data") or []):
+            out.append({"channel": cid, "post": m.get("id"),
+                        "id": c.get("id"),
+                        "text": (c.get("message") or "")[:140],
+                        "who": ((c.get("from") or {}).get("name") or "someone"),
+                        "at": c.get("created_time")})
+    return out
+
+
+def _linkedin_posts():
+    r = _requests()
+    urn = _env("LINKEDIN_ORG_URN")
+    H = {"Authorization": "Bearer " + _env("LINKEDIN_ORG_TOKEN"),
+         "LinkedIn-Version": _env("LINKEDIN_API_VERSION") or "202409",
+         "X-Restli-Protocol-Version": "2.0.0"}
+    j = r.get(f"https://api.linkedin.com/rest/posts?author={urn}"
+              "&q=author&count=25", headers=H, timeout=30).json()
+    return [{"id": m.get("id"), "channel": "linkedin",
+             "title": str(m.get("commentary") or "")[:90],
+             "at": m.get("createdAt"), "format": "post",
+             "likes": None, "comments": None, "shares": None,
+             "engagement": None, "reach": None, "impressions": None}
+            for m in (j.get("elements") or [])]
+
+
+def _x_posts():
+    """X's free tier gives each tweet's counts. Impressions are a paid-tier
+    field and stay None rather than being guessed at."""
+    r = _requests()
+    uid = _env("TWITTER_USER_ID")
+    H = {"Authorization": "Bearer " + _env("TWITTER_BEARER_TOKEN")}
+    j = r.get(f"https://api.twitter.com/2/users/{uid}/tweets",
+              params={"max_results": 25,
+                      "tweet.fields": "created_at,public_metrics,text"},
+              headers=H, timeout=30).json()
+    out = []
+    for m in (j.get("data") or []):
+        pm = m.get("public_metrics") or {}
+        eng = sum(float(pm.get(k) or 0) for k in
+                  ("like_count", "reply_count", "retweet_count",
+                   "quote_count"))
+        out.append({"id": m.get("id"), "channel": "x",
+                    "title": (m.get("text") or "")[:90],
+                    "at": m.get("created_at"), "format": "tweet",
+                    "likes": pm.get("like_count"),
+                    "comments": pm.get("reply_count"),
+                    "shares": pm.get("retweet_count"),
+                    "engagement": eng or None,
+                    "impressions": pm.get("impression_count"),
+                    "reach": None})
+    return out
+
+
+def _youtube_posts():
+    import content_engine_connectors as C
+    fn = getattr(C, "_google_token", None)
+    tok = fn(["https://www.googleapis.com/auth/youtube.readonly"]) if fn else None
+    if not tok:
+        return []
+    r = _requests()
+    H = {"Authorization": "Bearer " + tok}
+    j = r.get("https://www.googleapis.com/youtube/v3/search",
+              params={"part": "snippet",
+                      "channelId": _env("YOUTUBE_CHANNEL_ID"),
+                      "order": "date", "maxResults": 25, "type": "video"},
+              headers=H, timeout=30).json()
+    ids = [i.get("id", {}).get("videoId") for i in (j.get("items") or [])]
+    ids = [i for i in ids if i]
+    if not ids:
+        return []
+    st = r.get("https://www.googleapis.com/youtube/v3/videos",
+               params={"part": "snippet,statistics", "id": ",".join(ids[:25])},
+               headers=H, timeout=30).json()
+    out = []
+    for v_ in (st.get("items") or []):
+        s, k = v_.get("snippet") or {}, v_.get("statistics") or {}
+        eng = sum(float(k.get(x) or 0) for x in ("likeCount", "commentCount"))
+        out.append({"id": v_.get("id"), "channel": "youtube",
+                    "title": (s.get("title") or "")[:90],
+                    "at": s.get("publishedAt"), "format": "video",
+                    "likes": k.get("likeCount"),
+                    "comments": k.get("commentCount"), "shares": None,
+                    "engagement": eng or None,
+                    "impressions": k.get("viewCount"), "reach": None})
+    return out
+
+
+def fetch_posts(cid):
+    """Recent posts with real metrics; [] when the key is not there yet."""
+    if missing_keys(cid) or not _requests():
+        return []
+    try:
+        if cid == "facebook":
+            return _meta_posts(cid, _env("META_PAGE_ID"))
+        if cid == "instagram":
+            return _meta_posts(cid, _env("IG_BUSINESS_ID"))
+        if cid == "linkedin":
+            return _linkedin_posts()
+        if cid == "x":
+            return _x_posts()
+        if cid == "youtube":
+            return _youtube_posts()
+    except Exception as e:
+        log.warning("%s posts failed: %s", cid, e)
+    return []
+
+
+def fetch_demographics(cid):
+    if missing_keys(cid) or not _requests():
+        return {}
+    try:
+        if cid == "facebook":
+            return _meta_demographics(cid, _env("META_PAGE_ID"))
+        if cid == "instagram":
+            return _meta_demographics(cid, _env("IG_BUSINESS_ID"))
+        if cid == "linkedin":
+            return _linkedin_demographics()
+    except Exception as e:
+        log.warning("%s demographics failed: %s", cid, e)
+    return {}
+
+
+def fetch_inbox(cid):
+    if missing_keys(cid) or not _requests():
+        return []
+    try:
+        if cid == "facebook":
+            return _meta_inbox(cid, _env("META_PAGE_ID"))
+        if cid == "instagram":
+            return _meta_inbox(cid, _env("IG_BUSINESS_ID"))
+    except Exception as e:
+        log.warning("%s inbox failed: %s", cid, e)
+    return []
+
+
+def best_time(rows):
+    """Day x time-of-day engagement, computed from REAL posts. Empty until
+    posts carry engagement, because a heatmap of nothing is a decoration."""
+    days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    slots = ["00-04", "04-08", "08-12", "12-16", "16-20", "20-24"]
+    grid = [[0.0] * len(slots) for _ in days]
+    n = 0
+    for r in rows or ():
+        if not isinstance(r, dict) or not r.get("engagement"):
+            continue
+        raw = str(r.get("at") or "")[:19].replace("Z", "")
+        try:
+            from datetime import datetime
+            t = datetime.fromisoformat(raw)
+        except Exception:
+            continue
+        grid[t.weekday()][min(t.hour // 4, 5)] += float(r["engagement"])
+        n += 1
+    if not n:
+        return {}
+    mx = max(max(row) for row in grid) or 1.0
+    return {"rows": days, "cols": slots, "posts": n,
+            "grid": [[round(v / mx * 100) for v in row] for row in grid]}
+
+
+# ---------------------------------------------------------------------------
+# COMPETITORS - public profiles you name, measured by each channel's own key
+# ---------------------------------------------------------------------------
+COMP_KEY = "social_competitors"
+
+
+def competitors(store):
+    try:
+        v = store.get_setting(COMP_KEY, []) or []
+        return [c for c in v if isinstance(c, dict)]
+    except Exception:
+        return []
+
+
+def track_competitor(store, channel, handle):
+    """Add a rival to watch. Public profiles only; the measuring is done by
+    that channel's own key, so an untracked channel says so instead of
+    inventing a follower count."""
+    handle = str(handle or "").strip().lstrip("@")
+    if channel not in ORDER:
+        return {"ok": False, "error": f"{channel} is not a tracked channel"}
+    if not handle:
+        return {"ok": False, "error": "no handle given; nothing added"}
+    cur = competitors(store)
+    if any(c.get("channel") == channel and c.get("handle") == handle
+           for c in cur):
+        return {"ok": True, "message": f"{handle} is already tracked"}
+    cur.append({"channel": channel, "handle": handle, "added": _now(),
+                "followers": None, "posts": None, "engagement": None,
+                "reason": (NAME[channel] + " public metrics need that "
+                           "channel's key on Connect")})
+    store.set_setting(COMP_KEY, cur)
+    return {"ok": True, "count": len(cur),
+            "message": f"tracking {handle} on {NAME[channel]}"}
+
+
+def untrack_competitor(store, channel, handle):
+    cur = competitors(store)
+    keep = [c for c in cur
+            if not (c.get("channel") == channel and c.get("handle") == handle)]
+    store.set_setting(COMP_KEY, keep)
+    return {"ok": True, "count": len(keep),
+            "message": f"stopped tracking {handle}"}
+
+
+# ---------------------------------------------------------------------------
 def refresh(store) -> dict:
     """Pull every connected channel; keep the honest blanks for the rest.
     One snapshot the screens and the agent both read."""
     snap = {"at": _now(), "channels": {}}
     for cid in ORDER:
-        snap["channels"][cid] = fetch(cid)
+        c = fetch(cid)
+        if c.get("connected"):
+            c["posts_rows"] = fetch_posts(cid)
+            c["demographics"] = fetch_demographics(cid)
+            c["inbox"] = fetch_inbox(cid)
+            c["best_time"] = best_time(c["posts_rows"])
+            if c.get("posts") is None and c["posts_rows"]:
+                c["posts"] = len(c["posts_rows"])
+        snap["channels"][cid] = c
     live = [c for c, v in snap["channels"].items() if v.get("connected")]
     snap["live"] = live
     try:
@@ -399,5 +719,29 @@ if __name__ == "__main__":
     t("refresh reports 0 live honestly",
       snap["live"] == [] and "lights up" in snap["message"])
     t("nothing invented into history", s.d.get("social_history") is None)
+    t("every blank carries the later layers",
+      all(k in b for k in ("posts_rows", "demographics", "inbox", "paid")))
+    t("posts/demographics/inbox are empty without a key",
+      fetch_posts("facebook") == [] and fetch_demographics("facebook") == {}
+      and fetch_inbox("facebook") == [])
+    t("best_time on nothing is empty, not a fake grid", best_time([]) == {})
+    _bt = best_time([{"at": "2026-08-03T09:15:00", "engagement": 40},
+                     {"at": "2026-08-05T19:00:00", "engagement": 10}])
+    t("best_time on real posts is a 7x6 grid",
+      len(_bt.get("grid", [])) == 7 and len(_bt["grid"][0]) == 6
+      and _bt["posts"] == 2)
+    t("the busiest slot is the strongest", _bt["grid"][0][2] == 100)
+    t("a competitor needs a real handle",
+      track_competitor(s, "linkedin", "")["ok"] is False)
+    t("an unknown channel is refused",
+      track_competitor(s, "myspace", "x")["ok"] is False)
+    t("a tracked rival starts with no invented numbers",
+      track_competitor(s, "linkedin", "@rival")["ok"] is True
+      and competitors(s)[0]["followers"] is None)
+    t("tracking twice does not duplicate",
+      track_competitor(s, "linkedin", "rival")["ok"] is True
+      and len(competitors(s)) == 1)
+    t("untrack removes it",
+      untrack_competitor(s, "linkedin", "rival")["count"] == 0)
     print(f"\n{sum(ok)} passed, {len(ok) - sum(ok)} failed")
     raise SystemExit(0 if all(ok) else 1)

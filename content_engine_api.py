@@ -2808,6 +2808,24 @@ def build_app():
         return {"ok": True, **{k: out.get(k) for k in
                                ("at", "live", "message")}}
 
+    @app.post("/social/competitor")
+    async def social_competitor(request: Request):
+        """Track or untrack a rival's public profile."""
+        import content_engine_social_insights as SI
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        ch, h = str(d.get("channel") or ""), str(d.get("handle") or "")
+        store = get_store()
+        if d.get("remove"):
+            return SI.untrack_competitor(store, ch, h.lstrip("@"))
+        out = SI.track_competitor(store, ch, h)
+        if out.get("ok"):
+            _log_decision(store, "social_competitor", f"{ch}:{h}",
+                          out.get("message", ""))
+        return out
+
     @app.post("/media/auto")
     async def media_auto(request: Request):
         import content_engine_media_orders as MO

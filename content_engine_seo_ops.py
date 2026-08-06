@@ -1039,6 +1039,7 @@ def build_sga_ctx(store, *, jobs=None, status=None, insights=None, deals=None,
         # read, so nothing that worked before changes.
         "social": _social_snap(store),
         "social_history": _get(store, "social_history", []) or [],
+        "competitors": _get(store, "social_competitors", []) or [],
     }
 
 
