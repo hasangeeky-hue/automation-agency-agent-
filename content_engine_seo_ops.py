@@ -409,12 +409,16 @@ def run_prospecting(store, *, limit: int = 12) -> dict:
 
 
 def run_fixes(store, *, limit: int = 20, auto_only: bool = True,
-              dry_run: bool = False, types=None) -> dict:
-    """E7/E8/E9. Apply what may be applied; draft what must be approved."""
+              dry_run: bool = False, types=None, urls=None, ids=None) -> dict:
+    """E7/E8/E9. Apply what may be applied; draft what must be approved.
+
+    urls/ids pass straight through to the fixer's single dispatch, so the
+    dashboard's "fix this page" and per-issue buttons run the exact code the
+    nightly batch runs."""
     import content_engine_seo_fixer as FIX
     crawl = _get(store, K_CRAWL, {}) or {}
     rep = FIX.run_batch(store, crawl=crawl, limit=limit, auto_only=auto_only,
-                        dry_run=dry_run, types=types)
+                        dry_run=dry_run, types=types, urls=urls, ids=ids)
     _stamp(store, "fixes")
     return rep
 
@@ -1100,6 +1104,15 @@ def build_risk_ctx(store, *, status=None, health=None, meters=None,
 # ======================================================================
 #  CONTEXT FOR THE BOARDS
 # ======================================================================
+def _auto_level(store) -> str:
+    """The unattended-SEO switch, read from the scheduler that obeys it."""
+    try:
+        import content_engine_scheduler as _SCH
+        return _SCH.seo_auto_level(store)
+    except Exception:
+        return "unknown"
+
+
 def build_ctx(store, *, status=None, insights=None, meters=None,
               competitor_intel=None) -> dict:
     import content_engine_workorders as WO
@@ -1141,6 +1154,9 @@ def build_ctx(store, *, status=None, insights=None, meters=None,
         "insights": insights or (_get(store, "google_insights", {}) or {}),
         "status": status or {},
         "engine_runs": _get(store, K_RUNS, {}) or {},
+        # the 24/7 switch state, so the agent band can show it instead of
+        # guessing. Additive: the old dashboard ignores keys it never reads.
+        "auto_level": _auto_level(store),
         "meters": meters or {},
         "competitor_intel": competitor_intel or {},
     }

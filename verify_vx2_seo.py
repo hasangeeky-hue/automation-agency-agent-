@@ -129,17 +129,28 @@ def _g8():
     return f"{len(manual)} manual problems, 0 fix buttons"
 
 
-@gate(9, "a fixable problem with pages renders exactly one fix button")
+@gate(9, "an undrafted problem EXECUTES; only a drafted one APPROVES")
 def _g9():
+    # THE WIRING THIS GATE USED TO BLESS WAS WRONG. It asserted s2fix() for
+    # undrafted orders - but s2fix posts /seo/fix/{id}, the APPROVE endpoint,
+    # which refuses anything without a proposal. The button looked live and
+    # was not. Undrafted rows now run through /seo/run-orders (the fixer's
+    # one dispatch); s2fix remains only for rows carrying a drafted proposal.
     orders = [{"id": "o1", "code": "schema_missing", "url": "/a",
                "severity": "high", "impact": 60, "status": "open"},
               {"id": "o2", "code": "schema_missing", "url": "/b",
                "severity": "high", "impact": 60, "status": "open"}]
     html = S.issues_panel({"orders": orders}, ["schema_missing"])
-    assert html.count("s2fix(") == 1, "one row, one button"
-    assert "o1,o2" in html, "the button must carry both page ids"
-    assert "a2now" in html, "schema_missing is a NOW fix and must look like one"
-    return "one button, both ids, correct class"
+    assert html.count("s3run(") == 1, "one row, one run button"
+    assert "s2fix(" not in html, (
+        "an undrafted NOW fix pointed at the approve endpoint, which would "
+        "refuse it - the exact dead button this gate exists to stop")
+    assert "o1,o2" in html and "a2now" in html
+    drafted = [dict(orders[0],
+                    extra={"proposal": {"field": "title", "after": "X"}})]
+    html2 = S.issues_panel({"orders": drafted}, ["schema_missing"])
+    assert "s2fix(" in html2, "a drafted row must offer the approve path"
+    return "run for the undrafted, approve for the drafted"
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +384,147 @@ def _g20():
         "the apply endpoint does not route the eight new repairs to fixer8, "
         "so approving one would run the title/meta handler on it")
     return "two apply paths, routed by code; nothing drafted means nothing done"
+
+
+# ---------------------------------------------------------------------------
+# 23-30  THE SEMRUSH BUILD: agent band, pages, robots, backlinks, endpoints
+# ---------------------------------------------------------------------------
+_CTX = {"orders": [
+    WO.make_order("schema_missing", "https://x.test/a", severity="critical"),
+    WO.make_order("title_long", "https://x.test/a", severity="medium"),
+    WO.make_order("h1_missing", "https://x.test/b", severity="high"),
+    WO.make_order("slow_page", "https://x.test/b", severity="high"),
+], "auto_level": "safe", "engine_runs": {"fixes": "2026-08-06T10:00:00"}}
+_CTX["orders"][1]["extra"]["proposal"] = {"field": "title", "after": "Short"}
+
+
+@gate(23, "the agent command band commands real machinery")
+def _g23():
+    html = S.agent_band(_CTX)
+    for need in ("/seo/fix-all", "s3draftall", "seoAutoSet('off'",
+                 "seoAutoSet('safe'", "seoAutoSet('all'"):
+        assert need in html, f"the band is missing {need}"
+    assert "SAFE 24/7" in html, "the band must show the switch state in words"
+    assert "s3on" in html, "the current level must be visibly selected"
+    assert "approve-all?type=title" in html, (
+        "a drafted rewrite existed and the band offered no bulk approval")
+    dark = S.agent_band({"orders": [], "auto_level": "unknown"})
+    assert "could not be read" in dark, (
+        "an unreadable switch state must say so, never guess a level")
+    return "3 commands, the ladder, the state in words, honest when blind"
+
+
+@gate(24, "the Pages screen is the queue keyed by URL, with per-page command")
+def _g24():
+    html = S.pages_screen(_CTX)
+    assert "https://x.test/a" in html and "https://x.test/b" in html
+    assert html.count("s3fixpage(") == 2, "each page needs its one command"
+    assert "draft ready" in html, "a drafted fix must be visible on its page"
+    assert "s3run(" in html, "per-problem execute buttons must be present"
+    assert S.MANUAL_WHERE["slow_page"][:20] in html, (
+        "a manual problem on a page must say where it IS fixed")
+    empty = S.pages_screen({"orders": []})
+    assert "No page carries an open problem" in empty
+    return "2 pages, 2 page commands, drafts marked, manual explained"
+
+
+@gate(25, "robots.txt and llms.txt tell the truth in every state")
+def _g25():
+    blank = S.robots_panel({})
+    assert "Not checked yet" in blank and "Probe now" in blank
+    assert "Not generated yet" in blank, "an absent llms.txt must say so"
+    full = S.robots_panel({
+        "crawler_access": {"robots_found": True, "has_sitemap": True,
+                           "blocked_count": 1, "allowed_count": 5,
+                           "bots": [{"bot": "GPTBot", "blocked": False},
+                                    {"bot": "Google-Extended", "blocked": True}]},
+        "llms_txt": "# site\nline\n" * 40})
+    assert "GPTBot" in full and "Google-Extended" in full
+    assert "blocked" in full and "allowed" in full
+    assert "1 AI crawler(s) blocked" in full
+    assert "/seo/llms.txt" in full, "where it is served must be stated"
+    return "blank state honest, live state names every bot"
+
+
+@gate(26, "backlinks: honest about the missing vendor, alive where free")
+def _g26():
+    html = S.backlinks_screen({"offpage": {"connected": False,
+                                           "reason": "DataForSEO not connected"},
+                               "link_gap": [], "prospect_stats": {},
+                               "prospects": []})
+    assert "DataForSEO not connected" in html, "the vendor gap must be named"
+    assert html.count("needs DataForSEO") == 4, (
+        "all four authority cells must say why they are empty")
+    assert "Nothing sends itself" in html
+    gap = S.backlinks_screen({"offpage": {}, "prospect_stats": {},
+                              "link_gap": [{"domain": "omr.com",
+                                            "links": 3, "why": "covers rivals"}],
+                              "prospects": []})
+    assert "omr.com" in gap and "Draft a pitch" in gap
+    return "4 honest cells, the free layer works"
+
+
+@gate(27, "AEO and GEO screens render live data and honest absence")
+def _g27():
+    aeo = S.aeo_screen({"aeo": {"engines_live": 2, "prompts": [
+        {"prompt": "best automation agency munich", "mentioned": False,
+         "rivals_mentioned": ["rival.de"]}]}, "llms_txt": ""})
+    assert "rival.de" in aeo and "not you" in aeo
+    assert "Generate" in aeo, "a missing llms.txt must offer generation"
+    blank = S.aeo_screen({})
+    assert "No probe on record" in blank
+    geo = S.geo_gen_screen({"geo": {"score": 40, "uncovered_markets": ["UK"]},
+                            "ranks": [{"market": "de", "position": 7}]})
+    assert ">40<" in geo or "40" in geo
+    loc = S.geo_local_screen({})
+    assert "not connected" in loc, "GBP absence must be stated"
+    return "engines, rivals, markets, and every absence spoken"
+
+
+@gate(28, "the cockpit card presses the same machinery from Decide")
+def _g28():
+    html = S.cockpit_card(_CTX)
+    assert "/seo/fix-all" in html, "the agent command is missing"
+    assert "vx2read('seowork')" in html, "reviewing drafts must deep-link"
+    import content_engine_vx2 as VX
+    board = VX.board_page("decide", "Decide", "What needs me?",
+                          {"seo_ctx": _CTX})
+    assert "Command the SEO agent" in board and "/seo/fix-all" in board
+    return "on the card and on the Decide board itself"
+
+
+@gate(29, "the three new endpoints exist and refuse empty input")
+def _g29():
+    src = io.open("content_engine_api.py", encoding="utf-8").read()
+    for route in ('"/seo/run-orders"', '"/seo/fix-page"', '"/seo/draft-all"'):
+        assert route in src, f"missing route {route}"
+    assert "no order ids given" in src and "no url given" in src, (
+        "empty input must be refused with words, not a stack trace")
+    assert "Capped per click" in src, (
+        "draft-all spends model calls; the cap and the reason must be stated")
+    return "run-orders, fix-page, draft-all; empty input refused"
+
+
+@gate(30, "the dispatch filters really narrow to a page or a set of ids")
+def _g30():
+    import content_engine_seo_fixer as FIX
+    o1 = WO.make_order("h1_missing", "https://x.test/one", severity="high")
+    o2 = WO.make_order("h1_missing", "https://x.test/two", severity="high")
+    store = _Store([o1, o2])
+    crawl = {"urls": [
+        {"url": "https://x.test/one", "status": 200, "title": "One",
+         "content": "<p>x</p>"},
+        {"url": "https://x.test/two", "status": 200, "title": "Two",
+         "content": "<p>y</p>"}]}
+    rep = FIX.run_batch(store, crawl=crawl, auto_only=False,
+                        urls=["https://x.test/one"])
+    assert rep["attempted"] == 1, f"url filter leaked: {rep}"
+    assert rep["details"][0]["url"] == "https://x.test/one"
+    store2 = _Store([o1, o2])
+    rep2 = FIX.run_batch(store2, crawl=crawl, auto_only=False, ids=[o2["id"]])
+    assert rep2["attempted"] == 1 and rep2["details"][0]["id"] == o2["id"], (
+        f"id filter leaked: {rep2}")
+    return "one page in, one page ran; one id in, one id ran"
 
 
 # ---------------------------------------------------------------------------

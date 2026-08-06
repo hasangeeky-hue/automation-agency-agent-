@@ -146,16 +146,31 @@ LINKS = _all_link_html()
 PAGE = V.page(active="decide")
 
 
-@gate(8, "every JS function a card button calls is defined on the page")
+@gate(8, "every JS function ANY screen calls is defined on the page shell")
 def _g8():
     called = set()
     for lk in LINKS:
         called |= set(re.findall(r"onclick=[\"']\s*([A-Za-z_$][\w]*)\s*\(", lk))
+    # THE FETCHED SCREENS TOO. Readouts arrive by fetch and cannot bring
+    # their own scripts to life, so every handler they call must already be
+    # on the shell. This shipped broken once: the SEO screens called s3run
+    # while the shell defined nothing of the sort - a 200 endpoint behind a
+    # dead button.
+    import content_engine_vx2_seo as _S
+    import content_engine_vx2_ads as _A
+    for tab in ("seocmd", "seopages", "seotech", "seooff", "seoaeo",
+                "seogeo", "seowork", "mbcmd"):
+        html = V.readout_page(tab, {"seo_ctx": {
+            "orders": [{"id": "x1", "code": "schema_missing", "url": "/a",
+                        "severity": "high", "impact": 9, "status": "open"}],
+            "auto_level": "safe"}})
+        called |= set(re.findall(r"onclick=[\"']\s*([A-Za-z_$][\w]*)\s*\(",
+                                 html))
     missing = [f for f in sorted(called)
                if f"function {f}(" not in PAGE
                and f"function {f} (" not in PAGE]
     assert not missing, f"dead buttons, no such function: {missing}"
-    return f"{len(called)} distinct handlers, all defined"
+    return f"{len(called)} distinct handlers, all defined on the shell"
 
 
 @gate(9, "the three navigation overrides come AFTER the shared script")

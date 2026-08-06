@@ -2458,6 +2458,77 @@ def build_app():
     def seo_approve_all(type: str = "title"):
         return api_seo_approve_all(type)
 
+    # THE EXECUTION PATH. /seo/fix/{id} APPROVES a drafted proposal and
+    # refuses anything undrafted - correct, but it left the dashboard's
+    # "Fix now" and "Draft a fix" buttons with nowhere honest to land.
+    # These three run the fixer's ONE dispatch (run_batch) filtered to a
+    # set of orders, one page, or everything draftable, so a button behaves
+    # exactly like the nightly batch would on the same rows.
+    @app.post("/seo/run-orders")
+    async def seo_run_orders(request: Request):
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        ids = [str(x) for x in (d.get("ids") or []) if x][:200]
+        if not ids:
+            return {"ok": False, "message": "no order ids given; nothing ran"}
+        import content_engine_seo_ops as SEO
+        store = get_store()
+        rep = SEO.run_fixes(store, auto_only=False, limit=len(ids), ids=ids)
+        _log_decision(store, "seo_fix_ran",
+                      f"{len(ids)} order(s) by button",
+                      f"done {rep.get('done', 0)}, drafted "
+                      f"{rep.get('awaiting_approval', 0)}, "
+                      f"failed {rep.get('failed', 0)}")
+        return {"ok": True, **rep, "message":
+                f"{rep.get('done', 0)} fixed now, "
+                f"{rep.get('awaiting_approval', 0)} drafted for your "
+                f"approval, {rep.get('skipped', 0)} skipped with a reason, "
+                f"{rep.get('failed', 0)} failed."}
+
+    @app.post("/seo/fix-page")
+    async def seo_fix_page(request: Request):
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        url = str(d.get("url") or "").strip()
+        if not url:
+            return {"ok": False, "message": "no url given; nothing ran"}
+        import content_engine_seo_ops as SEO
+        store = get_store()
+        rep = SEO.run_fixes(store, auto_only=False, limit=50, urls=[url])
+        _log_decision(store, "seo_fix_ran", f"whole page {url[:80]}",
+                      f"done {rep.get('done', 0)}, drafted "
+                      f"{rep.get('awaiting_approval', 0)}")
+        return {"ok": True, **rep, "message":
+                f"{url}: {rep.get('done', 0)} fixed now, "
+                f"{rep.get('awaiting_approval', 0)} drafted for your "
+                f"approval. Nothing publishes without you."}
+
+    @app.post("/seo/draft-all")
+    def seo_draft_all(limit: int = 100):
+        """Draft every approval-gated fix. CAPPED PER CLICK: title and meta
+        drafts each cost one model call, so one click drafts up to `limit`
+        and says how many remain rather than silently spending the budget."""
+        import content_engine_seo_ops as SEO
+        import content_engine_workorders as WO
+        store = get_store()
+        limit = max(1, min(int(limit or 100), 250))
+        rep = SEO.run_fixes(store, auto_only=False, limit=limit)
+        remaining = sum(1 for o in WO.load(store)
+                        if o.get("status") == "open")
+        _log_decision(store, "seo_draft_all", f"batch of {limit}",
+                      f"drafted {rep.get('awaiting_approval', 0)}, "
+                      f"{remaining} still open")
+        return {"ok": True, **rep, "message":
+                f"{rep.get('done', 0)} fixed now, "
+                f"{rep.get('awaiting_approval', 0)} drafted. "
+                f"{remaining} orders still open - press again for the next "
+                f"batch. Capped per click because copy drafts cost model "
+                f"calls."}
+
     @app.get("/seo/llms.txt")
     def seo_llms_txt():
         from fastapi.responses import PlainTextResponse

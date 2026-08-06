@@ -310,7 +310,7 @@ def _theme_instruction(code, url):
 
 
 def run_batch(store, *, crawl=None, limit: int = 20, auto_only: bool = True,
-              dry_run: bool = False, types=None) -> dict:
+              dry_run: bool = False, types=None, urls=None, ids=None) -> dict:
     """Execute the highest-priority open work orders. Returns a run report.
 
     Safe by default: only `auto` orders run; copy changes become proposals.
@@ -318,6 +318,13 @@ def run_batch(store, *, crawl=None, limit: int = 20, auto_only: bool = True,
     `types` narrows further — used by the unattended 24/7 mode to run only the
     fixes that change nothing a reader sees, leaving body rewrites out unless
     they were explicitly opted into.
+
+    `urls` and `ids` narrow to ONE PAGE or ONE SET OF ROWS — the dashboard's
+    "fix this page" and per-issue buttons. Filters on the pool, not a second
+    dispatch: whatever path an order takes here is the same path it takes in
+    the nightly batch, so a button can never behave differently from the
+    scheduler. That is the one-dispatch rule, and it exists because two
+    dispatches is how a button starts to lie.
     """
     crawl = crawl or {}
     by_url = {r.get("url"): r for r in crawl.get("urls", [])}
@@ -325,7 +332,14 @@ def run_batch(store, *, crawl=None, limit: int = 20, auto_only: bool = True,
                   for r in crawl.get("urls", [])
                   if r.get("status") == 200 and r.get("title")]
     orders = WO.load(store)
-    batch = WO.next_batch(orders, auto_only=auto_only, limit=limit,
+    pool = orders
+    if urls:
+        want = {str(u).rstrip("/") for u in urls}
+        pool = [o for o in pool if str(o.get("url", "")).rstrip("/") in want]
+    if ids:
+        want_ids = set(ids)
+        pool = [o for o in pool if o.get("id") in want_ids]
+    batch = WO.next_batch(pool, auto_only=auto_only, limit=limit,
                           types=types)
     report = {"attempted": 0, "done": 0, "skipped": 0, "failed": 0,
               "awaiting_approval": 0, "details": []}

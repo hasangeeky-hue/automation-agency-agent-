@@ -1,28 +1,33 @@
 """
 content_engine_vx2_seo.py
 ============================================================================
-THE SEO AUDIT ENVIRONMENT. Ten subsections, one grammar: find the problem,
-read what it costs, press the thing that repairs it.
+THE SEO / AEO / GEO ENVIRONMENT, SEMRUSH GRADE. Ten subsections plus the
+Pages screen, one grammar: find the problem, read what it costs, press the
+thing that repairs it - or command the agent to press all of them.
 
-WHY THIS REPLACES THE CARD GRID
-  The old SEO section reported. It told you a score was 96 and left you to
-  work out which of 2,294 cards to act on. An audit tool does the opposite:
-  it leads with the list of what is wrong, sorted by what it costs, and puts
-  the repair on the same row as the problem.
+THE LAYERS
+  the agent band     command the fleet: fix everything, draft everything,
+                     approve everything, and the OFF / SAFE / ALL switch
+  the audit band     health ring, the three decision counts, seven sub-scores
+  the issue rows     one row per problem type, count, cost, repair
+  the pages screen   the same queue keyed by URL: every page, its problems,
+                     one button that fixes everything fixable on it
 
 THE ONE RULE THAT MATTERS HERE
   A button's appearance is decided by what it is ALLOWED to do, never by what
-  it is about. There are exactly four action classes and they never share a
-  look, so a click can never surprise you:
+  it is about. Four action classes, four looks, read from
+  content_engine_workorders - the same tables the scheduler obeys. And every
+  button lands on the fixer's ONE dispatch (run_batch), so a click can never
+  behave differently from the nightly run.
 
-    NOW      it repairs immediately and nothing a reader sees changes
-    BODY     it repairs immediately and DOES edit the page a reader sees
-    DRAFT    it writes a fix and waits for you
-    MANUAL   no button, because no button here could honestly work
-
-  The class comes from content_engine_workorders, which is also what the
-  scheduler obeys. One vocabulary: the screen cannot promise a power the
-  engine does not have.
+WIRING (all endpoints exist in content_engine_api)
+  /seo/run-orders    execute or draft a set of order ids through the dispatch
+  /seo/fix-page      everything fixable on one URL
+  /seo/fix-all       the agent's unattended set, now
+  /seo/draft-all     draft every approval-gated fix (LLM cost capped per click)
+  /seo/approve-all   publish every drafted rewrite of one type
+  /seo/fix/{id}      approve ONE drafted proposal
+  /seo/auto          the OFF / SAFE / ALL ladder the scheduler obeys
 ============================================================================
 """
 
@@ -31,6 +36,7 @@ from __future__ import annotations
 import html as _html
 
 import content_engine_workorders as WO
+import content_engine_vx2_shapes as SH
 
 # ---------------------------------------------------------------------------
 # THE 33 PROBLEMS, IN WORDS
@@ -265,24 +271,92 @@ def e(v) -> str:
     return _html.escape(str(v if v is not None else ""), quote=True)
 
 
+def _open(orders):
+    return [o for o in (orders or ())
+            if o.get("status") in ("open", "awaiting_approval", "")]
+
+
 # ---------------------------------------------------------------------------
-# THE HEADER - the same on all ten screens
+# THE AGENT COMMAND BAND - you have agents; this is where you command them
+# ---------------------------------------------------------------------------
+def agent_band(ctx: dict) -> str:
+    """The fleet's cockpit: status in words, three bulk commands, the ladder.
+
+    Every button here drives machinery that already runs unattended; the band
+    only makes the commands visible. The level is READ from the scheduler's
+    own switch, never assumed - if it cannot be read, the band says so."""
+    orders = _open((ctx or {}).get("orders"))
+    drafted = [o for o in orders if (o.get("extra") or {}).get("proposal")]
+    n_fix = sum(1 for o in orders if action_class(o.get("code")) != "MANUAL")
+    n_man = sum(1 for o in orders if action_class(o.get("code")) == "MANUAL")
+    level = str((ctx or {}).get("auto_level") or "unknown").lower()
+    runs = (ctx or {}).get("engine_runs") or {}
+    last_fix = runs.get("fixes") or ""
+
+    lvl_word = {"off": "OFF - the agent waits for your clicks",
+                "safe": "SAFE 24/7 - invisible fixes run unattended",
+                "all": "ALL - includes body edits readers can see",
+                }.get(level, "switch state could not be read")
+
+    kinds = sorted({o.get("type") for o in drafted if o.get("type")})
+    approve_btns = "".join(
+        f"<button class='cta a2draft' onclick=\"act('/seo/approve-all?"
+        f"type={e(k)}')\">Approve every {e(k)} rewrite</button>"
+        for k in kinds[:4])
+
+    def _lvl(lv, label):
+        on = " s3on" if level == lv else ""
+        return (f"<button class='s3lvl{on}' "
+                f"onclick=\"seoAutoSet('{lv}',this)\">{label}</button>")
+
+    return (
+        "<div class='s3band'>"
+        "<div class='s3who'>"
+        "<p class='s3k'>Your SEO agent</p>"
+        f"<p class='s3state'><b>{e(lvl_word)}</b>"
+        + (f" &middot; last fix run {e(str(last_fix)[:16])}" if last_fix else
+           " &middot; no fix run recorded yet")
+        + "</p>"
+        f"<p class='s3sub'>{n_fix} problems it can repair &middot; "
+        f"{len(drafted)} drafted and waiting for you &middot; "
+        f"{n_man} need hands outside the engine. Safe fixes change nothing "
+        f"a reader sees; everything else is drafted and queued below.</p>"
+        "</div>"
+        "<div class='s3cmds'>"
+        "<button class='cta s3go' onclick=\"act('/seo/fix-all')\">"
+        "Agent: fix everything it may, now</button>"
+        + (f"<button class='cta a2draft' onclick=\"s3draftall(this)\">"
+           f"Agent: draft fixes for all {n_fix}</button>" if n_fix else "")
+        + approve_btns
+        + "</div>"
+        "<div class='s3ladder' role='group' aria-label='unattended level'>"
+        + _lvl("off", "OFF") + _lvl("safe", "SAFE 24/7") + _lvl("all", "ALL")
+        + "</div></div>")
+
+
+# ---------------------------------------------------------------------------
+# THE AUDIT BAND - ring, the three decision counts, seven sub-scores
 # ---------------------------------------------------------------------------
 def health_header(ctx: dict) -> str:
-    """Site health, its parts, and when it was last measured."""
+    """Site health as the SEMrush band: the ring, the three counts that are
+    decisions, and the seven sub-scores. Absent data reads as absent."""
     sc = (ctx or {}).get("scores") or {}
     overall = sc.get("overall")
     parts = [("Technical", sc.get("technical")), ("Indexing", sc.get("indexing")),
              ("On-page", sc.get("on_page")), ("Off-page", sc.get("off_page")),
              ("Visibility", sc.get("visibility")), ("Answer engines", sc.get("aeo")),
              ("Local", sc.get("local"))]
-    # The crawler writes {"base", "at", "count", "urls"}. Reading "pages"
-    # first, as an earlier draft did, silently printed "0 pages crawled" over
-    # a real 176-page crawl: a true-looking number that was never measured.
+    # The crawler writes {"base","at","count","urls"}; reading "pages" first
+    # once printed "0 pages crawled" over a real 176-page crawl.
     crawl = (ctx or {}).get("crawl") or {}
     pages = (sc.get("pages_scored") or crawl.get("count")
              or crawl.get("pages") or len(crawl.get("urls") or ()))
     when = crawl.get("at") or crawl.get("crawled_at") or ""
+
+    orders = _open((ctx or {}).get("orders"))
+    drafted = sum(1 for o in orders if (o.get("extra") or {}).get("proposal"))
+    n_fix = sum(1 for o in orders if action_class(o.get("code")) != "MANUAL")
+    n_man = sum(1 for o in orders if action_class(o.get("code")) == "MANUAL")
 
     def band(v):
         if v is None:
@@ -297,14 +371,24 @@ def health_header(ctx: dict) -> str:
         + (f"{int(v)}" if v is not None else "not measured") + "</span></div>"
         for n, v in parts)
 
-    big = f"{int(overall)}" if overall is not None else "--"
+    if overall is not None:
+        ring = SH.score_ring(float(overall), size=104)
+    else:
+        ring = "<span class='s2nonebig'>--</span>"
     note = ("Not measured yet. Run a crawl and these fill in."
             if overall is None else
             "100 means every check the engine knows how to run came back clean.")
     return (
-        "<div class='s2hd'>"
-        f"<div class='s2score {band(overall)}'><b>{big}</b>"
+        "<div class='s2hd s3hd'>"
+        f"<div class='s2score {band(overall)}'>{ring}"
         f"<span>Site health</span></div>"
+        "<div class='s3trio'>"
+        f"<div class='s3cell s3e'><b>{n_fix}</b><span>fixable from this "
+        f"screen</span></div>"
+        f"<div class='s3cell s3d'><b>{drafted}</b><span>drafted, waiting for "
+        f"you</span></div>"
+        f"<div class='s3cell s3w'><b>{n_man}</b><span>manual: theme or host "
+        f"work</span></div></div>"
         f"<div class='s2parts'>{bars}</div>"
         "<div class='s2crawl'>"
         f"<p class='s2cn'><b>{e(pages or 0)}</b> pages crawled</p>"
@@ -350,26 +434,38 @@ def _issue_row(r: dict, ctx: dict) -> str:
     sev_cls = {"Error": "s2bad", "Warning": "s2warn", "Notice": "s2none"}[sev_word]
     n = r["n"]
     title = code.replace("_", " ")
+    headline = (f"{n} page{'s' if n != 1 else ''} affected") if n else "clean"
 
-    if n:
-        headline = (f"{n} page{'s' if n != 1 else ''} affected")
-    else:
-        headline = "clean"
+    drafted = [o for o in r["orders"] if (o.get("extra") or {}).get("proposal")]
+    undone = [o for o in r["orders"] if not (o.get("extra") or {}).get("proposal")]
 
-    # the button. MANUAL never renders one that posts.
+    # THE BUTTONS, WIRED TO WHAT THEY CLAIM.
+    #   run    -> /seo/run-orders: the fixer's dispatch. Applies NOW/BODY
+    #             codes, drafts DRAFT codes. This used to point at the
+    #             APPROVE endpoint, which refuses anything undrafted - a
+    #             button that looked live and was not.
+    #   approve-> /seo/fix/{id} per drafted order, which publishes.
+    btns = []
     if not n:
-        btn = "<span class='s2clean'>nothing to fix</span>"
+        btns.append("<span class='s2clean'>nothing to fix</span>")
     elif r["action"] == "MANUAL":
         where = MANUAL_WHERE.get(code, "outside the engine")
-        btn = (f"<button class='cta {cls}' onclick=\"s2manual('{e(code)}')\">"
-               f"{e(label)}</button>"
-               f"<div class='s2man' id='s2m-{e(code)}' style='display:none'>"
-               f"Fixed in: {e(where)}</div>")
+        btns.append(f"<button class='cta {cls}' "
+                    f"onclick=\"s2manual('{e(code)}')\">{e(label)}</button>"
+                    f"<div class='s2man' id='s2m-{e(code)}' "
+                    f"style='display:none'>Fixed in: {e(where)}</div>")
     else:
-        ids = ",".join(str(o.get("id")) for o in r["orders"][:50])
-        btn = (f"<button class='cta {cls}' "
-               f"onclick=\"s2fix('{e(code)}','{e(ids)}',this)\">"
-               f"{e(label)}{'' if n == 1 else f' &middot; {n}'}</button>")
+        if undone:
+            ids = ",".join(str(o.get("id")) for o in undone[:100])
+            btns.append(f"<button class='cta {cls}' "
+                        f"onclick=\"s3run('{e(ids)}',this)\">{e(label)}"
+                        f"{'' if len(undone) == 1 else f' &middot; {len(undone)}'}"
+                        f"</button>")
+        if drafted:
+            ids = ",".join(str(o.get("id")) for o in drafted[:100])
+            btns.append(f"<button class='cta a2draft' "
+                        f"onclick=\"s2fix('{e(code)}','{e(ids)}',this)\">"
+                        f"Approve {len(drafted)} drafted</button>")
 
     urls = "".join(
         f"<li><a href='{e(o.get('url'))}' target='_blank' rel='noopener'>"
@@ -388,7 +484,7 @@ def _issue_row(r: dict, ctx: dict) -> str:
         f"<span class='s2sev {sev_cls}'>{sev_word}</span>"
         f"<span class='s2code'>{e(title)}</span>"
         f"<span class='s2n'>{e(headline)}</span>"
-        f"<span class='s2act'>{btn}</span>"
+        f"<span class='s2act'>{''.join(btns)}</span>"
         "</div>"
         f"<div class='s2body' id='b-{e(code)}' style='display:none'>"
         f"<p class='s2why'>{e(EXPLAIN.get(code, 'No explanation written for this check yet.'))}</p>"
@@ -420,21 +516,356 @@ def issues_panel(ctx: dict, codes: list, *, title: str = "") -> str:
 
 
 # ---------------------------------------------------------------------------
-# THE TEN SCREENS
+# THE PAGES SCREEN - the same queue, keyed by URL
 # ---------------------------------------------------------------------------
-def _measure_rows(cards) -> str:
-    """Measurements that are not issues still belong on the screen, but under
-    the issues, because a number you cannot act on never outranks a repair."""
-    import content_engine_vx2 as V
-    if not cards:
-        return ""
-    lines = sorted((V._line(c) for c in cards), key=lambda t: t[0])
-    return ("<div class='s2meas'><h4>Measurements</h4>"
-            + "".join(h for _w, h in lines) + "</div>")
+def pages_screen(ctx: dict) -> str:
+    """Every page with open problems: its counts, its worst issue, and one
+    button that runs everything fixable on it through the single dispatch."""
+    orders = _open((ctx or {}).get("orders"))
+    by_url = {}
+    for o in orders:
+        by_url.setdefault(str(o.get("url") or "(no url)"), []).append(o)
+    pages = sorted(by_url.items(),
+                   key=lambda kv: -sum(float(o.get("impact") or 0)
+                                       for o in kv[1]))
+    head = (f"<div class='s2sum'><span class='s2big'>{len(pages)}</span>"
+            f"<span class='s2lb'>pages carrying open problems</span>"
+            f"<span class='s2big s2bad'>{len(orders)}</span>"
+            f"<span class='s2lb'>problems across them</span></div>")
+    if not pages:
+        return head + ("<p class='s2empty'>No page carries an open problem. "
+                       "Either the site is clean or no audit has run; the "
+                       "crawl date in the band above says which.</p>")
+    rows = []
+    for i, (url, ords) in enumerate(pages[:40]):
+        errs = sum(1 for o in ords
+                   if SEVERITY.get(o.get("severity"), ("", 3))[0] == "Error")
+        worst = max(ords, key=lambda o: float(o.get("impact") or 0))
+        fixable = [o for o in ords if action_class(o.get("code")) != "MANUAL"]
+        drafted = sum(1 for o in ords if (o.get("extra") or {}).get("proposal"))
+        fixes = "".join(
+            f"<div class='s3fx'>"
+            f"<span class='s2sev {('s2bad' if action_class(o.get('code')) in ('NOW','BODY') else 's2none') if False else ''}' "
+            f"style='color:var(--{ {'NOW':'okc','BODY':'warnc','DRAFT':'ac','MANUAL':'ft'}[action_class(o.get('code'))] })'>"
+            f"{action_class(o.get('code'))}</span>"
+            f"<span class='s3fxn'>{e(str(o.get('code')).replace('_',' '))}"
+            + (f" <i class='s3prop'>draft ready</i>"
+               if (o.get('extra') or {}).get('proposal') else "")
+            + "</span>"
+            f"<span class='s3fxw'>{e(DOES.get(o.get('code'), MANUAL_WHERE.get(o.get('code'), '')))[:70]}</span>"
+            + (f"<button class='cta a2draft' onclick=\"s2fix('one','{e(o.get('id'))}',this)\">Approve</button>"
+               if (o.get('extra') or {}).get('proposal') else
+               (f"<button class='cta {ACTION_LOOK[action_class(o.get('code'))][1]}' "
+                f"onclick=\"s3run('{e(o.get('id'))}',this)\">"
+                f"{e(ACTION_LOOK[action_class(o.get('code'))][0])}</button>"
+                if action_class(o.get('code')) != 'MANUAL' else
+                f"<span class='s2clean'>{e(MANUAL_WHERE.get(o.get('code'), 'manual'))[:38]}</span>"))
+            + "</div>"
+            for o in sorted(ords, key=lambda x: -float(x.get("impact") or 0))[:12])
+        rows.append(
+            f"<div class='s3pg' id='pg-{i}'>"
+            f"<div class='s3pr' onclick=\"s2open('pg{i}')\">"
+            f"<span class='s3pill{' s3pe' if errs else ''}'>{len(ords)}</span>"
+            f"<a class='s3url' href='{e(url)}' target='_blank' rel='noopener' "
+            f"onclick='event.stopPropagation()'>{e(url)}</a>"
+            f"<span class='s2n'>{errs} error{'s' if errs != 1 else ''} &middot; "
+            f"worst: {e(str(worst.get('code')).replace('_', ' '))}"
+            + (f" &middot; {drafted} drafted" if drafted else "") + "</span>"
+            f"<span class='s2act'>"
+            + (f"<button class='cta s3go' "
+               f"onclick=\"s3fixpage('{e(url)}',this)\">Fix this page"
+               f" &middot; {len(fixable)}</button>" if fixable else
+               "<span class='s2clean'>manual only</span>")
+            + "</span></div>"
+            f"<div class='s2body' id='b-pg{i}' style='display:none'>{fixes}"
+            "</div></div>")
+    more = ("" if len(pages) <= 40 else
+            f"<p class='s2more' style='list-style:none'>and {len(pages) - 40} "
+            f"more pages, worst first</p>")
+    return head + "".join(rows) + more
 
 
+# ---------------------------------------------------------------------------
+# ROBOTS & AI ACCESS - robots.txt, llms.txt, who may read you
+# ---------------------------------------------------------------------------
+def robots_panel(ctx: dict) -> str:
+    acc = (ctx or {}).get("crawler_access") or {}
+    llms = (ctx or {}).get("llms_txt") or ""
+    bots = acc.get("bots") or []
+
+    def chk(ok, text, extra=""):
+        cls = "y" if ok else ("n" if ok is False else "q")
+        mark = "&#10003;" if ok else ("&#10005;" if ok is False else "?")
+        return (f"<div class='s3chk'><i class='{cls}'>{mark}</i>{text}"
+                f"{extra}</div>")
+
+    left = ["<p class='s3k'>robots.txt</p>"]
+    if not acc:
+        left.append("<p class='s2empty'>Not checked yet. The crawler-access "
+                    "probe runs with the AEO engine; press it and this fills "
+                    "with your live robots rules.</p>"
+                    "<button class='cta' onclick=\"act('/aeo/probe')\">"
+                    "Probe now</button>")
+    else:
+        left.append(chk(bool(acc.get("robots_found")),
+                        "robots.txt exists and answers"))
+        left.append(chk(bool(acc.get("has_sitemap")),
+                        "Sitemap declared in it"))
+        blocked = int(acc.get("blocked_count") or 0)
+        left.append(chk(blocked == 0,
+                        f"{blocked} AI crawler(s) blocked" if blocked
+                        else "No AI crawler is blocked"))
+        if acc.get("reason"):
+            left.append(f"<p class='s2empty'>{e(acc['reason'])}</p>")
+
+    right = ["<p class='s3k'>llms.txt &middot; what AI engines are told "
+             "about you</p>"]
+    if llms:
+        lines = str(llms).count("\n") + 1
+        right.append(chk(True, f"Generated &middot; {len(str(llms)) // 1024} KB, "
+                               f"{lines} lines &middot; served at /seo/llms.txt"))
+        right.append("<button class='cta' onclick=\"act('/aeo/probe')\">"
+                     "Regenerate with the next probe</button>")
+    else:
+        right.append(chk(False, "Not generated yet - AI engines have nothing "
+                                "curated to read about you"))
+        right.append("<button class='cta' onclick=\"act('/aeo/probe')\">"
+                     "Generate it now</button>")
+
+    grid = ""
+    if bots:
+        cells = []
+        for b in bots[:12]:
+            down = bool(b.get("blocked")) or str(b.get("status", "")).lower() in (
+                "blocked", "disallowed")
+            col = "var(--bad)" if down else "var(--okc)"
+            word = "blocked" if down else "allowed"
+            cells.append(f"<div class='s3bot'><i style='background:{col}'></i>"
+                         f"{e(b.get('bot') or b.get('vendor') or '?')}"
+                         f"<span>{word}</span></div>")
+        grid = ("<p class='s3k'>AI crawlers &middot; from your live robots "
+                "rules</p><div class='s3bots'>" + "".join(cells) + "</div>"
+                "<p class='s2empty' style='padding:6px 2px'>A blocked AI "
+                "crawler cannot cite you. Changing a rule is a robots.txt "
+                "edit; the engine drafts it, your theme carries it.</p>")
+
+    return ("<div class='s3two'><div class='s3panel'>" + "".join(left)
+            + "</div><div class='s3panel'>" + "".join(right) + grid
+            + "</div></div>")
+
+
+# ---------------------------------------------------------------------------
+# BACKLINKS - authority, the gap, the pitch pipeline
+# ---------------------------------------------------------------------------
+def backlinks_screen(ctx: dict) -> str:
+    off = (ctx or {}).get("offpage") or {}
+    gap = (ctx or {}).get("link_gap") or []
+    pstats = (ctx or {}).get("prospect_stats") or {}
+    prospects = (ctx or {}).get("prospects") or []
+
+    out = []
+    if not off.get("connected"):
+        out.append(f"<div class='s3banner'>{e(off.get('reason') or 'DataForSEO is not connected.')}"
+                   " The four cells below fill the hour the key is added; "
+                   "everything under them runs free, now.</div>")
+        cells = [("Authority score", None), ("Backlinks", None),
+                 ("Referring domains", None), ("New / lost &middot; 30d", None)]
+    else:
+        cells = [("Authority score", off.get("rank") or off.get("authority")),
+                 ("Backlinks", off.get("backlinks")),
+                 ("Referring domains", off.get("referring_domains")),
+                 ("New / lost &middot; 30d",
+                  f"{off.get('new', '?')} / {off.get('lost', '?')}")]
+    out.append("<div class='s3stats'>" + "".join(
+        f"<div class='s3stat'><span class='s3k'>{k}</span>"
+        + (f"<b>{e(v)}</b>" if v not in (None, "") else
+           "<b class='s2nonebig'>--</b><span class='s3d'>needs DataForSEO"
+           "</span>")
+        + "</div>" for k, v in cells) + "</div>")
+
+    out.append("<p class='s3k' style='margin-top:16px'>The link gap &middot; "
+               "free, from SERP overlap with rivals</p>")
+    if gap:
+        rows = []
+        for g in gap[:12]:
+            if isinstance(g, dict):
+                dom = g.get("domain") or g.get("url") or "?"
+                why = g.get("why") or g.get("reason") or ""
+                n = g.get("links") or g.get("count") or ""
+            else:
+                dom, why, n = str(g), "", ""
+            rows.append(f"<div class='s3fx'><span class='s3fxn mono'>{e(dom)}"
+                        f"</span><span class='s3fxw'>{e(why)[:80]}</span>"
+                        f"<span class='s2n'>{e(n)}</span>"
+                        f"<button class='cta a2draft' "
+                        f"onclick=\"act('/seo/prospecting')\">Draft a pitch"
+                        f"</button></div>")
+        out.append("".join(rows))
+    else:
+        out.append("<p class='s2empty'>No gap computed yet. It builds from "
+                   "rank overlap with rivals; run the off-page engine and "
+                   "name rivals to fill it.</p>"
+                   "<button class='cta' onclick=\"act('/seo/offpage')\">"
+                   "Run off-page now</button>")
+
+    out.append("<p class='s3k' style='margin-top:16px'>Pitch pipeline &middot; "
+               "your outreach machinery, aimed at links</p>")
+    out.append("<div class='s3stats'>"
+               f"<div class='s3stat'><span class='s3k'>Prospects</span>"
+               f"<b>{int(pstats.get('total') or len(prospects) or 0)}</b></div>"
+               f"<div class='s3stat'><span class='s3k'>Awaiting approval</span>"
+               f"<b>{int(pstats.get('awaiting_approval') or 0)}</b></div>"
+               f"<div class='s3stat'><span class='s3k'>Contacted</span>"
+               f"<b>{int(pstats.get('contacted') or 0)}</b></div>"
+               f"<div class='s3stat'><span class='s3k'>Replied &middot; placed"
+               f"</span><b>{int(pstats.get('replied') or 0)}"
+               f"<span style='font-size:13px;color:var(--ft)'> &middot; "
+               f"{int(pstats.get('placed') or 0)}</span></b></div></div>")
+    out.append("<p class='s2empty' style='padding:6px 2px'>Nothing sends "
+               "itself: every pitch is drafted, queued, and waits for your "
+               "approval like every other email in the engine.</p>")
+    return "".join(out)
+
+
+# ---------------------------------------------------------------------------
+# AEO - do answer engines name you, and what feeds them
+# ---------------------------------------------------------------------------
+def aeo_screen(ctx: dict) -> str:
+    aeo = (ctx or {}).get("aeo") or {}
+    prompts = aeo.get("prompts") or []
+    llms = (ctx or {}).get("llms_txt") or ""
+    quot = (ctx or {}).get("quotable") or {}
+
+    named = sum(1 for p in prompts if p.get("mentioned"))
+    hero = (SH.ratio_bar(named, len(prompts)) if prompts else
+            "<span class='s2nonebig'>--</span>")
+    out = [f"<div class='s3aeohd'><div><p class='s3k'>Mention rate</p>{hero}"
+           f"<p class='s3d'>{aeo.get('engines_live', 0)} engine(s) probed "
+           f"live</p></div>"
+           "<button class='cta s3go' onclick=\"act('/aeo/probe')\">"
+           "Probe the engines now</button></div>"]
+
+    if prompts:
+        rows = []
+        for p in prompts[:10]:
+            hit = bool(p.get("mentioned"))
+            pill = ("<span class='s3pill' style='background:var(--okbg);"
+                    "color:var(--okc)'>named you</span>" if hit else
+                    "<span class='s3pill s3pe'>not you</span>")
+            rivals = p.get("rivals_mentioned") or []
+            rv = (", ".join(map(str, rivals[:3])) if rivals
+                  else "no rival named either - open ground")
+            rows.append(f"<div class='s3fx'><span class='s3fxn'>"
+                        f"{e(p.get('prompt'))[:70]}</span>{pill}"
+                        f"<span class='s3fxw'>{e(rv)[:70]}</span></div>")
+        out.append("<p class='s3k'>Question by question &middot; last probe"
+                   "</p>" + "".join(rows))
+    else:
+        out.append("<p class='s2empty'>No probe on record. Press the button "
+                   "above: it asks the live engines your buyers' questions "
+                   "and records who they named.</p>")
+
+    levers = []
+    levers.append(f"<div class='s3fx'><span class='s3fxn'>llms.txt</span>"
+                  f"<span class='s3fxw'>"
+                  + ("generated and served" if llms else
+                     "not generated - engines have nothing curated to read")
+                  + "</span><button class='cta a2draft' "
+                    "onclick=\"act('/aeo/probe')\">"
+                  + ("Regenerate" if llms else "Generate") + "</button></div>")
+    nq = len(quot.get("blocks") or quot.get("pages") or ()) if isinstance(quot, dict) else 0
+    levers.append(f"<div class='s3fx'><span class='s3fxn'>Quotable blocks"
+                  f"</span><span class='s3fxw'>"
+                  + (f"{nq} pages carry a liftable 40-word answer" if nq else
+                     "no page carries a block an engine can lift verbatim")
+                  + "</span></div>")
+    out.append("<p class='s3k' style='margin-top:14px'>What feeds an answer "
+               "engine</p>" + "".join(levers))
+    return "".join(out)
+
+
+# ---------------------------------------------------------------------------
+# GEO - markets, and the local pack
+# ---------------------------------------------------------------------------
+def geo_gen_screen(ctx: dict) -> str:
+    g = (ctx or {}).get("geo") or {}
+    ranks = (ctx or {}).get("ranks") or []
+    out = []
+    cells = [("GEO score", g.get("score")),
+             ("Markets uncovered", len(g.get("uncovered_markets") or ())),
+             ("Market pages missing", len(g.get("missing_market_pages") or ())),
+             ("hreflang issues", len(g.get("hreflang_issues") or ()))]
+    out.append("<div class='s3stats'>" + "".join(
+        f"<div class='s3stat'><span class='s3k'>{k}</span>"
+        + (f"<b>{e(v)}</b>" if v not in (None, "") else
+           "<b class='s2nonebig'>--</b>")
+        + "</div>" for k, v in cells) + "</div>")
+    out.append("<button class='cta' style='margin-top:10px' "
+               "onclick=\"act('/geo/audit')\">Audit markets now</button>")
+    if ranks:
+        by = {}
+        for r in ranks:
+            if isinstance(r, dict):
+                by.setdefault(str(r.get("market") or r.get("gl") or "all"),
+                              []).append(r)
+        rows = []
+        for mk, rs in sorted(by.items(), key=lambda kv: -len(kv[1]))[:6]:
+            best = min((int(r.get("position") or 99) for r in rs), default=99)
+            rows.append(f"<div class='s3fx'><span class='s3fxn'>{e(mk)}</span>"
+                        f"<span class='s3fxw'>{len(rs)} tracked keywords"
+                        f"</span><span class='s2n'>best position {best}"
+                        f"</span></div>")
+        out.append("<p class='s3k' style='margin-top:14px'>By market &middot; "
+                   "from live SERPs</p>" + "".join(rows))
+    else:
+        out.append("<p class='s2empty'>No rank rows today. The rank engine "
+                   "runs on the cadence; its rows land here per market.</p>")
+    return "".join(out)
+
+
+def geo_local_screen(ctx: dict) -> str:
+    nap = (ctx or {}).get("nap") or {}
+    grid = (ctx or {}).get("local_grid") or []
+    local = (ctx or {}).get("local") or {}
+    out = []
+
+    def chk(ok, text, extra=""):
+        cls = "y" if ok else ("n" if ok is False else "q")
+        mark = "&#10003;" if ok else ("&#10005;" if ok is False else "?")
+        return (f"<div class='s3chk'><i class='{cls}'>{mark}</i>{text}"
+                f"{extra}</div>")
+
+    out.append("<p class='s3k'>Local pack &middot; Munich</p>")
+    if nap:
+        ok = nap.get("consistent")
+        out.append(chk(bool(ok) if ok is not None else None,
+                       "NAP consistent across footer, imprint and schema"
+                       if ok else "NAP inconsistency found - name, address or "
+                       "phone differ between pages"))
+        if nap.get("issues"):
+            for i in list(nap["issues"])[:4]:
+                out.append(f"<p class='s2empty'>{e(i)}</p>")
+    else:
+        out.append(chk(None, "NAP not checked yet - runs with the GEO audit"))
+    gbp = bool(local.get("connected") or local.get("gbp"))
+    out.append(chk(gbp if gbp else False,
+                   "Google Business Profile connected" if gbp else
+                   "Google Business Profile not connected - the rank grid "
+                   "stays honest and empty until it is"))
+    if grid:
+        out.append(f"<p class='s3k' style='margin-top:12px'>Rank grid &middot; "
+                   f"{len(grid)} cells measured</p>")
+    out.append("<button class='cta' style='margin-top:10px' "
+               "onclick=\"act('/geo/audit')\">Run the local audit</button>")
+    return "".join(out)
+
+
+# ---------------------------------------------------------------------------
+# THE SCREENS the router calls
+# ---------------------------------------------------------------------------
 def command_screen(ctx: dict, cards) -> str:
-    """SEO Command: health, then the ten repairs worth the most."""
+    """SEO Command: the agent band, the audit band, the ten repairs worth
+    the most, and the door to the Pages screen."""
     orders = (ctx or {}).get("orders") or []
     rows = _rows_for(orders, list(EXPLAIN))
     top = [r for r in rows if r["n"]][:10]
@@ -445,7 +876,19 @@ def command_screen(ctx: dict, cards) -> str:
         body = ("<p class='s2empty'>Nothing is queued for repair. Either the "
                 "site is clean or no audit has run. The crawl date above "
                 "tells you which.</p>")
-    return health_header(ctx) + body + _measure_rows(cards)
+    door = ("<div class='s3door'><button class='cta' "
+            "onclick=\"vx2read('seopages')\">Open the Pages screen: every "
+            "URL, its problems, its buttons &rsaquo;</button></div>")
+    return (agent_band(ctx) + health_header(ctx) + body + door
+            + _measure_rows(cards))
+
+
+def technical_screen(ctx: dict, cards) -> str:
+    """Technical & Indexing: its issues plus robots.txt, llms.txt and the
+    AI crawler grid - the machine-access layer lives with technical."""
+    _t, codes = TAB_CODES["seotech"]
+    return (health_header(ctx) + robots_panel(ctx)
+            + issues_panel(ctx, codes) + _measure_rows(cards))
 
 
 def issue_screen(tab: str, ctx: dict, cards) -> str:
@@ -471,22 +914,94 @@ def workorders_screen(ctx: dict, cards) -> str:
                     f"approve-all?type={e(k)}')\">Approve every "
                     f"{e(k)} rewrite</button>" for k in kinds)
                 + "</div>")
-    return (health_header(ctx) + bulk
+    return (agent_band(ctx) + health_header(ctx) + bulk
             + issues_panel(ctx, list(EXPLAIN)) + _measure_rows(cards))
 
 
+def cockpit_card(ctx: dict) -> str:
+    """The SEO command card for the Decide board: the same machinery,
+    pressed without leaving the cockpit."""
+    sc = (ctx or {}).get("scores") or {}
+    overall = sc.get("overall")
+    orders = _open((ctx or {}).get("orders"))
+    drafted = sum(1 for o in orders if (o.get("extra") or {}).get("proposal"))
+    n_fix = sum(1 for o in orders if action_class(o.get("code")) != "MANUAL")
+    unindexed = sum(1 for o in orders if o.get("code") == "not_indexed")
+    level = str((ctx or {}).get("auto_level") or "unknown").lower()
+    ring = (SH.score_ring(float(overall), size=46)
+            if overall is not None else "<span class='s2nonebig'>--</span>")
+    return (
+        "<div class='s3ck'>"
+        f"<span class='s3ckring'>{ring}</span>"
+        f"<span class='s3ckt'><b>Found &middot; site health "
+        f"{'--' if overall is None else int(overall)}</b>"
+        f"<span>agent at {e(level.upper() if level != 'unknown' else '?')}"
+        f" &middot; {n_fix} fixable &middot; {drafted} drafted and waiting"
+        + (f" &middot; {unindexed} unindexed" if unindexed else "")
+        + "</span></span>"
+        "<span class='s2act'>"
+        "<button class='cta s3go' onclick=\"act('/seo/fix-all')\">"
+        "Agent: fix everything</button>"
+        + (f"<button class='cta a2draft' onclick=\"vx2read('seowork')\">"
+           f"Review the {drafted}</button>" if drafted else "")
+        + (f"<button class='cta' onclick=\"act('/seo/indexnow')\">"
+           f"Submit {unindexed}</button>" if unindexed else "")
+        + "</span></div>")
+
+
+def _measure_rows(cards) -> str:
+    """Measurements that are not issues still belong on the screen, but under
+    the issues, because a number you cannot act on never outranks a repair."""
+    import content_engine_vx2 as V
+    if not cards:
+        return ""
+    lines = sorted((V._line(c) for c in cards), key=lambda t: t[0])
+    return ("<div class='s2meas'><h4>Measurements</h4>"
+            + "".join(h for _w, h in lines) + "</div>")
+
+
 CSS = """
-.s2hd{display:grid;grid-template-columns:auto 1fr auto;gap:22px;align-items:center;
-padding:16px 18px;border:1px solid var(--ln);border-radius:10px;margin:0 0 18px;
-background:var(--card)}
+/* ---- the agent command band ---- */
+.s3band{display:flex;gap:16px;align-items:center;flex-wrap:wrap;
+padding:13px 16px;border:1px solid var(--ln);border-left:3px solid var(--ac);
+border-radius:11px;background:var(--card);margin:0 0 14px}
+.s3band .s3who{flex:1;min-width:240px}
+.s3k{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;
+letter-spacing:.13em;text-transform:uppercase;color:var(--ft);margin:0 0 4px}
+.s3state{margin:0;font-size:13px}
+.s3sub{margin:3px 0 0;font-size:11.5px;color:var(--ft);line-height:1.5;
+max-width:52ch}
+.s3cmds{display:flex;gap:8px;flex-wrap:wrap}
+.cta.s3go{background:var(--ac);color:#fff;border-color:var(--ac)}
+.cta.s3go:hover{filter:brightness(1.1)}
+.s3ladder{display:flex;border:1px solid var(--ln);border-radius:8px;
+overflow:hidden}
+.s3lvl{font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:700;
+padding:7px 12px;border:0;background:transparent;color:var(--ft);
+cursor:pointer}
+.s3lvl.s3on{background:var(--ac);color:#fff}
+/* ---- the audit band ---- */
+.s2hd{display:grid;grid-template-columns:auto auto 1fr auto;gap:20px;
+align-items:center;padding:16px 18px;border:1px solid var(--ln);
+border-radius:10px;margin:0 0 18px;background:var(--card)}
 .s2score{display:flex;flex-direction:column;align-items:center;min-width:96px;
-padding:10px 14px;border-radius:9px;border:1px solid var(--ln)}
-.s2score b{font-size:38px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+padding:8px 10px;gap:4px}
 .s2score span{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
-color:var(--ft);margin-top:5px}
-.s2score.s2ok b{color:var(--okc)}.s2score.s2warn b{color:var(--warnc)}
-.s2score.s2bad b{color:var(--bad)}.s2score.s2none b{color:var(--ft)}
-.s2parts{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px}
+color:var(--ft)}
+.s2score.s2ok{color:var(--okc)}.s2score.s2warn{color:var(--warnc)}
+.s2score.s2bad{color:var(--bad)}.s2score.s2none{color:var(--ft)}
+.s2nonebig{font-family:ui-monospace,Menlo,monospace;font-size:34px;
+font-weight:800;color:var(--ft)}
+.s3trio{display:flex;flex-direction:column;gap:7px}
+.s3cell{border:1px solid var(--ln);border-radius:9px;padding:7px 12px;
+display:flex;align-items:baseline;gap:8px;min-width:180px}
+.s3cell b{font-family:ui-monospace,Menlo,monospace;font-size:19px;
+font-weight:700}
+.s3cell span{font-size:11px;color:var(--dm)}
+.s3cell.s3e{border-left:3px solid var(--bad)}.s3cell.s3e b{color:var(--bad)}
+.s3cell.s3d{border-left:3px solid var(--ac)}.s3cell.s3d b{color:var(--ac)}
+.s3cell.s3w{border-left:3px solid var(--warnc)}.s3cell.s3w b{color:var(--warnc)}
+.s2parts{display:grid;grid-template-columns:1fr;gap:4px}
 .s2part{display:flex;align-items:center;gap:9px;font-size:12px}
 .s2pl{width:96px;color:var(--dm);flex:none}
 .s2bar{flex:1;height:5px;background:var(--ln);border-radius:3px;overflow:hidden}
@@ -497,9 +1012,11 @@ color:var(--ft);margin-top:5px}
 font-size:11px;font-variant-numeric:tabular-nums}
 .s2pv.s2ok{color:var(--okc)}.s2pv.s2warn{color:var(--warnc)}
 .s2pv.s2bad{color:var(--bad)}.s2pv.s2none{color:var(--ft)}
-.s2crawl{text-align:right;display:flex;flex-direction:column;gap:5px;align-items:flex-end}
+.s2crawl{text-align:right;display:flex;flex-direction:column;gap:5px;
+align-items:flex-end}
 .s2cn{margin:0;font-size:13px}.s2cw{margin:0;font-size:11px;color:var(--ft)}
 .s2note{grid-column:1/-1;margin:2px 0 0;font-size:11.5px;color:var(--ft)}
+/* ---- issues ---- */
 .s2sum{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 12px;
 padding:0 2px}
 .s2big{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
@@ -510,8 +1027,8 @@ background:var(--card);overflow:hidden}
 .s2issue.s2quiet{opacity:.5}
 .s2ir{display:flex;align-items:center;gap:12px;padding:9px 12px;cursor:pointer}
 .s2ir:hover{background:var(--hov)}
-.s2sev{font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
-width:62px;flex:none}
+.s2sev{font-size:9.5px;font-weight:800;letter-spacing:.09em;
+text-transform:uppercase;width:62px;flex:none}
 .s2sev.s2bad{color:var(--bad)}.s2sev.s2warn{color:var(--warnc)}
 .s2sev.s2none{color:var(--ft)}
 .s2code{flex:1;font-size:13.5px;text-transform:capitalize;min-width:0;
@@ -520,8 +1037,10 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .s2act{flex:none;display:flex;gap:6px;align-items:center}
 .s2clean{font-size:11px;color:var(--ft)}
 .s2body{padding:2px 14px 14px 76px;border-top:1px solid var(--ln)}
-.s2why{margin:10px 0 6px;font-size:13px;line-height:1.6;color:var(--dm);max-width:66ch}
-.s2does{margin:0 0 8px;font-size:12.5px;line-height:1.55;color:var(--tx);max-width:66ch}
+.s2why{margin:10px 0 6px;font-size:13px;line-height:1.6;color:var(--dm);
+max-width:66ch}
+.s2does{margin:0 0 8px;font-size:12.5px;line-height:1.55;color:var(--tx);
+max-width:66ch}
 .s2urls{margin:6px 0 0;padding:0 0 0 16px;font-size:12px;line-height:1.75}
 .s2urls a{color:var(--ac);text-decoration:none}
 .s2urls a:hover{text-decoration:underline}
@@ -529,33 +1048,94 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .s2prop{color:var(--okc)}
 .s2more{color:var(--ft);list-style:none}
 .s2man{margin:8px 0 0;font-size:12.5px;color:var(--dm)}
-.s2h4{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ft);
-margin:18px 0 8px}
+.s2h4{font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+color:var(--ft);margin:18px 0 8px}
 .s2meas{margin-top:26px;border-top:1px solid var(--ln);padding-top:6px}
 .s2meas h4{font-size:11px;letter-spacing:.09em;text-transform:uppercase;
 color:var(--ft);margin:10px 0 4px}
-.s2bulk{border:1px solid var(--ln);border-left:3px solid var(--ac);border-radius:8px;
-padding:12px 14px;margin:0 0 14px;display:flex;gap:10px;align-items:center;
-flex-wrap:wrap;background:var(--card)}
+.s2bulk{border:1px solid var(--ln);border-left:3px solid var(--ac);
+border-radius:8px;padding:12px 14px;margin:0 0 14px;display:flex;gap:10px;
+align-items:center;flex-wrap:wrap;background:var(--card)}
 .s2bulk p{margin:0;font-size:13px;flex:1;min-width:220px}
-.s2empty{font-size:13px;color:var(--ft);padding:14px 2px;margin:0;line-height:1.6}
-/* THE BASE. Without this the issue-row buttons inherit nothing: VX2 styles
-   .v2act .cta and these live in .s2act, so the browser was drawing them with
-   its own default chrome (border-style: outset, a black border on the dashed
-   one). Caught by reading computed styles in a browser, not by reading CSS. */
-.s2act .cta,.s2bulk .cta,.s2crawl .cta{font-size:11.5px;padding:4px 10px;
-border:1px solid var(--ln);border-radius:6px;background:var(--card);
-color:var(--tx);cursor:pointer;font-family:inherit;white-space:nowrap}
-.s2act .cta:hover,.s2bulk .cta:hover,.s2crawl .cta:hover{filter:brightness(1.08)}
-.s2act .cta[disabled]{opacity:.55;cursor:default}
-/* the four action classes, never the same look twice */
+.s2empty{font-size:13px;color:var(--ft);padding:12px 10px;margin:0;
+line-height:1.55}
+/* base for every button on these screens */
+.s2act .cta,.s2bulk .cta,.s2crawl .cta,.s3band .cta,.s3panel .cta,
+.s3fx .cta,.s3door .cta,.s3aeohd .cta,.s3ck .cta{font-size:11.5px;
+padding:4px 10px;border:1px solid var(--ln);border-radius:6px;
+background:var(--card);color:var(--tx);cursor:pointer;font-family:inherit;
+white-space:nowrap}
+.s2act .cta:hover,.s3fx .cta:hover{filter:brightness(1.08)}
+.s2act .cta[disabled],.s3fx .cta[disabled]{opacity:.55;cursor:default}
 .cta.a2now{border-color:var(--okc);color:var(--okc)}
 .cta.a2body{border-color:var(--warnc);color:var(--warnc)}
 .cta.a2draft{border-color:var(--ac);color:var(--ac)}
 .cta.a2manual{border-style:dashed;border-color:var(--ft);color:var(--ft)}
+/* ---- pages ---- */
+.s3pg{border:1px solid var(--ln);border-radius:8px;margin:0 0 6px;
+background:var(--card);overflow:hidden}
+.s3pr{display:flex;align-items:center;gap:12px;padding:9px 12px;cursor:pointer}
+.s3pr:hover{background:var(--hov)}
+.s3pill{font-family:ui-monospace,Menlo,monospace;font-size:10px;
+font-weight:700;border-radius:8px;padding:2px 8px;background:var(--warnbg);
+color:var(--warnc);flex:none}
+.s3pill.s3pe{background:var(--badbg);color:var(--bad)}
+.s3url{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+white-space:nowrap;color:var(--ac);text-decoration:none;font-size:12.5px}
+.s3url:hover{text-decoration:underline}
+.s3fx{display:flex;gap:12px;align-items:center;padding:6px 0;font-size:12.5px;
+border-bottom:1px solid var(--ln)}
+.s3fx:last-child{border-bottom:0}
+.s3fx .s2sev{width:52px}
+.s3fxn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+white-space:nowrap}
+.s3fxn.mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.s3prop{font-style:normal;font-size:10px;color:var(--okc);
+font-family:ui-monospace,monospace}
+.s3fxw{flex:1.2;min-width:0;color:var(--ft);font-size:11.5px;overflow:hidden;
+text-overflow:ellipsis;white-space:nowrap}
+.s3door{margin:14px 0 0}
+/* ---- robots / llms / two-up panels ---- */
+.s3two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 16px}
+.s3panel{border:1px solid var(--ln);border-radius:10px;background:var(--card);
+padding:13px 15px}
+.s3chk{display:flex;gap:9px;align-items:center;font-size:12.5px;padding:5px 0}
+.s3chk i{width:15px;height:15px;border-radius:50%;flex:none;display:flex;
+align-items:center;justify-content:center;color:#fff;font-size:9px;
+font-style:normal}
+.s3chk i.y{background:var(--okc)}.s3chk i.n{background:var(--bad)}
+.s3chk i.q{background:var(--ft)}
+.s3bots{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+gap:7px;margin-top:6px}
+.s3bot{display:flex;gap:8px;align-items:center;border:1px solid var(--ln);
+border-radius:8px;padding:7px 10px;font-size:12px}
+.s3bot i{width:8px;height:8px;border-radius:50%;flex:none}
+.s3bot span{margin-left:auto;font-family:ui-monospace,monospace;
+font-size:10.5px;color:var(--ft)}
+/* ---- stats / banner ---- */
+.s3banner{border:1px dashed var(--warnc);background:var(--warnbg);
+color:var(--warnc);border-radius:9px;padding:9px 13px;font-size:12.5px;
+margin:0 0 12px}
+.s3stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+gap:9px}
+.s3stat{border:1px solid var(--ln);border-radius:10px;background:var(--card);
+padding:10px 13px;display:flex;flex-direction:column;gap:4px}
+.s3stat b{font-family:ui-monospace,Menlo,monospace;font-size:20px;
+font-weight:700;line-height:1}
+.s3d{font-size:10.5px;color:var(--ft)}
+.s3aeohd{display:flex;gap:16px;align-items:center;justify-content:space-between;
+flex-wrap:wrap;margin:0 0 14px}
+/* ---- the cockpit card ---- */
+.s3ck{display:flex;gap:13px;align-items:center;flex-wrap:wrap;
+border:1px solid var(--ln);border-left:3px solid var(--bad);border-radius:9px;
+background:var(--card);padding:10px 13px;margin:0 0 7px}
+.s3ckring{flex:none;color:var(--bad)}
+.s3ckt{flex:1;min-width:200px;display:flex;flex-direction:column;gap:1px}
+.s3ckt b{font-size:13.5px}
+.s3ckt span{font-size:11.5px;color:var(--dm)}
 @media (max-width:900px){.s2hd{grid-template-columns:1fr}
-.s2parts{grid-template-columns:1fr}.s2crawl{text-align:left;align-items:flex-start}
-.s2body{padding-left:14px}}
+.s2crawl{text-align:left;align-items:flex-start}.s2body{padding-left:14px}
+.s3two{grid-template-columns:1fr}}
 """
 
 JS = ("<script>"
@@ -565,14 +1145,13 @@ JS = ("<script>"
       "if(m)m.style.display=(m.style.display==='none')?'block':'none';"
       "var b=document.getElementById('b-'+c);if(b)b.style.display='block';"
       "if(window.event)window.event.stopPropagation();}"
-      # ONE fix entry point. It posts the ids the row is holding, so the
-      # button repairs exactly the pages the row just told you about.
+      # APPROVE drafted proposals - one POST per order to /seo/fix/{id}
       "async function s2fix(code,ids,btn){"
       "if(window.event)window.event.stopPropagation();"
       "var list=String(ids||'').split(',').filter(Boolean);"
-      "if(!list.length){toast('Nothing queued for '+code);return;}"
+      "if(!list.length){toast('Nothing drafted for '+code);return;}"
       "var lab=btn?btn.textContent:'';"
-      "if(btn){btn.disabled=true;btn.textContent='Working\\u2026';}"
+      "if(btn){btn.disabled=true;btn.textContent='Publishing\\u2026';}"
       "var ok=0,bad=0,last='';"
       "for(var i=0;i<list.length;i++){try{"
       "var r=await fetch('/seo/fix/'+list[i],{method:'POST'});"
@@ -581,6 +1160,50 @@ JS = ("<script>"
       "else{bad++;last=(j&&(j.result||j.error))||'refused';}"
       "}catch(e){bad++;last='could not reach the engine';}}"
       "if(btn){btn.disabled=false;btn.textContent=lab;}"
-      "toast(ok+' repaired'+(bad?(', '+bad+' could not be: '+last):'')"
-      "+(ok?'. Re-run the checks to see the score move.':''),!bad);"
-      "}</script>")
+      "toast(ok+' published'+(bad?(', '+bad+' could not be: '+last):'')"
+      "+(ok?'. Re-run the checks to see the score move.':''),!bad);}"
+      # RUN a set of orders through the fixer's dispatch: applies what it
+      # may, drafts what needs you. One POST, one report.
+      "async function s3run(ids,btn){"
+      "if(window.event)window.event.stopPropagation();"
+      "var lab=btn?btn.textContent:'';"
+      "if(btn){btn.disabled=true;btn.textContent='Working\\u2026';}"
+      "try{var r=await fetch('/seo/run-orders',{method:'POST',"
+      "headers:{'Content-Type':'application/json'},"
+      "body:JSON.stringify({ids:String(ids||'').split(',').filter(Boolean)})});"
+      "var j=await r.json();"
+      "toast((j&&j.message)||JSON.stringify(j).slice(0,140),j&&j.ok!==false);"
+      "}catch(e){toast('could not reach the engine \\u2014 nothing changed',"
+      "false);}if(btn){btn.disabled=false;btn.textContent=lab;}}"
+      # FIX ONE PAGE: everything fixable on a URL through the same dispatch
+      "async function s3fixpage(url,btn){"
+      "if(window.event)window.event.stopPropagation();"
+      "var lab=btn?btn.textContent:'';"
+      "if(btn){btn.disabled=true;btn.textContent='Working\\u2026';}"
+      "try{var r=await fetch('/seo/fix-page',{method:'POST',"
+      "headers:{'Content-Type':'application/json'},"
+      "body:JSON.stringify({url:url})});var j=await r.json();"
+      "toast((j&&j.message)||'done',j&&j.ok!==false);}"
+      "catch(e){toast('could not reach the engine \\u2014 nothing changed',"
+      "false);}if(btn){btn.disabled=false;btn.textContent=lab;}}"
+      # DRAFT EVERYTHING the agent may not apply alone (LLM cost capped)
+      "async function s3draftall(btn){"
+      "var lab=btn?btn.textContent:'';"
+      "if(btn){btn.disabled=true;btn.textContent='Drafting\\u2026';}"
+      "try{var r=await fetch('/seo/draft-all',{method:'POST'});"
+      "var j=await r.json();"
+      "toast((j&&j.message)||'drafting ran',j&&j.ok!==false);}"
+      "catch(e){toast('could not reach the engine \\u2014 nothing changed',"
+      "false);}if(btn){btn.disabled=false;btn.textContent=lab;}}"
+      # THE LADDER - the same /seo/auto switch the scheduler obeys
+      "async function seoAutoSet(level,btn){"
+      "try{var r=await fetch('/seo/auto',{method:'POST',"
+      "headers:{'Content-Type':'application/json'},"
+      "body:JSON.stringify({level:level})});var j=await r.json();"
+      "toast((j&&(j.message||j.error))||('level '+level),j&&j.ok!==false);"
+      "if(j&&j.ok!==false&&btn&&btn.parentNode){"
+      "btn.parentNode.querySelectorAll('.s3lvl').forEach(function(x){"
+      "x.classList.remove('s3on');});btn.classList.add('s3on');}}"
+      "catch(e){toast('could not reach the engine \\u2014 the switch is "
+      "unchanged',false);}}"
+      "</script>")

@@ -383,8 +383,9 @@ def readout(entry, ctx) -> str:
 # Both still read the same captured measurements underneath, so nothing here
 # can invent a figure the old boards would not also show.
 _SEO_SCREENS = {
-    "seocmd": "command", "seotech": "issues", "seoonpage": "issues",
-    "seokw": "issues", "seowork": "workorders",
+    "seocmd": "command", "seotech": "technical", "seoonpage": "issues",
+    "seokw": "issues", "seowork": "workorders", "seoaeo": "aeo",
+    "seooff": "backlinks", "seogen": "geo_gen", "seogeo": "geo_local",
 }
 
 
@@ -399,13 +400,26 @@ def special(entry, ctx, extra) -> str:
             head = _sec_head(entry, len(cards), _bad_count(cards))
             if kind == "command":
                 return head + S.command_screen(ctx, cards)
+            if kind == "technical":
+                return head + S.technical_screen(ctx, cards)
             if kind == "issues":
                 return head + S.issue_screen(tab, ctx, cards)
             if kind == "workorders":
                 return head + S.workorders_screen(ctx, cards)
-            # AEO, both GEO screens, Off-Page and Sources keep their
-            # measurements but gain the audit header, so the score you are
-            # judging them against is on screen with them.
+            if kind == "aeo":
+                return (head + S.health_header(ctx) + S.aeo_screen(ctx)
+                        + _rows(cards, entry, title="Measurements"))
+            if kind == "backlinks":
+                return (head + S.health_header(ctx) + S.backlinks_screen(ctx)
+                        + _rows(cards, entry, title="Measurements"))
+            if kind == "geo_gen":
+                return (head + S.health_header(ctx) + S.geo_gen_screen(ctx)
+                        + _rows(cards, entry, title="Measurements"))
+            if kind == "geo_local":
+                return (head + S.health_header(ctx) + S.geo_local_screen(ctx)
+                        + _rows(cards, entry, title="Measurements"))
+            # Sources keeps its measurements under the audit header, so the
+            # score you judge them against is on screen with them.
             return head + S.health_header(ctx) + _rows(cards, entry)
         if mod == "media" and tab == "mbcmd":
             import content_engine_vx2_ads as A
@@ -431,6 +445,20 @@ _GROUPS = ((0, "Needs attention"), (1, "Needs attention"),
 def readout_page(tab: str, kw: dict) -> str:
     """Breadcrumb, header with the hero drawn in its shape, then every
     measurement grouped: what wants you first, the healthy, the quiet."""
+    # THE PAGES SCREEN is VX2-only: the same 600 work orders keyed by URL
+    # instead of by issue type. It lives outside the manifest because the
+    # manifest mirrors the founder's 127 and this is a second door, not a
+    # 128th room.
+    if tab == "seopages":
+        import content_engine_vx2_seo as S
+        ctx = ctxs_from(kw).get("seo") or {}
+        return ("<div class='v2crumb'>"
+                "<a href='#market' onclick=\"return vx2go('market')\">Market"
+                "</a><span>&rsaquo;</span>"
+                "<a href='#seocmd' onclick=\"return vx2read('seocmd')\">SEO"
+                "</a><span>&rsaquo;</span><b>Pages</b></div>"
+                "<div class='v2readbody'>"
+                + S.health_header(ctx) + S.pages_screen(ctx) + "</div>")
     entry = next((m for m in MANIFEST if m["tab"] == tab), None)
     if not entry:
         return "<p class='v2empty'>No subsection by that name.</p>"
@@ -594,11 +622,22 @@ def board_page(bid, label, question, kw) -> str:
             f"<span class='v2shape'>{m['shape']}</span>"
             f"<span class='v2go'>&rsaquo;</span></div>")
 
+    # THE COCKPIT CARD: on Decide, the SEO agent's commands sit at the top,
+    # so the whole fleet can be run without ever opening the Market board.
+    seo_card = ""
+    if bid == "decide":
+        try:
+            import content_engine_vx2_seo as _S
+            seo_card = ("<p class='v2grp'>Command the SEO agent</p>"
+                        + _S.cockpit_card(kw.get("seo_ctx") or {}))
+        except Exception:
+            seo_card = ""
+
     return (f"<div class='v2board'><p class='v2q'>{e(question)}</p>"
             f"<div class='v2ans'><span class='v2hero'>{hero}</span>"
             f"<span class='v2unit'>{e(unit)}</span></div>"
             f"<p class='v2reading'>{e(reading)}</p>"
-            + todo_html
+            + seo_card + todo_html
             + f"<p class='v2grp'>Its {len(stats)} subsections</p>"
             + "".join(items) + "</div>")
 
@@ -784,8 +823,11 @@ def page(active: str = "decide", **kw) -> str:
     import content_engine_dashboard as _D
     shared = _D.dashboard_script({})
 
+    # seopages is the one VX2-only screen: reachable, routable, but not a
+    # manifest row, because the manifest mirrors the founder's 127 exactly.
+    tabmap = dict(wiring(), seopages="market")
     js = ("<script>"
-          "window.VX2TAB=" + _json.dumps(wiring()) + ";"
+          "window.VX2TAB=" + _json.dumps(tabmap) + ";"
           "window.VX2SEC=" + _json.dumps(section_wiring()) + ";"
           "window.VX2CUR='" + active + "';"
           # LEVEL 1 <-> 2: show a board, hide the readout
@@ -871,13 +913,18 @@ def page(active: str = "decide", **kw) -> str:
            "aria-label='Close details'>&#10005;</button></div>"
            "<div class='dlgbody' id='dlgbody'></div></div></div>")
 
+    # _SEOX.JS and _ADSX.JS MUST ship with the page. The readouts arrive by
+    # fetch, and fetched HTML cannot bring its own <script> to life - so if
+    # these are not on the shell, every s3run/s2fix/a3plat button in every
+    # SEO and Ads screen is silently undefined. That exact omission shipped
+    # once: the endpoint answered 200 while the button did nothing.
     return ("<!doctype html><html lang='en'><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
             "<title>Anthropos VX2</title><style>" + CSS + shapes.CSS
             + _SEOX.CSS + _ADSX.CSS + "</style></head>"
             "<body class='v2wrap'>" + "".join(nav)
             + "<div class='v2main'>" + "".join(pages) + "</div>"
-            + dlg + shared + js + "</body></html>")
+            + dlg + shared + js + _SEOX.JS + _ADSX.JS + "</body></html>")
 
 
 # ---------------------------------------------------------------------------
