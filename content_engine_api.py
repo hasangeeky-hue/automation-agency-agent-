@@ -1445,15 +1445,29 @@ def api_seo_approve_all(kind: str = "title", limit: int = 250) -> dict:
 
 
 def api_seo_apply(order_id: str) -> dict:
-    """Approve and publish ONE drafted copy change (title/meta)."""
+    """Approve and publish ONE drafted change.
+
+    Routes by code, because there are now two apply paths. The title and meta
+    rewrites go through the original fixer. The eight repairs added later
+    (headings, broken links, canonicals, indexing) go through fixer8, which
+    knows that a canonical is a meta field, an IndexNow submit is a ping, and
+    a redirect is a rule the engine cannot write at all.
+    """
     try:
         import content_engine_workorders as WO
         import content_engine_seo_fixer as FIX
+        import content_engine_seo_fixer8 as F8
         store = get_store()
         order = next((o for o in WO.load(store) if o.get("id") == order_id), None)
         if not order:
             return {"ok": False, "error": "work order not found"}
-        out = FIX.apply_proposal(order)
+        if not (order.get("extra") or {}).get("proposal"):
+            return {"ok": False, "status": "skipped",
+                    "result": ("Nothing has been drafted for this page yet. "
+                               "Run the fixer first, read what it proposes, "
+                               "then approve it.")}
+        out = (F8.apply(order) if order.get("code") in F8.FIXER8_CODES
+               else FIX.apply_proposal(order))
         WO.mark(store, order_id, out["status"], out.get("result", ""))
         _log_decision(store, "seo_fix_approved",
                       f"{order.get('code')} on {str(order.get('url'))[:80]}",

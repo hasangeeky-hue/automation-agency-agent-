@@ -70,6 +70,18 @@ APPROVAL_CODES = {
     "thin_content", "ctr_gap", "decay_refresh", "cannibalization",
 }
 
+# THE EIGHT THAT HAD NO FIX PATH AT ALL. They were detected, listed, and then
+# nothing could be done about them from anywhere in the system. Each now has a
+# repair in content_engine_seo_fixer8, and each is approval gated, because
+# they edit the body of a live page or change what search engines index.
+#
+# Imported rather than retyped: this file and the fixer must never hold two
+# hand-written copies of the same list. That exact shape of bug has cost this
+# engine five separate outages.
+from content_engine_seo_fixer8 import FIXER8_CODES as _F8  # noqa: E402
+
+APPROVAL_CODES |= set(_F8)
+
 # A code cannot be both "the engine applies this alone" and "the engine cannot
 # reach this". Overlap means the batcher promises work the fixer will refuse.
 assert not (AUTO_CODES & THEME_CODES), (

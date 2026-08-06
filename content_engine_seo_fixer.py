@@ -25,6 +25,7 @@ import re
 from typing import Optional
 
 import content_engine_workorders as WO
+import content_engine_seo_fixer8 as _F8
 
 log = logging.getLogger("seo_fixer")
 
@@ -354,9 +355,23 @@ def run_batch(store, *, crawl=None, limit: int = 20, auto_only: bool = True,
                 # in the queue as human work, with the actual instruction.
                 out = {"status": "awaiting_approval",
                        "result": _theme_instruction(code, o["url"])}
+            elif code in _F8.FIXER8_CODES:
+                # THE EIGHT THAT USED TO FALL THROUGH TO THE else BELOW. They
+                # were detected, queued, and answered with "no automated
+                # handler for this yet" forever. Each now drafts a real repair,
+                # and like every copy change it waits for approval.
+                _p = _F8.propose(o, rec, live_urls=list(by_url))
+                if _p.get("ok"):
+                    out = {"status": "awaiting_approval",
+                           "result": f"proposed: {_p['proposal']['says']}",
+                           "proposal": _p["proposal"]}
+                else:
+                    # A refusal is an ANSWER. "this page already has an H1" is
+                    # something the founder should read, not a silent skip.
+                    out = {"status": "skipped", "result": _p.get("why", "")}
             else:
                 out = {"status": "awaiting_approval",
-                       "result": ("No automated handler for this yet — it stays "
+                       "result": ("No automated handler for this yet - it stays "
                                   "in the queue as human work rather than being "
                                   "silently dropped.")}
         except Exception as e:                       # never let one fix kill the run

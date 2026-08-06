@@ -232,34 +232,99 @@ def _line(card) -> tuple:
             + f"</div>")
 
 
-def readout(entry, ctx) -> str:
-    """LEVEL 3 - a subsection. Every measurement as one line, problems first."""
-    cards = capture(entry["fn"], ctx) if entry.get("fn") else []
-    lines = sorted((_line(c) for c in cards), key=lambda t: t[0])
-    n_bad = sum(1 for c in cards
-                if _tone(c[6] if len(c) > 6 else "")[0] in ("bad", "warn"))
-    head = (f"<div class='v2head'><div><h3>{e(entry['label'])}</h3>"
-            f"<p class='v2sub2'>{len(cards)} measurements"
+def _bad_count(cards) -> int:
+    return sum(1 for c in cards
+               if _tone(c[6] if len(c) > 6 else "")[0] in ("bad", "warn"))
+
+
+def _sec_head(entry, n_cards, n_bad=0) -> str:
+    """The one-line title every subsection wears, whatever screen follows."""
+    return (f"<div class='v2head'><div><h3>{e(entry['label'])}</h3>"
+            f"<p class='v2sub2'>{n_cards} measurements"
             + (f" &middot; <b style='color:#D2453C'>{n_bad} want attention</b>"
                if n_bad else " &middot; nothing wants attention")
             + f"</p></div>"
             f"<span class='v2shape'>{entry['shape']}</span></div>")
+
+
+def _rows(cards, entry, title=None) -> str:
+    """Measurements as sorted lines, problems first."""
+    lines = sorted((_line(c) for c in cards), key=lambda t: t[0])
     if not lines:
-        why = entry.get("note") or ("Nothing measured here yet. This "
-                                    "subsection has no data on your box, "
-                                    "which is not the same as a zero.")
-        return head + f"<p class='v2empty'>{e(why)}</p>"
-    return head + "".join(h for _w, h in lines)
+        why = (entry or {}).get("note") or (
+            "Nothing measured here yet. This subsection has no data on your "
+            "box, which is not the same as a zero.")
+        return f"<p class='v2empty'>{e(why)}</p>"
+    body = "".join(h for _w, h in lines)
+    if title:
+        return (f"<div class='s2meas'><h4>{e(title)}</h4>{body}</div>")
+    return body
 
 
-def board_page(bid, label, question, ctxs, manifest) -> str:
+def readout(entry, ctx) -> str:
+    """LEVEL 3 - a subsection. Every measurement as one line, problems first."""
+    cards = capture(entry["fn"], ctx) if entry.get("fn") else []
+    return _sec_head(entry, len(cards), _bad_count(cards)) + _rows(cards, entry)
+
+
+# ---------------------------------------------------------------------------
+# SPECIAL SUBSECTIONS - where a list of measurements is the wrong shape
+# ---------------------------------------------------------------------------
+# Most of the 127 are answered well by a sorted list of measurements. Two
+# groups are not. The ten SEO subsections are an audit, which means the list
+# of what is WRONG has to lead and each row has to carry its repair. The
+# sixteen Media Buying subsections are an ad manager, which means a hierarchy
+# and a creative preview, not a row of numbers.
+#
+# Both still read the same captured measurements underneath, so nothing here
+# can invent a figure the old boards would not also show.
+_SEO_SCREENS = {
+    "seocmd": "command", "seotech": "issues", "seoonpage": "issues",
+    "seokw": "issues", "seowork": "workorders",
+}
+
+
+def special(entry, ctx, extra) -> str:
+    """Route a subsection to its purpose-built screen, or to the default."""
+    tab, mod = entry.get("tab"), entry.get("module")
+    try:
+        if mod == "seo":
+            import content_engine_vx2_seo as S
+            kind = _SEO_SCREENS.get(tab)
+            cards = capture(entry["fn"], ctx) if entry.get("fn") else []
+            head = _sec_head(entry, len(cards))
+            if kind == "command":
+                return head + S.command_screen(ctx, cards)
+            if kind == "issues":
+                return head + S.issue_screen(tab, ctx, cards)
+            if kind == "workorders":
+                return head + S.workorders_screen(ctx, cards)
+            # AEO, both GEO screens, Off-Page and Sources keep their
+            # measurements but gain the audit header, so the score you are
+            # judging them against is on screen with them.
+            return head + S.health_header(ctx) + _rows(cards, entry)
+        if mod == "media" and tab == "mbcmd":
+            import content_engine_vx2_ads as A
+            cards = capture(entry["fn"], ctx) if entry.get("fn") else []
+            return (_sec_head(entry, len(cards))
+                    + A.ads_screen(extra.get("ads") or {})
+                    + _rows(cards, entry, title="Measurements"))
+    except Exception as ex:
+        return (_sec_head(entry, 0)
+                + "<p class='v2empty'>This screen failed to build: "
+                + f"{e(type(ex).__name__)}. The other subsections are "
+                + "unaffected.</p>")
+    return readout(entry, ctx)
+
+
+def board_page(bid, label, question, ctxs, manifest, extra=None) -> str:
     """LEVEL 2 - a board: its subsections, problems surfaced first."""
     subs = [m for m in manifest if m["board"] == bid]
     blocks = []
     for m in subs:
         ctx = ctxs.get(m["module"]) or {}
         blocks.append(f"<section class='v2sec' id='vx2-{e(m['tab'])}'>"
-                      + readout(m, ctx) + "</section>")
+                      + special(m, ctx, extra or {}) + "</section>")
     return (f"<div class='v2board'><p class='v2q'>{e(question)}</p>"
             f"<h2 class='v2h2'>{e(label)}</h2>"
             f"<p class='v2meta'>{len(subs)} subsections</p>"
@@ -419,7 +484,8 @@ def board_html(bid: str, kw: dict) -> str:
     if not row:
         return "<p class='v2empty'>No board by that name.</p>"
     _b, label, q, _s = row
-    return board_page(bid, label, q, ctxs_from(kw), MANIFEST)
+    return board_page(bid, label, q, ctxs_from(kw), MANIFEST,
+                      extra={"ads": kw.get("ads") or {}})
 
 
 def page(active: str = "decide", **kw) -> str:
@@ -433,6 +499,8 @@ def page(active: str = "decide", **kw) -> str:
     that, so the second visit is instant and the first is small.
     """
     import json as _json
+    import content_engine_vx2_seo as _SEO
+    import content_engine_vx2_ads as _ADS
     active = active if any(b[0] == active for b in BOARDS) else "decide"
     counts = {bid: sum(1 for m in MANIFEST if m["board"] == bid)
               for bid, *_ in BOARDS}
@@ -519,10 +587,11 @@ def page(active: str = "decide", **kw) -> str:
 
     return ("<!doctype html><html lang='en'><head><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<title>Anthropos VX2</title><style>" + CSS + "</style></head>"
+            "<title>Anthropos VX2</title><style>" + CSS + _SEO.CSS + _ADS.CSS
+            + "</style></head>"
             "<body class='v2wrap'>" + "".join(nav)
             + "<div class='v2main'>" + "".join(pages) + "</div>"
-            + dlg + shared + js + "</body></html>")
+            + dlg + shared + js + _SEO.JS + _ADS.JS + "</body></html>")
 
 
 # ---------------------------------------------------------------------------
