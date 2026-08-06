@@ -1381,7 +1381,8 @@ def media_pages(ctx) -> dict:
             for tab, boards in _TAB_BOARDS.items()}
 
 
-def media_section(ctx) -> str:
+def media_section(ctx, legacy_campaigns: str = "",
+                  legacy_tracking: str = "") -> str:
     """All 296 cards in ONE dashboard section, same system as SEO."""
     H = _H()
     # THE SCREENS REPLACE THE 296 CARDS - the founder's order, same surgery
@@ -1390,7 +1391,9 @@ def media_section(ctx) -> str:
     import content_engine_media_screens as MSCR
     import content_engine_media_platforms as MPL
     import content_engine_seo_screens as SSCR
-    panels = MSCR.build_panels(ctx)
+    panels = MSCR.build_panels(
+        ctx, legacy_campaigns=legacy_campaigns,
+        legacy_tracking=legacy_tracking)
     _mo = ctx.get("media_orders") or []
     _mo_open = [o for o in _mo if o.get("status") == "open"]
     _chips = {"mbcmd": len((ctx.get("media_verdicts") or {}).get("verdicts") or ()),

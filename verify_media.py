@@ -289,6 +289,78 @@ def _g20():
     return "daily entry; empty case skips in words"
 
 
+def _full_page():
+    """The dashboard as the founder's browser receives it."""
+    import content_engine_dashboard as D
+    return D.dashboard_html(
+        saved_keys=set(), seo_ctx=None, media_ctx={"media_auto_level":
+                                                   "observe"},
+        system_ctx=None, risk_ctx=None, bi_ctx=None, outreach_ctx=None,
+        sga_ctx=None, factory_ctx=None, cockpit_ctx=None, jobs=[], st={},
+        health={}, month_spent=0.0, month_cap=40.0, day_spent=0.0,
+        day_cap=10.0, taste_skills=[], has_password=True, paused=False,
+        autonomy=False, bookings={}, ads={}, needles={}, last_eval=None,
+        meters={}, api_limits={}, ci_text="", ci_drive="",
+        autopilot_on=False, content_plan=None, web_tracking={},
+        reply_drafts=[], competitor_intel=None, google_insights={})
+
+
+def _media_panel(html):
+    i = html.find("id='sec-media'")
+    assert i > 0, "the media section is not on the page at all"
+    j = html.find("id='sec-", i + 10)
+    return html[i:j if j > 0 else None]
+
+
+@gate(21, "THE ASSEMBLED PAGE: the media panel is the new section, with no "
+          "old wall appended after it")
+def _g21():
+    # THE GATE THAT WAS MISSING. Gate 11 tested media_section in isolation and
+    # passed while the page appended the entire legacy media page after it -
+    # so the founder opened Media Buying and correctly said nothing had
+    # changed. A section is not a page; this renders the page.
+    panel = _media_panel(_full_page())
+    assert "s3band" in panel, "the agent band is not on the assembled page"
+    assert "mediaAutoSet('propose'" in panel, "the ladder is not on the page"
+    # the legacy at-a-glance strip must NOT be re-rendered after the section
+    assert "Media buying &mdash; at a glance" not in panel, (
+        "the old at-a-glance strip is back on the page")
+    assert "Media buying — at a glance" not in panel, (
+        "the old at-a-glance strip is back on the page")
+    stray = re.findall(r"<div class='card (?:overflowcard )?sev-", panel)
+    assert not stray, f"{len(stray)} old board card(s) on the assembled page"
+    return "band and ladder present; no at-a-glance strip; 0 board cards"
+
+
+@gate(22, "the AI media buyer survived the replacement, inside the tabs")
+def _g22():
+    panel = _media_panel(_full_page())
+    for need in ("draftCampaign(", "mediaSectionSend(",
+                 "Campaign drafts", "your AI media buyer"):
+        assert need in panel, (
+            f"the media buyer's {need} was destroyed by the card removal - "
+            f"drafting and chat are function, not decoration")
+    assert "What GA4 and Search Console actually recorded" in panel, (
+        "the GA4/GSC boards were dropped instead of moved into Tracking")
+    return "draft flow, chat and the Google boards all rehomed"
+
+
+@gate(23, "switching the agent level updates EVERY band on the page")
+def _g23():
+    # The band renders on Command and on Work Orders. Updating only the
+    # clicked ladder left the other screen claiming a level that was no
+    # longer true, which a real press in a browser exposed.
+    js = MS.JS
+    assert "document.querySelectorAll('.s3lvl')" in js, (
+        "mediaAutoSet updates only the pressed ladder; the second band "
+        "on the page keeps showing the old level")
+    assert "btn.parentNode.querySelectorAll" not in js
+    panel = _media_panel(_full_page())
+    assert panel.count("s3ladder") >= 2, (
+        "this gate assumes more than one band; if that changed, revisit it")
+    return f"{panel.count('s3ladder')} bands, one source of truth"
+
+
 if __name__ == "__main__":
     print("=" * 74)
     print("MEDIA + TAG MANAGER GATES")

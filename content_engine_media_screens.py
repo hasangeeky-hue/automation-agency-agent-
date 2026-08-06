@@ -455,16 +455,27 @@ def land_screen(ctx) -> str:
     return simple_screen("Landing pages, from GA4", "".join(rows))
 
 
-def build_panels(ctx) -> dict:
+def build_panels(ctx, *, legacy_campaigns: str = "",
+                 legacy_tracking: str = "") -> dict:
     """tab id -> screen html. THE one mapping, imported by media_section."""
     return {
         "mbcmd": cmd_screen(ctx),
         "mbhealth": health_screen(ctx),
-        "mbtypes": platform_screen_for("google", ctx),
+        # The Google manager, then the AI media buyer's own drafting flow -
+        # draft a campaign, read its reasoning, chat, deploy. That flow is
+        # real function, so it moved in here rather than being deleted with
+        # the card wall it used to sit under.
+        "mbtypes": (platform_screen_for("google", ctx)
+                    + (("<p class='s3k' style='margin-top:18px'>Campaign drafts &middot; your AI media buyer</p>"
+                        + legacy_campaigns)
+                       if legacy_campaigns else "")),
         "mbaud": meta_screen(ctx),
         "mbtarget": platform_screen_for("linkedin", ctx),
         "mbads": platform_screen_for("tiktok", ctx),
-        "mbconv": tracking_screen(ctx),
+        "mbconv": (tracking_screen(ctx)
+                   + (("<p class='s3k' style='margin-top:18px'>What GA4 and Search Console actually recorded</p>"
+                       + legacy_tracking)
+                      if legacy_tracking else "")),
         "mbterms": terms_screen(ctx),
         "mbkw": table_screen(
             "Paid keywords & quality score",
@@ -493,9 +504,14 @@ JS = ("<script>"
       "headers:{'Content-Type':'application/json'},"
       "body:JSON.stringify({level:level})});var j=await r.json();"
       "toast((j&&(j.message||j.error))||('level '+level),j&&j.ok!==false);"
-      "if(j&&j.ok!==false&&btn&&btn.parentNode){"
-      "btn.parentNode.querySelectorAll('.s3lvl').forEach(function(x){"
-      "x.classList.remove('s3on');});btn.classList.add('s3on');}}"
+      # EVERY ladder on the page follows, not just the one clicked. The
+      # band renders on Command AND Work Orders, so updating only the
+      # pressed one left the other screen showing a level that was no
+      # longer true - the same silence the founder objected to when an
+      # approval told him nothing.
+      "if(j&&j.ok!==false){document.querySelectorAll('.s3lvl').forEach("
+      "function(x){x.classList.remove('s3on');if(x.textContent.toLowerCase()"
+      ".indexOf(level)===0)x.classList.add('s3on');});}}"
       "catch(e){toast('could not reach the engine \\u2014 the switch is "
       "unchanged',false);}}"
       "async function mediaOptimize(btn){"

@@ -1133,7 +1133,12 @@ def _media_tracking_panel(web):
             f"<div style='margin-top:4px'>{queries}</div></div></div></div>")
 
 
-def _media_page(jobs, st, web_tracking=None):
+def _media_page(jobs, st, web_tracking=None, with_master=True):
+    # with_master=False is how the new Media Buying tabs carry the drafting
+    # flow: the campaign drafts and the buyer chat are real function and
+    # move in, while the old at-a-glance strip is dropped - the command
+    # screen's tiles already answer it, and answering it twice was the
+    # duplication the founder threw out.
     all_drafts = _media_campaigns(jobs)
     drafts = [(j, mb) for j, mb in all_drafts if j.get("status") != "aborted"]
     ads_on = bool(st.get("ads_api"))
@@ -1188,7 +1193,19 @@ def _media_page(jobs, st, web_tracking=None):
                 "<div class='ctrl'><button class='cbtn' onclick=\"nav('map')\">Go to System Map →</button></div></div>")
     else:
         note = ""
-    return master + _media_tracking_panel(web_tracking) + chat_card + note + cards
+    # THE ACTION SURVIVES THE STRIP. "Draft a campaign now" lived inside the
+    # at-a-glance master; dropping the strip silently dropped the primary
+    # button with it, which a gate caught before the founder did. Without the
+    # master, a slim command bar carries the same action.
+    slim = ("" if with_master else
+            "<div class='ctrl' style='margin:0 0 10px'>"
+            "<button class='sbtn' id='draftbtn' onclick='draftCampaign()'>"
+            "✍️ Draft a campaign now</button>"
+            "<span class='dim' style='align-self:center'>Runs the media "
+            "buyer on your ICP. A full campaign appears below in ~15s, "
+            "drafted - nothing spends until you deploy it.</span></div>")
+    return ((master if with_master else slim)
+            + _media_tracking_panel(web_tracking) + chat_card + note + cards)
 
 
 # ---------------------------------------------------------------------------
@@ -4286,7 +4303,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # ---- Media buying boards (16 boards / 296 cards), same card kit ----
     try:
         import content_engine_media_boards as _MB
-        _media_all = _MB.media_section(media_ctx or {})
+        _media_all = _MB.media_section(
+            media_ctx or {},
+            # web_tracking=None: the tracking panel has its own tab now,
+            # and rendering it in the Google Ads tab too was the same number
+            # answered twice - the duplication this rebuild exists to end.
+            legacy_campaigns=_media_page(jobs, st, None, with_master=False),
+            legacy_tracking=(_ga4_board(google_insights,
+                             "Website tracking (GA4)")
+                             + _gsc_board(google_insights)))
     except Exception as _e2:
         _media_all = (p_media + "<div class='card full'><p class='ct'>Media boards unavailable</p>"
                       f"<p class='cc'>{_esc(str(_e2))}</p></div>")
@@ -4450,7 +4475,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          "Search, AI-answer and geo visibility — every SEO board in one place.", _seo_all),
         ("media", "🛒", "Media Buying", "Media Buying · Google Ads",
          "296 cards across 16 boards — what a senior media buyer reads before deciding.",
-         _media_all + p_media),
+         # THE PANEL IS THE SECTION. p_media used to be appended here, so
+         # the old media wall sat under the new screens and the founder
+         # read the page as unchanged. Its working parts now live inside
+         # the tabs; only the emergency fallback above still uses it.
+         _media_all),
         ("system", "🩺", "System & Wiring", "System & Wiring",
          "Agents, health, wiring and machines — merged. 214 cards across 12 boards.",
          _system_all),
