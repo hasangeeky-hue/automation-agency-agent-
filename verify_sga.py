@@ -263,17 +263,46 @@ def _g15():
     return "age, gender, country drawn; nothing estimated when absent"
 
 
-@gate(16, "the social inbox reads comments and never answers for you")
+@gate(16, "replies are drafted and posted only by a human click")
 def _g16():
+    # THE CONTRACT GREW. Before, the inbox was read-only and the gate
+    # asserted it said so. The founder asked twice for replying, so it is
+    # built - and the promise is now stronger, not weaker: the engine may
+    # compose and hold a reply, but the send is a click, on a draft the
+    # founder wrote, behind a browser confirm.
     h = SGS.build_panels(_RICH)["sgaengage"]
-    assert "Dr. Weber" in h and "outside Munich" in h
-    assert "never answers as you" in h, (
-        "the inbox must state that it does not reply on your behalf")
-    src = io.open("content_engine_social_insights.py", encoding="utf-8").read()
-    assert "def _meta_inbox" in src
+    assert "Dr. Weber" in h and "outside Munich" in h, "the comment is missing"
+    assert "sgReply(" in h, "no reply button on a comment"
+    assert "Nothing is ever posted without your click" in h, (
+        "the reply box must state that nothing sends itself")
+    s = _S()
+    assert SI.draft_reply(s, {"id": "c1", "channel": "facebook"},
+                          "")["ok"] is False, "an empty reply was accepted"
+    d = SI.draft_reply(s, {"id": "c1", "channel": "facebook", "who": "Ann",
+                           "text": "do you serve Berlin?"}, "We do.")
+    assert d["ok"] and "Nothing has been posted" in d["message"]
+    assert SI.reply_drafts(s)[0]["status"] == "draft", (
+        "a queued reply must never start as sent")
+    out = SI.send_reply(s, SI.reply_drafts(s)[0]["id"])
+    assert out["ok"] is False and "META_ACCESS_TOKEN" in out["error"], (
+        "sending without the key must refuse and name the key")
+    # the promise must hold when there are NO comments too - a stale
+    # "read-only by design" survived one build after replying was added
     empty = SGS.build_panels({})["sgaengage"]
-    assert "Social inbox" in empty and "read-only by design" in empty
-    return "comments read; replying stays yours"
+    assert "read-only by design" not in empty, (
+        "the empty inbox still claims to be read-only, which stopped being "
+        "true the moment replying was built")
+    assert "the send is always your click" in empty
+    assert "sg-rt" in empty, "the reply queue must be visible when empty too"
+    src = io.open("content_engine_sga_screens.py", encoding="utf-8").read()
+    assert "confirm('Post this reply publicly now?')" in src, (
+        "posting publicly must pass a browser confirm")
+    api = io.open("content_engine_api.py", encoding="utf-8").read()
+    for r in ('"/social/reply"', '"/social/reply/send"',
+              '"/social/reply/discard"'):
+        assert r in api, f"missing route {r}"
+    assert "no reply id; nothing sent" in api
+    return "drafted, confirmed, clicked; never auto-sent"
 
 
 @gate(17, "paid tiles show per-channel CPM, CPC and cost per result")

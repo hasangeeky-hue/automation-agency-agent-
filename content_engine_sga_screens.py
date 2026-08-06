@@ -147,6 +147,40 @@ def _inbox(ctx) -> list:
     return rows
 
 
+def _reply_box(ctx) -> str:
+    """Drafted replies waiting on you. The engine composes; YOU post.
+
+    A reply is public speech in the founder's name, so there is no send
+    that is not a click - the same contract every email here runs under."""
+    drafts = [d for d in (ctx.get("reply_drafts") or [])
+              if isinstance(d, dict)]
+    waiting = [d for d in drafts if d.get("status") == "draft"]
+    box = ("<div class='sg-add' style='margin-top:10px'>"
+           "<input id='sg-rt' placeholder='write a reply, then queue it'>"
+           "<button class='cta s3go' onclick='sgQueueReply()'>Queue for "
+           "approval</button></div>"
+           "<p class='sg-empty'>Nothing is ever posted without your click. "
+           "Queue a reply here, read it back, then send it.</p>")
+    if not waiting:
+        return "<p class='s3k' style='margin-top:12px'>Replies</p>" + box
+    rows = "".join(
+        "<div class='sg-tr'>"
+        + f"<span>{e(SI.NAME.get(d.get('channel'), d.get('channel')))}</span>"
+        + f"<span>to {e(d.get('to'))}</span>"
+        + f"<span>{e(d.get('text'))[:70]}</span>"
+        + "<span><button class='cta s3go' onclick=\"sgSendReply(&#39;"
+        + e(d.get("id")) + "&#39;)\">Send it</button>"
+        + "<button class='cta' onclick=\"sgDropReply(&#39;"
+        + e(d.get("id")) + "&#39;)\">Discard</button></span></div>"
+        for d in waiting[:15])
+    failed = [d for d in drafts if d.get("status") == "failed"]
+    note = "".join(f"<p class='sg-empty'>{e(d.get('result'))[:150]}</p>"
+                   for d in failed[:3])
+    return (f"<p class='s3k' style='margin-top:12px'>Replies waiting on you "
+            f"&middot; {len(waiting)}</p><div class='sg-tbl'>{rows}</div>"
+            + note + box)
+
+
 # ---------------------------------------------------------------------------
 # THE COMMAND BAND
 # ---------------------------------------------------------------------------
@@ -338,16 +372,23 @@ def engagement_screen(ctx) -> str:
                    f"<span>{e(str(m.get('at'))[:16])}</span>"
                    f"<span>{e(SI.NAME.get(m.get('channel'), m.get('channel')))}</span>"
                    f"<span>{e(m.get('who'))}</span>"
-                   f"<span>{e(m.get('text'))[:70]}</span></div>"
+                   f"<span>{e(m.get('text'))[:70]}</span>"
+                   f"<span><button class='cta' onclick=\"sgReply("
+                   f"&#39;{e(m.get('id'))}&#39;,&#39;{e(m.get('channel'))}&#39;,"
+                   f"&#39;{e(m.get('who'))}&#39;)\">Reply</button></span>"
+                   f"</div>"
                    for m in inbox[:25]) + "</div>"
-               "<p class='sg-empty'>Replying happens on the platform: the "
-               "engine reads comments, and never answers as you without "
-               "your words.</p>")
+               + _reply_box(ctx))
     else:
+        # THE PROMISE HAD GONE STALE. This said "read-only by design" for a
+        # build in which replying did not exist; it does now, so the words
+        # state the real contract instead of an old one.
         ibx = ("<p class='s3k' style='margin-top:14px'>Social inbox</p>"
                "<p class='sg-empty'>Comments arrive here once Facebook or "
-               "Instagram is connected. Your reply agent handles email; this "
-               "is the social side, read-only by design.</p>")
+               "Instagram is connected. When they do, you can draft a reply "
+               "and post it from this screen - the engine composes and "
+               "holds, and the send is always your click.</p>"
+               + _reply_box(ctx))
     return t + "<div class='sg-row'>" + donut + bars + "</div>" + ibx
 
 
@@ -629,7 +670,8 @@ def targeting_screen(ctx) -> str:
            + "</select>"
            "<input id='sg-ch' placeholder='their handle, e.g. rival.io'>"
            "<button class='cta s3go' onclick='sgAddComp()'>Track</button>"
-           "</div>")
+           "<button class='cta' onclick=\"act('/social/competitors')\">"
+           "Measure them now</button></div>")
     if comps:
         crows = ("<div class='sg-tbl'><div class='sg-tr sg-th'>"
                  "<span>Channel</span><span>Who</span><span>Followers</span>"
@@ -645,9 +687,10 @@ def targeting_screen(ctx) -> str:
                      f"'{e(c.get('channel'))}','{e(c.get('handle'))}')\">"
                      f"Stop</button></span></div>" for c in comps[:25])
                  + "</div>"
-                 "<p class='sg-empty'>A rival's numbers are read by the same "
-                 "channel key that reads yours; until that key is on Connect "
-                 "these stay blank rather than guessed.</p>")
+                 "<p class='sg-empty'>A rival's numbers are read by the "
+                 "same channel key that reads yours. Only Instagram, YouTube "
+                 "and X expose a public competitor read; on the other four a "
+                 "rival stays listed and blank rather than guessed at.</p>")
     else:
         crows = ("<p class='sg-empty'>No rivals tracked. Name one and the "
                  "engine watches its public profile with the same key that "
@@ -764,6 +807,33 @@ border-radius:3px;padding:1px 4px}
 """
 
 JS = ("<script>"
+      "var _sgReplyTo=null;"
+      "function sgReply(id,ch,who){_sgReplyTo={id:id,channel:ch,who:who};"
+      "var b=document.getElementById('sg-rt');"
+      "if(b){b.placeholder='replying to '+who;b.focus();}"
+      "toast('Write the reply below, then queue it for approval.');}"
+      "async function sgQueueReply(){var t=document.getElementById('sg-rt');"
+      "if(!t||!t.value.trim()){toast('Write something first.');return;}"
+      "if(!_sgReplyTo){toast('Press Reply on a comment first.');return;}"
+      "try{var r=await fetch('/social/reply',{method:'POST',"
+      "headers:{'Content-Type':'application/json'},"
+      "body:JSON.stringify({comment:_sgReplyTo,text:t.value})});"
+      "var j=await r.json();toast((j&&(j.message||j.error))||'queued',"
+      "j&&j.ok!==false);if(j&&j.ok)t.value='';}"
+      "catch(e){toast('could not reach the engine',false);}}"
+      "async function sgSendReply(id){"
+      "if(!confirm('Post this reply publicly now?'))return;"
+      "try{var r=await fetch('/social/reply/send',{method:'POST',"
+      "headers:{'Content-Type':'application/json'},"
+      "body:JSON.stringify({id:id})});var j=await r.json();"
+      "toast((j&&(j.message||j.error))||'sent',j&&j.ok!==false);}"
+      "catch(e){toast('could not reach the engine',false);}}"
+      "async function sgDropReply(id){"
+      "try{var r=await fetch('/social/reply/discard',{method:'POST',"
+      "headers:{'Content-Type':'application/json'},"
+      "body:JSON.stringify({id:id})});var j=await r.json();"
+      "toast((j&&j.message)||'discarded',true);}"
+      "catch(e){toast('could not reach the engine',false);}}"
       "async function sgAddComp(){var c=document.getElementById('sg-cc'),"
       "h=document.getElementById('sg-ch');if(!c||!h)return;"
       "if(!h.value.trim()){toast('Type a handle first.');return;}"

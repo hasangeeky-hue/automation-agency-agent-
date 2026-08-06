@@ -371,7 +371,51 @@ def _meta_posts(cid, obj_id):
                     "likes": likes, "comments": comments, "shares": shares,
                     "engagement": eng or None, "reach": None,
                     "impressions": None})
+    _meta_post_reach(cid, out)
     return out
+
+
+def _meta_post_reach(cid, rows):
+    """Reach and impressions live on a SECOND call, per post - Meta does not
+    return them on the list edge. Batched so 25 posts cost one request, and
+    a post whose insights fail keeps its None rather than a fabricated 0."""
+    if not rows:
+        return
+    r, tok = _requests(), _env("META_ACCESS_TOKEN")
+    v = _env("META_API_VERSION") or "v21.0"
+    metric = ("reach,impressions,saved" if cid == "instagram"
+              else "post_impressions,post_impressions_unique")
+    import json as _json
+    batch = [{"method": "GET",
+              "relative_url": f"{x['id']}/insights?metric={metric}"}
+             for x in rows[:25] if x.get("id")]
+    if not batch:
+        return
+    try:
+        resp = r.post(f"https://graph.facebook.com/{v}/",
+                      data={"batch": _json.dumps(batch),
+                            "access_token": tok}, timeout=45).json()
+    except Exception as e:
+        log.warning("%s per-post reach failed: %s", cid, e)
+        return
+    for row, res in zip(rows, resp if isinstance(resp, list) else []):
+        if not isinstance(res, dict) or res.get("code") != 200:
+            continue
+        try:
+            body = _json.loads(res.get("body") or "{}")
+        except Exception:
+            continue
+        got = {}
+        for d in (body.get("data") or []):
+            vals = d.get("values") or [{}]
+            v0 = vals[-1].get("value")
+            if isinstance(v0, (int, float)):
+                got[d.get("name")] = float(v0)
+        row["reach"] = got.get("reach") or got.get("post_impressions_unique")
+        row["impressions"] = (got.get("impressions")
+                              or got.get("post_impressions"))
+        if got.get("saved") is not None:
+            row["saves"] = got["saved"]
 
 
 def _meta_demographics(cid, obj_id):
@@ -453,12 +497,53 @@ def _linkedin_posts():
          "X-Restli-Protocol-Version": "2.0.0"}
     j = r.get(f"https://api.linkedin.com/rest/posts?author={urn}"
               "&q=author&count=25", headers=H, timeout=30).json()
-    return [{"id": m.get("id"), "channel": "linkedin",
+    rows = [{"id": m.get("id"), "channel": "linkedin",
              "title": str(m.get("commentary") or "")[:90],
              "at": m.get("createdAt"), "format": "post",
              "likes": None, "comments": None, "shares": None,
              "engagement": None, "reach": None, "impressions": None}
             for m in (j.get("elements") or [])]
+    _linkedin_post_stats(rows, urn, H)
+    return rows
+
+
+def _linkedin_post_stats(rows, urn, H):
+    """Per-post numbers come from ShareStatistics keyed by the post urn -
+    the list edge carries none of them. Asked for in one call; a post the
+    API does not answer for keeps its None."""
+    if not rows:
+        return
+    r = _requests()
+    q = "".join(f"&shares[{i}]={row['id']}"
+                for i, row in enumerate(rows[:20]) if row.get("id"))
+    if not q:
+        return
+    try:
+        j = r.get("https://api.linkedin.com/rest/"
+                  "organizationalEntityShareStatistics"
+                  f"?q=organizationalEntity&organizationalEntity={urn}{q}",
+                  headers=H, timeout=30).json()
+    except Exception as e:
+        log.warning("linkedin per-post stats failed: %s", e)
+        return
+    by_id = {}
+    for el in (j.get("elements") or []):
+        sid = str(el.get("share") or el.get("ugcPost") or "")
+        st = el.get("totalShareStatistics") or {}
+        if sid:
+            by_id[sid] = st
+    for row in rows:
+        st = by_id.get(str(row.get("id")))
+        if not st:
+            continue
+        row["likes"] = st.get("likeCount")
+        row["comments"] = st.get("commentCount")
+        row["shares"] = st.get("shareCount")
+        row["impressions"] = st.get("impressionCount")
+        row["reach"] = st.get("uniqueImpressionsCount")
+        row["clicks"] = st.get("clickCount")
+        row["engagement"] = sum(float(st.get(k) or 0) for k in
+                                ("likeCount", "commentCount", "shareCount"))
 
 
 def _x_posts():
@@ -538,9 +623,69 @@ def fetch_posts(cid):
             return _x_posts()
         if cid == "youtube":
             return _youtube_posts()
+        if cid == "tiktok":
+            return _tiktok_posts()
+        if cid == "gbp":
+            return _gbp_posts()
     except Exception as e:
         log.warning("%s posts failed: %s", cid, e)
     return []
+
+
+def _tiktok_posts():
+    """Every video with its own counts. TikTok returns them on the list
+    itself, so one call is enough."""
+    r = _requests()
+    v = _env("TIKTOK_ADS_API_VERSION") or "v1.3"
+    H = {"Access-Token": _env("TIKTOK_ACCESS_TOKEN")}
+    j = r.get(f"https://business-api.tiktok.com/open_api/{v}/business/video/list/",
+              params={"business_id": _env("TIKTOK_BUSINESS_ID"),
+                      "fields": '["item_id","create_time","caption",'
+                                '"video_views","likes","comments","shares",'
+                                '"reach","impressions"]',
+                      "max_count": 25},
+              headers=H, timeout=30).json()
+    out = []
+    for m in (((j.get("data") or {}).get("videos")) or []):
+        eng = sum(float(m.get(k) or 0)
+                  for k in ("likes", "comments", "shares"))
+        when = m.get("create_time")
+        try:
+            from datetime import datetime, timezone
+            when = datetime.fromtimestamp(float(when),
+                                          timezone.utc).isoformat()
+        except Exception:
+            pass
+        out.append({"id": m.get("item_id"), "channel": "tiktok",
+                    "title": (m.get("caption") or "")[:90], "at": when,
+                    "format": "video", "likes": m.get("likes"),
+                    "comments": m.get("comments"), "shares": m.get("shares"),
+                    "engagement": eng or None, "reach": m.get("reach"),
+                    "impressions": m.get("impressions")
+                    or m.get("video_views")})
+    return out
+
+
+def _gbp_posts():
+    """Google Business local posts, with the views each one earned."""
+    import content_engine_connectors as C
+    fn = getattr(C, "_google_token", None)
+    tok = fn(["https://www.googleapis.com/auth/business.manage"]) if fn else None
+    if not tok:
+        return []
+    r = _requests()
+    loc = _env("GBP_LOCATION_NAME")
+    j = r.get(f"https://mybusiness.googleapis.com/v4/{loc}/localPosts",
+              headers={"Authorization": "Bearer " + tok}, timeout=30).json()
+    out = []
+    for m in (j.get("localPosts") or []):
+        out.append({"id": m.get("name"), "channel": "gbp",
+                    "title": (m.get("summary") or "")[:90],
+                    "at": m.get("createTime"), "format": m.get("topicType")
+                    or "post", "likes": None, "comments": None,
+                    "shares": None, "engagement": None, "reach": None,
+                    "impressions": None})
+    return out
 
 
 def fetch_demographics(cid):
@@ -639,6 +784,175 @@ def untrack_competitor(store, channel, handle):
     store.set_setting(COMP_KEY, keep)
     return {"ok": True, "count": len(keep),
             "message": f"stopped tracking {handle}"}
+
+
+def measure_competitors(store) -> dict:
+    """Read each tracked rival's PUBLIC profile with the same key that reads
+    your own channel. A rival on a channel you have not connected keeps its
+    None and its reason - a competitor screen that guesses is worse than an
+    empty one."""
+    rows = competitors(store)
+    if not rows:
+        return {"measured": 0, "message": "no rivals tracked yet"}
+    n = 0
+    for c in rows:
+        cid = c.get("channel")
+        if missing_keys(cid) or not _requests():
+            c["reason"] = reason_for(cid)
+            continue
+        try:
+            got = _competitor_one(cid, c.get("handle") or "")
+        except Exception as e:
+            c["reason"] = f"{NAME.get(cid, cid)}: {type(e).__name__}"
+            continue
+        if got:
+            c.update(got)
+            c["reason"] = ""
+            c["at"] = _now()
+            n += 1
+        else:
+            c["reason"] = (f"{NAME.get(cid, cid)} returned nothing public "
+                           f"for {c.get('handle')}")
+    store.set_setting(COMP_KEY, rows)
+    return {"measured": n, "tracked": len(rows),
+            "message": (f"{n} of {len(rows)} rival(s) measured"
+                        + ("" if n else "; each unmeasured one says why"))}
+
+
+def _competitor_one(cid, handle):
+    """One rival's public numbers. Only public profile data is read - no
+    private account is ever touched."""
+    r = _requests()
+    if cid == "instagram":
+        # Meta's business discovery: public business profiles only
+        v = _env("META_API_VERSION") or "v21.0"
+        q = (f"business_discovery.username({handle})"
+             "{followers_count,media_count,media.limit(10){like_count,"
+             "comments_count}}")
+        j = r.get(f"https://graph.facebook.com/{v}/{_env('IG_BUSINESS_ID')}",
+                  params={"fields": q,
+                          "access_token": _env("META_ACCESS_TOKEN")},
+                  timeout=30).json()
+        bd = (j.get("business_discovery") or {})
+        media = ((bd.get("media") or {}).get("data") or [])
+        eng = sum(float(m.get("like_count") or 0)
+                  + float(m.get("comments_count") or 0) for m in media)
+        return {"followers": bd.get("followers_count"),
+                "posts": bd.get("media_count"),
+                "engagement": eng or None} if bd else {}
+    if cid == "youtube":
+        import content_engine_connectors as C
+        fn = getattr(C, "_google_token", None)
+        tok = fn(["https://www.googleapis.com/auth/youtube.readonly"]) if fn else None
+        if not tok:
+            return {}
+        j = r.get("https://www.googleapis.com/youtube/v3/channels",
+                  params={"part": "statistics", "forHandle": handle},
+                  headers={"Authorization": "Bearer " + tok},
+                  timeout=30).json()
+        st = ((j.get("items") or [{}])[0].get("statistics") or {})
+        return {"followers": st.get("subscriberCount"),
+                "posts": st.get("videoCount"),
+                "engagement": None} if st else {}
+    if cid == "x":
+        H = {"Authorization": "Bearer " + _env("TWITTER_BEARER_TOKEN")}
+        j = r.get(f"https://api.twitter.com/2/users/by/username/{handle}",
+                  params={"user.fields": "public_metrics"},
+                  headers=H, timeout=30).json()
+        pm = ((j.get("data") or {}).get("public_metrics") or {})
+        return {"followers": pm.get("followers_count"),
+                "posts": pm.get("tweet_count"),
+                "engagement": None} if pm else {}
+    # Facebook, LinkedIn, TikTok and GBP expose no public competitor read
+    # on these APIs. Saying so is the honest answer.
+    return {}
+
+
+COMPETITOR_READABLE = ("instagram", "youtube", "x")
+
+
+# ---------------------------------------------------------------------------
+# REPLIES - drafted by the engine, SENT ONLY BY A HUMAN CLICK
+# ---------------------------------------------------------------------------
+REPLY_KEY = "social_reply_drafts"
+
+
+def draft_reply(store, comment: dict, text: str = "") -> dict:
+    """Queue a reply for approval. NOTHING is sent here.
+
+    A reply is public speech in the founder's name. The engine may compose
+    it and may hold it, but the send is a human click - the same contract
+    every email in this engine runs under.
+    """
+    if not isinstance(comment, dict) or not comment.get("id"):
+        return {"ok": False, "error": "no comment given; nothing queued"}
+    body = str(text or "").strip()
+    if not body:
+        return {"ok": False, "error": "an empty reply is not a reply"}
+    cur = store.get_setting(REPLY_KEY, []) or []
+    cur = [c for c in cur if isinstance(c, dict)]
+    if any(c.get("comment_id") == comment["id"] and c.get("status") == "draft"
+           for c in cur):
+        return {"ok": True, "message": "a reply is already queued for this "
+                                       "comment"}
+    cur.append({"id": "rp_" + str(abs(hash(comment["id"])))[:10],
+                "comment_id": comment["id"], "channel": comment.get("channel"),
+                "to": comment.get("who"), "about": comment.get("text"),
+                "text": body, "status": "draft", "at": _now(),
+                "result": ""})
+    store.set_setting(REPLY_KEY, cur)
+    return {"ok": True, "queued": len(cur),
+            "message": "queued for your approval. Nothing has been posted."}
+
+
+def reply_drafts(store) -> list:
+    try:
+        v = store.get_setting(REPLY_KEY, []) or []
+        return [c for c in v if isinstance(c, dict)]
+    except Exception:
+        return []
+
+
+def send_reply(store, rid: str) -> dict:
+    """Publish ONE approved reply. Reached only from an explicit click."""
+    rows = reply_drafts(store)
+    row = next((r for r in rows if r.get("id") == rid), None)
+    if not row:
+        return {"ok": False, "error": "no such reply"}
+    if row.get("status") == "sent":
+        return {"ok": True, "message": "already sent"}
+    cid = row.get("channel")
+    if missing_keys(cid) or not _requests():
+        row["result"] = reason_for(cid)
+        store.set_setting(REPLY_KEY, rows)
+        return {"ok": False, "error": row["result"]}
+    try:
+        r = _requests()
+        v = _env("META_API_VERSION") or "v21.0"
+        if cid in ("facebook", "instagram"):
+            resp = r.post(f"https://graph.facebook.com/{v}/"
+                          f"{row['comment_id']}/replies",
+                          data={"message": row["text"],
+                                "access_token": _env("META_ACCESS_TOKEN")},
+                          timeout=30)
+            ok = resp.status_code == 200
+            row["result"] = ("posted" if ok else resp.text[:150])
+        else:
+            ok = False
+            row["result"] = (f"{NAME.get(cid, cid)} replies are not wired; "
+                             f"the draft stays here and you can post it "
+                             f"yourself")
+    except Exception as ex:
+        ok, row["result"] = False, f"{type(ex).__name__}: {str(ex)[:120]}"
+    row["status"] = "sent" if ok else "failed"
+    store.set_setting(REPLY_KEY, rows)
+    return {"ok": ok, "message": row["result"]}
+
+
+def discard_reply(store, rid: str) -> dict:
+    rows = [r for r in reply_drafts(store) if r.get("id") != rid]
+    store.set_setting(REPLY_KEY, rows)
+    return {"ok": True, "message": "draft discarded", "left": len(rows)}
 
 
 # ---------------------------------------------------------------------------
@@ -743,5 +1057,33 @@ if __name__ == "__main__":
       and len(competitors(s)) == 1)
     t("untrack removes it",
       untrack_competitor(s, "linkedin", "rival")["count"] == 0)
+    t("measuring with nothing tracked says so",
+      measure_competitors(s)["measured"] == 0)
+    track_competitor(s, "instagram", "rival.io")
+    _m = measure_competitors(s)
+    t("an unmeasurable rival keeps None and gains a reason",
+      _m["measured"] == 0 and competitors(s)[0]["followers"] is None
+      and "IG_BUSINESS_ID" in competitors(s)[0]["reason"])
+    t("only three channels can read a rival publicly",
+      set(COMPETITOR_READABLE) == {"instagram", "youtube", "x"})
+    t("an empty reply is refused",
+      draft_reply(s, {"id": "c1", "channel": "facebook"}, "")["ok"] is False)
+    t("a reply with no comment is refused",
+      draft_reply(s, {}, "hello")["ok"] is False)
+    _d = draft_reply(s, {"id": "c1", "channel": "facebook", "who": "Ann",
+                         "text": "do you serve Berlin?"}, "We do, yes.")
+    t("a drafted reply is queued, NOT sent",
+      _d["ok"] and "Nothing has been posted" in _d["message"]
+      and reply_drafts(s)[0]["status"] == "draft")
+    t("drafting twice does not duplicate",
+      draft_reply(s, {"id": "c1", "channel": "facebook"}, "again")["ok"]
+      and len(reply_drafts(s)) == 1)
+    _sr = send_reply(s, reply_drafts(s)[0]["id"])
+    t("sending without the key refuses and says which key",
+      _sr["ok"] is False and "META_ACCESS_TOKEN" in _sr["error"])
+    t("a refused send is recorded, not silently dropped",
+      reply_drafts(s)[0]["result"] != "")
+    t("discard removes the draft",
+      discard_reply(s, reply_drafts(s)[0]["id"])["left"] == 0)
     print(f"\n{sum(ok)} passed, {len(ok) - sum(ok)} failed")
     raise SystemExit(0 if all(ok) else 1)

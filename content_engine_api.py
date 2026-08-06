@@ -2808,6 +2808,54 @@ def build_app():
         return {"ok": True, **{k: out.get(k) for k in
                                ("at", "live", "message")}}
 
+    @app.post("/social/competitors")
+    def social_measure_competitors():
+        """Read every tracked rival's public profile."""
+        import content_engine_social_insights as SI
+        return {"ok": True, **SI.measure_competitors(get_store())}
+
+    @app.post("/social/reply")
+    async def social_reply(request: Request):
+        """QUEUE a reply. Never sends - that is a separate, explicit click."""
+        import content_engine_social_insights as SI
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        out = SI.draft_reply(get_store(), d.get("comment") or {},
+                             d.get("text") or "")
+        if out.get("ok"):
+            _log_decision(get_store(), "social_reply_queued",
+                          str((d.get("comment") or {}).get("who"))[:40],
+                          str(d.get("text"))[:100])
+        return out
+
+    @app.post("/social/reply/send")
+    async def social_reply_send(request: Request):
+        """POST one approved reply publicly. Reached only from a click the
+        browser has already confirmed, on a draft the founder wrote."""
+        import content_engine_social_insights as SI
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        rid = str(d.get("id") or "")
+        if not rid:
+            return {"ok": False, "error": "no reply id; nothing sent"}
+        out = SI.send_reply(get_store(), rid)
+        _log_decision(get_store(), "social_reply_sent", rid,
+                      str(out.get("message") or out.get("error"))[:120])
+        return out
+
+    @app.post("/social/reply/discard")
+    async def social_reply_discard(request: Request):
+        import content_engine_social_insights as SI
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        return SI.discard_reply(get_store(), str(d.get("id") or ""))
+
     @app.post("/social/competitor")
     async def social_competitor(request: Request):
         """Track or untrack a rival's public profile."""
