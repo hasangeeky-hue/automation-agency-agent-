@@ -448,19 +448,26 @@ def _g24():
     return "3 hostile destinations, all refused"
 
 
-@gate(25, "the old dashboard offers a way into the new one")
+@gate(25, "VX2 is cancelled: unadvertised but still answering, and the "
+          "old dashboard carries the SEO screens itself")
 def _g25():
+    # THE FOUNDER CANCELLED VX2 (2026-08-06). The old dashboard must not
+    # advertise it any more - the screens VX2 was built to carry now live in
+    # the old dashboard's own SEO section. The route stays parked for anyone
+    # who typed it; deleting it is the founder's call, not a side effect.
     c, _A = _client()
     c.post("/login", data={"password": "testpw"}, follow_redirects=False)
     r = c.get("/", headers=_HTML)
-    assert "href='/vx2'" in r.text, (
-        "there is no link from / to /vx2, so the only way in is typing the "
-        "URL exactly right")
+    assert "href='/vx2'" not in r.text, (
+        "the old dashboard still advertises the cancelled VX2")
+    for need in ("s3band", "s3fixpage(", "seoAutoSet('safe'",
+                 "function s3run("):
+        assert need in r.text, (
+            f"the old dashboard's SEO section is missing {need} - the "
+            f"SEMrush screens did not land where the founder asked")
     r2 = c.get("/vx2", headers=_HTML)
-    assert "Anthropos VX2" in r2.text, "/vx2 did not serve VX2 when signed in"
-    assert "Business Control Center" not in r2.text, (
-        "/vx2 served the old dashboard")
-    return "a link in, and /vx2 serves VX2"
+    assert "Anthropos VX2" in r2.text, "/vx2 should still answer, parked"
+    return "unadvertised, parked, and the screens live at / now"
 
 
 # ---------------------------------------------------------------------------

@@ -4520,13 +4520,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  "<div class='ctrl' style='margin-top:6px'><button class='cbtn' onclick=\"act('/tick')\">▶ Run one step</button>"
                  + pause_btn + auto_btn + "</div></details>")
 
-    # THE DOOR TO VX2. Without a link here, the only way into the new layout
-    # was typing the URL, and typing it while signed out produced raw JSON -
-    # which read as "vx2 is not showing, it shows the old dashboard".
-    _vx2_link = ("<a class='logout' href='/vx2' style='border-color:#6BA8FF;"
-                 "color:#6BA8FF'>Try the new layout &rsaquo;</a>")
-    logout = _vx2_link + ("<a class='logout' href='/logout'>Sign out</a>"
-                          if has_password else "")
+    # VX2 IS CANCELLED (the founder's word, 2026-08-06). The route still
+    # answers at /vx2 for anyone who typed it, but this dashboard no longer
+    # advertises it: the SEMrush screens it was built to carry live HERE now,
+    # in the SEO section.
+    logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
     _af = (system_ctx or {}).get("agent_findings") or {}
     _counts = {str((_s or {}).get("section")): len((_s or {}).get("findings") or [])
                for _s in (_af.get("sections") or [])
@@ -4574,200 +4572,6 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "aria-label='Close details'>✕</button></div>"
         "<div class='dlgbody' id='dlgbody'></div></div></div>"
         + script + "</body></html>")
-
-
-if __name__ == "__main__":
-    demo = [
-        {"job_id": "job_a1", "type": "content_piece", "status": "AWAITING_APPROVAL",
-         "payload": {"content_producer": {"title": "24/7 competitor price monitoring"}}, "cost_so_far_usd": 0.04},
-        {"job_id": "job_b2", "type": "content_piece", "status": "optimized", "payload": {}, "cost_so_far_usd": 0.11},
-        {"job_id": "job_e5", "type": "outreach_campaign", "status": "sent",
-         "payload": {"raw_leads": [{}] * 40, "leads": [{}] * 31, "send_ref": "x"}, "cost_so_far_usd": 0.02},
-    ]
-    html = dashboard_html(jobs=demo, st={"wordpress_publish": True, "google_sheets": False},
-                          health={"healthy": True, "anthropic": {"status": "ok"}, "postgres": {"status": "ok"}},
-                          month_spent=63, month_cap=200, day_spent=4.2, day_cap=50,
-                          taste_skills=["content_producer", "seo_optimizer"])
-    for need in ("Content Factory", "System Map", "Wiring diagnostic", "Automation Engine",
-                 "nav('leads')", "24/7 competitor", "What it breaks", "Not connected",
-                 # Risk & Infrastructure: the merged section and its four groups
-                 "Risk &amp; Infrastructure", "WHAT COULD HURT", "WHO DOES THE WORK",
-                 "WILL IT KEEP RUNNING", "ARE WE COVERED",
-                 # Business Intelligence: the merged section and its four groups
-                 "IS DEMAND THERE", "IS IT BECOMING PIPELINE",
-                 "IS IT BECOMING MONEY", "DOES THE MATH WORK"):
-        assert need in html, need
-    # ---- the inline JS must PARSE. A single bad string literal takes down
-    # every handler on the page: nav() stops working, the sections stop
-    # opening and the dashboard reads as completely static. The block is one
-    # concatenated line, so a raw newline in it means a Python escape leaked
-    # into a JS string.
-    import re as _re
-    _js = max(_re.findall(r"<script[^>]*>(.*?)</script>", html, _re.S), key=len)
-    for _bad, _name in ((chr(10), "newline"), (chr(13), "carriage return")):
-        if _bad in _js:
-            _at = _js.index(_bad)
-            raise AssertionError(
-                f"raw {_name} inside the inline JS at offset {_at} - this is a "
-                f"SyntaxError and blanks the whole dashboard. Near: "
-                f"...{_js[max(0, _at - 90):_at + 40]!r}")
-    for _ch, _cl in (("{", "}"), ("(", ")"), ("[", "]")):
-        assert _js.count(_ch) == _js.count(_cl), (
-            f"unbalanced {_ch}{_cl} in the inline JS: "
-            f"{_js.count(_ch)} vs {_js.count(_cl)}")
-    # every handler an onclick names must actually exist
-    _JS_KEYWORDS = {"if", "for", "while", "return", "switch", "catch",
-                    "typeof", "new", "delete", "void", "function"}
-    _called = set(_re.findall(r"onclick=[\"']?([A-Za-z_]\w*)\(", html))
-    _defined = set(_re.findall(r"function\s+([A-Za-z_]\w*)\s*\(", _js))
-    _missing = sorted(c for c in _called
-                      if c not in _defined and c not in _JS_KEYWORDS
-                      and c not in ("window", "location", "alert", "confirm"))
-    assert not _missing, f"onclick calls a function nothing defines: {_missing}"
-
-    import re as _re
-    _ids = _re.findall(r"id='sec-([a-z0-9_]+)'", html)
-    assert _ids == ["cockpit", "bi", "riskinfra", "content",
-                    "outreach", "sga", "seo", "media", "system"], _ids
-    assert html.count("class='page") == 9, html.count("class='page")
-    for _old in ("mission", "ops", "appr", "learn"):
-        assert f"{_old}:'cockpit'" in html, f"nav alias {_old} -> cockpit missing"
-    assert "setBudget()" in html, "the budget control must be reachable"
-    # the launch pad must survive the merge: every endpoint still reachable
-    for _ep in ("/outreach/send_all", "/outreach/send_one", "/outreach/send_batch",
-                "/outreach/edit", "/outreach/trash", "/replies/refresh",
-                "/reply/send", "/reply/edit", "/reply/dismiss", "/leads/maps"):
-        assert _ep in html, f"{_ep} is no longer reachable from the UI"
-    # the six merged-away pages must not come back, and every old nav id must
-    # still land somewhere real
-    for _dead in ("sec-business", "sec-marketing", "sec-sales", "sec-customer",
-                  "sec-finance", "sec-budget", "sec-exec",
-                  "sec-leads", "sec-email", "sec-social", "sec-google",
-                  "sec-ads", "sec-mission", "sec-ops", "sec-appr", "sec-learn"):
-        assert f"id='{_dead}'" not in html, f"{_dead} should be merged into sec-bi"
-    for _old in ("business", "marketing", "sales", "customer", "finance",
-                 "budget", "exec"):
-        assert f"{_old}:'bi'" in html, f"nav alias {_old} -> bi missing"
-    for _old in ("leads", "email"):
-        assert f"{_old}:'outreach'" in html, f"nav alias {_old} -> outreach missing"
-    for _old in ("social", "google", "ads"):
-        assert f"{_old}:'sga'" in html, f"nav alias {_old} -> sga missing"
-    for _fn in ("biDeal()", "biEcon()", "biTargets()"):
-        assert _fn in html, f"{_fn} handler missing"
-    assert "AI Cockpit" in html, "the cockpit page must exist"
-    for _g in ("DECIDE", "APPROVE", "CONTROL", "RUN &amp; LEARN"):
-        assert _g in html, f"cockpit group {_g} missing"
-    for _m in ("Business Intelligence", "AI Workforce", "Executive brief"):
-        assert _m in html, _m
-    # the three merged-away sections must not come back as pages, and every old
-    # nav id must still land somewhere real
-    for _dead in ("id='sec-risk'", "id='sec-workforce'", "id='sec-infra'"):
-        assert _dead not in html, f"{_dead} should be merged into sec-riskinfra"
-    assert "id='sec-riskinfra'" in html
-    for _old, _new in (("risk", "riskinfra"), ("workforce", "riskinfra"),
-                       ("infra", "riskinfra"), ("agents", "system"), ("map", "system")):
-        assert f"{_old}:'{_new}'" in html, f"nav alias {_old} -> {_new} missing"
-    assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
-                                                       month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
-    # ---- PHASE D: the UI guards -------------------------------------------
-    # These three failures were all invisible to every previous check, because
-    # every previous check measured CARDS. They measure the journey instead.
-    import re as _re3
-
-    # 1. every input must carry a label that survives typing. 86 fields had none.
-    _inputs = _re3.findall(r"<input id='f-([A-Z0-9_]+)'", html)
-    _named = set(_re3.findall(r"<input[^>]*name='([A-Z0-9_]+)'", html))
-    _labels = set(_re3.findall(r"<label for='f-([A-Z0-9_]+)'", html))
-    _rawlabel = sorted({n for n, t in _re3.findall(
-        r"<label for='f-([A-Z0-9_]+)'>([^<]*)", html) if t.strip() == n})
-    assert not _rawlabel, (
-        f"{len(_rawlabel)} field(s) show a raw variable name as their label - "
-        f"that tells a person nothing: {_rawlabel[:6]}")
-    _unlabelled = sorted(_named - _labels)
-    assert not _unlabelled, (
-        f"{len(_unlabelled)} credential input(s) have no <label>; a placeholder "
-        f"disappears as soon as you type: {_unlabelled[:6]}")
-
-    # 2. the sidebar must be real links, or you cannot open a section in a tab
-    assert html.count("<a class='navb") >= 9, (
-        "sections must be <a href='#id'> so right-click -> open in new tab, "
-        "bookmarking and the back button all work")
-    for _pid in ("cockpit", "system", "bi"):
-        assert f"href='#{_pid}'" in html, f"section {_pid} has no URL"
-
-    # 3. navigation must not be dressed as an action
-    # A handler with no button is invisible work. I have now shipped that three
-    # times - the outcome collector nothing called, the rewrite proposal nothing
-    # rendered, and seoAuto() with zero buttons on the page. Defining a function
-    # is not shipping a feature; this asserts the ENTRY POINT exists.
-    # Only handlers that must appear on EVERY render belong here. focusKey needs
-    # live wire data and proposal needs a pending proposal, so both are asserted
-    # where that context exists - focusKey in the API self-check against the real
-    # page, proposal in verify_loop.py section 3b. Asserting them here would fail
-    # on a fixture that legitimately has neither.
-    _MUST_BE_CLICKABLE = ("seoAuto", "setBudget", "runSeoDue", "keyEye",
-                          "startExperiment", "biDeal")
-    import re as _re4
-    _clickable = set(_re4.findall(r"onclick=[\"']([A-Za-z_$][\w$]*)\(", html))
-    _orphans = [h for h in _MUST_BE_CLICKABLE
-                if f"function {h}" in html and h not in _clickable]
-    assert not _orphans, (
-        f"these handlers exist but NOTHING on the page calls them, so the "
-        f"feature is unreachable: {_orphans}")
-
-    assert "function demoteNavButtons" in html, (
-        "a button whose onclick is nav()/seoTab() must render as a quiet link, "
-        "not as a filled action button")
-    assert "button.cta,a.cta{" in html, (
-        "card buttons had NO style at all - they rendered as raw browser "
-        "buttons, light grey with a black border on a dark theme")
-    assert "routeFromHash" in html and "popstate" in html, (
-        "the back button must work")
-
-    assert "Sign in" in login_html()
-    # ---- every class the page uses must actually be STYLED.
-    # Five merged sections shipped `stabbar` and `sgrprail`, which no stylesheet
-    # ever defined. An unstyled div is display:block, so both navigation rails
-    # stacked one button per row and every one of those sections read as an
-    # endless vertical list before you reached a single card. A class name with
-    # no rule behind it fails silently — nothing errors, it just looks wrong.
-    import re as _re2
-    # The board kit ships its own <style> block, so BOTH stylesheets count.
-    _allcss = CSS
-    try:
-        import content_engine_seo_boards as _SB2
-        _allcss += _SB2._TAB_CSS
-    except Exception as _ce:
-        raise AssertionError(f"cannot read the board stylesheet: {_ce}")
-    _styled = set(_re2.findall(r"[.#]([A-Za-z][\w-]*)", _allcss))
-    _used = set()
-    for _attr in _re2.findall(r"class='([^']+)'", html):
-        _used.update(_attr.split())
-    _LAYOUT = {c for c in _used
-               if c.startswith(("s", "g", "c", "n", "b", "m", "p", "t", "w", "f"))}
-    # Verified inert: each of these either carries its own inline styles or is a
-    # default state that deliberately inherits (.sev-ok / .sev-info keep the
-    # normal card border; only critical and warn recolour it).
-    _INERT = {"mlog", "sev-ok", "sev-info", "spanels", "subsec"}
-    _unstyled = sorted(c for c in _LAYOUT if c not in _styled and c not in _INERT)
-    assert not _unstyled, (
-        "these classes are used in the markup but no CSS rule defines them, so "
-        f"they render as unstyled blocks: {_unstyled}")
-    # the rails that actually carry the sub-section buttons must be horizontal
-    for _rail in ("stabs", "sgroups"):
-        assert f"class='{_rail}'" in html, f"{_rail} rail missing from the page"
-        assert f".{_rail}{{display:flex" in _allcss, f".{_rail} must lay out as a flex row"
-    assert html.count("class='stabs'") >= 9, (
-        "every section with sub-boards needs the styled horizontal tab rail; "
-        f"found {html.count(chr(39).join(['class=', 'stabs', '']))}")
-    print("OK — 9 pages. Risk + AI Workforce + Infrastructure now render as ONE "
-          "Risk & Infrastructure section (208 cards) and six more render as ONE "
-          "Business Intelligence section (268 cards, 15 boards, Executive "
-          "Intelligence included), and Lead Machine + Email & Outreach render "
-          "as ONE Leads & Outreach section (240 cards, 14 boards, every send "
-          "endpoint intact); the old nav ids "
-          "all alias to them. No page lost, no credential path touched. "
-          "No network.")
 
 
 def dashboard_script(agent_counts: dict) -> str:
@@ -5392,3 +5196,209 @@ def dashboard_script(agent_counts: dict) -> str:
               "out.textContent='Running '+sk+'…';try{var b=JSON.parse(inp||'{}');}catch(e){out.textContent='That input is not valid JSON.';return;}"
               "try{var r=await fetch('/skills/'+sk+'/taste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:b})});"
               "out.textContent=JSON.stringify(await r.json(),null,2);}catch(e){out.textContent='Error: '+e;}}</script>")
+
+
+if __name__ == "__main__":
+    demo = [
+        {"job_id": "job_a1", "type": "content_piece", "status": "AWAITING_APPROVAL",
+         "payload": {"content_producer": {"title": "24/7 competitor price monitoring"}}, "cost_so_far_usd": 0.04},
+        {"job_id": "job_b2", "type": "content_piece", "status": "optimized", "payload": {}, "cost_so_far_usd": 0.11},
+        {"job_id": "job_e5", "type": "outreach_campaign", "status": "sent",
+         "payload": {"raw_leads": [{}] * 40, "leads": [{}] * 31, "send_ref": "x"}, "cost_so_far_usd": 0.02},
+    ]
+    html = dashboard_html(jobs=demo, st={"wordpress_publish": True, "google_sheets": False},
+                          health={"healthy": True, "anthropic": {"status": "ok"}, "postgres": {"status": "ok"}},
+                          month_spent=63, month_cap=200, day_spent=4.2, day_cap=50,
+                          taste_skills=["content_producer", "seo_optimizer"])
+    for need in ("Content Factory", "System Map", "Wiring diagnostic", "Automation Engine",
+                 "nav('leads')", "24/7 competitor", "What it breaks", "Not connected",
+                 # Risk & Infrastructure: the merged section and its four groups
+                 "Risk &amp; Infrastructure", "WHAT COULD HURT", "WHO DOES THE WORK",
+                 "WILL IT KEEP RUNNING", "ARE WE COVERED",
+                 # Business Intelligence: the merged section and its four groups
+                 "IS DEMAND THERE", "IS IT BECOMING PIPELINE",
+                 "IS IT BECOMING MONEY", "DOES THE MATH WORK"):
+        assert need in html, need
+    # ---- the inline JS must PARSE. A single bad string literal takes down
+    # every handler on the page: nav() stops working, the sections stop
+    # opening and the dashboard reads as completely static. The block is one
+    # concatenated line, so a raw newline in it means a Python escape leaked
+    # into a JS string.
+    import re as _re
+    _js = max(_re.findall(r"<script[^>]*>(.*?)</script>", html, _re.S), key=len)
+    for _bad, _name in ((chr(10), "newline"), (chr(13), "carriage return")):
+        if _bad in _js:
+            _at = _js.index(_bad)
+            raise AssertionError(
+                f"raw {_name} inside the inline JS at offset {_at} - this is a "
+                f"SyntaxError and blanks the whole dashboard. Near: "
+                f"...{_js[max(0, _at - 90):_at + 40]!r}")
+    for _ch, _cl in (("{", "}"), ("(", ")"), ("[", "]")):
+        assert _js.count(_ch) == _js.count(_cl), (
+            f"unbalanced {_ch}{_cl} in the inline JS: "
+            f"{_js.count(_ch)} vs {_js.count(_cl)}")
+    # every handler an onclick names must actually exist
+    _JS_KEYWORDS = {"if", "for", "while", "return", "switch", "catch",
+                    "typeof", "new", "delete", "void", "function"}
+    _called = set(_re.findall(r"onclick=[\"']?([A-Za-z_]\w*)\(", html))
+    # Definitions are collected from the WHOLE page, not just the main
+    # script block: the SEO audit screens ship their handlers (s2open,
+    # s3run, seoAutoSet ...) in their own script tag inside the section,
+    # which is exactly as alive in a browser. The contract is "defined
+    # somewhere on the page", and that is what gets checked.
+    _defined = set(_re.findall(r"function\s+([A-Za-z_]\w*)\s*\(", html))
+    _missing = sorted(c for c in _called
+                      if c not in _defined and c not in _JS_KEYWORDS
+                      and c not in ("window", "location", "alert", "confirm"))
+    assert not _missing, f"onclick calls a function nothing defines: {_missing}"
+
+    import re as _re
+    _ids = _re.findall(r"id='sec-([a-z0-9_]+)'", html)
+    assert _ids == ["cockpit", "bi", "riskinfra", "content",
+                    "outreach", "sga", "seo", "media", "system"], _ids
+    assert html.count("class='page") == 9, html.count("class='page")
+    for _old in ("mission", "ops", "appr", "learn"):
+        assert f"{_old}:'cockpit'" in html, f"nav alias {_old} -> cockpit missing"
+    assert "setBudget()" in html, "the budget control must be reachable"
+    # the launch pad must survive the merge: every endpoint still reachable
+    for _ep in ("/outreach/send_all", "/outreach/send_one", "/outreach/send_batch",
+                "/outreach/edit", "/outreach/trash", "/replies/refresh",
+                "/reply/send", "/reply/edit", "/reply/dismiss", "/leads/maps"):
+        assert _ep in html, f"{_ep} is no longer reachable from the UI"
+    # the six merged-away pages must not come back, and every old nav id must
+    # still land somewhere real
+    for _dead in ("sec-business", "sec-marketing", "sec-sales", "sec-customer",
+                  "sec-finance", "sec-budget", "sec-exec",
+                  "sec-leads", "sec-email", "sec-social", "sec-google",
+                  "sec-ads", "sec-mission", "sec-ops", "sec-appr", "sec-learn"):
+        assert f"id='{_dead}'" not in html, f"{_dead} should be merged into sec-bi"
+    for _old in ("business", "marketing", "sales", "customer", "finance",
+                 "budget", "exec"):
+        assert f"{_old}:'bi'" in html, f"nav alias {_old} -> bi missing"
+    for _old in ("leads", "email"):
+        assert f"{_old}:'outreach'" in html, f"nav alias {_old} -> outreach missing"
+    for _old in ("social", "google", "ads"):
+        assert f"{_old}:'sga'" in html, f"nav alias {_old} -> sga missing"
+    for _fn in ("biDeal()", "biEcon()", "biTargets()"):
+        assert _fn in html, f"{_fn} handler missing"
+    assert "AI Cockpit" in html, "the cockpit page must exist"
+    for _g in ("DECIDE", "APPROVE", "CONTROL", "RUN &amp; LEARN"):
+        assert _g in html, f"cockpit group {_g} missing"
+    for _m in ("Business Intelligence", "AI Workforce", "Executive brief"):
+        assert _m in html, _m
+    # the three merged-away sections must not come back as pages, and every old
+    # nav id must still land somewhere real
+    for _dead in ("id='sec-risk'", "id='sec-workforce'", "id='sec-infra'"):
+        assert _dead not in html, f"{_dead} should be merged into sec-riskinfra"
+    assert "id='sec-riskinfra'" in html
+    for _old, _new in (("risk", "riskinfra"), ("workforce", "riskinfra"),
+                       ("infra", "riskinfra"), ("agents", "system"), ("map", "system")):
+        assert f"{_old}:'{_new}'" in html, f"nav alias {_old} -> {_new} missing"
+    assert "control center is ready" in dashboard_html(jobs=[], st={}, health={"healthy": True},
+                                                       month_spent=0, month_cap=200, day_spent=0, day_cap=50, taste_skills=[])
+    # ---- PHASE D: the UI guards -------------------------------------------
+    # These three failures were all invisible to every previous check, because
+    # every previous check measured CARDS. They measure the journey instead.
+    import re as _re3
+
+    # 1. every input must carry a label that survives typing. 86 fields had none.
+    _inputs = _re3.findall(r"<input id='f-([A-Z0-9_]+)'", html)
+    _named = set(_re3.findall(r"<input[^>]*name='([A-Z0-9_]+)'", html))
+    _labels = set(_re3.findall(r"<label for='f-([A-Z0-9_]+)'", html))
+    _rawlabel = sorted({n for n, t in _re3.findall(
+        r"<label for='f-([A-Z0-9_]+)'>([^<]*)", html) if t.strip() == n})
+    assert not _rawlabel, (
+        f"{len(_rawlabel)} field(s) show a raw variable name as their label - "
+        f"that tells a person nothing: {_rawlabel[:6]}")
+    _unlabelled = sorted(_named - _labels)
+    assert not _unlabelled, (
+        f"{len(_unlabelled)} credential input(s) have no <label>; a placeholder "
+        f"disappears as soon as you type: {_unlabelled[:6]}")
+
+    # 2. the sidebar must be real links, or you cannot open a section in a tab
+    assert html.count("<a class='navb") >= 9, (
+        "sections must be <a href='#id'> so right-click -> open in new tab, "
+        "bookmarking and the back button all work")
+    for _pid in ("cockpit", "system", "bi"):
+        assert f"href='#{_pid}'" in html, f"section {_pid} has no URL"
+
+    # 3. navigation must not be dressed as an action
+    # A handler with no button is invisible work. I have now shipped that three
+    # times - the outcome collector nothing called, the rewrite proposal nothing
+    # rendered, and seoAuto() with zero buttons on the page. Defining a function
+    # is not shipping a feature; this asserts the ENTRY POINT exists.
+    # Only handlers that must appear on EVERY render belong here. focusKey needs
+    # live wire data and proposal needs a pending proposal, so both are asserted
+    # where that context exists - focusKey in the API self-check against the real
+    # page, proposal in verify_loop.py section 3b. Asserting them here would fail
+    # on a fixture that legitimately has neither.
+    _MUST_BE_CLICKABLE = ("seoAuto", "setBudget", "runSeoDue", "keyEye",
+                          "startExperiment", "biDeal")
+    import re as _re4
+    _clickable = set(_re4.findall(r"onclick=[\"']([A-Za-z_$][\w$]*)\(", html))
+    _orphans = [h for h in _MUST_BE_CLICKABLE
+                if f"function {h}" in html and h not in _clickable]
+    assert not _orphans, (
+        f"these handlers exist but NOTHING on the page calls them, so the "
+        f"feature is unreachable: {_orphans}")
+
+    assert "function demoteNavButtons" in html, (
+        "a button whose onclick is nav()/seoTab() must render as a quiet link, "
+        "not as a filled action button")
+    assert "button.cta,a.cta{" in html, (
+        "card buttons had NO style at all - they rendered as raw browser "
+        "buttons, light grey with a black border on a dark theme")
+    assert "routeFromHash" in html and "popstate" in html, (
+        "the back button must work")
+
+    assert "Sign in" in login_html()
+    # ---- every class the page uses must actually be STYLED.
+    # Five merged sections shipped `stabbar` and `sgrprail`, which no stylesheet
+    # ever defined. An unstyled div is display:block, so both navigation rails
+    # stacked one button per row and every one of those sections read as an
+    # endless vertical list before you reached a single card. A class name with
+    # no rule behind it fails silently — nothing errors, it just looks wrong.
+    import re as _re2
+    # The board kit ships its own <style> block, so BOTH stylesheets count.
+    _allcss = CSS
+    try:
+        import content_engine_seo_boards as _SB2
+        _allcss += _SB2._TAB_CSS
+    except Exception as _ce:
+        raise AssertionError(f"cannot read the board stylesheet: {_ce}")
+    # The SEO audit screens carry their stylesheet WITH the section (the
+    # bridge + content_engine_seo_screens.CSS travel in a <style> block
+    # inside seo_section's output). Rules embedded in the page style an
+    # element exactly as well as rules in the main sheet, so coverage is
+    # judged against every <style> block the page actually ships.
+    for _blk in _re2.findall(r"<style>(.*?)</style>", html, _re2.S):
+        _allcss += _blk
+    _styled = set(_re2.findall(r"[.#]([A-Za-z][\w-]*)", _allcss))
+    _used = set()
+    for _attr in _re2.findall(r"class='([^']+)'", html):
+        _used.update(_attr.split())
+    _LAYOUT = {c for c in _used
+               if c.startswith(("s", "g", "c", "n", "b", "m", "p", "t", "w", "f"))}
+    # Verified inert: each of these either carries its own inline styles or is a
+    # default state that deliberately inherits (.sev-ok / .sev-info keep the
+    # normal card border; only critical and warn recolour it).
+    _INERT = {"mlog", "sev-ok", "sev-info", "spanels", "subsec"}
+    _unstyled = sorted(c for c in _LAYOUT if c not in _styled and c not in _INERT)
+    assert not _unstyled, (
+        "these classes are used in the markup but no CSS rule defines them, so "
+        f"they render as unstyled blocks: {_unstyled}")
+    # the rails that actually carry the sub-section buttons must be horizontal
+    for _rail in ("stabs", "sgroups"):
+        assert f"class='{_rail}'" in html, f"{_rail} rail missing from the page"
+        assert f".{_rail}{{display:flex" in _allcss, f".{_rail} must lay out as a flex row"
+    assert html.count("class='stabs'") >= 9, (
+        "every section with sub-boards needs the styled horizontal tab rail; "
+        f"found {html.count(chr(39).join(['class=', 'stabs', '']))}")
+    print("OK — 9 pages. Risk + AI Workforce + Infrastructure now render as ONE "
+          "Risk & Infrastructure section (208 cards) and six more render as ONE "
+          "Business Intelligence section (268 cards, 15 boards, Executive "
+          "Intelligence included), and Lead Machine + Email & Outreach render "
+          "as ONE Leads & Outreach section (240 cards, 14 boards, every send "
+          "endpoint intact); the old nav ids "
+          "all alias to them. No page lost, no credential path touched. "
+          "No network.")

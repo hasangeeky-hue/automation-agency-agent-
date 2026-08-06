@@ -2478,23 +2478,51 @@ def seo_section(ctx, legacy_html: str = "") -> str:
     is still on this page, in the same place.
     """
     H = _H()
-    panels = seo_pages(ctx)
-    counts = {"seocmd": CARD_COUNTS["command"],
-              "seotech": CARD_COUNTS["technical"] + CARD_COUNTS["indexing"],
-              "seoonpage": CARD_COUNTS["on_page"] + CARD_COUNTS["internal_links"],
-              "seokw": CARD_COUNTS["keywords"] + CARD_COUNTS["content"],
-              "seoaeo": CARD_COUNTS["aeo"],
-              "seogen": CARD_COUNTS["geo_generative"],
-              "seogeo": CARD_COUNTS["local"],
-              "seooff": CARD_COUNTS["off_page"],
-              "seowork": CARD_COUNTS["work_orders"],
-              "seosrc": (legacy_html or "").count("<div class='card'>")}
+    # THE SEMRUSH SCREENS REPLACE THE CARD BOARDS. The founder's words:
+    # "old dashboard cards gonna replace". Each tab now renders the audit
+    # screen from content_engine_seo_screens - the agent command band, the
+    # health band, issue rows with their four action classes, the per-page
+    # command table, robots and AI access, backlinks, AEO and GEO. The card
+    # boards these replaced still exist as functions (the SEO context and
+    # engines are untouched); only what this section DRAWS has changed.
+    import content_engine_seo_screens as SCR
+    panels = {
+        "seocmd": SCR.command_screen(ctx, []),
+        "seotech": SCR.technical_screen(ctx, []),
+        "seoonpage": SCR.issue_screen("seoonpage", ctx, []),
+        "seokw": SCR.issue_screen("seokw", ctx, []),
+        "seoaeo": SCR.health_header(ctx) + SCR.aeo_screen(ctx),
+        "seogen": SCR.health_header(ctx) + SCR.geo_gen_screen(ctx),
+        "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
+        "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
+        "seowork": SCR.workorders_screen(ctx, []),
+    }
+    # THE CHIPS COUNT PROBLEMS NOW, NOT CARDS. A chip that says 20 because
+    # twenty tiles used to render there is a decoration; a chip that says 12
+    # because twelve problems are open is a reading. Tabs whose screens are
+    # not problem-shaped (AEO, GEO, backlinks, sources) carry no number
+    # rather than a fake one.
+    _orders = [o for o in (ctx.get("orders") or ())
+               if o.get("status") in ("open", "awaiting_approval", "")]
+    _per = {t: sum(1 for o in _orders
+                   if o.get("code") in set(codes))
+            for t, (_lbl, codes) in SCR.TAB_CODES.items()}
+    counts = {"seocmd": len(_orders),
+              "seotech": _per.get("seotech", 0),
+              "seoonpage": _per.get("seoonpage", 0),
+              "seokw": _per.get("seokw", 0),
+              "seoaeo": None, "seogen": None, "seogeo": None, "seooff": None,
+              "seowork": sum(1 for o in _orders
+                             if (o.get("extra") or {}).get("proposal")),
+              "seosrc": None}
     gof = {t: gid for gid, _l, _q, ts in GROUPS for t in ts}
     bar = "".join(
         f"<button class='stab{' on' if i == 0 else ''}' id='stab-{tid}' "
         f"data-grp='{gof.get(tid, 'act')}' "
         f"onclick=\"seoTab('{tid}')\"><span>{icon}</span>{H._esc(label)}"
-        f"<span class='n'>{counts.get(tid, 0)}</span></button>"
+        + (f"<span class='n'>{counts[tid]}</span>"
+           if counts.get(tid) is not None else "")
+        + "</button>"
         for i, (tid, icon, label) in enumerate(TABS))
     # 'seosrc' is a declared tab but its panel is built separately below, so
     # emitting it here too put TWO elements with id='spanel-seosrc' on the
@@ -2513,25 +2541,22 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "<button class='cbtn' onclick='runAeo()'>🤖 Probe AI answers</button>"
         "<button class='cbtn' onclick='runProspect()'>🌐 Find link prospects</button>"
         "</div>")
-    total = sum(counts.values())
-    # ---- ① group rail  ->  ② tab chips  ->  ③ cards ----
+    total = sum(v for v in counts.values() if isinstance(v, int))
+    # ---- ① group rail  ->  ② tab chips  ->  ③ the audit screens ----
     grouprail = "".join(
         f"<button class='sgrp{' on' if i == 0 else ''}' id='sgrp-{gid}' "
         f"onclick=\"seoGroup('{gid}')\"><b>{H._esc(label)}</b>"
         f"<span class='gq'>{H._esc(question)}</span></button>"
         for i, (gid, label, question, _t) in enumerate(GROUPS))
-    tools = (
-        "<div class='stools'>"
-        "<input id='cardq' class='cinput' placeholder='🔎 Search all 235 cards…' "
-        "oninput='seoFilter()'>"
-        "<button class='cbtn sm' id='fl-all' onclick=\"seoSev('all')\">All</button>"
-        "<button class='cbtn sm' onclick=\"seoSev('critical')\">⛔ Needs fixing</button>"
-        "<button class='cbtn sm' onclick=\"seoSev('warn')\">⚠ Worth a look</button>"
-        "<button class='cbtn sm' onclick=\"seoSev('ok')\">✓ Healthy</button>"
-        "<span class='dim' id='cardcount'></span></div>")
-    hint = (f"<div class='shint'>👇 <b>{total} cards</b> in {len(GROUPS)} groups. "
-            f"Broken things sort to the top of every board. Every card has an action "
-            f"and its own link.</div>")
+    # The card search-and-severity toolbar is gone WITH the cards it
+    # filtered. A search box over elements that no longer exist is the
+    # decorative toolbar the founder called out a month ago; the screens
+    # sort problems first on their own.
+    tools = ""
+    hint = (f"<div class='shint'>👇 <b>{total} open problem"
+            f"{'s' if total != 1 else ''}</b> across the audit. Every row "
+            f"carries what it costs and the button that repairs it; the "
+            f"agent band at the top commands all of them at once.</div>")
     legacy_head = ("<div id='seo-google' class='card full' style='margin-top:14px;"
                    "border-color:#4C8DFF'><p class='ct'>📊 Search Console &amp; Analytics</p>"
                    "<p class='cc'>Your original Google boards — same data, same order, "
@@ -2541,9 +2566,23 @@ def seo_section(ctx, legacy_html: str = "") -> str:
     # 130k characters below everything else.
     sources_panel = (f"<div class='spanel' id='spanel-seosrc'>{legacy_head}"
                      f"{legacy_html or ''}</div>")
-    return (_TAB_CSS + runbar + hint
+    # THE PALETTE BRIDGE. The screens were written against semantic variable
+    # names (--card, --ln, --tx ...); this maps them onto the old dashboard's
+    # own dark palette, so the screens wear this dashboard's clothes instead
+    # of bringing their own. Scoped to .seoscr: nothing outside the SEO
+    # section can be repainted by it.
+    bridge = ("<style>.seoscr{--pap:var(--s2);--card:var(--s1);"
+              "--ln:var(--line);--tx:var(--ink);--dm:var(--mut);"
+              "--ft:var(--dim);--ac:var(--blue);--warnc:var(--warn);"
+              "--okc:var(--good);--badbg:rgba(255,107,147,.09);"
+              "--warnbg:rgba(245,177,76,.09);--okbg:rgba(63,217,139,.09);"
+              "--hov:rgba(76,141,255,.07)}"
+              + SCR.CSS + "</style>")
+    return ("<div class='seoscr'>" + bridge + SCR.JS
+            + _TAB_CSS + runbar + hint
             + f"<div class='sgroups'>{grouprail}</div>"
-            + f"<div class='stabs'>{bar}</div>" + tools + body + sources_panel)
+            + f"<div class='stabs'>{bar}</div>" + tools + body + sources_panel
+            + "</div>")
 
 
 CARD_COUNTS = {"command": 13, "technical": 18, "indexing": 12, "on_page": 16,
@@ -2775,18 +2814,35 @@ if __name__ == "__main__":
     for gid, _l, _q, _t in GROUPS:
         assert f"id='sgrp-{gid}'" in sec, f"missing group button {gid}"
         assert f"seoGroup('{gid}')" in sec, f"group {gid} has no click handler"
-    assert "id='cardq'" in sec, "card search box missing"
-    assert "seoSev('critical')" in sec, "severity filter missing"
+    # THE CONTRACT CHANGED ON THE FOUNDER'S ORDER (2026-08-06): "old
+    # dashboard cards gonna replace". The engine tab panels now carry the
+    # audit screens - agent band, health band, issue rows, the per-page
+    # command table - and the card grids are gone from them, along with the
+    # toolbar that filtered those cards. Only ④ Sources keeps its cards,
+    # because those are the founder's original Google boards.
+    assert "id='cardq'" not in sec, (
+        "the card search box is back but the cards it searched are not")
     assert sec.count("class='spanel on'") == 1, "exactly one tab may start open"
     assert sec.count("class='stab on'") == 1, "exactly one tab may start active"
     assert "same data, same order" in sec, "must reassure the Google boards are intact"
-    # SEO Command is the first NEW board shown — but only after the legacy ones.
     assert TABS[0][0] == "seocmd", "SEO Command must be the first tab"
     assert "class='spanel on' id='spanel-seocmd'" in sec, \
         "the SEO Command panel must be the one open on load"
-    assert "cards</b> in" in sec, "must tell the user how the cards are organised"
-    # every card still present, just tabbed
-    assert len(_re.findall(r"<div class='card (?:overflowcard )?sev-", sec)) == TOTAL_CARDS,         len(_re.findall(r"<div class='card (?:overflowcard )?sev-", sec))
+    assert "open problem" in sec, "the hint must count problems, not cards"
+    assert "s3band" in sec, "the agent command band must lead SEO Command"
+    assert "seoAutoSet('safe'" in sec, "the OFF/SAFE/ALL ladder is missing"
+    assert "s3fixpage(" in sec, "the per-page command table is missing"
+    assert "class='s2issue" in sec, "the issue rows are missing"
+    assert ".seoscr{" in sec, "the palette bridge is missing - the screens "\
+        "would render unstyled on the dark theme"
+    assert "function s3run(" in sec, "the screens' handlers must ship with "\
+        "the section - a fetched-in or scriptless screen is dead buttons"
+    # the engine panels carry NO card grids; the only cards left are the
+    # legacy Google boards in Sources
+    _engine_panels = sec[:sec.index("id='spanel-seosrc'")]
+    _stray = _re.findall(r"<div class='card (?:overflowcard )?sev-",
+                         _engine_panels)
+    assert not _stray, f"{len(_stray)} card(s) still render in engine panels"
     # the run bar must expose the free engines by name
     for label in ("free", "Run every SEO engine", "Crawl my site"):
         assert label in sec, f"run bar missing '{label}'"
