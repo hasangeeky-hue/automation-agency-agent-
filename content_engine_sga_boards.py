@@ -1369,13 +1369,30 @@ def sga_pages(ctx) -> dict:
 def sga_section(ctx) -> str:
     H = _H()
     ctx = _ctx(ctx)
-    panels = sga_pages(ctx)
+    # THE SCREENS REPLACE THE 250 CARDS - the founder's order, the same
+    # surgery SEO and Media Buying had. The board functions stay as tested
+    # data producers; only what this section DRAWS has changed.
+    import content_engine_sga_screens as SGS
+    import content_engine_seo_screens as SSCR
+    panels = SGS.build_panels(ctx)
+    # A CHIP COUNTS A REAL THING OR NOTHING. A number that only counts
+    # tiles is a decoration; these count channels reporting and posts on
+    # record, and every other tab carries no number rather than a fake one.
+    import content_engine_social_insights as _SI
+    _live = len((ctx.get("social") or {}).get("live") or ())
+    _posts = (ctx.get("posts") or {})
+    _chips = {"sgachannels": _live or None,
+              "sgacmd": _live or None,
+              "sgaorganic": (_posts.get("total")
+                             if isinstance(_posts, dict) else None) or None}
     gof = {t: gid for gid, _l, _q, ts in GROUPS for t in ts}
     bar = "".join(
         f"<button class='stab{' on' if i == 0 else ''}' id='stab-{tid}' "
         f"data-grp='{gof.get(tid, 'sgaplanit')}' onclick=\"seoTab('{tid}')\">"
         f"<span>{icon}</span>{H._esc(label)}"
-        f"<span class='n'>{_TAB_COUNTS.get(tid, 0)}</span></button>"
+        + (f"<span class='n'>{_chips[tid]}</span>"
+           if _chips.get(tid) is not None else "")
+        + "</button>"
         for i, (tid, icon, label) in enumerate(TABS))
     grouprail = "".join(
         f"<button class='sgrp{' on' if i == 0 else ''}' id='sgrp-{gid}' "
@@ -1390,11 +1407,19 @@ def sga_section(ctx) -> str:
               "<button class='cbtn' onclick=\"act('/insights/refresh')\">🔄 Refresh GA4</button>"
               "<button class='cbtn' onclick=\"nav('media')\">🛒 Google Ads is over here</button>"
               "</div>")
-    return (_TAB_CSS
+    bridge = ("<style>.seoscr{--pap:var(--s2);--card:var(--s1);"
+              "--ln:var(--line);--tx:var(--ink);--dm:var(--mut);"
+              "--ft:var(--dim);--ac:var(--blue);--warnc:var(--warn);"
+              "--okc:var(--good);--badbg:rgba(255,107,147,.09);"
+              "--warnbg:rgba(245,177,76,.09);--okbg:rgba(63,217,139,.09);"
+              "--hov:rgba(76,141,255,.07)}"
+              + SSCR.CSS + SGS.CSS + "</style>")
+    return ("<div class='seoscr'>" + bridge + SSCR.JS + SGS.JS
+            + _TAB_CSS
             + "<div class='sgroups'>" + grouprail + "</div>"
             + runbar
             + "<div class='stabs'>" + bar + "</div>"
-            + "<div class='spanels'>" + body + "</div>")
+            + "<div class='spanels'>" + body + "</div></div>")
 
 
 # ---------------------------------------------------------------- self-check
@@ -1509,6 +1534,23 @@ if __name__ == "__main__":
             except Exception as e:
                 raise AssertionError(f"{name} raised on hostile ctx: "
                                      f"{type(e).__name__}: {e}") from e
+
+    # THE SECTION'S OWN CONTRACT. It was never asserted before, so the
+    # 250-card wall could have survived a transplant unnoticed. On the
+    # founder's order (2026-08-06) the section now draws Metricool-grade
+    # tiles and charts; sga_pages() above still proves the data producers.
+    sec = sga_section(ctx)
+    for tid, _i, _l in TABS:
+        assert f"id='stab-{tid}'" in sec and f"id='spanel-{tid}'" in sec, tid
+    _stray = re.findall(r"<div class='card (?:overflowcard )?sev-", sec)
+    assert not _stray, f"{len(_stray)} old card(s) still render in the section"
+    assert sec.count("class='sg-tile'") >= 80, "too few metric tiles"
+    assert sec.count("class='sg-chart'") >= 25, "too few charts"
+    assert "a3swbar" in sec, "the channel switcher is missing"
+    assert "function sgChan(" in sec, "the channel handler must ship aboard"
+    assert ".seoscr{" in sec, "the palette bridge is missing"
+    _sids = re.findall(r"\sid='([^']+)'", sec)
+    assert len(_sids) == len(set(_sids)), "duplicate element ids in the section"
 
     charts = len(re.findall(r"<svg", html))
     print(f"sga_boards self-check OK — {len(_TAB_BOARDS)} boards, {counted} cards, "

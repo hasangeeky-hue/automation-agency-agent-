@@ -552,6 +552,27 @@ EXTRA_KEY_GROUPS = [
     # a config file the founder has no way to edit. His words: "google tag
     # manager will connect via api the way other app connect via frontend".
     # The service account is the one already reading GSC and GA4.
+    # SOCIAL ANALYTICS KEYS. The posting connectors can only WRITE; these
+    # are the READ side, and each one lights up its channel's analytics
+    # screen the moment it is saved. YouTube and Google Business ride the
+    # service account that already reads GSC and GA4, so they need only an id.
+    ("\U0001F4CA Social analytics", "socan",
+     "Followers, reach, impressions and engagement come from each "
+     "platform's insights API - separate from the posting keys. A channel "
+     "shows no numbers rather than zeros until its key is here.",
+     [("META_PAGE_ID", "Facebook Page id - with META_ACCESS_TOKEN unlocks "
+                       "Facebook analytics"),
+      ("IG_BUSINESS_ID", "Instagram business account id - unlocks Instagram "
+                         "analytics"),
+      ("LINKEDIN_ORG_TOKEN", "LinkedIn token with r_organization_social"),
+      ("LINKEDIN_ORG_URN", "urn:li:organization:XXXXXX"),
+      ("TIKTOK_BUSINESS_ID", "TikTok business id - with TIKTOK_ACCESS_TOKEN"),
+      ("TWITTER_USER_ID", "your X numeric user id - with "
+                          "TWITTER_BEARER_TOKEN"),
+      ("YOUTUBE_CHANNEL_ID", "UCxxxxxxxx - grant the service account on the "
+                             "channel, then only this id is needed"),
+      ("GBP_LOCATION_NAME", "locations/XXXXXXXX - Google Business Profile, "
+                            "same service account")]),
     ("\U0001F4D0 Tag Manager", "gtm",
      "Paste your container path and public id. The engine then audits, "
      "drafts and publishes tags for every channel, so you never open "

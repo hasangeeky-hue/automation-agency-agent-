@@ -984,6 +984,23 @@ def build_factory_ctx(store, *, jobs=None, status=None, ci=None, piece=None,
     }
 
 
+def _social_snap(store) -> dict:
+    try:
+        import content_engine_social_insights as _SI
+        return _SI.load(store)
+    except Exception:
+        return {}
+
+
+def run_social(store) -> dict:
+    """Pull every connected channel's insights. Free; honest blanks for the
+    channels whose keys are not on the Connect board yet."""
+    import content_engine_social_insights as _SI
+    out = _SI.refresh(store)
+    _stamp(store, "social")
+    return out
+
+
 def build_sga_ctx(store, *, jobs=None, status=None, insights=None, deals=None,
                   month_spent=0.0, month_cap=200.0, emails_sent=0,
                   target_per_channel=1) -> dict:
@@ -1018,6 +1035,10 @@ def build_sga_ctx(store, *, jobs=None, status=None, insights=None, deals=None,
         "budget": SGA.budget(camps, paid, month_spent, month_cap, bl),
         "hub": SGA.google_hub(store, status, jobs, emails_sent=emails_sent),
         "cost_series": SGA.cost_series(jobs),
+        # THE READ SIDE. Additive: the old boards ignore keys they never
+        # read, so nothing that worked before changes.
+        "social": _social_snap(store),
+        "social_history": _get(store, "social_history", []) or [],
     }
 
 

@@ -2795,6 +2795,19 @@ def build_app():
 
     # MEDIA AGENT + TAG MANAGER. Every route lands on the one dispatch or
     # the gated GTM machinery; empty input is refused in words.
+    @app.post("/social/refresh")
+    def social_refresh():
+        """Pull every connected channel's insights. A channel with no key
+        returns its honest blank naming the missing setting."""
+        import content_engine_seo_ops as O
+        store = get_store()
+        out = O.run_social(store)
+        _log_decision(store, "social_refresh",
+                      f"{len(out.get('live') or ())} channel(s) reporting",
+                      out.get("message", "")[:120])
+        return {"ok": True, **{k: out.get(k) for k in
+                               ("at", "live", "message")}}
+
     @app.post("/media/auto")
     async def media_auto(request: Request):
         import content_engine_media_orders as MO
