@@ -35,7 +35,7 @@ BOARD_CTA.update({
     "Executive Brief": ("Open Risk", "nav('riskinfra')"),
     "BI Command": ("Record a won deal", "biDeal()"),
     "Demand": ("Open SEO", "nav('seo')"),
-    "Markets": ("Open GEO", "seoTab('geo')"),
+    "Markets": ("Open GEO", "seoTab('seogeo')"),
     "Channels": ("Open Media Buying", "nav('media')"),
     "Content Value": ("Open Content", "nav('content')"),
     "Lead Generation": ("Open Leads", "nav('leads')"),
@@ -376,7 +376,7 @@ def board_markets(ctx) -> str:
           "site has no German content. This is the widest single gap on the "
           "dashboard and it needs no new tool."),
          "site audit", PINK,
-         "<button class='cta' onclick=\"seoTab('geo')\">Open GEO markets</button>"),
+         "<button class='cta' onclick=\"seoTab('seogeo')\">Open GEO markets</button>"),
         ("Sessions by market", len(rows), "ranked",
          _hbars([(n[:20], v) for n, v in rows[:8]]),
          "Ranked by sessions, so the top row is where to double down.",
@@ -408,7 +408,7 @@ def board_markets(ctx) -> str:
          "This board says which markets exist. The GEO board says how to reach "
          "the ones that do not.",
          "navigation", VIOLET,
-         "<button class='cta' onclick=\"seoTab('geo')\">Open GEO</button>"),
+         "<button class='cta' onclick=\"seoTab('seogeo')\">Open GEO</button>"),
     ]
     return _head("🌍", "Markets & geography",
                  "Which countries the demand comes from, against the five you "

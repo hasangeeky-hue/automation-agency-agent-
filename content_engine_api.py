@@ -1570,8 +1570,14 @@ def _bi_bookings():
         return []
 
 
-def api_dashboard_html() -> str:
-    """Gather live engine data and render the Business Control Center."""
+def _dashboard_kwargs() -> dict:
+    """Gather live engine data ONCE, for whichever UI is asking.
+
+    This used to be the first 180 lines of api_dashboard_html(). It was split
+    out when the VX2 layout arrived, so the two UIs cannot read different
+    numbers for the same question. Whatever is wrong here is wrong in both;
+    whatever is right here is right in both. There is no second reader.
+    """
     store = get_store()
     jobs = store.list_jobs() if hasattr(store, "list_jobs") else []
     st = _connectors_status()
@@ -1742,7 +1748,7 @@ def api_dashboard_html() -> str:
                         saved_keys.add(_k)
     except Exception as e:
         log.warning("could not read which extra keys are set: %s", e)
-    return D.dashboard_html(
+    return dict(
         saved_keys=saved_keys,
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
         risk_ctx=risk_ctx, bi_ctx=bi_ctx, outreach_ctx=outreach_ctx,
@@ -1757,6 +1763,23 @@ def api_dashboard_html() -> str:
         reply_drafts=reply_drafts,
         competitor_intel=(st.get_setting("competitor_intel", None) if hasattr(st, "get_setting") else None),
         google_insights=_safe_google_insights())
+
+
+def api_dashboard_html() -> str:
+    """Render the Business Control Center: the original nine-board layout."""
+    import content_engine_dashboard as D
+    return D.dashboard_html(**_dashboard_kwargs())
+
+
+def api_vx2_html(active: str = "decide") -> str:
+    """Render VX2: the same nine boards, four doors, 127 subsections.
+
+    Same data, same builders, same second. If VX2 ever disagrees with the old
+    dashboard about a number, the disagreement is in the RENDERER, because the
+    reader above is shared.
+    """
+    import content_engine_vx2 as VX2
+    return VX2.page(active=active, **_dashboard_kwargs())
 
 
 # ---------------------------------------------------------------------------
@@ -1822,6 +1845,32 @@ def build_app():
         if not dash_authed(request.cookies):
             return HTMLResponse(_login_html(), headers=_NO_CACHE)
         return HTMLResponse(api_dashboard_html(), headers=_NO_CACHE)
+
+    # VX2 - the new layout, served BESIDE the old one. Same login, same data,
+    # same handlers. "/" is untouched, so nothing that works today can break
+    # here, and switching back is a URL, not a rollback.
+    @app.get("/vx2", response_class=HTMLResponse)
+    def vx2(request: Request, b: str = "decide"):
+        if not dash_authed(request.cookies):
+            return HTMLResponse(_login_html(), headers=_NO_CACHE)
+        return HTMLResponse(api_vx2_html(active=b), headers=_NO_CACHE)
+
+    @app.get("/vx2/board/{bid}", response_class=HTMLResponse)
+    def vx2_board(bid: str, request: Request):
+        """One board's HTML, fetched when you first open that board."""
+        if not dash_authed(request.cookies):
+            return HTMLResponse("<p>Session expired. Reload the page.</p>",
+                                status_code=401)
+        import content_engine_vx2 as VX2
+        try:
+            return HTMLResponse(VX2.board_html(bid, _dashboard_kwargs()),
+                                headers=_NO_CACHE)
+        except Exception as ex:
+            log.warning("vx2 board %s failed: %s", bid, ex)
+            return HTMLResponse(
+                "<p class='v2empty'>This board could not be read: "
+                f"{type(ex).__name__}. The other boards are unaffected.</p>",
+                headers=_NO_CACHE)
 
     @app.post("/login")
     async def login(request: Request):

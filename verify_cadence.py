@@ -168,7 +168,18 @@ print("\n== 24/7 TECHNICAL SEO: its own switch, and bounded ==")
 import content_engine_workorders as WO
 
 st5 = Store()
-chk(S.seo_auto_level(st5) == "off", "off by default - a deploy does not start fixing")
+# WAS: chk(... == "off", "off by default"). That gate outlived its contract.
+# Shipping the default as "off" meant fourteen SEO engines ran zero times and
+# the section reported on work that never happened. The default is now "safe",
+# and the promise moved with it: safe fixes only what a reader never sees, so
+# the two checks below assert the thing that actually protects the site.
+chk(S.seo_auto_level(st5) == "safe",
+    "safe by default - the engines actually run", S.seo_auto_level(st5))
+_safe_codes = set(S._seo_codes("safe"))
+_all_codes = set(S._seo_codes("all"))
+chk(_safe_codes and _safe_codes < _all_codes,
+    "safe is a strict subset of all - it can never do more",
+    f"{len(_safe_codes)} of {len(_all_codes)} work-order types")
 _stopped = S.run_due_work(Store(), NOW)
 chk(_stopped.get("ran") in (None, "inspect")
     or _stopped.get("skipped"),
