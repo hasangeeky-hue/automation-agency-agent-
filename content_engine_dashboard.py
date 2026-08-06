@@ -2372,14 +2372,28 @@ def _system_map(st):
 # ---------------------------------------------------------------------------
 # login
 # ---------------------------------------------------------------------------
-def login_html(error=""):
+def login_html(error="", nxt=""):
+    """The sign-in page. `nxt` is where to land AFTER signing in.
+
+    Without it, every deep link died at the door: you asked for /vx2, were sent
+    to the login form, and arrived at / with no way of knowing what you had
+    asked for. A bookmark to a board was therefore never usable twice.
+    """
     err = f'<p style="color:#FF6B93;font-size:13px;margin:0 0 10px">{_esc(error)}</p>' if error else ""
+    # only a local path, never an absolute URL - an open redirect on a login
+    # form is how a sign-in page gets used to send someone elsewhere
+    nxt = str(nxt or "")
+    safe = nxt if (nxt.startswith("/") and not nxt.startswith("//")) else ""
+    hidden = (f"<input type='hidden' name='next' value='{_esc(safe)}'>"
+              if safe else "")
+    going = (f"<p style='color:#8E9BBE;font-size:11.5px;margin:-8px 0 14px'>"
+             f"then on to <b>{_esc(safe)}</b></p>" if safe else "")
     return ("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             "<title>Sign in</title><style>" + CSS +
             "body{display:flex;align-items:center;justify-content:center;min-height:100vh}.box{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:26px;width:330px;max-width:90vw}"
             "input{width:100%;margin-bottom:12px;background:var(--s2);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:11px}button{width:100%;background:var(--teal);color:#04121a;font-weight:700;border:none;border-radius:9px;padding:11px;cursor:pointer}</style></head><body>"
             "<form class='box' method='post' action='/login'><h1 style='font-size:17px;margin:0 0 2px'>Business Control Center</h1>"
-            "<p style='color:#8E9BBE;font-size:12px;margin:0 0 16px'>Sign in to continue</p>" + err +
+            "<p style='color:#8E9BBE;font-size:12px;margin:0 0 16px'>Sign in to continue</p>" + going + err + hidden +
             "<input type='password' name='password' placeholder='Password' autofocus><button type='submit'>Sign in</button></form></body></html>")
 
 
@@ -4506,7 +4520,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  "<div class='ctrl' style='margin-top:6px'><button class='cbtn' onclick=\"act('/tick')\">▶ Run one step</button>"
                  + pause_btn + auto_btn + "</div></details>")
 
-    logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
+    # THE DOOR TO VX2. Without a link here, the only way into the new layout
+    # was typing the URL, and typing it while signed out produced raw JSON -
+    # which read as "vx2 is not showing, it shows the old dashboard".
+    _vx2_link = ("<a class='logout' href='/vx2' style='border-color:#6BA8FF;"
+                 "color:#6BA8FF'>Try the new layout &rsaquo;</a>")
+    logout = _vx2_link + ("<a class='logout' href='/logout'>Sign out</a>"
+                          if has_password else "")
     _af = (system_ctx or {}).get("agent_findings") or {}
     _counts = {str((_s or {}).get("section")): len((_s or {}).get("findings") or [])
                for _s in (_af.get("sections") or [])

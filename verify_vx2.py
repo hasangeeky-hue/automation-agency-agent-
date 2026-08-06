@@ -304,6 +304,86 @@ def _g20():
 
 
 # ---------------------------------------------------------------------------
+# 21-25  THE DOOR. Reaching /vx2 at all, which is where this first failed.
+# ---------------------------------------------------------------------------
+def _client(password="testpw"):
+    import os
+    os.environ["DASHBOARD_PASSWORD"] = password
+    from fastapi.testclient import TestClient
+    import importlib
+    import content_engine_api as _A
+    importlib.reload(_A)
+    return TestClient(_A.app), _A
+
+
+_HTML = {"accept": "text/html,application/xhtml+xml"}
+
+
+@gate(21, "a signed-out browser asking for /vx2 gets the login form, not JSON")
+def _g21():
+    c, _A = _client()
+    for p in ("/", "/vx2", "/vx2?b=market"):
+        r = c.get(p, headers=_HTML, follow_redirects=False)
+        assert "name='password'" in r.text, (
+            f"{p} answered a browser with something that is not a login form. "
+            f"This is the bug the founder hit: /vx2 returned raw JSON, so the "
+            f"deep link died and the only reachable page was the old one. "
+            f"Got: {r.text[:80]!r}")
+        assert r.status_code == 200, (
+            f"{p} returned {r.status_code}; a proxy with "
+            f"proxy_intercept_errors can swallow a non-200 body")
+    return "3 page paths, all served the form"
+
+
+@gate(22, "a program still gets JSON, not a login page")
+def _g22():
+    c, _A = _client()
+    r = c.get("/health", follow_redirects=False)
+    assert r.status_code == 401, f"an API call must still 401, got {r.status_code}"
+    assert "application/json" in (r.headers.get("content-type") or ""), (
+        "an unauthenticated API call must not receive an HTML login page")
+    return "401 + JSON for callers that did not ask for a page"
+
+
+@gate(23, "signing in lands you where you were going")
+def _g23():
+    c, _A = _client()
+    r = c.post("/login", data={"password": "testpw", "next": "/vx2?b=market"},
+               follow_redirects=False)
+    assert r.headers.get("location") == "/vx2?b=market", (
+        f"a deep link must survive the login, got {r.headers.get('location')}")
+    return "the destination survives the sign-in"
+
+
+@gate(24, "the login form cannot be used to redirect somewhere else")
+def _g24():
+    c, _A = _client()
+    for bad in ("https://evil.example/x", "//evil.example/x",
+                "http://evil.example"):
+        r = c.post("/login", data={"password": "testpw", "next": bad},
+                   follow_redirects=False)
+        assert r.headers.get("location") == "/", (
+            f"an open redirect: next={bad!r} sent the user to "
+            f"{r.headers.get('location')!r}")
+    return "3 hostile destinations, all refused"
+
+
+@gate(25, "the old dashboard offers a way into the new one")
+def _g25():
+    c, _A = _client()
+    c.post("/login", data={"password": "testpw"}, follow_redirects=False)
+    r = c.get("/", headers=_HTML)
+    assert "href='/vx2'" in r.text, (
+        "there is no link from / to /vx2, so the only way in is typing the "
+        "URL exactly right")
+    r2 = c.get("/vx2", headers=_HTML)
+    assert "Anthropos VX2" in r2.text, "/vx2 did not serve VX2 when signed in"
+    assert "Business Control Center" not in r2.text, (
+        "/vx2 served the old dashboard")
+    return "a link in, and /vx2 serves VX2"
+
+
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print("=" * 74)
     print("VX2 GATES")

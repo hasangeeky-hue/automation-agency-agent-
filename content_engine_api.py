@@ -1361,9 +1361,9 @@ def _blueprint_svg(st: dict) -> str:
     return "".join(parts)
 
 
-def _login_html(error: str = "") -> str:
+def _login_html(error: str = "", nxt: str = "") -> str:
     import content_engine_dashboard as D
-    return D.login_html(error)
+    return D.login_html(error, nxt)
 
 
 # ---------------------------------------------------------------------------
@@ -1837,8 +1837,29 @@ def build_app():
         key = request.headers.get("x-api-key") or request.query_params.get("key")
         if cookie_ok or (key and key == pw):
             return await call_next(request)
-        if request.url.path == "/":
-            return HTMLResponse(_login_html())
+        # A BROWSER GETS A LOGIN FORM. A PROGRAM GETS 401.
+        #
+        # This used to serve the form for "/" alone, so every other page a
+        # human could type - /vx2 above all - answered a browser navigation
+        # with raw JSON. The founder read that dead end as "vx2 is not
+        # showing, it shows the old dashboard": the deep link never opened, so
+        # the only page reachable was the one the login form landed on.
+        #
+        # The test is what the caller asked for, not which path it is. A page
+        # request says text/html; an API call does not.
+        wants_page = (request.method == "GET"
+                      and "text/html" in (request.headers.get("accept") or ""))
+        if wants_page:
+            nxt = request.url.path
+            if request.url.query:
+                nxt += "?" + request.url.query
+            # 200, not 401. "/" has served the login form with 200 since the
+            # beginning and works through the proxy in front of this box; a
+            # reverse proxy running proxy_intercept_errors would swallow a 401
+            # body and show its own error page instead of the form. Changing
+            # the status of the page that already works, to fix the pages that
+            # do not, would be trading one broken door for another.
+            return HTMLResponse(_login_html(nxt=nxt), headers=_NO_CACHE)
         return JSONResponse({"detail": "unauthorized — sign in at / or send ?key= / X-API-Key"},
                             status_code=401)
 
@@ -1891,13 +1912,20 @@ def build_app():
         # Parse the urlencoded form by hand so we don't need python-multipart.
         from urllib.parse import parse_qs
         raw = (await request.body()).decode("utf-8", "ignore")
-        password = parse_qs(raw).get("password", [""])[0]
+        form = parse_qs(raw)
+        password = form.get("password", [""])[0]
+        # Land where you were going, not always at "/". Only a local path is
+        # accepted: an open redirect on a sign-in form is how a login page
+        # gets turned into a way of sending someone somewhere else.
+        nxt = form.get("next", [""])[0]
+        dest = nxt if (nxt.startswith("/") and not nxt.startswith("//")) else "/"
         if _dash_password() and password == _dash_password():
-            resp = RedirectResponse(url="/", status_code=303)
+            resp = RedirectResponse(url=dest, status_code=303)
             resp.set_cookie("aa_dash", _dash_token(), httponly=True,
                             samesite="lax", max_age=60 * 60 * 24 * 14)
             return resp
-        return HTMLResponse(_login_html("Wrong password"), status_code=401)
+        return HTMLResponse(_login_html("Wrong password", nxt=dest),
+                            status_code=401)
 
     @app.get("/logout")
     def logout():
