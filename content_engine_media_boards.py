@@ -1384,13 +1384,27 @@ def media_pages(ctx) -> dict:
 def media_section(ctx) -> str:
     """All 296 cards in ONE dashboard section, same system as SEO."""
     H = _H()
-    panels = media_pages(ctx)
+    # THE SCREENS REPLACE THE 296 CARDS - the founder's order, same surgery
+    # the SEO section had. The board functions stay (data producers); only
+    # what this section DRAWS changed.
+    import content_engine_media_screens as MSCR
+    import content_engine_media_platforms as MPL
+    import content_engine_seo_screens as SSCR
+    panels = MSCR.build_panels(ctx)
+    _mo = ctx.get("media_orders") or []
+    _mo_open = [o for o in _mo if o.get("status") == "open"]
+    _chips = {"mbcmd": len((ctx.get("media_verdicts") or {}).get("verdicts") or ()),
+              "mbwork": len(_mo_open),
+              "mbconv": len(((ctx.get("gtm_audit") or {}).get("missing")) or ())
+              or None}
     gof = {t: gid for gid, _l, _q, ts in GROUPS for t in ts}
     bar = "".join(
         f"<button class='stab{' on' if i == 0 else ''}' id='stab-{tid}' "
         f"data-grp='{gof.get(tid, 'mbact')}' onclick=\"seoTab('{tid}')\">"
         f"<span>{icon}</span>{H._esc(label)}"
-        f"<span class='n'>{_TAB_COUNTS.get(tid, 0)}</span></button>"
+        + (f"<span class='n'>{_chips[tid]}</span>"
+           if _chips.get(tid) is not None else "")
+        + "</button>"
         for i, (tid, icon, label) in enumerate(TABS))
     grouprail = "".join(
         f"<button class='sgrp{' on' if i == 0 else ''}' id='sgrp-{gid}' "
@@ -1406,19 +1420,22 @@ def media_section(ctx) -> str:
               "<button class='cbtn' onclick='openEcon()'>💶 Set unit economics</button>"
               "<button class='cbtn' onclick=\"nav('map')\">🔌 Connect Google Ads</button>"
               "</div>")
-    tools = ("<div class='stools'>"
-             "<input id='cardq2' class='cinput' placeholder='🔎 Search all 296 media cards…' "
-             "oninput='seoFilter()'>"
-             "<button class='cbtn sm' onclick=\"seoSev('all')\">All</button>"
-             "<button class='cbtn sm' onclick=\"seoSev('critical')\">⛔ Needs fixing</button>"
-             "<button class='cbtn sm' onclick=\"seoSev('warn')\">⚠ Worth a look</button>"
-             "<button class='cbtn sm' onclick=\"seoSev('ok')\">✓ Healthy</button></div>")
+    tools = ""  # went with the cards it filtered
+
     hint = (f"<div class='shint'>👇 <b>{TOTAL_CARDS} media-buying cards</b> in "
             f"{len(GROUPS)} groups. Google Ads is not connected yet — cards that "
             f"need it say so instead of showing a fake zero.</div>")
-    return (_TAB_CSS + runbar + hint
+    bridge = ("<style>.seoscr{--pap:var(--s2);--card:var(--s1);"
+              "--ln:var(--line);--tx:var(--ink);--dm:var(--mut);"
+              "--ft:var(--dim);--ac:var(--blue);--warnc:var(--warn);"
+              "--okc:var(--good);--badbg:rgba(255,107,147,.09);"
+              "--warnbg:rgba(245,177,76,.09);--okbg:rgba(63,217,139,.09);"
+              "--hov:rgba(76,141,255,.07)}"
+              + SSCR.CSS + MPL.CSS + "</style>")
+    return ("<div class='seoscr'>" + bridge + SSCR.JS + MPL.JS + MSCR.JS
+            + _TAB_CSS + runbar + hint
             + f"<div class='sgroups'>{grouprail}</div>"
-            + f"<div class='stabs'>{bar}</div>" + tools + body)
+            + f"<div class='stabs'>{bar}</div>" + tools + body + "</div>")
 
 
 # ---------------------------------------------------------------- self-check
@@ -1530,8 +1547,20 @@ if __name__ == "__main__":
     grouped = [t for _g, _l, _q, ts in GROUPS for t in ts]
     assert sorted(grouped) == sorted(t for t, _, _ in TABS), "every tab in exactly one group"
     assert sec.count("class='spanel on'") == 1 and sec.count("class='stab on'") == 1
-    assert "overflowcard" in sec and "Show all" in sec, "progressive disclosure"
-    assert "id='cardq2'" in sec, "search box"
-    print(f"media_boards self-check OK — 16 boards, {counted} cards, "
-          f"{len(set(ids))} unique ids, {html.count('<svg')} charts, honest degrade "
-          f"on Google Ads, live data on landing/interlock/economics")
+    # THE CONTRACT CHANGED ON THE FOUNDER'S ORDER (2026-08-06): the 296 cards
+    # are replaced by the screens. media_pages() and its counts stay tested
+    # above because the boards remain the data producers; the SECTION now
+    # ships the agent band, the platform managers, the tracking layer and
+    # the queue - with its handlers and styles aboard.
+    assert "id='cardq2'" not in sec, "the card search box outlived its cards"
+    assert "s3band" in sec, "the media agent band is missing"
+    assert "mediaAutoSet('observe'" in sec, "the OFF/OBSERVE/PROPOSE ladder is missing"
+    assert "a3swbar" in sec or "a3bar" in sec, "the platform managers are missing"
+    assert "function mediaRun(" in sec, "the media handlers must ship with the section"
+    assert ".seoscr{" in sec, "the palette bridge is missing"
+    import re as _re4
+    _stray = _re4.findall(r"<div class='card (?:overflowcard )?sev-", sec)
+    assert not _stray, f"{len(_stray)} old card(s) still render in the section"
+    print(f"media_boards self-check OK — 16 board data producers ({counted} "
+          f"card tuples intact), section serves the agent screens, honest "
+          f"degrade on Google Ads")

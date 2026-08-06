@@ -2793,6 +2793,105 @@ def build_app():
         except Exception as e:
             return {"error": str(e)[:120]}
 
+    # MEDIA AGENT + TAG MANAGER. Every route lands on the one dispatch or
+    # the gated GTM machinery; empty input is refused in words.
+    @app.post("/media/auto")
+    async def media_auto(request: Request):
+        import content_engine_media_orders as MO
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        out = MO.set_auto(get_store(), d.get("level", ""))
+        if out.get("ok"):
+            _log_decision(get_store(), "media_auto",
+                          f"level {d.get('level')}", out.get("message", ""))
+        return out
+
+    @app.post("/media/optimize")
+    def media_optimize():
+        import content_engine_media_orders as MO
+        store = get_store()
+        lvl = MO.auto_level(store)
+        out = MO.optimize(store, propose=(lvl == "propose"))
+        _log_decision(store, "media_optimize", f"at level {lvl}",
+                      out.get("message", ""))
+        return {"ok": True, **out}
+
+    @app.post("/media/approve")
+    async def media_approve(request: Request):
+        import content_engine_media_orders as MO
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        oid = str(d.get("id") or "")
+        if not oid:
+            return {"ok": False, "message": "no order id given; nothing changed"}
+        okd = MO.mark(get_store(), oid, "approved", "approved by founder")
+        _log_decision(get_store(), "media_approved", oid[:40], "")
+        return {"ok": okd, "message": ("approved - press Execute to run it "
+                                       "through the dispatch" if okd else
+                                       "no such order")}
+
+    @app.post("/media/run-orders")
+    async def media_run_orders(request: Request):
+        import content_engine_media_orders as MO
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        ids = [str(x) for x in (d.get("ids") or []) if x][:50]
+        rep = MO.run_media_batch(get_store(), ids=ids or None)
+        if rep["attempted"] == 0:
+            return {"ok": True, **rep,
+                    "message": "nothing approved matched; approve an order "
+                               "first - the dispatch only runs approved work"}
+        _log_decision(get_store(), "media_ran", f"{rep['attempted']} order(s)",
+                      f"done {rep['done']}, held {rep['held']}")
+        return {"ok": True, **rep, "message":
+                f"{rep['done']} executed, {rep['held']} held with the "
+                f"reason written down, {rep['failed']} failed."}
+
+    @app.post("/gtm/audit")
+    def gtm_audit_ep():
+        import content_engine_gtm as G
+        store = get_store()
+        ins = store.get_setting("google_insights", {}) or {}
+        rep = G.audit(store, insights=ins)
+        return {"ok": True, **{k: rep.get(k) for k in
+                               ("ready", "at", "missing", "paused",
+                                "silent", "steps")},
+                "message": (f"audited: {len(rep.get('missing', []))} missing, "
+                            f"{len(rep.get('silent', []))} silent"
+                            if rep.get("ready") else
+                            "Tag Manager is not granted yet; the steps are "
+                            "on the Tracking tab")}
+
+    @app.post("/gtm/draft")
+    async def gtm_draft_ep(request: Request):
+        import content_engine_gtm as G
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        name = str(d.get("name") or "")
+        if not name:
+            return {"ok": False, "result": "no tag name given; nothing drafted"}
+        out = G.draft_tag(get_store(), name)
+        _log_decision(get_store(), "gtm_draft", name[:60],
+                      out.get("result", "")[:120])
+        return {"ok": out.get("status") == "done", **out}
+
+    @app.post("/gtm/publish")
+    def gtm_publish_ep():
+        import content_engine_gtm as G
+        out = G.publish(get_store())
+        _log_decision(get_store(), "gtm_publish", "workspace",
+                      out.get("result", "")[:120])
+        return {"ok": out.get("status") == "done", **out,
+                "message": out.get("result", "")}
+
     @app.post("/media/draft")
     def media_draft():
         return api_media_draft()

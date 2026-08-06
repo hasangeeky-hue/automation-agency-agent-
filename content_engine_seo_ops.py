@@ -523,6 +523,33 @@ def run_interlock(store) -> dict:
             "cac": (out.get("cac") or {}).get("cac")}
 
 
+def _mo_load(store):
+    try:
+        import content_engine_media_orders as _MO
+        return _MO.load(store)
+    except Exception:
+        return []
+
+
+def _mo_level(store):
+    try:
+        import content_engine_media_orders as _MO
+        return _MO.auto_level(store)
+    except Exception:
+        return "unknown"
+
+
+def run_optimize(store) -> dict:
+    """The media agent's cadence step: judge daily; draft only at PROPOSE."""
+    import content_engine_media_orders as _MO
+    lvl = _MO.auto_level(store)
+    if lvl == "off":
+        return {"skipped": "media agent is OFF"}
+    out = _MO.optimize(store, propose=(lvl == "propose"))
+    _stamp(store, "optimize")
+    return out
+
+
 def build_media_ctx(store, *, competitor_intel=None) -> dict:
     """Everything the 16 media boards read."""
     import content_engine_ads as ADS
@@ -537,6 +564,12 @@ def build_media_ctx(store, *, competitor_intel=None) -> dict:
         "markets": inter.get("markets") or [],
         "competitor_intel": competitor_intel or (_get(store, "competitor_intel", {}) or {}),
         "orders": [], "funnel": [],
+        # THE MEDIA AGENT'S KEYS - additive; the old boards ignore them.
+        "insights": _get(store, "google_insights", {}) or {},
+        "media_orders": _mo_load(store),
+        "media_verdicts": _get(store, "media_verdicts", {}) or {},
+        "media_auto_level": _mo_level(store),
+        "gtm_audit": _get(store, "gtm_audit", None),
     })
     # M13 — findings become tracked jobs, the same as the SEO side.
     try:

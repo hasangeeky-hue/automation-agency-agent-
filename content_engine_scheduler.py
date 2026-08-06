@@ -159,6 +159,8 @@ SEO_CADENCE = {
     "geo":         {"every_days": 7, "cost": "cheap"},
     "ads":         {"every_days": 1, "cost": "free"},
     "interlock":   {"every_days": 1, "cost": "free"},
+    # the media agent: judge daily, draft only at PROPOSE, spend never
+    "optimize":    {"every_days": 1, "cost": "free"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }
