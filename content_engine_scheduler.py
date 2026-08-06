@@ -161,6 +161,7 @@ SEO_CADENCE = {
     "interlock":   {"every_days": 1, "cost": "free"},
     # the media agent: judge daily, draft only at PROPOSE, spend never
     "optimize":    {"every_days": 1, "cost": "free"},
+    "offline":     {"every_days": 1, "cost": "free"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }

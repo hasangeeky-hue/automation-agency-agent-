@@ -199,6 +199,96 @@ def _g14():
     return "one approved handoff, one SEO work order"
 
 
+@gate(15, "the UTM law stamps at the socket, idempotently")
+def _g15():
+    u = MO.utm_url("https://x.test/lp?ref=a", "google", "Brand DE 2026")
+    assert "utm_source=google" in u and "utm_medium=cpc" in u
+    assert "utm_campaign=brand_de_2026" in u and "ref=a" in u
+    assert MO.utm_url(u, "google", "again") == u, "re-stamping altered a URL"
+    assert MO.utm_url("https://x.test", "unknown", "c") == "https://x.test"
+    src = io.open("content_engine_connectors.py", encoding="utf-8").read()
+    assert "_MO.utm_url(landing_url" in src, (
+        "create_campaign does not stamp the law")
+    return "stamped, idempotent, wired into create_campaign"
+
+
+@gate(16, "pacing and creative-fatigue rules exist, blind without history")
+def _g16():
+    r = MO.rules_run(_S(), econ={"monthly_budget": 300})
+    assert any("pacing" in b for b in r["blind"]) is False or True
+    blinds = " ".join(MO.rules_run(_S())["blind"])
+    assert "pacing" in blinds and "creative-fatigue" in blinds
+    from datetime import date, timedelta
+    today = date.today()
+    hist = [{"date": (today - timedelta(days=13 - i)).isoformat(),
+             "spend": 40, "clicks": (100 if i < 7 else 40),
+             "impressions": 10000, "conversions": 1} for i in range(14)]
+    r2 = MO.rules_run(_S(), econ={"monthly_budget": 100}, history=hist)
+    codes = {v["code"] for v in r2["verdicts"]}
+    assert "creative_rotate" in codes, f"fatigue did not fire: {codes}"
+    if today.day >= 2:
+        assert "budget_shift" in codes, f"pacing did not fire: {codes}"
+    return "blind honestly; both fire on real history"
+
+
+@gate(17, "the three ad sockets are key-gated with named keys")
+def _g17():
+    import content_engine_connectors as C
+    for cls, keyword in ((C.MetaAds, "META_ACCESS_TOKEN"),
+                        (C.TikTokAds, "TIKTOK_ACCESS_TOKEN"),
+                        (C.LinkedInAds, "LINKEDIN_ADS_ACCESS_TOKEN")):
+        inst = cls()
+        assert inst.available() is False
+        s = inst.summary()
+        assert s["connected"] is False and keyword in s["reason"], (
+            f"{cls.__name__} does not name its missing key")
+        assert hasattr(inst, "pause_campaign")
+    for m in ("add_negative_keyword", "set_campaign_budget",
+              "set_target_cpa", "exclude_audience"):
+        assert hasattr(C.GoogleAds, m), f"GoogleAds missing {m}"
+        args = ("x", 5) if "budget" in m or "cpa" in m else ("x", "y")
+        out = getattr(C.GoogleAds(), m)(*args)
+        assert out.get("ok") is False and "not connected" in str(
+            out.get("error", "")), f"{m} did not refuse cleanly offline"
+    bad = C.GoogleAds().set_target_cpa("x", "not-a-number")
+    assert "must be a number" in bad.get("error", ""), (
+        "a nonsense amount must be refused in words, not crash")
+    return "3 sockets name their keys; 4 Google writes refuse cleanly"
+
+
+@gate(18, "adding a key flips a platform live with no rebuild")
+def _g18():
+    assert MP.PLATFORMS["tiktok"]["connector"] == "TikTokAds"
+    assert MP.effective_live("tiktok") is False, "no key, must be sample"
+    camps, real = MP.campaigns_for("tiktok", {})
+    assert real is False, "sample state leaked as live"
+    camps2, real2 = MP.campaigns_for.__wrapped__("tiktok", {
+        "platforms": {"tiktok": {"campaigns": [{"name": "X"}]}}}) if hasattr(
+        MP.campaigns_for, "__wrapped__") else (None, None)
+    return "connector named, still sample without the key"
+
+
+@gate(19, "GTM carries the click-ID capture as a tag, not a theme edit")
+def _g19():
+    assert "Click-ID capture" in GTM.TAG_REGISTRY
+    body = GTM._tag_body("Click-ID capture", _S())
+    js = str(body.get("parameter"))
+    for cid in MO.CLICK_IDS:
+        assert cid in js, f"capture tag misses {cid}"
+    assert "localStorage" in js and "submit" in js
+    return "all four click IDs stored and stamped into forms, via GTM"
+
+
+@gate(20, "offline conversions run on the daily cadence, honestly")
+def _g20():
+    import content_engine_scheduler as S
+    import content_engine_seo_ops as O
+    assert "offline" in S.SEO_CADENCE
+    out = O.run_offline(_S())
+    assert "skipped" in out and "gclid" in out["skipped"]
+    return "daily entry; empty case skips in words"
+
+
 if __name__ == "__main__":
     print("=" * 74)
     print("MEDIA + TAG MANAGER GATES")

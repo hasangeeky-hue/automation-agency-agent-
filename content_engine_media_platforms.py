@@ -64,7 +64,7 @@ PLATFORMS = {
     },
     "facebook": {
         "name": "Facebook Ads", "mark": "f", "colour": "#1877F2",
-        "connector": None, "state": "sample",
+        "connector": "MetaAds", "state": "sample",
         "levels": ("Campaign", "Ad set", "Ad"),
         "objectives": ("Sales", "Leads", "Engagement", "Traffic",
                        "Awareness", "App promotion"),
@@ -84,7 +84,7 @@ PLATFORMS = {
     },
     "instagram": {
         "name": "Instagram Ads", "mark": "ig", "colour": "#C13584",
-        "connector": None, "state": "sample",
+        "connector": "MetaAds", "state": "sample",
         "levels": ("Campaign", "Ad set", "Ad"),
         "objectives": ("Sales", "Leads", "Engagement", "Traffic",
                        "Awareness", "Profile visits"),
@@ -101,7 +101,7 @@ PLATFORMS = {
     },
     "linkedin": {
         "name": "LinkedIn Ads", "mark": "in", "colour": "#0A66C2",
-        "connector": None, "state": "sample",
+        "connector": "LinkedInAds", "state": "sample",
         "levels": ("Campaign group", "Campaign", "Ad"),
         "objectives": ("Lead generation", "Website visits", "Engagement",
                        "Brand awareness", "Video views", "Job applicants"),
@@ -119,7 +119,7 @@ PLATFORMS = {
     },
     "tiktok": {
         "name": "TikTok Ads", "mark": "tt", "colour": "#161823",
-        "connector": None, "state": "sample",
+        "connector": "TikTokAds", "state": "sample",
         "levels": ("Campaign", "Ad group", "Ad"),
         "objectives": ("Traffic", "Conversions", "Lead generation",
                        "Video views", "Reach", "App promotion"),
@@ -234,12 +234,29 @@ def is_connected(pid: str) -> bool:
         return False
 
 
+def effective_live(pid: str) -> bool:
+    """PLUG AND PLAY. A platform is live when its declared state is live OR
+    its connector authorises right now - so adding a key flips the screen
+    with no rebuild, and removing one flips it honestly back to sample."""
+    p = PLATFORMS.get(pid) or {}
+    return p.get("state") == "live" or is_connected(pid)
+
+
 def campaigns_for(pid: str, ads: dict) -> tuple:
     """Returns (campaigns, is_real). Never invents a figure for a live
     platform, and never presents a sample as live."""
     p = PLATFORMS[pid]
-    if p["state"] != "live":
+    if not effective_live(pid):
         return (SAMPLE.get(pid) or [], False)
+    if pid != "google":
+        plat = ((ads or {}).get("platforms") or {}).get(pid) or {}
+        rows = plat.get("campaigns") or []
+        return ([{"name": c.get("name") or "(unnamed)",
+                  "status": c.get("status") or "unknown",
+                  "budget": c.get("budget"), "spend": c.get("spend"),
+                  "impr": c.get("impressions"), "clicks": c.get("clicks"),
+                  "conv": c.get("conv"), "groups": []}
+                 for c in rows if isinstance(c, dict)], True)
     rows = list((ads or {}).get("campaigns") or [])
     out = []
     for c in rows:
@@ -567,7 +584,7 @@ def switcher(active: str) -> str:
     for pid in ORDER:
         p = PLATFORMS[pid]
         on = " on" if pid == active else ""
-        tag = "" if p["state"] == "live" else "<i>sample</i>"
+        tag = "" if effective_live(pid) else "<i>sample</i>"
         out.append(f"<button class='a3sw{on}' onclick=\"a3plat('{pid}')\">"
                    f"<span class='a3swm' style='background:{p['colour']}'>"
                    f"{e(p['mark'])}</span>{e(p['name'])}{tag}</button>")

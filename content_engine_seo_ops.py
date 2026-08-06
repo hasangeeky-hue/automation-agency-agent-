@@ -475,6 +475,32 @@ def run_ads(store) -> dict:
                  ((_get(store, "google_insights", {}) or {}).get("gsc") or {}).get("queries", [])][:10]
     snap["kw_ideas"] = ADS.keyword_ideas([s for s in seeds if s])
     _set(store, K_ADS, snap)
+    # HISTORY - one row per day, so the pacing and creative-fatigue rules
+    # have something real to look back on. Capped at 90 days.
+    try:
+        from datetime import date as _date
+        hist = _get(store, "ads_history", []) or []
+        _today = _date.today().isoformat()
+        _row = {"date": _today,
+                "spend": (snap.get("ads") or {}).get("spend"),
+                "clicks": (snap.get("ads") or {}).get("clicks"),
+                "impressions": (snap.get("ads") or {}).get("impressions"),
+                "conversions": (snap.get("ads") or {}).get("conversions")}
+        hist = [h for h in hist if h.get("date") != _today] + [_row]
+        _put(store, "ads_history", hist[-90:])
+    except Exception as e:
+        log.warning("ads history append failed: %s", e)
+    # THE OTHER PLATFORMS - each key-gated socket pulls when connected and
+    # states its reason when not, into one place the screens read.
+    try:
+        import content_engine_connectors as _C
+        _meta = _C.MetaAds().summary()
+        snap["platforms"] = {"facebook": _meta, "instagram": _meta,
+                            "tiktok": _C.TikTokAds().summary(),
+                            "linkedin": _C.LinkedInAds().summary()}
+        _put(store, K_ADS, snap)
+    except Exception as e:
+        log.warning("platform pulls failed: %s", e)
     _stamp(store, "ads")
     return {"connected": bool((snap["ads"] or {}).get("connected")),
             "reason": (snap["ads"] or {}).get("reason", ""),
@@ -539,6 +565,27 @@ def _mo_level(store):
         return "unknown"
 
 
+def run_offline(store) -> dict:
+    """Feed WON deals (gclid + revenue) back to Google daily, so it bids for
+    clients rather than form fills. Honest skip when nothing is won."""
+    import content_engine_ads as ADS
+    rows = []
+    try:
+        for j in (store.list_jobs() if hasattr(store, "list_jobs") else []):
+            o = (j.get("payload", {}) or {}).get("outcome") or {}
+            if o.get("gclid") and o.get("revenue"):
+                rows.append({"gclid": o["gclid"], "value": o["revenue"],
+                             "conversion_date_time": o.get("won_at", "")})
+    except Exception as e:
+        log.warning("offline gather failed: %s", e)
+    if not rows:
+        _stamp(store, "offline")
+        return {"skipped": "no won deals carrying a gclid yet"}
+    out = ADS.upload_offline_conversions(rows)
+    _stamp(store, "offline")
+    return out
+
+
 def run_optimize(store) -> dict:
     """The media agent's cadence step: judge daily; draft only at PROPOSE."""
     import content_engine_media_orders as _MO
@@ -570,6 +617,7 @@ def build_media_ctx(store, *, competitor_intel=None) -> dict:
         "media_verdicts": _get(store, "media_verdicts", {}) or {},
         "media_auto_level": _mo_level(store),
         "gtm_audit": _get(store, "gtm_audit", None),
+        "gtm_public_id": _get(store, "GTM_PUBLIC_ID", "") or "",
     })
     # M13 — findings become tracked jobs, the same as the SEO side.
     try:

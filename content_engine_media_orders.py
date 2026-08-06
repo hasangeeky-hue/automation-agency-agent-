@@ -73,6 +73,24 @@ UTM_LAW = {
 }
 CLICK_IDS = ("gclid", "fbclid", "ttclid", "li_fat_id")
 
+def utm_url(url: str, platform: str, campaign: str) -> str:
+    """Stamp the UTM law onto a landing URL. Idempotent: a URL already
+    carrying utm_source is returned untouched, because overwriting a human's
+    deliberate tagging silently is worse than trusting it."""
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    if not url or platform not in UTM_LAW:
+        return url
+    parts = urlsplit(url)
+    q = parse_qsl(parts.query, keep_blank_values=True)
+    if any(k == "utm_source" for k, _v in q):
+        return url
+    slug = "".join(c if c.isalnum() else "_" for c in
+                   str(campaign or "engine").lower())[:60] or "engine"
+    q += list(UTM_LAW[platform].items()) + [("utm_campaign", slug)]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path,
+                       urlencode(q), parts.fragment))
+
+
 _EVIDENCE_FIELDS = ("metric", "threshold", "window", "source")
 
 
@@ -176,7 +194,7 @@ def set_auto(store, level) -> dict:
 # THE RULES - deterministic, evidence-first, honest about missing data
 # ---------------------------------------------------------------------------
 def rules_run(store, *, snap=None, inter=None, econ=None, insights=None,
-              gtm_audit=None) -> dict:
+              gtm_audit=None, **kwargs) -> dict:
     """Compute verdicts from what is REALLY there. A rule whose input is
     absent contributes a 'blind' note, never a guess."""
     verdicts, blind = [], []
@@ -252,6 +270,50 @@ def rules_run(store, *, snap=None, inter=None, econ=None, insights=None,
     if gtm_audit is None:
         blind.append("tag rules: Tag Manager not granted yet")
 
+    # R5 - monthly pacing: spend runs ahead of the cap's calendar share
+    hist = kwargs.get("history") or []
+    cap = float((econ or {}).get("monthly_budget") or 0)
+    if not cap:
+        blind.append("pacing rule: no monthly ad cap set in economics")
+    elif not hist:
+        blind.append("pacing rule: no spend history yet (fills daily)")
+    else:
+        from datetime import date as _d
+        today = _d.today()
+        month = today.isoformat()[:7]
+        mtd = sum(float(h.get("spend") or 0) for h in hist
+                  if str(h.get("date", "")).startswith(month))
+        frac = today.day / 30.0
+        if frac > 0 and cap and mtd > cap * frac * 1.3:
+            verdicts.append(make_order(
+                "budget_shift", f"pacing-{month}", platform="google",
+                evidence={"metric": f"{mtd:.2f} spent by day {today.day}",
+                          "threshold": f"130% of {cap * frac:.2f} pace",
+                          "window": "month to date", "source": "ads_history"},
+                say=f"spend {mtd:.2f} is running 30%+ ahead of the "
+                    f"{cap:.0f}/month cap - cap or shift budget"))
+
+    # R6 - creative fatigue: CTR last 7 days fell 30%+ vs the prior 7
+    rows = [h for h in hist if h.get("clicks") is not None
+            and h.get("impressions")]
+    if len(rows) < 14:
+        blind.append(f"creative-fatigue rule: needs 14 days of history, "
+                     f"has {len(rows)}")
+    else:
+        def _ctr(seg):
+            c = sum(float(h.get("clicks") or 0) for h in seg)
+            im = sum(float(h.get("impressions") or 0) for h in seg)
+            return (c / im) if im else 0.0
+        last7, prior7 = _ctr(rows[-7:]), _ctr(rows[-14:-7])
+        if prior7 > 0 and last7 < prior7 * 0.7:
+            verdicts.append(make_order(
+                "creative_rotate", "account-ctr", platform="google",
+                evidence={"metric": f"CTR {last7:.3%} last 7d",
+                          "threshold": f"30% under prior 7d {prior7:.3%}",
+                          "window": "14d", "source": "ads_history"},
+                say="click-through fell 30%+ week over week: the creative "
+                    "is wearing out; rotate it"))
+
     return {"at": _now(), "verdicts": verdicts, "blind": blind}
 
 
@@ -265,8 +327,10 @@ def optimize(store, *, propose: bool) -> dict:
     econ = ADS.get_economics(store)
     insights = store.get_setting("google_insights", {}) or {}
     gtm_audit = store.get_setting("gtm_audit", None)
+    hist = (store.get_setting("ads_history", []) or []
+            if hasattr(store, "get_setting") else [])
     out = rules_run(store, snap=snap, inter=inter, econ=econ,
-                    insights=insights, gtm_audit=gtm_audit)
+                    insights=insights, gtm_audit=gtm_audit, history=hist)
     store.set_setting("media_verdicts", {
         "at": out["at"], "blind": out["blind"],
         "verdicts": [{k: o[k] for k in ("id", "code", "key", "say",
@@ -304,11 +368,56 @@ def run_media_batch(store, *, ids=None, limit: int = 20) -> dict:
                     out = ("held", "Google Ads is not connected; the order "
                                    "waits and executes the day it is")
                 elif o["code"] == "pause_campaign":
-                    ga.pause_campaign(o["key"])
-                    out = ("done", f"paused {o['key']}")
+                    r = ga.pause_campaign(o["key"])
+                    out = (("done", r.get("detail", "paused")) if r.get("ok")
+                           else ("failed", r.get("error", "")))
+                elif o["code"] == "resume_campaign":
+                    r = ga._mutate("campaigns", [{
+                        "update": {"resourceName": o["key"],
+                                   "status": "ENABLED"},
+                        "updateMask": "status"}])
+                    out = (("done", "resumed") if r.get("ok")
+                           else ("failed", r.get("error", "")))
+                elif o["code"] == "negative_keyword":
+                    r = ga.add_negative_keyword(o["key"])
+                    out = (("done", r.get("detail", "added")) if r.get("ok")
+                           else ("failed", r.get("error", "")))
+                elif o["code"] == "budget_shift":
+                    amt = (o.get("evidence") or {}).get("new_daily_eur")
+                    ref = (o.get("evidence") or {}).get("campaign_ref")
+                    if amt and ref:
+                        r = ga.set_campaign_budget(ref, float(amt))
+                        out = (("done", r.get("detail", "budget set"))
+                               if r.get("ok")
+                               else ("failed", r.get("error", "")))
+                    else:
+                        out = ("held", "needs a campaign_ref and "
+                                       "new_daily_eur on the order - set "
+                                       "them when approving")
+                elif o["code"] == "bid_change":
+                    amt = (o.get("evidence") or {}).get("new_target_cpa_eur")
+                    ref = (o.get("evidence") or {}).get("campaign_ref")
+                    if amt and ref:
+                        r = ga.set_target_cpa(ref, float(amt))
+                        out = (("done", r.get("detail", "target set"))
+                               if r.get("ok")
+                               else ("failed", r.get("error", "")))
+                    else:
+                        out = ("held", "needs a campaign_ref and "
+                                       "new_target_cpa_eur on the order")
+                elif o["code"] == "audience_exclude":
+                    ref = (o.get("evidence") or {}).get("campaign_ref")
+                    ul = (o.get("evidence") or {}).get("user_list_ref")
+                    if ref and ul:
+                        r = ga.exclude_audience(ref, ul)
+                        out = (("done", r.get("detail", "excluded"))
+                               if r.get("ok")
+                               else ("failed", r.get("error", "")))
+                    else:
+                        out = ("held", "needs campaign_ref and "
+                                       "user_list_ref on the order")
                 else:
-                    out = ("held", f"{o['code']} needs a Google Ads write "
-                                   f"the connector does not carry yet")
+                    out = ("held", f"{o['code']} has no Google write yet")
             elif via == "seo_queue":
                 import content_engine_workorders as WO
                 so = WO.make_order("thin_content", o["key"], severity="high",

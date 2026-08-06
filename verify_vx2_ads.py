@@ -60,8 +60,14 @@ def _g1():
                     f"{p['connector']} has no {m}(), so this screen cannot "
                     f"honestly be marked live")
         else:
-            assert not p["connector"], (
-                f"{pid} is marked sample but names a connector")
+            # PLUG AND PLAY (founder, 2026-08-06): a sample platform now
+            # NAMES its connector socket so a key flips it live with no
+            # rebuild - but it may never CLAIM liveness without the key.
+            if p["connector"]:
+                klass = getattr(C, p["connector"], None)
+                assert klass is not None, f"{pid} names a ghost connector"
+                assert A.effective_live(pid) == klass().available(), (
+                    f"{pid} claims a liveness its connector does not have")
     live = [k for k, v in A.PLATFORMS.items() if v["state"] == "live"]
     return f"live: {live}; sample: {len(A.PLATFORMS) - len(live)}"
 

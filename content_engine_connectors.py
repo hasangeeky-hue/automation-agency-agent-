@@ -496,7 +496,6 @@ EMAIL_CATEGORY_ALIAS = {
 }
 
 
-
 # ---------------------------------------------------------------------------
 # WIRE VERIFICATION — creds present is not the same as creds accepted
 # ---------------------------------------------------------------------------
@@ -3496,6 +3495,150 @@ class CalCom:
 # client id/secret that minted it). Google must approve the developer token
 # before live data flows — until then available() is False (no fake numbers).
 # ---------------------------------------------------------------------------
+class _AdsSocket:
+    """Shared shape for the three non-Google ad platforms: key-gated, honest
+    reasons, one summary contract {connected, campaigns[], spend, reason}.
+    The endpoints are the platforms' documented current versions; like
+    GOOGLE_ADS_API_VERSION, each version is a setting so a sunset API is a
+    config change, not a code change. UNVERIFIED against live accounts until
+    a key exists - by definition - and each first live call reports exactly
+    what the platform said."""
+
+    name = "ads"
+    keys = ()
+
+    def available(self) -> bool:
+        return bool(all(_env(k) for k in self.keys) and _requests())
+
+    def _reason(self) -> str:
+        missing = [k for k in self.keys if not _env(k)]
+        return (f"{self.name} ads API not connected - set "
+                + " + ".join(missing) + " on Connect and this goes live")
+
+    def summary(self) -> dict:
+        if not self.available():
+            return {"connected": False, "reason": self._reason(),
+                    "campaigns": []}
+        try:
+            return self._pull()
+        except Exception as e:
+            return {"connected": False, "campaigns": [],
+                    "reason": f"{self.name}: {type(e).__name__}: "
+                              f"{str(e)[:140]}"}
+
+
+class MetaAds(_AdsSocket):
+    """Facebook + Instagram. One Marketing API serves both; placements split
+    inside the account, not across accounts."""
+    name = "Meta"
+    keys = ("META_ACCESS_TOKEN", "META_AD_ACCOUNT_ID")
+
+    def _base(self):
+        v = _env("META_API_VERSION", "v21.0") or "v21.0"
+        acct = _env("META_AD_ACCOUNT_ID").replace("act_", "")
+        return f"https://graph.facebook.com/{v}/act_{acct}"
+
+    def _pull(self) -> dict:
+        r = _requests()
+        tok = _env("META_ACCESS_TOKEN")
+        camps = r.get(f"{self._base()}/campaigns",
+                      params={"fields": "name,status,daily_budget",
+                              "access_token": tok, "limit": 50},
+                      timeout=30).json()
+        ins = r.get(f"{self._base()}/insights",
+                    params={"fields": "spend,clicks,impressions,actions",
+                            "date_preset": "last_30d",
+                            "access_token": tok}, timeout=30).json()
+        row = ((ins.get("data") or [{}])[0]) if isinstance(ins, dict) else {}
+        return {"connected": True,
+                "campaigns": [{"name": c.get("name"),
+                               "status": str(c.get("status", "")).lower(),
+                               "budget": (float(c["daily_budget"]) / 100
+                                          if c.get("daily_budget") else None)}
+                              for c in (camps.get("data") or [])],
+                "spend": row.get("spend"), "clicks": row.get("clicks"),
+                "impressions": row.get("impressions")}
+
+    def pause_campaign(self, campaign_id: str) -> dict:
+        if not self.available():
+            return {"ok": False, "error": self._reason()}
+        r = _requests()
+        v = _env("META_API_VERSION", "v21.0") or "v21.0"
+        resp = r.post(f"https://graph.facebook.com/{v}/{campaign_id}",
+                      data={"status": "PAUSED",
+                            "access_token": _env("META_ACCESS_TOKEN")},
+                      timeout=30)
+        if resp.status_code == 200:
+            return {"ok": True, "detail": "paused in Meta"}
+        return {"ok": False, "error": resp.text[:180]}
+
+
+class TikTokAds(_AdsSocket):
+    name = "TikTok"
+    keys = ("TIKTOK_ACCESS_TOKEN", "TIKTOK_ADVERTISER_ID")
+
+    def _pull(self) -> dict:
+        r = _requests()
+        v = _env("TIKTOK_ADS_API_VERSION", "v1.3") or "v1.3"
+        H = {"Access-Token": _env("TIKTOK_ACCESS_TOKEN")}
+        adv = _env("TIKTOK_ADVERTISER_ID")
+        camps = r.get("https://business-api.tiktok.com/open_api/"
+                      f"{v}/campaign/get/",
+                      params={"advertiser_id": adv, "page_size": 50},
+                      headers=H, timeout=30).json()
+        lst = ((camps.get("data") or {}).get("list")) or []
+        return {"connected": True,
+                "campaigns": [{"name": c.get("campaign_name"),
+                               "status": str(c.get("operation_status",
+                                                   "")).lower(),
+                               "budget": c.get("budget")} for c in lst]}
+
+    def pause_campaign(self, campaign_id: str) -> dict:
+        if not self.available():
+            return {"ok": False, "error": self._reason()}
+        r = _requests()
+        v = _env("TIKTOK_ADS_API_VERSION", "v1.3") or "v1.3"
+        resp = r.post("https://business-api.tiktok.com/open_api/"
+                      f"{v}/campaign/status/update/",
+                      json={"advertiser_id": _env("TIKTOK_ADVERTISER_ID"),
+                            "campaign_ids": [campaign_id],
+                            "operation_status": "DISABLE"},
+                      headers={"Access-Token": _env("TIKTOK_ACCESS_TOKEN")},
+                      timeout=30)
+        ok = resp.status_code == 200 and (resp.json() or {}).get("code") == 0
+        if ok:
+            return {"ok": True, "detail": "paused in TikTok"}
+        return {"ok": False, "error": resp.text[:180]}
+
+
+class LinkedInAds(_AdsSocket):
+    name = "LinkedIn"
+    keys = ("LINKEDIN_ADS_ACCESS_TOKEN", "LINKEDIN_AD_ACCOUNT_ID")
+
+    def _pull(self) -> dict:
+        r = _requests()
+        acct = _env("LINKEDIN_AD_ACCOUNT_ID")
+        resp = r.get("https://api.linkedin.com/rest/adAccounts/"
+                     f"{acct}/adCampaigns?q=search&pageSize=50",
+                     headers={"Authorization": "Bearer "
+                              + _env("LINKEDIN_ADS_ACCESS_TOKEN"),
+                              "LinkedIn-Version":
+                              _env("LINKEDIN_ADS_API_VERSION", "202409")
+                              or "202409",
+                              "X-Restli-Protocol-Version": "2.0.0"},
+                     timeout=30).json()
+        return {"connected": True,
+                "campaigns": [{"name": c.get("name"),
+                               "status": str(c.get("status", "")).lower()}
+                              for c in (resp.get("elements") or [])]}
+
+    def pause_campaign(self, campaign_id: str) -> dict:
+        if not self.available():
+            return {"ok": False, "error": self._reason()}
+        return {"ok": False, "error": "LinkedIn pause needs the partial-"
+                "update call; wired on the first live account"}
+
+
 class GoogleAds:
     def __init__(self) -> None:
         self.dev = _env("GOOGLE_ADS_DEVELOPER_TOKEN")
@@ -3671,7 +3814,109 @@ class GoogleAds:
                 "conversions": round(conv, 1), "cpa": round(spend / conv, 2) if conv else 0,
                 "campaigns": camps[:6]}
 
+    def _gaql(self, query: str):
+        """One GAQL search. Returns rows or an {'error'} dict, never raises."""
+        if not self.available():
+            return {"error": "Google Ads not connected"}
+        tok = self._access_token()
+        if not tok:
+            return {"error": "could not get a Google access token"}
+        try:
+            r = _post_json(f"{self._base()}/googleAds:search",
+                           {"query": query}, headers=self._headers(tok))
+            return (r or {}).get("results", []) if isinstance(r, dict) else []
+        except Exception as e:
+            return {"error": str(e)[:180]}
+
+    def _mutate(self, path: str, operations: list) -> dict:
+        if not self.available():
+            return {"ok": False, "error": "Google Ads not connected"}
+        tok = self._access_token()
+        if not tok:
+            return {"ok": False, "error": "could not get a Google access token"}
+        try:
+            r = _post_json(f"{self._base()}/{path}:mutate",
+                           {"operations": operations},
+                           headers=self._headers(tok))
+            if r and r.get("results"):
+                return {"ok": True,
+                        "detail": f"{len(r['results'])} change(s) applied"}
+            return {"ok": False, "error": f"mutate refused: {str(r)[:180]}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200]}
+
+    def add_negative_keyword(self, term: str, campaign_ref: str = "") -> dict:
+        """Stop paying for a term. Applied to the named campaign, or to every
+        enabled campaign when none is named (the interlock's case)."""
+        if not term:
+            return {"ok": False, "error": "no term given"}
+        refs = [campaign_ref] if campaign_ref else []
+        if not refs:
+            rows = self._gaql("SELECT campaign.resource_name FROM campaign "
+                              "WHERE campaign.status = 'ENABLED'")
+            if isinstance(rows, dict):
+                return {"ok": False, "error": rows["error"]}
+            refs = [r.get("campaign", {}).get("resourceName")
+                    for r in rows][:10]
+        if not refs:
+            return {"ok": False, "error": "no enabled campaigns to protect"}
+        ops = [{"create": {"campaign": ref, "negative": True,
+                           "keyword": {"text": term, "matchType": "EXACT"}}}
+               for ref in refs if ref]
+        return self._mutate("campaignCriteria", ops)
+
+    def set_campaign_budget(self, campaign_ref: str, daily_eur: float) -> dict:
+        """Change a campaign's daily budget, in whole euros."""
+        if not campaign_ref or not daily_eur:
+            return {"ok": False, "error": "campaign and amount required"}
+        try:
+            daily_eur = float(daily_eur)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "the amount must be a number"}
+        rows = self._gaql("SELECT campaign.campaign_budget FROM campaign "
+                          f"WHERE campaign.resource_name = '{campaign_ref}'")
+        if isinstance(rows, dict):
+            return {"ok": False, "error": rows["error"]}
+        bud = (rows or [{}])[0].get("campaign", {}).get("campaignBudget")
+        if not bud:
+            return {"ok": False, "error": "campaign budget not found"}
+        return self._mutate("campaignBudgets", [{
+            "update": {"resourceName": bud,
+                       "amountMicros": str(int(float(daily_eur) * 1_000_000))},
+            "updateMask": "amountMicros"}])
+
+    def set_target_cpa(self, campaign_ref: str, eur: float) -> dict:
+        """Change a Target-CPA campaign's target. Google refuses it for other
+        bidding strategies and that refusal is surfaced, not swallowed."""
+        if not campaign_ref or not eur:
+            return {"ok": False, "error": "campaign and amount required"}
+        try:
+            eur = float(eur)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "the amount must be a number"}
+        return self._mutate("campaigns", [{
+            "update": {"resourceName": campaign_ref,
+                       "targetCpa": {"targetCpaMicros":
+                                     str(int(float(eur) * 1_000_000))}},
+            "updateMask": "targetCpa.targetCpaMicros"}])
+
+    def exclude_audience(self, campaign_ref: str, user_list_ref: str) -> dict:
+        if not campaign_ref or not user_list_ref:
+            return {"ok": False, "error": "campaign and audience required"}
+        return self._mutate("campaignCriteria", [{
+            "create": {"campaign": campaign_ref, "negative": True,
+                       "userList": {"userList": user_list_ref}}}])
+
     def create_campaign(self, draft: dict, landing_url: str = "") -> dict:
+        # THE UTM LAW, stamped at the socket. Every campaign the engine
+        # pushes carries the one-table UTMs, so attribution never depends on
+        # someone remembering. Idempotent: an already-tagged URL is left be.
+        try:
+            import content_engine_media_orders as _MO
+            landing_url = _MO.utm_url(landing_url, "google",
+                                      (draft or {}).get("name") or "engine")
+        except Exception:
+            pass
         """1-click activate: launch a drafted campaign into Google Ads —
         budget -> campaign -> ad group -> responsive search ad -> keywords.
         Returns {'ok', 'detail'}. Requires an APPROVED developer token; until
@@ -4009,3 +4254,5 @@ if __name__ == "__main__":
           "return safe empties, Google hub off-and-safe, and a wire reads green "
           "only once something proved the credentials were accepted. "
           "(No network, no API.)")
+
+

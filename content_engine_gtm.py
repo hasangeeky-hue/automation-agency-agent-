@@ -45,6 +45,7 @@ TAG_REGISTRY = {
     "Meta Pixel":              ("html",   "meta",     "FB+IG attribution"),
     "TikTok Pixel":            ("html",   "tiktok",   "TikTok attribution"),
     "LinkedIn Insight":        ("html",   "linkedin", "LinkedIn attribution"),
+    "Click-ID capture":        ("html",   "engine",   "stores gclid/fbclid/ttclid/li_fat_id and stamps lead forms"),
 }
 
 # which GA4 event each event-tag must fire, for the three-dots silence check
@@ -169,6 +170,13 @@ def _tag_body(name: str, store) -> dict:
     except Exception:
         pass
     body = {"name": name, "type": ttype}
+    if name == "Click-ID capture":
+        # the site-side capture, carried BY Tag Manager - no theme edit.
+        # It stores the four click IDs and stamps them into any form the
+        # visitor later submits, which is how a lead carries its gclid home.
+        body["parameter"] = [{"type": "template", "key": "html",
+                              "value": "<script>(function(){try{var q=new URLSearchParams(location.search);['gclid','fbclid','ttclid','li_fat_id'].forEach(function(k){var v=q.get(k);if(v)localStorage.setItem('aa_'+k,v);});document.addEventListener('submit',function(ev){var f=ev.target;if(!f||!f.appendChild)return;['gclid','fbclid','ttclid','li_fat_id'].forEach(function(k){var v=localStorage.getItem('aa_'+k);if(v&&!f.querySelector('[name='+k+']')){var i=document.createElement('input');i.type='hidden';i.name=k;i.value=v;f.appendChild(i);}});},true);}catch(e){}})();</script>"}]
+        return body
     if ttype == "gaawc":
         body["parameter"] = [{"type": "template", "key": "measurementIdOverride",
                               "value": ga4_id or "G-UNSET"}]

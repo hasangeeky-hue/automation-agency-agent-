@@ -130,7 +130,8 @@ def cmd_screen(ctx) -> str:
         "<div class='s3stat'><span class='s3k'>Blended CPA</span>"
         + _n(round(cpa, 2) if cpa else None, "&euro;") + "</div>"
         "<div class='s3stat'><span class='s3k'>CPA target</span>"
-        + _n(econ.get("target_cpa"), "&euro;") + "</div></div>")
+        + _n((ctx.get("targets") or {}).get("target_cpa_lead")
+             or econ.get("target_cpa"), "&euro;") + "</div></div>")
     why = ""
     if ads.get("reason"):
         why = (f"<div class='s3banner'>{e(ads['reason'])[:220]}</div>")
@@ -240,6 +241,25 @@ def tracking_screen(ctx) -> str:
                      "drafts</button>"
                      "<button class='cta' onclick=\"act('/gtm/audit')\">"
                      "Re-audit</button></div>")
+    # THE BASE SNIPPET, ready to paste. The one thing the API cannot do is
+    # put its own loader into the theme; this box removes every other step.
+    pub = str(ctx.get("gtm_public_id") or "")
+    if pub:
+        sn = ("&lt;script&gt;(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({"
+              "'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d."
+              "getElementsByTagName(s)[0],j=d.createElement(s);j.async=true;"
+              "j.src='https://www.googletagmanager.com/gtm.js?id='+i;"
+              "f.parentNode.insertBefore(j,f);})(window,document,'script',"
+              f"'dataLayer','{e(pub)}');&lt;/script&gt;")
+        parts.append("<div class='s3panel'><p class='s3k'>The base snippet "
+                     "&middot; paste once into the theme header</p>"
+                     f"<div class='code' style='font-family:ui-monospace,"
+                     f"monospace;font-size:10.5px;white-space:pre-wrap;"
+                     f"word-break:break-all'>{sn}</div></div>")
+    else:
+        parts.append("<p class='s2empty'>Save your public container id "
+                     "(GTM-XXXXXXX) as GTM_PUBLIC_ID on Connect and the "
+                     "paste-ready base snippet renders here.</p>")
     # the UTM law, from the single table
     law = "".join(
         f"<div class='s3fx'><span class='s3fxn mono'>{e(pid)}</span>"
@@ -352,6 +372,52 @@ def work_screen(ctx) -> str:
                                 "agent's next verdict run fills it.</p>"))
 
 
+def table_screen(title, obj, *, reason_key, rows_keys, empty) -> str:
+    """A defensive table over whatever a pull really returned: list-of-dicts
+    become rows, a stated reason is shown, and nothing is invented."""
+    if isinstance(obj, dict) and obj.get(reason_key):
+        return simple_screen(title, f"<p class='s2empty'>"
+                                    f"{e(obj[reason_key])[:220]}</p>")
+    rows = []
+    if isinstance(obj, dict):
+        for k in rows_keys:
+            v = obj.get(k)
+            if isinstance(v, list) and v:
+                rows = [r for r in v if isinstance(r, dict)][:25]
+                break
+    elif isinstance(obj, list):
+        rows = [r for r in obj if isinstance(r, dict)][:25]
+    if not rows:
+        return simple_screen(title, f"<p class='s2empty'>{e(empty)}</p>")
+    cols = [k for k in rows[0].keys()][:5]
+    head = "".join(f"<span class='s3fxw'><b>{e(c)}</b></span>" for c in cols)
+    body = "".join(
+        "<div class='s3fx'>" + "".join(
+            f"<span class='s3fxw'>{e(r.get(c))[:38]}</span>" for c in cols)
+        + "</div>" for r in rows)
+    return simple_screen(title, f"<div class='s3fx'>{head}</div>{body}")
+
+
+def comp_screen(ctx) -> str:
+    """Who advertises on which of your queries - real SERP observation."""
+    ci = ctx.get("competitor_intel") or {}
+    serp = ci.get("serp_ads") or {}
+    if not isinstance(serp, dict) or not serp:
+        return simple_screen("Competition", "<p class='s2empty'>No SERP "
+                             "advertiser observations yet; the competitor "
+                             "engine fills this. Auction insights need the "
+                             "Google key.</p>")
+    rows = "".join(
+        f"<div class='s3fx'><span class='s3fxn'>{e(q)[:46]}</span>"
+        f"<span class='s3fxw'>{e(', '.join(map(str, ds[:4])) if isinstance(ds, list) else ds)[:70]}"
+        f"</span></div>"
+        for q, ds in list(serp.items())[:20])
+    return simple_screen("Who advertises on your queries", rows
+                         + "<p class='s2empty'>True auction insights need "
+                           "the Google Ads key; this is live SERP "
+                           "observation meanwhile.</p>")
+
+
 def simple_screen(title, body) -> str:
     return f"<p class='s3k'>{e(title)}</p>{body}"
 
@@ -400,26 +466,22 @@ def build_panels(ctx) -> dict:
         "mbads": platform_screen_for("tiktok", ctx),
         "mbconv": tracking_screen(ctx),
         "mbterms": terms_screen(ctx),
-        "mbkw": simple_screen(
+        "mbkw": table_screen(
             "Paid keywords & quality score",
-            "<p class='s2empty'>Fills from the Google pull; quality score "
-            "needs the Google Ads key. GSC keyword ideas live on the SEO "
-            "side, one door left.</p>"),
+            (ctx.get("kw") or {}),
+            reason_key="reason",
+            rows_keys=("keywords", "rows"),
+            empty="Fills from the Google pull; quality score needs the Google Ads key."),
         "mbbid": bid_screen(ctx),
         "mbbudget": budget_screen(ctx),
         "mbland": land_screen(ctx),
-        "mbcomp": simple_screen(
-            "Competition",
-            "<p class='s2empty'>Competitor intel renders here when the "
-            "competitor engine has run; auction insights need the Google "
-            "key.</p>") if not (ctx.get("competitor_intel") or {}) else
-            simple_screen("Competition", "<p class='s2empty'>Competitor "
-            "intel is on record; auction insights still need the Google "
-            "key.</p>"),
-        "mbresearch": simple_screen(
+        "mbcomp": comp_screen(ctx),
+        "mbresearch": table_screen(
             "Keyword research",
-            "<p class='s2empty'>Search volumes need the Google Ads key; "
-            "what can run free already runs on the SEO side.</p>"),
+            (ctx.get("kw_ideas") or {}),
+            reason_key="reason",
+            rows_keys=("ideas", "keywords", "rows"),
+            empty="Search volumes need the Google Ads key; free research runs on the SEO side."),
         "mblink": terms_screen(ctx),
         "mbwork": work_screen(ctx),
     }
