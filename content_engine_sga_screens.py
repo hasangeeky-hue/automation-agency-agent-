@@ -260,7 +260,7 @@ def overview(ctx) -> str:
                 CH.ring(segs[:5], center="mix") if segs else "",
                 "No engagement measured yet - each channel's insights key "
                 "fills its slice.")
-    return band(ctx) + t + "<div class='sg-row'>" + growth + mix + "</div>"
+    return t + "<div class='sg-row'>" + growth + mix + "</div>"
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +324,7 @@ def channels_screen(ctx) -> str:
         + ("" if i == 0 else " style='display:none'") + ">"
         + channel_panel(ctx, cid) + "</div>"
         for i, cid in enumerate(SI.ORDER))
-    return (band(ctx) + f"<div class='a3swbar'>{sw}</div>" + panels)
+    return f"<div class='a3swbar'>{sw}</div>" + panels
 
 
 # ---------------------------------------------------------------------------

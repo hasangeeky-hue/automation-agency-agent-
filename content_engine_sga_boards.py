@@ -1298,20 +1298,24 @@ def board_hub(ctx) -> str:
 #  SECTION
 # ======================================================================
 TABS = [
-    ("sgacmd", "🚀", "SGA Command"),
-    ("sgaplan", "🗓", "Campaign Planner"),
-    ("sgacreative", "🎨", "Creative Library"),
-    ("sgaorganic", "📤", "Organic Push"),
-    ("sgapaid", "💳", "Paid Social"),
-    ("sgatarget", "🎯", "Audience Targeting"),
-    ("sgablog", "📰", "Blog & Long-form"),
-    ("sgachannels", "🔌", "Channel Health"),
-    ("sgaaudience", "👥", "Audience"),
-    ("sgaengage", "💬", "Engagement"),
-    ("sgatraffic", "📈", "Social → Traffic"),
-    ("sgarevenue", "💶", "Social → Revenue"),
-    ("sgabudget", "💰", "Budget & Pacing"),
-    ("sgahub", "☁️", "Google Hub"),
+    # METRICOOL'S OWN WORDS (founder's verdict, 2026-08-06). The labels used
+    # to read "Organic Push", "Audience Targeting", "Channel Health",
+    # "Social -> Traffic" - the engine's internal vocabulary, not the one a
+    # social manager thinks in. Ids are unchanged so every link still lands.
+    ("sgacmd", "\U0001F4CA", "Overview"),
+    ("sgachannels", "\U0001F4C8", "Analytics"),
+    ("sgaorganic", "\U0001F4DD", "Posts"),
+    ("sgaplan", "\U0001F5D3", "Planning"),
+    ("sgaengage", "\U0001F4AC", "Inbox"),
+    ("sgaaudience", "\U0001F465", "Audience"),
+    ("sgatarget", "\U0001F94A", "Competitors"),
+    ("sgacreative", "\U0001F3A8", "Media library"),
+    ("sgapaid", "\U0001F4B3", "Paid"),
+    ("sgatraffic", "\U0001F310", "Web traffic"),
+    ("sgarevenue", "\U0001F4B6", "Revenue"),
+    ("sgablog", "\U0001F4F0", "Blog"),
+    ("sgabudget", "\U0001F4B0", "Budget"),
+    ("sgahub", "\U0001F50C", "Connections"),
 ]
 
 GROUPS = [
@@ -1375,38 +1379,33 @@ def sga_section(ctx) -> str:
     import content_engine_sga_screens as SGS
     import content_engine_seo_screens as SSCR
     panels = SGS.build_panels(ctx)
-    # A CHIP COUNTS A REAL THING OR NOTHING. A number that only counts
-    # tiles is a decoration; these count channels reporting and posts on
-    # record, and every other tab carries no number rather than a fake one.
-    import content_engine_social_insights as _SI
+    # A CHIP COUNTS A REAL THING OR NOTHING.
     _live = len((ctx.get("social") or {}).get("live") or ())
     _posts = (ctx.get("posts") or {})
+    _drafts = [d for d in (ctx.get("reply_drafts") or [])
+               if isinstance(d, dict) and d.get("status") == "draft"]
     _chips = {"sgachannels": _live or None,
-              "sgacmd": _live or None,
+              "sgaengage": len(_drafts) or None,
               "sgaorganic": (_posts.get("total")
-                             if isinstance(_posts, dict) else None) or None}
-    gof = {t: gid for gid, _l, _q, ts in GROUPS for t in ts}
+                             if isinstance(_posts, dict) else None) or None,
+              "sgatarget": len(ctx.get("competitors") or ()) or None}
     bar = "".join(
         f"<button class='stab{' on' if i == 0 else ''}' id='stab-{tid}' "
-        f"data-grp='{gof.get(tid, 'sgaplanit')}' onclick=\"seoTab('{tid}')\">"
-        f"<span>{icon}</span>{H._esc(label)}"
+        f"onclick=\"seoTab('{tid}')\"><span>{icon}</span>{H._esc(label)}"
         + (f"<span class='n'>{_chips[tid]}</span>"
            if _chips.get(tid) is not None else "")
         + "</button>"
         for i, (tid, icon, label) in enumerate(TABS))
-    grouprail = "".join(
-        f"<button class='sgrp{' on' if i == 0 else ''}' id='sgrp-{gid}' "
-        f"onclick=\"seoGroup('{gid}')\"><b>{H._esc(label)}</b>"
-        f"<span class='gq'>{H._esc(question)}</span></button>"
-        for i, (gid, label, question, _t) in enumerate(GROUPS))
     body = "".join(
-        f"<div class='spanel{' on' if i == 0 else ''}' id='spanel-{tid}'>{panels.get(tid, '')}</div>"
+        f"<div class='spanel{' on' if i == 0 else ''}' id='spanel-{tid}'>"
+        f"{panels.get(tid, '')}</div>"
         for i, (tid, _, _) in enumerate(TABS))
-    runbar = ("<div class='ctrl' style='margin:10px 0 2px;flex-wrap:wrap'>"
-              "<button class='cbtn' onclick='sgaCampaign()'>🗓 Plan a campaign</button>"
-              "<button class='cbtn' onclick=\"act('/insights/refresh')\">🔄 Refresh GA4</button>"
-              "<button class='cbtn' onclick=\"nav('media')\">🛒 Google Ads is over here</button>"
-              "</div>")
+    # THE LEGACY CHROME IS GONE. The four-button group rail (PLAN IT / PUSH
+    # IT / DID IT LAND / DID IT PAY) and the three-button run bar were the
+    # engine's old navigation grammar sitting on top of the new screens -
+    # exactly the fragmentation the founder scored 0/10. One band, one tab
+    # strip, one panel. The band's own buttons carry everything the run bar
+    # used to: refresh the channels, refresh GA4, add a key.
     bridge = ("<style>.seoscr{--pap:var(--s2);--card:var(--s1);"
               "--ln:var(--line);--tx:var(--ink);--dm:var(--mut);"
               "--ft:var(--dim);--ac:var(--blue);--warnc:var(--warn);"
@@ -1416,8 +1415,7 @@ def sga_section(ctx) -> str:
               + SSCR.CSS + SGS.CSS + "</style>")
     return ("<div class='seoscr'>" + bridge + SSCR.JS + SGS.JS
             + _TAB_CSS
-            + "<div class='sgroups'>" + grouprail + "</div>"
-            + runbar
+            + SGS.band(ctx)
             + "<div class='stabs'>" + bar + "</div>"
             + "<div class='spanels'>" + body + "</div></div>")
 

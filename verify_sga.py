@@ -39,15 +39,40 @@ class _S:
     def set_setting(self, k, v): self.d[k] = v
 
 
-@gate(1, "one channel registry, imported everywhere")
+@gate(1, "one channel registry; no module retypes the channel list")
 def _g1():
     assert len(SI.CHANNELS) == 7 and set(SI.KEYS) == set(SI.ORDER)
     src = io.open("content_engine_sga_screens.py", encoding="utf-8").read()
     assert "SI.ORDER" in src and "SI.NAME" in src, (
         "the screens must import the registry, not retype the channels")
-    boards = io.open("content_engine_sga_boards.py", encoding="utf-8").read()
-    assert "content_engine_social_insights" in boards
-    return f"{len(SI.CHANNELS)} channels: {', '.join(SI.ORDER)}"
+    # THE REAL PROPERTY. This used to assert that sga_boards imported the
+    # module - but the boards stopped needing it when the section handed
+    # rendering to the screens, and keeping a dead import to satisfy a gate
+    # is a worse sin than the gate it satisfies. What must never happen is a
+    # SECOND hand-written channel list, so that is what is checked, by
+    # parsing rather than by grepping.
+    import glob
+    dupes = []
+    for f in glob.glob("content_engine_*.py"):
+        if f.endswith("social_insights.py"):
+            continue
+        try:
+            tree = ast.parse(io.open(f, encoding="utf-8").read())
+        except Exception:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            vals = set()
+            for lit in ast.walk(node.value):
+                if isinstance(lit, ast.Constant) and isinstance(lit.value, str):
+                    vals.add(lit.value)
+            hit = vals & set(SI.ORDER)
+            if len(hit) >= 5:
+                dupes.append(f"{f}:{getattr(node.targets[0], 'id', '?')}")
+    assert not dupes, (
+        "a second hand-written channel list exists: " + "; ".join(dupes))
+    return f"{len(SI.CHANNELS)} channels: {', '.join(SI.ORDER)}; one list"
 
 
 @gate(2, "a channel with no key shows NOTHING, never a zero")
