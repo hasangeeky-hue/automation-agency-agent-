@@ -545,6 +545,12 @@ def upload_image(store, filename, data) -> dict:
 
 
 def search_profiles(store, q, workspace_id=CORE.DEFAULT_WORKSPACE) -> str:
+    """Kept as its own name because the route is public API now; it is the
+    profiles page with a query, and nothing else."""
+    return page(store, "profiles", 1, 50, q, workspace_id)
+
+
+def _search_profiles_old(store, q, workspace_id=CORE.DEFAULT_WORKSPACE) -> str:
     """ITEM 17. Search every profile, not only the ones on screen."""
     import content_engine_os_audience as _AUD
     q = str(q or "").strip().lower()
@@ -559,6 +565,63 @@ def search_profiles(store, q, workspace_id=CORE.DEFAULT_WORKSPACE) -> str:
         r["name"] = " ".join(x for x in [r.get("first_name"),
                                          r.get("last_name")] if x) or r.get("email")
     return SCR.profile_table(rows[:250])
+
+
+def page(store, target, page=1, size=50, q="",
+         workspace_id=CORE.DEFAULT_WORKSPACE) -> str:
+    """One page of one table, as the fragment that replaces its container.
+
+    Every long table goes through here, so paging is one route rather than
+    eight, and a table becomes pageable by appearing in SCR.PAGED."""
+    fn = SCR.PAGED.get(str(target or ""))
+    if not fn:
+        return "<p class='os-empty'>There is no table called that.</p>"
+    r = repo(store, workspace_id)
+    rows = _rows_for_target(store, r, target, q)
+    return fn(rows, page, size)
+
+
+def _rows_for_target(store, r, target, q="") -> list:
+    """Where each paged table gets its rows. Deliberately the SAME
+    functions the screens use, so a page and the first render cannot
+    disagree about what is in the list."""
+    import content_engine_os_audience as _AUD
+    import content_engine_os_send as _SEND
+    if target in ("profiles", "leads"):
+        rows = AN.profile_rows(r, limit=100000)
+        for x in rows:
+            x["name"] = " ".join(y for y in [x.get("first_name"),
+                                             x.get("last_name")] if y)                 or x.get("email") or x.get("company") or "(no name)"
+        q = str(q or "").strip().lower()
+        if q:
+            rows = [x for x in rows
+                    if q in " ".join(str(x.get(k) or "").lower() for k in
+                                     ("email", "first_name", "last_name",
+                                      "company", "country", "city",
+                                      "industry", "job_title"))]
+        return rows
+    if target == "companies":
+        seen = {}
+        for x in AN.profile_rows(r, limit=100000):
+            nm = x.get("company")
+            if nm:
+                c = seen.setdefault(nm, {"name": nm, "people": 0,
+                                         "website": x.get("website"),
+                                         "country": x.get("country")})
+                c["people"] += 1
+        return sorted(seen.values(), key=lambda c: -c["people"])
+    if target == "campaigns":
+        return AN.campaign_rows(r)
+    if target == "queue":
+        return _SEND.queue_rows(r)
+    if target == "hygiene":
+        return _L(AN.hygiene(r).get("rows"))
+    if target == "runs":
+        return AN.agent_rows(r)
+    if target == "messages":
+        cid = str(q or "")
+        return AN.message_rows(r, cid) if cid else []
+    return []
 
 
 def segment_get(store, seg_id, workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:

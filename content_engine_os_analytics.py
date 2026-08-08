@@ -309,8 +309,9 @@ def profile_rows(repo, limit=400) -> list:
     import content_engine_os_audience as AUD
     rows = AUD.people(repo)
     for r in rows:
-        r["name"] = " ".join(x for x in [r.get("first_name"),
-                                         r.get("last_name")] if x) or r.get("email")
+        r["name"] = (" ".join(x for x in [r.get("first_name"),
+                                          r.get("last_name")] if x)
+                     or r.get("email") or r.get("company") or "(no name yet)")
     return sorted(rows, key=lambda r: (-(r.get("clicks") or 0),
                                        -(r.get("opens") or 0),
                                        str(r.get("email"))))[:limit]

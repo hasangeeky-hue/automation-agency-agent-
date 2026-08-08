@@ -1240,6 +1240,79 @@ t("a typed unsubscribe works and is recorded as typed",
 t("and it suppresses in the same act",
   "bo@lawfirm.co.uk" in CORE.suppression_index(gr))
 
+print("  -- pages, and a rows-per-page you choose")
+_pg = seeded()
+_pj = _pg.get("out_991")
+for _i in range(140):
+    _pj["payload"]["leads"].append(
+        {"email": (f"p{_i}@firm{_i}.de" if _i % 3 else ""),
+         "name": f"Person {_i}", "company": f"Firm {_i}",
+         "website": f"firm{_i}.de", "country": "Germany", "source": "maps"})
+_pg.save(_pj)
+OS.sync(_pg, _pg.list_jobs())
+t("every offered page size is a real choice",
+  SCR.PAGE_SIZES == (20, 50, 100, 250, 500))
+t("the default is one screen's worth, not everything",
+  SCR.DEFAULT_SIZE in SCR.PAGE_SIZES)
+_sl, _m = SCR.page_of(list(range(144)), 2, 20)
+t("a page is the right slice", _sl[0] == 20 and len(_sl) == 20)
+t("and knows where it is", (_m["from"], _m["to"], _m["total"], _m["pages"])
+  == (21, 40, 144, 8), str(_m))
+t("a page past the end lands on the last one, not on nothing",
+  SCR.page_of(list(range(144)), 999, 20)[1]["page"] == 8)
+t("a size nobody offered falls back to the default",
+  SCR.page_of(list(range(10)), 1, 37)[1]["size"] == SCR.DEFAULT_SIZE)
+t("an empty table has one page, not zero",
+  SCR.page_of([], 1, 20)[1]["pages"] == 1)
+t("eight tables are pageable", len(SCR.PAGED) == 8, str(sorted(SCR.PAGED)))
+_p1 = OS.page(_pg, "profiles", 1, 20)
+_p2 = OS.page(_pg, "profiles", 2, 20)
+t("page one and page two are different rows", _p1 != _p2)
+t("the bar says where you are, not just which page",
+  "1 to 20 of" in _p1 and "21 to 40 of" in _p2)
+t("500 rows is offered and works",
+  "1 to 144 of 144" in OS.page(_pg, "profiles", 1, 500))
+t("a search narrows the total the pager reports",
+  "of 35" in OS.page(_pg, "profiles", 1, 20, "firm1"), 
+  OS.page(_pg, "profiles", 1, 20, "firm1")[:120])
+t("an unknown table is refused rather than drawn empty",
+  "no table called" in OS.page(_pg, "nope", 1, 20))
+_ph = SCR.build(OS.build_ctx(_pg, jobs=_pg.list_jobs()))
+for _tgt in SCR.PAGED:
+    if _tgt != "messages":
+        t(f"the {_tgt} table has a container the page can replace",
+          f"id='os-t-{_tgt}'" in _ph)
+t("no screen promises a fixed 250 any more", "most engaged 250" not in _ph)
+t("the handler exists", "function osPage(" in SCR.JS)
+
+print("  -- leads with no address are still leads")
+_nl = seeded()
+_j = _nl.get("out_991")
+_j["payload"]["leads"].append({"name": "Dr Klein", "company": "Praxis Klein",
+                               "website": "praxisklein.de", "phone": "+49 1",
+                               "country": "Germany", "source": "maps"})
+_nl.save(_j)
+OS.sync(_nl, _nl.list_jobs())
+_nr = OS.repo(_nl)
+t("a Maps lead with no email is written in, not skipped",
+  any(p.get("company") == "Praxis Klein" for p in _nr.all("profiles")),
+  str([p.get("company") for p in _nr.all("profiles")]))
+t("and it becomes a lead you can see",
+  len(_nr.all("leads")) == 5, str(len(_nr.all("leads"))))
+t("it is keyed on the website, so re-reading does not duplicate it",
+  len([p for p in _nr.all("profiles")
+       if p.get("company") == "Praxis Klein"]) == 1)
+_np = next(p for p in AUD.people(_nr) if p.get("company") == "Praxis Klein")
+t("it is named on screen even with no address",
+  AN.profile_rows(_nr)[0].get("name") is not None)
+t("but it can NEVER be emailed by accident",
+  _np["email"] in ("", None)
+  and _np.get("id") in {x.get("id") for x in AUD.people(_nr)}
+  and not any(x.get("company") == "Praxis Klein"
+              for x in AUD.resolve_audience(_nr, "all")["eligible"]))
+t("and the gate says why, by name",
+  "invalid_address" in AUD.resolve_audience(_nr, "all")["dropped"])
+
 print("  -- 2 bounces are read out of the mailbox")
 t("a 5.x.x status is permanent",
   BOU.classify("Action: failed\nStatus: 5.1.1 user unknown")[0] == "hard")

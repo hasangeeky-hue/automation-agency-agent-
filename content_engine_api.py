@@ -3301,6 +3301,18 @@ def build_app():
                       out.get("message", ""))
         return out
 
+    @app.get("/os/page/{target}", response_class=HTMLResponse)
+    def os_page(target: str, page: int = 1, size: int = 50, q: str = ""):
+        """One page of one long table. Every table goes through here."""
+        OS, store, _ = _os()
+        try:
+            return HTMLResponse(OS.page(store, target, page, size, q,
+                                        _ws(None)))
+        except Exception as e2:
+            log.exception("paging failed")
+            return HTMLResponse("<p class='os-empty'>That page could not be "
+                                f"drawn: {type(e2).__name__}</p>")
+
     @app.get("/os/profiles/search", response_class=HTMLResponse)
     def os_profiles_search(q: str = ""):
         OS, store, _ = _os()

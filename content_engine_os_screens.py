@@ -147,7 +147,58 @@ def _numeric(rows, i) -> bool:
     return seen
 
 
-def table(headers, rows, empty="Nothing here yet.", *, dataset="") -> str:
+#: What a person may choose. 500 is the ceiling on purpose: past that the
+#: browser, not the server, is the slow part, and a table nobody can scroll
+#: is not more useful for being complete.
+PAGE_SIZES = (20, 50, 100, 250, 500)
+DEFAULT_SIZE = 50
+
+
+def page_of(rows, page=1, size=DEFAULT_SIZE) -> tuple:
+    """(slice, meta). One helper, so no screen invents its own arithmetic
+    and no screen can land on a page that does not exist."""
+    rows = _L(rows)
+    size = int(size) if int(size or 0) in PAGE_SIZES else DEFAULT_SIZE
+    total = len(rows)
+    pages = max(1, -(-total // size))
+    page = max(1, min(int(page or 1), pages))
+    start = (page - 1) * size
+    return rows[start:start + size], {
+        "page": page, "pages": pages, "size": size, "total": total,
+        "from": (start + 1) if total else 0,
+        "to": min(start + size, total)}
+
+
+def pager(target, meta) -> str:
+    """The control bar.
+
+    It says WHERE YOU ARE before it offers the jump, because the question
+    people actually have in front of a long list is not "which page" but
+    "how much is left"."""
+    m = _D(meta)
+    if not target or not m.get("total"):
+        return ""
+    sizes = "".join(
+        f"<option value='{n}'{' selected' if n == m.get('size') else ''}>"
+        f"{n} rows</option>" for n in PAGE_SIZES)
+    out = [f"<span class='os-d'>{m['from']} to {m['to']} of {m['total']}"
+           f"</span>",
+           f"<select class='os-in os-psize' onchange=\"osPage('{e(target)}',1,"
+           f"this.value)\">{sizes}</select>"]
+    if m.get("pages", 1) > 1:
+        out += [
+            f"<button class='os-mini' onclick=\"osPage('{e(target)}',"
+            f"{m['page'] - 1},{m['size']})\""
+            + (" disabled" if m["page"] <= 1 else "") + ">Previous</button>",
+            f"<span class='os-d'>page {m['page']} of {m['pages']}</span>",
+            f"<button class='os-mini' onclick=\"osPage('{e(target)}',"
+            f"{m['page'] + 1},{m['size']})\""
+            + (" disabled" if m["page"] >= m["pages"] else "") + ">Next</button>"]
+    return "<div class='os-pager'>" + "".join(out) + "</div>"
+
+
+def table(headers, rows, empty="Nothing here yet.", *, dataset="",
+          target="", meta=None) -> str:
     """ONE table element, not a stack of grids.
 
     Every row used to be its own CSS grid, which meant every row sized its
@@ -168,10 +219,12 @@ def table(headers, rows, empty="Nothing here yet.", *, dataset="") -> str:
     body = "".join(
         "<tr>" + "".join(f"<td{cls(i)}>{c}</td>" for i, c in enumerate(r))
         + "</tr>" for r in rows)
-    dl = (f"<div class='os-dl'>{download_menu(dataset)}</div>"
-          if dataset else "")
-    return (dl + "<div class='os-tbl'><table><thead><tr>" + head
-            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+    top = pager(target, meta) + download_menu(dataset)
+    bar = f"<div class='os-dl'>{top}</div>" if top else ""
+    foot = (pager(target, meta) if _D(meta).get("pages", 1) > 1 else "")
+    return (bar + "<div class='os-tbl'><table><thead><tr>" + head
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>"
+            + (f"<div class='os-dl'>{foot}</div>" if foot else ""))
 
 
 def download_menu(dataset) -> str:
@@ -337,35 +390,21 @@ def overview(ctx) -> str:
 # 2 ACQUISITION
 # ---------------------------------------------------------------------------
 def acq_leads(ctx) -> str:
-    rows = _L(ctx.get("profiles"))[:200]
-    body = table(
-        ["Person", "Company", "Stage", "Score", "Sent", "Opens", "Clicks", ""],
-        [[f"<b>{e(r.get('name'))}</b><br><span class='os-d'>"
-          f"{e(r.get('email'))}</span>",
-          e(r.get("company") or ""),
-          state_pill(r.get("lead_stage") or "NEW"),
-          num(r.get("lead_score")), num(r.get("emails_sent")),
-          num(r.get("opens")), num(r.get("clicks")),
-          f"<button class='os-mini' onclick=\"osProfile('{e(r.get('id'))}')\">"
-          f"Open</button>"] for r in rows],
-        "No leads yet. The sourcing agent writes them here as it finds them.")
+    rows = _L(ctx.get("profiles"))
     return panel("Leads",
                  "A lead is the opportunity. The person is a profile, and one "
                  "company can produce several leads over time, which is why "
                  "they are separate records rather than columns on each other.",
                  tiles([("Leads", _D(ctx.get("acquisition")).get("leads"), ""),
-                        ("Shown", len(rows), "most engaged first")]) + body)
+                        ("On this list", len(rows), "most engaged first")])
+                 + f"<div id='os-t-leads'>{lead_table(rows)}</div>")
 
 
 def acq_companies(ctx) -> str:
-    rows = _L(ctx.get("companies"))[:200]
+    rows = _L(ctx.get("companies"))
     return panel("Companies",
                  "One row per organisation, with the people attached to it.",
-                 table(["Company", "Website", "Country", "People"],
-                       [[f"<b>{e(c.get('name'))}</b>", e(c.get("website") or ""),
-                         e(c.get("country") or ""), num(c.get("people"))]
-                        for c in rows],
-                       "No companies recorded yet."))
+                 f"<div id='os-t-companies'>{company_table(rows)}</div>")
 
 
 def acq_sources(ctx) -> str:
@@ -424,22 +463,6 @@ def acq_enrich(ctx) -> str:
 # ---------------------------------------------------------------------------
 # 3 AUDIENCE
 # ---------------------------------------------------------------------------
-def profile_table(rows) -> str:
-    """The rows alone, so a search can replace them without redrawing the
-    whole screen."""
-    return table(["Person", "Company", "Country", "Consent", "Sent", "Opens",
-               "Clicks", "Last activity", ""],
-              [[f"<b>{e(r.get('name'))}</b><br><span class='os-d'>"
-                f"{e(r.get('email'))}</span>",
-                e(r.get("company") or ""), e(r.get("country") or ""),
-                state_pill(r.get("consent")), num(r.get("emails_sent")),
-                num(r.get("opens")), num(r.get("clicks")),
-                e(str(r.get("last_activity_at") or "")[:10]),
-                f"<button class='os-mini' onclick=\"osProfile"
-                f"('{e(r.get('id'))}')\">Open</button>"] for r in rows],
-              "Nobody matches.", dataset="profiles")
-
-
 def aud_profiles(ctx) -> str:
     rows = _L(ctx.get("profiles"))
     total = _D(ctx.get("summary")).get("profiles") or len(rows)
@@ -453,9 +476,10 @@ def aud_profiles(ctx) -> str:
         "onkeydown='if(event.key===\'Enter\')osSearch()'>"
         "<button class='cta' onclick='osSearch()'>Search</button>"
         "<button class='os-mini' onclick='osSearchClear()'>Clear</button>"
-        f"<span class='os-note'>{e(total)} people. The list below shows the "
-        "most engaged 250; search looks at all of them.</span></div>"
-        + f"<div id='os-plist'>{profile_table(rows[:250])}</div>")
+        f"<span class='os-note'>{e(total)} people, most engaged first. "
+        "Choose how many rows you want and page through them; search looks "
+        "at all of them, not only the page in front of you.</span></div>"
+        + f"<div id='os-t-profiles'>{profile_table(rows)}</div>")
 
 
 def aud_lists(ctx) -> str:
@@ -528,22 +552,7 @@ def aud_segments(ctx) -> str:
 # ---------------------------------------------------------------------------
 def eng_campaigns(ctx) -> str:
     rows = _L(ctx.get("campaigns"))
-    body = table(
-        ["Subject", "State", "Recipients", "Sent", "Opens", "Clicks",
-         "Open rate", "Edited", ""],
-        [[f"<b>{e(c.get('subject') or c.get('name'))}</b>"
-          + (f"<br><span class='os-d'>{e(c.get('name'))}</span>"
-             if c.get("subject") else ""),
-          state_pill(c.get("state")), num(c.get("recipients")),
-          num(c.get("sent")), num(c.get("opens")), num(c.get("clicks")),
-          num(pair(c.get("open_rate"))[0], "%")
-          + f"<br><span class='os-d'>"
-            f"{e(pair(c.get('open_rate'))[1])}</span>",
-          num(c.get("edited") or None),
-          f"<button class='os-mini os-primary' onclick=\"osCamp"
-          f"('{e(c.get('id'))}')\">Open</button>"] for c in rows],
-        "No campaigns yet. Press Re-read the engine, or create one below.",
-        dataset="campaigns")
+    body = f"<div id='os-t-campaigns'>{campaign_table(rows)}</div>"
     wizard = (
         "<div class='os-form'>"
         "<input id='os-cn' class='os-in' placeholder='Campaign name'>"
@@ -670,7 +679,7 @@ def eng_templates(ctx) -> str:
 # ---------------------------------------------------------------------------
 def send_queue(ctx) -> str:
     counts = _D(ctx.get("queue_counts"))
-    rows = _L(ctx.get("queue_rows"))[:200]
+    rows = _L(ctx.get("queue_rows"))
     return panel(
         "Queue",
         "Every recipient is a row with a state. That is what makes a crash "
@@ -683,14 +692,7 @@ def send_queue(ctx) -> str:
           "<span class='os-note'>Only rows you approved are picked up, and "
           "every gate is re-checked at send time in case somebody "
           "unsubscribed while waiting.</span></div>"
-        + table(["Recipient", "Campaign", "State", "Approved", "Tries",
-                 "Provider", "Result"],
-                [[e(r.get("email")), e(r.get("campaign")),
-                  state_pill(r.get("status")),
-                  pill("yes", "ok") if r.get("approved") else pill("no", "warn"),
-                  num(r.get("attempts")), e(r.get("provider")),
-                  e(r.get("error") or r.get("sent_at") or "")]
-                 for r in rows], "The queue is empty.", dataset="queue"))
+        + f"<div id='os-t-queue'>{queue_table(rows)}</div>")
 
 
 _VERDICT_TONE = {"scanner": "warn", "silent": "bad", "looking": "warn",
@@ -783,29 +785,8 @@ def send_deliver(ctx) -> str:
                   "prospect for ever is the expensive mistake and a "
                   "suppression cannot be undone without asking them.</span>"
                   "</div>"
-                  + table(["Person", "Sent", "Opens", "Clicks", "What it is",
-                           "What to do", ""],
-                          [[f"<b>{e(r.get('email'))}</b>"
-                            + (f"<br><span class='os-d'>{e(r.get('company'))}"
-                               f"</span>" if r.get("company") else ""),
-                            num(r.get("sent")), num(r.get("opens")),
-                            num(r.get("clicks")),
-                            pill(r.get("code"),
-                                 _VERDICT_TONE.get(r.get("code"), "mut"))
-                            + f"<br><span class='os-d'>{e(r.get('why'))}"
-                              f"</span>",
-                            e(r.get("action")),
-                            (pill("resting to " + r.get("rest_until"), "ok")
-                             + f"<br><button class='os-mini' onclick="
-                               f"\"osWake('{e(r.get('email'))}')\">Wake"
-                               f"</button>"
-                             if r.get("resting") == "yes" else
-                             f"<button class='os-mini' onclick=\"osRest"
-                             f"('{e(r.get('email'))}')\">Rest 90 days"
-                             f"</button>")]
-                           for r in rows],
-                          "Nobody is being over-worked. Every address is "
-                          "inside the limits.", dataset="hygiene"))
+                  + "<div id='os-t-hygiene'>" + hygiene_table(rows)
+                  + "</div>")
         + section("Why people are suppressed",
                   donut(list(_D(d.get("by_reason")).items()))))
 
@@ -845,20 +826,13 @@ def auto_agents(ctx) -> str:
 
 
 def auto_runs(ctx) -> str:
-    rows = _L(ctx.get("agent_runs"))[:150]
+    rows = _L(ctx.get("agent_runs"))
     return panel(
         "Agent runs",
         "Every call an agent made, what it changed and what it cost. An "
         "action nobody can reconstruct afterwards gets blamed on the wrong "
         "thing.",
-        table(["Agent", "Task", "Status", "Actions", "Cost", "Started",
-               "Result"],
-              [[e(r.get("agent")), f"<code>{e(r.get('task'))}</code>",
-                state_pill(r.get("status")), num(r.get("actions")),
-                num(r.get("cost"), " USD") if r.get("cost") else num(None),
-                e(str(r.get("started_at"))[:16]), e(r.get("output"))]
-               for r in rows],
-              "No agent has called the OS yet."))
+        f"<div id='os-t-runs'>{runs_table(rows)}</div>")
 
 
 # ---------------------------------------------------------------------------
@@ -1542,6 +1516,152 @@ def data_drive(ctx) -> str:
 
 
 # ---------------------------------------------------------------------------
+# THE PAGED TABLES. One builder each, and one registry the route reads.
+# ---------------------------------------------------------------------------
+def _paged(target, rows, headers, cell, page, size, empty, dataset="") -> str:
+    slice_, meta = page_of(rows, page, size)
+    return table(headers, [cell(r) for r in slice_], empty, dataset=dataset,
+                 target=target, meta=meta)
+
+
+def profile_table(rows, page=1, size=DEFAULT_SIZE) -> str:
+    return _paged(
+        "profiles", rows,
+        ["Person", "Company", "Country", "Consent", "Sent", "Opens",
+         "Clicks", "Last activity", ""],
+        lambda r: [f"<b>{e(r.get('name'))}</b><br><span class='os-d'>"
+                   f"{e(r.get('email'))}</span>",
+                   e(r.get("company") or ""), e(r.get("country") or ""),
+                   state_pill(r.get("consent")), num(r.get("emails_sent")),
+                   num(r.get("opens")), num(r.get("clicks")),
+                   e(str(r.get("last_activity_at") or "")[:10]),
+                   f"<button class='os-mini' onclick=\"osProfile"
+                   f"('{e(r.get('id'))}')\">Open</button>"],
+        page, size, "Nobody matches.", dataset="profiles")
+
+
+def lead_table(rows, page=1, size=DEFAULT_SIZE) -> str:
+    return _paged(
+        "leads", rows,
+        ["Person", "Company", "Stage", "Score", "Sent", "Opens", "Clicks", ""],
+        lambda r: [f"<b>{e(r.get('name'))}</b><br><span class='os-d'>"
+                   f"{e(r.get('email') or 'no address yet')}</span>",
+                   e(r.get("company") or ""),
+                   state_pill(r.get("lead_stage") or "NEW"),
+                   num(r.get("lead_score")), num(r.get("emails_sent")),
+                   num(r.get("opens")), num(r.get("clicks")),
+                   f"<button class='os-mini' onclick=\"osProfile"
+                   f"('{e(r.get('id'))}')\">Open</button>"],
+        page, size,
+        "No leads yet. The sourcing agent writes them here as it finds them.",
+        dataset="leads")
+
+
+def company_table(rows, page=1, size=DEFAULT_SIZE) -> str:
+    return _paged(
+        "companies", rows, ["Company", "Website", "Country", "People"],
+        lambda c: [f"<b>{e(c.get('name'))}</b>", e(c.get("website") or ""),
+                   e(c.get("country") or ""), num(c.get("people"))],
+        page, size, "No companies recorded yet.", dataset="companies")
+
+
+def campaign_table(rows, page=1, size=DEFAULT_SIZE) -> str:
+    return _paged(
+        "campaigns", rows,
+        ["Subject", "State", "Recipients", "Sent", "Opens", "Clicks",
+         "Open rate", "Edited", ""],
+        lambda c: [f"<b>{e(c.get('subject') or c.get('name'))}</b>"
+                   + (f"<br><span class='os-d'>{e(c.get('name'))}</span>"
+                      if c.get("subject") else ""),
+                   state_pill(c.get("state")), num(c.get("recipients")),
+                   num(c.get("sent")), num(c.get("opens")),
+                   num(c.get("clicks")),
+                   num(pair(c.get("open_rate"))[0], "%")
+                   + f"<br><span class='os-d'>"
+                     f"{e(pair(c.get('open_rate'))[1])}</span>",
+                   num(c.get("edited") or None),
+                   f"<button class='os-mini os-primary' onclick=\"osCamp"
+                   f"('{e(c.get('id'))}')\">Open</button>"],
+        page, size,
+        "No campaigns yet. Press Re-read the engine, or create one below.",
+        dataset="campaigns")
+
+
+def queue_table(rows, page=1, size=DEFAULT_SIZE) -> str:
+    return _paged(
+        "queue", rows,
+        ["Recipient", "Campaign", "State", "Approved", "Tries", "Provider",
+         "Result"],
+        lambda r: [e(r.get("email")), e(r.get("campaign")),
+                   state_pill(r.get("status")),
+                   pill("yes", "ok") if r.get("approved") else pill("no", "warn"),
+                   num(r.get("attempts")), e(r.get("provider")),
+                   e(r.get("error") or r.get("sent_at") or "")],
+        page, size, "The queue is empty.", dataset="queue")
+
+
+def hygiene_table(rows, page=1, size=DEFAULT_SIZE) -> str:
+    return _paged(
+        "hygiene", rows,
+        ["Person", "Sent", "Opens", "Clicks", "What it is", "What to do", ""],
+        lambda r: [f"<b>{e(r.get('email'))}</b>"
+                   + (f"<br><span class='os-d'>{e(r.get('company'))}</span>"
+                      if r.get("company") else ""),
+                   num(r.get("sent")), num(r.get("opens")),
+                   num(r.get("clicks")),
+                   pill(r.get("code"), _VERDICT_TONE.get(r.get("code"), "mut"))
+                   + f"<br><span class='os-d'>{e(r.get('why'))}</span>",
+                   e(r.get("action")),
+                   (pill("resting to " + str(r.get("rest_until")), "ok")
+                    + f"<br><button class='os-mini' onclick=\"osWake"
+                      f"('{e(r.get('email'))}')\">Wake</button>"
+                    if r.get("resting") == "yes" else
+                    f"<button class='os-mini' onclick=\"osRest"
+                    f"('{e(r.get('email'))}')\">Rest 90 days</button>")],
+        page, size,
+        "Nobody is being over-worked. Every address is inside the limits.",
+        dataset="hygiene")
+
+
+def runs_table(rows, page=1, size=DEFAULT_SIZE) -> str:
+    return _paged(
+        "runs", rows,
+        ["Agent", "Task", "Status", "Actions", "Cost", "Started", "Result"],
+        lambda r: [e(r.get("agent")), f"<code>{e(r.get('task'))}</code>",
+                   state_pill(r.get("status")), num(r.get("actions")),
+                   num(r.get("cost"), " USD") if r.get("cost") else num(None),
+                   e(str(r.get("started_at"))[:16]), e(r.get("output"))],
+        page, size, "No agent has called the OS yet.")
+
+
+def message_table(rows, page=1, size=DEFAULT_SIZE) -> str:
+    return _paged(
+        "messages", rows,
+        ["Person", "Company", "Step", "Subject sent", "Opened", "Clicked",
+         "Sent", ""],
+        lambda m: [f"<b>{e(m.get('name') or m.get('email'))}</b>"
+                   f"<br><span class='os-d'>{e(m.get('email'))}</span>",
+                   e(m.get("company")), num(m.get("touch")),
+                   e(m.get("subject") or "")
+                   + (" " + pill("edited", "ok") if m.get("edited") else ""),
+                   num(m.get("opened") or None), num(m.get("clicked") or None),
+                   e(str(m.get("sent_at") or "")[:16])
+                   or state_pill(m.get("state")),
+                   f"<button class='os-mini' onclick=\"osProfile"
+                   f"('{e(m.get('profile_id'))}')\">Open</button>"],
+        page, size, "Nobody has been sent this yet.", dataset="messages")
+
+
+#: target -> builder. The route reads THIS, so a table becomes pageable the
+#: moment it is listed here and never before. The container each fragment
+#: replaces is id="os-t-{target}", derived from the same key.
+PAGED = {"profiles": profile_table, "leads": lead_table,
+         "companies": company_table, "campaigns": campaign_table,
+         "queue": queue_table, "hygiene": hygiene_table,
+         "runs": runs_table, "messages": message_table}
+
+
+# ---------------------------------------------------------------------------
 # THE CAMPAIGN DETAIL. Two columns. This is the screen the founder wanted.
 # ---------------------------------------------------------------------------
 def campaign_detail(ctx, cid) -> str:
@@ -1664,19 +1784,8 @@ def campaign_detail(ctx, cid) -> str:
                   "leaves.</p>")
         + "</div>")
 
-    recips = section("Recipients", table(
-        ["Person", "Company", "Step", "Subject sent", "Opened", "Clicked",
-         "Sent", ""],
-        [[f"<b>{e(m.get('name') or m.get('email'))}</b>"
-          f"<br><span class='os-d'>{e(m.get('email'))}</span>",
-          e(m.get("company")), num(m.get("touch")),
-          e(m.get("subject") or "") + (" " + pill("edited", "ok")
-                                       if m.get("edited") else ""),
-          num(m.get("opened") or None), num(m.get("clicked") or None),
-          e(str(m.get("sent_at") or "")[:16]) or state_pill(m.get("state")),
-          f"<button class='os-mini' onclick=\"osProfile"
-          f"('{e(m.get('profile_id'))}')\">Open</button>"]
-         for m in msgs[:250]], "Nobody has been sent this yet."))
+    recips = section("Recipients",
+                     f"<div id='os-t-messages'>{message_table(msgs)}</div>")
 
     return ("<div class='os-dhead'><h3>"
             + e(c.get("subject") or c.get("name")) + "</h3>"
@@ -1891,6 +2000,10 @@ CSS = """
 .os-dl{display:flex;gap:6px;align-items:center;justify-content:flex-end;
  margin:0 0 6px}
 .os-dl a{text-decoration:none}
+.os-pager{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-right:auto}
+.os-psize{min-width:0;padding:4px 8px;font-size:12px}
+.os-pager button[disabled]{opacity:.4;cursor:default}
+.os-dl{justify-content:space-between}
 .os-up{cursor:pointer}
 .os-fxcanvas{transition:transform .12s ease}
 .os-empty{color:var(--osdim);padding:14px 2px;margin:0}
@@ -2206,11 +2319,19 @@ JS = ("<script>"
       "list_name:l?l.value:''});"
       "if(j&&j.ok)osImportPreview();}"
 
+      "async function osPage(target,page,size){"
+      "var box=document.getElementById('os-t-'+target);if(!box)return;"
+      "var q=document.getElementById('os-psearch');"
+      "try{var r=await fetch('/os/page/'+target+'?page='+page+'&size='+size+"
+      "'&q='+encodeURIComponent((target==='profiles'&&q)?q.value:''));"
+      "box.innerHTML=await r.text();}"
+      "catch(e){osToast({ok:false,message:'could not load that page'});}}"
+
       "async function osSearch(){"
       "var q=document.getElementById('os-psearch');"
-      "try{var r=await fetch('/os/profiles/search?q='+"
+      "try{var r=await fetch('/os/page/profiles?page=1&size=50&q='+"
       "encodeURIComponent(q?q.value:''));"
-      "document.getElementById('os-plist').innerHTML=await r.text();}"
+      "document.getElementById('os-t-profiles').innerHTML=await r.text();}"
       "catch(e){osToast({ok:false,message:'search failed'});}}"
       "function osSearchClear(){var q=document.getElementById('os-psearch');"
       "if(q)q.value='';osSearch();}"

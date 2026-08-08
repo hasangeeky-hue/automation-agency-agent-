@@ -322,9 +322,19 @@ def upsert_profile(repo: Repo, data: dict) -> dict:
     collection so an agent adding "pain_point" never needs a schema change."""
     data = _D(data)
     em = norm_email(data.get("email"))
-    if not em:
+    # A LEAD WITH NO ADDRESS IS STILL A LEAD. Maps sourcing returns real
+    # businesses (name, phone, site, rating) and the email finder does not
+    # always find an address. Refusing those made every one of them
+    # invisible in this OS, which is how a founder ends up believing the
+    # transformation lost the leads he paid for. They are keyed on the
+    # website or the company name instead, they show as "no address yet",
+    # and the audience gate already refuses them by name so they can never
+    # be emailed by accident.
+    key = em or str(data.get("website") or data.get("company")
+                    or "").strip().lower()
+    if not key:
         return {}
-    pid = rid("prf", repo.ws, em)
+    pid = rid("prf", repo.ws, key)
     cur = repo.one("profiles", pid) or {"id": pid}
     rec = dict(cur)
     for f in PROFILE_FIELDS:
@@ -711,8 +721,6 @@ def project(store, jobs=None, *, workspace_id=DEFAULT_WORKSPACE,
 
         for L in leads:
             em = norm_email(L.get("email"))
-            if not em:
-                continue
             q = qmap.get(em) or {}
             comp = upsert_company(repo, L.get("company"),
                                   website=L.get("website"),
