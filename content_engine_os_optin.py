@@ -136,7 +136,27 @@ def confirm(store, email, tok, *, ip="") -> dict:
     return {"ok": True, "message": "confirmed"}
 
 
-def unsubscribe(store, email, tok="", *, reason="link", require_token=True) -> dict:
+def unsubscribe_self(store, email, *, ip="") -> dict:
+    """Somebody typed their own address on the unsubscribe page.
+
+    NO TOKEN, ON PURPOSE. Every email sent before this build carried a
+    static link with no address in it, so those recipients arrive with
+    nothing to prove who they are. Refusing them would mean an unsubscribe
+    that does not work, which is both a legal problem and a spam complaint
+    waiting to happen.
+
+    The risk is that one person could unsubscribe another by typing their
+    address. That is the correct trade: the worst case is somebody stops
+    receiving marketing they did not ask to stop receiving, and the
+    alternative is a broken unsubscribe. The method is recorded as
+    "typed" rather than "confirmed link" so the record says which it was.
+    """
+    return unsubscribe(store, email, "", reason="typed on the page",
+                       require_token=False, ip=ip)
+
+
+def unsubscribe(store, email, tok="", *, reason="link", require_token=True,
+                ip="") -> dict:
     """The last word. Sets UNSUBSCRIBED and suppresses in the same act, so
     there is no window in which a queued email could still go out."""
     import content_engine_os_store as ST
@@ -145,7 +165,7 @@ def unsubscribe(store, email, tok="", *, reason="link", require_token=True) -> d
         return {"ok": False, "message": "that unsubscribe link is not valid"}
     repo = ST.repo_for(store)
     CORE.set_consent(repo, em, "UNSUBSCRIBED", source="unsubscribe " + reason,
-                     method=reason, evidence=f"at={now()}")
+                     method=reason, evidence=f"ip={ip} at={now()}")
     CORE.suppress(repo, em, "UNSUBSCRIBE", "asked to stop")
     n = 0
     for j in repo.all("email_jobs"):
@@ -216,7 +236,14 @@ def message_page(title, text, sub="") -> str:
 
 
 def unsubscribe_page(email, tok) -> str:
-    return page("Unsubscribe", f"""
+    """Two shapes, because links arrive in two shapes.
+
+    A tokenised link knows who you are and shows one button. A visitor
+    who arrived from an older email carries nothing, so the page asks for
+    the address instead of failing. It never says whether that address is
+    on the list: a page that did would be an address-checking service."""
+    if email and tok:
+        return page("Unsubscribe", f"""
 <h1>Leave this list</h1>
 <p>Press the button and you will not be emailed again. Anything already
 waiting to be sent to you is cancelled at the same moment.</p>
@@ -224,3 +251,14 @@ waiting to be sent to you is cancelled at the same moment.</p>
 <input type="hidden" name="email" value="{e(email)}">
 <input type="hidden" name="t" value="{e(tok)}">
 <button type="submit">Unsubscribe {e(email)}</button></form>""")
+    return page("Unsubscribe", f"""
+<h1>Leave this list</h1>
+<p>Type the address you would like removed. You will not be emailed again,
+and anything already waiting to be sent to you is cancelled at the same
+moment.</p>
+<form method="post" action="/unsubscribe">
+<label for="e">Email</label>
+<input id="e" name="email" type="email" required value="{e(email)}">
+<button type="submit">Unsubscribe</button></form>
+<p><small>Older emails carried a link that did not name you, which is why
+this page has to ask.</small></p>""")

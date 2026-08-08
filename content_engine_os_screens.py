@@ -424,13 +424,10 @@ def acq_enrich(ctx) -> str:
 # ---------------------------------------------------------------------------
 # 3 AUDIENCE
 # ---------------------------------------------------------------------------
-def aud_profiles(ctx) -> str:
-    rows = _L(ctx.get("profiles"))[:250]
-    return panel(
-        "Profiles",
-        "The person. Click one to see everything that has happened to them, "
-        "in order, including the exact emails they were sent.",
-        table(["Person", "Company", "Country", "Consent", "Sent", "Opens",
+def profile_table(rows) -> str:
+    """The rows alone, so a search can replace them without redrawing the
+    whole screen."""
+    return table(["Person", "Company", "Country", "Consent", "Sent", "Opens",
                "Clicks", "Last activity", ""],
               [[f"<b>{e(r.get('name'))}</b><br><span class='os-d'>"
                 f"{e(r.get('email'))}</span>",
@@ -440,8 +437,25 @@ def aud_profiles(ctx) -> str:
                 e(str(r.get("last_activity_at") or "")[:10]),
                 f"<button class='os-mini' onclick=\"osProfile"
                 f"('{e(r.get('id'))}')\">Open</button>"] for r in rows],
-              "No profiles yet. Press Re-read the engine to import the leads "
-              "already sitting in your campaigns.", dataset="profiles"))
+              "Nobody matches.", dataset="profiles")
+
+
+def aud_profiles(ctx) -> str:
+    rows = _L(ctx.get("profiles"))
+    total = _D(ctx.get("summary")).get("profiles") or len(rows)
+    return panel(
+        "Profiles",
+        "The person. Click one to see everything that has happened to them, "
+        "in order, including the exact emails they were sent.",
+        "<div class='os-form'>"
+        "<input id='os-psearch' class='os-in' placeholder='Search name, "
+        "email, company, country or industry' "
+        "onkeydown='if(event.key===\'Enter\')osSearch()'>"
+        "<button class='cta' onclick='osSearch()'>Search</button>"
+        "<button class='os-mini' onclick='osSearchClear()'>Clear</button>"
+        f"<span class='os-note'>{e(total)} people. The list below shows the "
+        "most engaged 250; search looks at all of them.</span></div>"
+        + f"<div id='os-plist'>{profile_table(rows[:250])}</div>")
 
 
 def aud_lists(ctx) -> str:
@@ -481,7 +495,10 @@ def aud_segments(ctx) -> str:
         "conditions</option><option value='OR'>match ANY condition</option>"
         "</select>"
         "<button class='os-mini' onclick='osAddCond()'>+ Add condition</button>"
+        "<button class='os-mini' onclick='osAddGroup()'>+ Add a bracket"
+        "</button>"
         "<button class='os-mini' onclick='osCountSeg()'>Count people</button>"
+        "<button class='os-mini' onclick='osClearSeg()'>Start again</button>"
         "<button class='cta' onclick='osSaveSeg()'>Save segment</button></div>"
         "<p class='os-note' id='os-scount'>A segment is a question asked of "
         "every profile each time you look, so it can never go stale.</p></div>")
@@ -493,9 +510,17 @@ def aud_segments(ctx) -> str:
         builder + table(["Segment", "The rule, in words", "People now", ""],
                         [[f"<b>{e(s.get('name'))}</b>", e(s.get("described")),
                           num(s.get("size")),
+                          f"<button class='os-mini' onclick=\"osEditSeg"
+                          f"('{e(s.get('id'))}')\">Edit</button> "
+                          f"<a class='os-mini' href='/os/export/profiles.csv"
+                          f"?segment={e(s.get('id'))}' download>CSV</a> "
                           f"<button class='os-mini' onclick=\"osDropSeg"
                           f"('{e(s.get('id'))}')\">Remove</button>"]
-                         for s in rows], "No segments yet."))
+                         for s in rows], "No segments yet.")
+        + "<p class='os-note'>A bracket nests one group inside the rule, "
+          "which covers \"in Germany AND (a good score OR a big company)\". "
+          "The evaluator handles six levels; this builder writes two, which "
+          "is every question anybody has actually asked of it.</p>")
 
 
 # ---------------------------------------------------------------------------
@@ -695,10 +720,27 @@ def send_deliver(ctx) -> str:
                ("Complaints", d.get("complaints"), ""),
                ("Unsubscribes", d.get("unsubscribes"), ""),
                ("Suppressed", d.get("suppressed"), "will never be emailed")])
-        + "<p class='os-note'>Delivered and bounced stay blank until a "
-          "provider webhook reports them. SMTP has no delivery receipt, and "
-          "showing zero bounces would be a claim rather than a measurement."
-          "</p>"
+        + section("Bounces, read out of your mailbox",
+                  tiles([("Bounces recorded", _D(ctx.get("bounces")).get("total"), ""),
+                         ("Permanent", _D(ctx.get("bounces")).get("hard"),
+                          "suppressed"),
+                         ("Temporary", _D(ctx.get("bounces")).get("soft"),
+                          "recorded, not suppressed"),
+                         ("Being watched", _D(ctx.get("bounces")).get("watching"),
+                          "rested after four")])
+                  + "<div class='os-brow'>"
+                    "<button class='cta' onclick=\"osAct('/os/bounces/read')\""
+                  + ("" if _D(ctx.get("bounces")).get("ready") else " disabled")
+                  + ">Read the mailbox now</button>"
+                    "<span class='os-note'>"
+                  + e(_D(ctx.get("bounces")).get("why")) + "</span></div>"
+                  + "<p class='os-note'>SMTP has no delivery receipt, so a "
+                    "failure arrives later as an email in the same mailbox "
+                    "everything else lands in. A 5.x.x status is permanent "
+                    "and suppresses; a 4.x.x is a full mailbox or a server "
+                    "having a bad day and does not. Four temporary failures "
+                    "rest the address rather than suppressing it, because a "
+                    "suppression cannot be undone without asking them.</p>")
         + section("How hard this list is being worked", tiles([
             ("People", h.get("people"), "in this workspace"),
             ("Most emails to one person", h.get("worst"), ""),
@@ -865,11 +907,39 @@ def an_lead(ctx) -> str:
 
 def an_attrib(ctx) -> str:
     a = _D(ctx.get("attribution"))
+    rev = _D(ctx.get("revenue"))
     return panel(
         "Attribution",
-        "Attribution here reads recorded deals, not a model. A model would "
-        "produce a bigger number and a smaller reason to believe it.",
-        tiles([("First touch", a.get("first_touch"), "deals"),
+        "Attribution here reads recorded conversions, not a model. A model "
+        "would produce a bigger number and a smaller reason to believe it.",
+        section("Money, from conversions this engine was told about",
+                tiles([("Conversions", rev.get("conversions"), ""),
+                       ("Customers", rev.get("customers"), "people"),
+                       ("Revenue", rev.get("revenue"), rev.get("currency", "")),
+                       ("Per recipient", rev.get("per_recipient"), ""),
+                       ("Conversion rate", pair(rev.get("rate"))[0],
+                        pair(rev.get("rate"))[1], "%")])
+                + f"<p class='os-note'>{e(rev.get('basis'))}</p>"
+                + "<div class='os-form'>"
+                  "<input id='os-cve' class='os-in' placeholder='email'>"
+                  "<input id='os-cvv' class='os-in' type='number' "
+                  "placeholder='value'>"
+                  "<input id='os-cvr' class='os-in' placeholder='reference, "
+                  "for example a booking id'>"
+                  "<button class='cta' onclick='osConversion()'>Record a "
+                  "conversion</button></div>"
+                + section("Or let your site record it",
+                          "<p class='os-note'>Drop this on your thank-you "
+                          "page and every booking records itself:</p>"
+                          "<pre class='os-pre'>&lt;img src=\"" + e(
+                              _D(ctx.get("connectors")).get("public_base")
+                              and "https://YOUR-ENGINE" or "https://YOUR-ENGINE")
+                          + "/t/v?e={{email}}&amp;value=2500\" "
+                            "width=\"1\" height=\"1\" alt=\"\"&gt;</pre>"
+                          "<p class='os-note'>It answers with a 1x1 image, so "
+                          "it works on a page built in a website editor that "
+                          "cannot run scripts.</p>"))
+        + tiles([("First touch", a.get("first_touch"), "deals"),
                ("Last touch", a.get("last_touch"), "deals"),
                ("Assisted", a.get("assisted"), ""),
                ("Revenue", a.get("revenue"), ""),
@@ -911,6 +981,20 @@ def set_email(ctx) -> str:
           "what came back, because a screen showing a connected badge for a "
           "key with a typo in it is worse than an empty one. Nothing is "
           "sent by that button.</p>"
+        + section("Prove one end to end",
+                  "<div class='os-form'>"
+                  "<select id='os-tp' class='os-in'>"
+                  + "".join(f"<option value='{e(p.get('name'))}'>"
+                            f"{e(p.get('name'))}</option>" for p in rows)
+                  + "</select>"
+                    "<input id='os-tt' class='os-in' placeholder='send the "
+                    "test to which address?'>"
+                    "<button class='cta' onclick='osSendTest()'>Send one test "
+                    "email</button></div>"
+                    "<p class='os-note'>Test checks the key. This sends one "
+                    "real email through that adapter, which is the only way "
+                    "its send path is ever exercised before a campaign "
+                    "depends on it.</p>")
         + section("The rule that does not bend",
                   "<p class='os-note'>No agent and no request handler may "
                   "call a provider. Everything goes through the queue, and "
@@ -958,6 +1042,17 @@ def set_integrations(ctx) -> str:
                 pill("connected", "ok") if p.get("live") else pill("not connected", "mut"),
                 f"<code>{e(p.get('key_env'))}</code>", e(p.get("docs"))]
                for p in rows if p.get("name") not in ("smtp",)], "")
+        + section("Read out of Klaviyo",
+                  "<div class='os-form'>"
+                  "<select id='os-kw' class='os-in'>"
+                  + "".join(f"<option value='{k}'>{k}</option>" for k in
+                            ("profiles", "lists", "segments", "campaigns",
+                             "flows", "metrics"))
+                  + "</select>"
+                    "<button class='cta' onclick='osKlaviyo()'>Pull</button>"
+                    "<span class='os-note'>Profiles are written in as leads. "
+                    "The rest is reported so you can see what is there "
+                    "before this engine starts copying it.</span></div>")
         + section("Credential handling",
                   "<p class='os-note'>Keys are read from the environment on "
                   "the server and are never returned to this page. Nothing "
@@ -989,6 +1084,14 @@ def set_compliance(ctx) -> str:
                                              "and a postal address"]]))
         + section("Suppression reasons",
                   donut(list(_D(d.get("by_reason")).items())))
+        + section("Somebody says the confirmation never arrived",
+                  "<div class='os-form'>"
+                  "<input id='os-rce' class='os-in' placeholder='email'>"
+                  "<button class='cta' onclick='osResendConfirm()'>Send it "
+                  "again</button></div>"
+                  "<p class='os-note'>Refused for anybody already confirmed, "
+                  "so this cannot become a way of emailing a subscriber "
+                  "under cover of a system message.</p>")
         + section("Add a suppression",
                   "<div class='os-form'><input id='os-supe' class='os-in' "
                   "placeholder='email address'>"
@@ -1099,6 +1202,17 @@ def an_ab(ctx) -> str:
                 f"('{e(c.get('id'))}')\">Open</button>"] for c in rows],
               "No campaign is running more than one subject line yet. Add a "
               "second variant on a campaign and both arms appear here.")
+        + section("End a test",
+                  "<div class='os-form'>"
+                  "<select id='os-abc' class='os-in'>"
+                  + "".join(f"<option value='{e(c.get('id'))}'>"
+                            f"{e(c.get('subject') or c.get('name'))}</option>"
+                            for c in rows)
+                  + "</select>"
+                    "<input id='os-abv' class='os-in' placeholder='arm, or "
+                    "leave blank to let the verdict decide'>"
+                    "<button class='cta' onclick='osPromote()'>Make it the "
+                    "only subject line</button></div>")
         + section("Why this screen refuses to crown a winner early",
                   "<p class='os-note'>Below roughly a hundred sends an arm, a "
                   "five point gap is noise. Declaring a winner off forty "
@@ -1140,6 +1254,23 @@ def set_team(ctx) -> str:
                     + "".join(f"<option>{e(r)}</option>" for r in CORE.ROLES)
                     + "</select><button class='cta' onclick='osAddMember()'>"
                       "Add</button></div>")
+        + section("Their own way in",
+                  "<div class='os-form'>"
+                  "<input id='os-pwe' class='os-in' placeholder='member email'>"
+                  "<input id='os-pwp' class='os-in' type='password' "
+                  "placeholder='a password of at least ten characters'>"
+                  "<button class='cta' onclick='osSetPassword()'>Give them a "
+                  "password</button>"
+                  "<button class='os-mini' onclick='osClearPassword()'>Take "
+                  "it away</button></div>"
+                  + table(["Member", "Signs in on their own"],
+                          [[e(k), pill("yes", "ok") if v
+                            else pill("no", "mut")]
+                           for k, v in _D(ctx.get("logins")).items()])
+                  + "<p class='os-note'>They sign in at the same page with "
+                    "their email and this password, and see only this "
+                    "workspace at the role you gave them. Your dashboard "
+                    "password still works and still means owner.</p>")
         + section("What this is not, plainly",
                   "<p class='os-note'>The dashboard session is still the only "
                   "way into this engine, and whoever holds it is the owner. "
@@ -1291,6 +1422,35 @@ def data_import(ctx) -> str:
                          ["suppressed", "skipped: somebody who asked you to "
                                         "stop is not un-asked by a "
                                         "spreadsheet"]]))
+        + section("A sheet somebody keeps adding to",
+                  "<div class='os-form'>"
+                  "<input id='os-srn' class='os-in' placeholder='what to call "
+                  "it'>"
+                  "<input id='os-srid' class='os-in' placeholder='Google "
+                  "Sheet id from its URL'>"
+                  "<input id='os-srt' class='os-in' placeholder='tab name' "
+                  "value='Sheet1'>"
+                  "<input id='os-srd' class='os-in' type='number' value='1' "
+                  "min='1' max='30'>"
+                  "<button class='cta' onclick='osSaveSource()'>Read it every "
+                  "N days</button>"
+                  "<button class='os-mini' onclick=\"osAct('/os/source/run')\">"
+                  "Read them all now</button></div>"
+                  + table(["Source", "Tab", "Every", "Last read", "Result",
+                           ""],
+                          [[f"<b>{e(x.get('name'))}</b>", e(x.get("tab")),
+                            num(x.get("every_days"), " days"),
+                            e(str(x.get("last_at") or "never")[:16]),
+                            e(str(x.get("last_result") or "")[:80]),
+                            f"<button class='os-mini' onclick=\"osDropSource"
+                            f"('{e(x.get('sheet_id'))}','{e(x.get('tab'))}')"
+                            f"\">Remove</button>"]
+                           for x in _L(ctx.get("sources"))],
+                          "No recurring source yet.")
+                  + "<p class='os-note'>Share the sheet with your Google "
+                    "service account or it cannot be opened. Every row goes "
+                    "through the same rules as an upload: existing people "
+                    "are updated, suppressed addresses are skipped.</p>")
         + (section("Lists you already have",
                    table(["List", "People"],
                          [[e(l.get("name")), num(l.get("members"))]
@@ -1300,8 +1460,10 @@ def data_import(ctx) -> str:
 def data_drive(ctx) -> str:
     d = _D(ctx.get("drive"))
     last = _D(ctx.get("drive_last"))
+    sh = _D(ctx.get("sheets"))
+    shlast = _D(ctx.get("sheets_last"))
     return panel(
-        "Google Drive",
+        "Google Drive and Sheets",
         "A copy of everything, in the folder your Google service account "
         "already has. Postgres stays the source of truth: this writes, and "
         "never reads back, so Drive cannot quietly become a second version "
@@ -1320,6 +1482,21 @@ def data_drive(ctx) -> str:
            f"target='_blank' rel='noopener'>Open the last workbook</a>"
            if last.get("workbook", "").startswith("http") else "")
         + "</div>"
+        + section("The same tables as tabs in your Sheet",
+                  tiles([("Sheet connected", None,
+                          "yes" if sh.get("ready") else "not yet"),
+                         ("Tabs last time", len(_L(shlast.get("tabs"))) or None,
+                          ""),
+                         ("Last written", None,
+                          str(shlast.get("at") or "never")[:16])])
+                  + f"<p class='os-note'>{e(sh.get('why'))}</p>"
+                  + "<div class='os-brow'>"
+                    "<button class='cta' onclick=\"osAct('/os/sheets/push')\""
+                  + ("" if sh.get("ready") else " disabled")
+                  + ">Write the tabs now</button>"
+                    "<span class='os-note'>Both mirrors also run once a day "
+                    "from the worker, keyed on the date so a restart cannot "
+                    "make them run twelve times.</span></div>")
         + section("What gets written",
                   table(["File", "What it is"],
                         [["<code>engagement-os-DATE.xlsx</code>",
@@ -1689,6 +1866,8 @@ CSS = """
 .os-dl{display:flex;gap:6px;align-items:center;justify-content:flex-end;
  margin:0 0 6px}
 .os-dl a{text-decoration:none}
+.os-up{cursor:pointer}
+.os-fxcanvas{transition:transform .12s ease}
 .os-empty{color:var(--osdim);padding:14px 2px;margin:0}
 .os-note{color:var(--osmut);font-size:12.5px;line-height:1.55;margin:8px 0 0;
  max-width:820px}
@@ -1862,14 +2041,24 @@ JS = ("<script>"
       "function osAddCond(){osConds.push(osCurrent());"
       "document.getElementById('os-sv').value='';osDrawConds();}"
       "function osDrawConds(){var h=osConds.map(function(c,i){"
-      "return \"<div class='os-cond'><span class='os-cw'>and</span><b>\"+c.field+"
-      "\"</b> <span class='os-d'>\"+c.operator.replace(/_/g,' ')+\"</span> <b>\"+"
-      "c.value+\"</b> <button class='os-mini' onclick='osDropCond(\"+i+\")'>\"+"
-      "\"remove</button></div>\";}).join('');"
+      "var body=c.group?(\"<span class='os-cw'>(</span>\"+c.conditions.map("
+      "function(x){return \"<b>\"+x.field+\"</b> \"+x.operator.replace(/_/g,' ')"
+      "+\" <b>\"+x.value+\"</b>\";}).join(\" \"+c.group+\" \")+"
+      "\"<span class='os-cw'>)</span>\"):"
+      "(\"<b>\"+c.field+\"</b> <span class='os-d'>\"+c.operator.replace(/_/g,' ')"
+      "+\"</span> <b>\"+c.value+\"</b>\");"
+      "return \"<div class='os-cond'><span class='os-cw'>and</span>\"+body+"
+      "\" <button class='os-mini' onclick='osDropCond(\"+i+\")'>remove\"+"
+      "\"</button>\"+(c.group?\" <button class='os-mini' onclick='osIntoGroup(\"+"
+      "i+\")'>+ into the bracket</button>\":\"\")+\"</div>\";}).join('');"
       "document.getElementById('os-conds').innerHTML=h;}"
+      "function osIntoGroup(i){if(!osConds[i]||!osConds[i].group)return;"
+      "osConds[i].conditions.push(osCurrent());"
+      "document.getElementById('os-sv').value='';osDrawConds();}"
       "function osDropCond(i){osConds.splice(i,1);osDrawConds();}"
       "function osTree(){var all=[osCurrent()].concat(osConds).filter("
-      "function(c){return c.field&&c.operator;});"
+      "function(c){return (c.field&&c.operator)||c.group;}).map(function(c){"
+      "return c.group?{operator:c.group,conditions:c.conditions}:c;});"
       "return {operator:document.getElementById('os-sm').value,conditions:all};}"
       "async function osCountSeg(){var j=await osAct('/os/segment/count',"
       "{tree:osTree()});var el=document.getElementById('os-scount');"
@@ -1991,6 +2180,65 @@ JS = ("<script>"
       "var j=await osAct('/os/import/commit',{filename:f.name,b64:f.b64,"
       "list_name:l?l.value:''});"
       "if(j&&j.ok)osImportPreview();}"
+
+      "async function osSearch(){"
+      "var q=document.getElementById('os-psearch');"
+      "try{var r=await fetch('/os/profiles/search?q='+"
+      "encodeURIComponent(q?q.value:''));"
+      "document.getElementById('os-plist').innerHTML=await r.text();}"
+      "catch(e){osToast({ok:false,message:'search failed'});}}"
+      "function osSearchClear(){var q=document.getElementById('os-psearch');"
+      "if(q)q.value='';osSearch();}"
+
+      "function osAddGroup(){osConds.push({group:'OR',conditions:[osCurrent()]});"
+      "document.getElementById('os-sv').value='';osDrawConds();}"
+      "function osClearSeg(){osConds=[];osDrawConds();"
+      "var n=document.getElementById('os-sn');if(n)n.value='';}"
+      "async function osEditSeg(id){try{"
+      "var r=await fetch('/os/segment/'+id);var j=await r.json();"
+      "if(!j||!j.ok){osToast(j,'could not load that segment');return;}"
+      "document.getElementById('os-sn').value=j.name||'';"
+      "document.getElementById('os-sm').value=j.match||'AND';"
+      "osConds=(j.conditions||[]).slice(1);"
+      "var first=(j.conditions||[])[0]||{};"
+      "if(first.field){document.getElementById('os-sf').value=first.field;"
+      "document.getElementById('os-so').value=first.operator||'equals';"
+      "document.getElementById('os-sv').value=first.value||'';}"
+      "osDrawConds();osToast({ok:true,message:'loaded; saving under the same "
+      "name replaces it'});}"
+      "catch(e){osToast({ok:false,message:'could not load that segment'});}}"
+
+      "async function osSendTest(){var p=document.getElementById('os-tp'),"
+      "t=document.getElementById('os-tt');"
+      "if(!t||!t.value){osToast({ok:false,message:'which address?'});return;}"
+      "if(!confirm('Send one real email through '+p.value+' to '+t.value+'?'))"
+      "return;await osAct('/os/provider/send-test',{name:p.value,to:t.value});}"
+      "async function osKlaviyo(){var w=document.getElementById('os-kw');"
+      "await osAct('/os/klaviyo/pull',{what:w?w.value:'profiles'});}"
+      "async function osSetPassword(){"
+      "var e2=document.getElementById('os-pwe'),p=document.getElementById('os-pwp');"
+      "var j=await osAct('/os/member/password',{email:e2?e2.value:'',"
+      "password:p?p.value:''});if(p)p.value='';}"
+      "async function osClearPassword(){var e2=document.getElementById('os-pwe');"
+      "await osAct('/os/member/password',{email:e2?e2.value:'',clear:true});}"
+      "async function osConversion(){"
+      "var e2=document.getElementById('os-cve'),v=document.getElementById('os-cvv'),"
+      "r=document.getElementById('os-cvr');"
+      "await osAct('/os/conversion',{email:e2?e2.value:'',"
+      "value:parseFloat(v&&v.value||'0'),ref:r?r.value:''});}"
+      "async function osSaveSource(){"
+      "var n=document.getElementById('os-srn'),i=document.getElementById('os-srid'),"
+      "t=document.getElementById('os-srt'),d=document.getElementById('os-srd');"
+      "await osAct('/os/source/save',{name:n?n.value:'',sheet_id:i?i.value:'',"
+      "tab:t?t.value:'Sheet1',every_days:parseInt(d&&d.value||'1',10)});}"
+      "async function osDropSource(id,tab){"
+      "await osAct('/os/source/drop',{sheet_id:id,tab:tab});}"
+      "async function osPromote(){var c=document.getElementById('os-abc'),"
+      "v=document.getElementById('os-abv');"
+      "await osAct('/os/variant/promote',{campaign_id:c?c.value:'',"
+      "variant:v?v.value:''});}"
+      "async function osResendConfirm(){var e2=document.getElementById('os-rce');"
+      "await osAct('/os/confirmation/resend',{email:e2?e2.value:''});}"
 
       "async function osTemplate(id){try{"
       "var r=await fetch('/os/template/'+id);osOpen(await r.text());"

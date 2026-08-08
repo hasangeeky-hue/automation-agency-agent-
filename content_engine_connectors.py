@@ -1392,6 +1392,25 @@ def _outreach_emails(body: str, *, lang, sender, title, company, website, phone,
     return plain, html
 
 
+def _unsub_for(to_addr) -> str:
+    """The tokenised, per-recipient unsubscribe link.
+
+    Lazily imported and wrapped: this module has been sending for months
+    and must not acquire a hard dependency on the engagement OS. If the OS
+    is unavailable, or PUBLIC_BASE_URL is unset, the caller falls back to
+    the static link exactly as before."""
+    if not to_addr:
+        return ""
+    try:
+        import content_engine_os_optin as _OPT
+        import content_engine_api as _A
+        url = _OPT.unsubscribe_url(_A.get_store(), to_addr)
+        return url if url.startswith("http") else ""
+    except Exception as e:
+        log.debug("per-recipient unsubscribe unavailable: %s", e)
+        return ""
+
+
 class Emailer:
     """Send the approved cold email over SMTP. Cold outreach goes out as a branded
     HTML email (logo + Book-an-appointment button + manage/unsubscribe footer);
@@ -1502,7 +1521,7 @@ class Emailer:
             return f"suppressed:{to_addr}"
         if not outreach_send_allowed():
             return "held_daily_cap"
-        plain, html = self.compose_outreach(body, job)
+        plain, html = self.compose_outreach(body, job, to_addr)
         try:
             import content_engine_safety as _safety
             allowed = [_env("EMAIL_WEBSITE", "anthropos-automation.com"), "anthropos-automation.com"]
@@ -1546,7 +1565,7 @@ class Emailer:
         # text + HTML). Code owns the signature so the consultation link is always
         # attached. Replies stay plain.
         if is_outreach:
-            plain, html = self.compose_outreach(body, job)
+            plain, html = self.compose_outreach(body, job, to_addr)
         else:
             plain, html = body, None
         # S4: last gate before an irreversible send — never let a broken/hijacked
@@ -1569,9 +1588,15 @@ class Emailer:
             _note_outreach_sent()   # count it toward today's warm-up cap
         return ref
 
-    def compose_outreach(self, body: str, job: dict):
+    def compose_outreach(self, body: str, job: dict, to_addr: str = ""):
         """Return (plain_text, html) for a cold email — the body + the branded
-        signature. Used by send() AND directly by the test command."""
+        signature. Used by send() AND directly by the test command.
+
+        `to_addr` exists so the unsubscribe link can name the person. It
+        used to be a single static URL for everybody, which meant the page
+        it landed on had no idea who had arrived and no way to check that
+        they were who they said. A tokenised, per-recipient link is what
+        makes one click actually remove one person."""
         p = job.get("payload", {}) or {}
         cfg = p.get("config", {}) or {}
         lead = p.get("lead", {}) or {}
@@ -1585,7 +1610,7 @@ class Emailer:
             phone=_env("EMAIL_PHONE", ""),
             booking_url=_env("EMAIL_BOOKING_URL", "https://anthropos-automation.com/free-audit/"),
             address=cfg.get("physical_address") or _env("EMAIL_ADDRESS", "1309 Coffeen Ave STE 1200, Sheridan, WY 82801"),
-            unsub_url=p.get("unsubscribe_url") or _env("EMAIL_UNSUBSCRIBE_URL", "https://anthropos-automation.com/unsubscribe"),
+            unsub_url=_unsub_for(to_addr) or p.get("unsubscribe_url") or _env("EMAIL_UNSUBSCRIBE_URL", "https://anthropos-automation.com/unsubscribe"),
             logo=_env("EMAIL_LOGO_URL", _LOGO_DEFAULT))
 
 

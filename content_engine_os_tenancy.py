@@ -25,6 +25,10 @@ THE RULE THAT MATTERS
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import os as _os
+
 import content_engine_os_core as CORE
 from content_engine_os_core import (DEFAULT_WORKSPACE, ROLE_GRANTS, ROLES, _D,
                                     _L, norm_email, now, rid)
@@ -213,3 +217,140 @@ def require(store, requested="", *, grant="read", email="") -> dict:
                 "message": f"a {role or 'guest'} may not {grant} here"}
     return {"ok": True, "workspace_id": wid, "role": role, "email": em,
             "message": ""}
+
+
+# ---------------------------------------------------------------------------
+# ITEM 8: A MEMBER CAN HOLD THEIR OWN PASSWORD
+# ---------------------------------------------------------------------------
+#: PBKDF2 with a per-user salt. Not bcrypt, because that is a wheel this
+#: image does not carry and a hashed password is not the place to add a
+#: dependency on the day you need it. 200k rounds of SHA-256 is well past
+#: what a stolen settings row is worth.
+ROUNDS = 200_000
+SESSION_KEY = "os_session_secret"
+
+
+def _session_secret(store) -> bytes:
+    try:
+        v = store.get_setting(SESSION_KEY, "")
+    except Exception:
+        v = ""
+    if not v:
+        v = hashlib.sha256(_os.urandom(32)).hexdigest()
+        try:
+            store.set_setting(SESSION_KEY, v)
+        except Exception:
+            pass
+    return str(v).encode()
+
+
+def hash_password(password, salt="") -> str:
+    salt = salt or hashlib.sha256(_os.urandom(16)).hexdigest()[:16]
+    dk = hashlib.pbkdf2_hmac("sha256", str(password).encode(), salt.encode(),
+                             ROUNDS)
+    return f"pbkdf2${ROUNDS}${salt}${dk.hex()}"
+
+
+def verify_password(password, stored) -> bool:
+    try:
+        kind, rounds, salt, want = str(stored or "").split("$", 3)
+        if kind != "pbkdf2":
+            return False
+        dk = hashlib.pbkdf2_hmac("sha256", str(password).encode(),
+                                 salt.encode(), int(rounds))
+        return hmac.compare_digest(dk.hex(), want)
+    except Exception:
+        return False
+
+
+def set_password(store, workspace_id, email, password) -> dict:
+    """Give a member their own way in.
+
+    The dashboard password still works and still means owner. This adds a
+    second door for the people already listed under Team, so an assistant
+    can be given read or write without being handed the founder's key."""
+    import content_engine_os_store as ST
+    em = norm_email(email)
+    if len(str(password or "")) < 10:
+        return {"ok": False,
+                "message": "use at least ten characters; this account can "
+                           "see every lead in the workspace"}
+    r = ST.repo_for(store, workspace_id)
+    if not r.find("workspace_members", user_email=em):
+        return {"ok": False,
+                "message": f"{em} is not a member of this workspace; add "
+                           f"them first"}
+    u = r.one("users", rid("usr", em)) or {"id": rid("usr", em), "email": em}
+    u["password_hash"] = hash_password(password)
+    u["password_set_at"] = now()
+    r.put("users", u)
+    CORE.audit(r, owner_email(store) or "founder", "password_set", em, "")
+    return {"ok": True,
+            "message": f"{em} can now sign in with their own password. The "
+                       f"dashboard password still works and still means "
+                       f"owner."}
+
+
+def clear_password(store, workspace_id, email) -> dict:
+    import content_engine_os_store as ST
+    em = norm_email(email)
+    r = ST.repo_for(store, workspace_id)
+    u = r.one("users", rid("usr", em))
+    if not u:
+        return {"ok": False, "message": f"{em} has no account"}
+    u["password_hash"] = ""
+    r.put("users", u)
+    return {"ok": True, "message": f"{em} can no longer sign in on their own"}
+
+
+def check_login(store, email, password) -> dict:
+    """(ok, workspace, role). Walks the workspaces this person belongs to.
+
+    A wrong password and an unknown address answer identically: a login
+    form that distinguishes them is a way of finding out who has an
+    account here."""
+    import content_engine_os_store as ST
+    em = norm_email(email)
+    if not em or not password:
+        return {"ok": False, "message": "email and password, please"}
+    ensure_home(store)
+    home = ST.repo_for(store, DEFAULT_WORKSPACE)
+    for w in home.all("workspaces") or []:
+        wid = w.get("id")
+        r = ST.repo_for(store, wid)
+        if not r.find("workspace_members", user_email=em):
+            continue
+        u = r.one("users", rid("usr", em)) or {}
+        if u.get("password_hash") and verify_password(password,
+                                                      u["password_hash"]):
+            u["last_seen_at"] = now()
+            r.put("users", u)
+            return {"ok": True, "email": em, "workspace_id": wid,
+                    "role": role_of(store, wid, em),
+                    "token": user_token(store, em)}
+    return {"ok": False, "message": "that email and password do not match"}
+
+
+def user_token(store, email) -> str:
+    return hmac.new(_session_secret(store),
+                    f"user|{norm_email(email)}".encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def user_from_cookie(store, cookie) -> str:
+    """Which member a session cookie belongs to, or "" if none.
+
+    The cookie is "email|signature", so the address is readable and the
+    signature is not forgeable without the server secret."""
+    raw = str(cookie or "")
+    if "|" not in raw:
+        return ""
+    em, sig = raw.rsplit("|", 1)
+    return em if hmac.compare_digest(user_token(store, em), sig) else ""
+
+
+def people_with_logins(store, workspace_id) -> dict:
+    import content_engine_os_store as ST
+    r = ST.repo_for(store, workspace_id)
+    return {u.get("email"): bool(u.get("password_hash"))
+            for u in r.all("users")}

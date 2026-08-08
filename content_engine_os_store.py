@@ -47,7 +47,8 @@ SCHEMA = {
     "workspaces":     ([("name", "text"), ("plan", "text"),
                         ("owner_email", "text")], ["name"]),
     "users":          ([("email", "text"), ("name", "text"),
-                        ("last_seen_at", "text")], ["email"]),
+                        ("last_seen_at", "text"), ("password_hash", "text"),
+                        ("password_set_at", "text")], ["email"]),
     "workspace_members": ([("user_id", "text"), ("user_email", "text"),
                            ("role", "text"), ("invited_at", "text"),
                            ("accepted_at", "text")],
@@ -455,11 +456,26 @@ def migrate(store, workspace_id=DEFAULT_WORKSPACE, *, force=False) -> dict:
             except Exception as ex:
                 log.error("migrate %s/%s: %s", coll, r.get("id"), ex)
         per[coll] = len(rows)
-    stamp = {"at": now(), "copied": copied, "per": per}
+    # ITEM 19. COUNT WHAT ARRIVED, not what was sent. A migration that
+    # reports success from its own loop counter is reporting that it tried.
+    after = counts(workspace_id)
+    short = {c: (per[c], after.get(c, 0)) for c in per
+             if per[c] and after.get(c, 0) < per[c]}
+    stamp = {"at": now(), "copied": copied, "per": per, "verified": after,
+             "short": short}
     store.set_setting(MIGRATED_KEY, stamp)
-    return {"ok": True, "copied": copied, "per": per,
-            "message": f"{copied} record(s) copied into {len(SCHEMA)} tables. "
-                       f"The JSON copy is untouched."}
+    return {"ok": not short, "copied": copied, "per": per, "verified": after,
+            "short": short,
+            "message": (f"{copied} record(s) copied into {len(SCHEMA)} "
+                        f"tables and counted back. The JSON copy is "
+                        f"untouched."
+                        if not short else
+                        f"{copied} sent but {len(short)} table(s) came back "
+                        f"short: "
+                        + ", ".join(f"{k} {v[1]} of {v[0]}"
+                                    for k, v in list(short.items())[:4])
+                        + ". Nothing was deleted; the JSON copy still has "
+                          "everything.")}
 
 
 def counts(workspace_id=DEFAULT_WORKSPACE) -> dict:

@@ -47,6 +47,8 @@ of them exist because something specific DID go wrong.
   G26 tables                  ONE table element, so columns line up
   G27 data in and out         every table downloads, a foreign spreadsheet
                               imports, and Drive is a mirror
+  G28 the nineteen            every gap named in the handover, closed and
+                              tested rather than described
 ============================================================================
 """
 
@@ -579,7 +581,10 @@ t("no screen failed to draw", "could not be drawn" not in html,
   html[html.find("could not be drawn") - 120:
        html.find("could not be drawn") + 160] if "could not be drawn" in html
   else "")
-ids = re.findall(r"id='([^']+)'", html)
+# Strip the scripts first: an id inside JS source is a string, not a DOM
+# node, and scanning it reported osFxCopy's "c.id='n'+..." as an element.
+_dom = re.sub(r"<script>.*?</script>|<style>.*?</style>", "", html, flags=re.S)
+ids = re.findall(r"id='([^']+)'", _dom)
 dup = sorted({i for i in ids if ids.count(i) > 1})
 t("no duplicate element ids", not dup, str(dup))
 t("every id is scoped to this section",
@@ -1201,6 +1206,274 @@ t("the upload needs no new server dependency",
   "UploadFile" not in _api and "= File(" not in _api
   and "python-multipart" not in io.open("deploy/requirements.txt",
                                         encoding="utf-8").read())
+
+print("\nG28 THE NINETEEN")
+import content_engine_os_bounce as BOU
+import content_engine_os_data as DAT
+import content_engine_os_optin as OPT2
+import content_engine_os_providers as PRV
+import content_engine_os_tenancy as TEN2
+import content_engine_connectors as CONN
+g = seeded()
+OS.sync(g, g.list_jobs())
+gr = OS.repo(g)
+gcid = gr.all("campaigns")[0]["id"]
+
+print("  -- 1 the unsubscribe link reaches the page")
+t("the composer takes the recipient, so the link can name them",
+  "to_addr" in CONN.Emailer.compose_outreach.__code__.co_varnames)
+t("the sender passes it",
+  "compose_outreach(body, job, to_addr)" in SRC["content_engine_api.py"]
+  or "compose_outreach(body, job, to_addr)" in io.open(
+      "content_engine_connectors.py", encoding="utf-8").read())
+t("the preview renders the SAME link, not a different one",
+  "compose_outreach(body, job, email)" in SRC["content_engine_os_content.py"])
+t("a visitor with no token is served a form, not an error",
+  "type=\"email\"" in OPT2.unsubscribe_page("", ""))
+t("a visitor with a token gets one button",
+  "Unsubscribe a@b.c" in OPT2.unsubscribe_page("a@b.c", "tok"))
+_u = OPT2.unsubscribe_self(g, "bo@lawfirm.co.uk")
+t("a typed unsubscribe works and is recorded as typed",
+  _u["ok"] and any(c.get("email") == "bo@lawfirm.co.uk"
+                   and "typed" in str(c.get("consent_method"))
+                   for c in gr.all("consents")))
+t("and it suppresses in the same act",
+  "bo@lawfirm.co.uk" in CORE.suppression_index(gr))
+
+print("  -- 2 bounces are read out of the mailbox")
+t("a 5.x.x status is permanent",
+  BOU.classify("Action: failed\nStatus: 5.1.1 user unknown")[0] == "hard")
+t("a 4.x.x status is temporary and must NOT suppress",
+  BOU.classify("Action: failed\nStatus: 4.2.2 mailbox full")[0] == "soft")
+t("a failure with no status code is treated as temporary, never permanent",
+  BOU.classify("Mail delivery failed: returning message")[0] == "soft")
+t("prose alone never makes a bounce permanent",
+  BOU.classify("the user unknown was mentioned")[0] != "hard")
+t("an ordinary email is not a bounce", BOU.classify("hello there")[0] == "")
+_m = __import__("email").message_from_string(
+    "From: Mail Delivery Subsystem <mailer-daemon@x>\nSubject: Undeliverable\n"
+    "Message-ID: <b1@x>\n\nFinal-Recipient: rfc822; gone@dead.de\n"
+    "Action: failed\nStatus: 5.1.1\n")
+t("a bounce is recognised", BOU.is_bounce(_m) is True)
+t("and it names the address it is about",
+  BOU.recipient_of(_m, BOU.flatten(_m)) == "gone@dead.de")
+t("four temporary failures rest rather than suppress",
+  BOU.SOFT_LIMIT >= 2 and "never suppressed" in BOU._note_soft.__doc__.lower()
+  or "RESTED" in BOU._note_soft.__doc__)
+t("with no mailbox it says so instead of failing",
+  BOU.read(Store(), gr)["ok"] is False)
+t("the summary says whether it can read at all",
+  "ready" in BOU.summary(g, gr))
+
+print("  -- 4 an adapter's send path can be proven")
+t("a test send exists and refuses without an address",
+  PRV.send_test("smtp", "")["ok"] is False)
+t("and refuses a provider that does not exist",
+  "no provider called" in PRV.send_test("nope", "a@b.c")["message"])
+t("it goes through the facade, so the HTTP layer holds no provider",
+  "content_engine_os_providers" not in SRC["content_engine_api.py"])
+
+print("  -- 5 Klaviyo reads as well as writes")
+t("the adapter can pull", hasattr(PRV.PROVIDERS["klaviyo"], "pull"))
+t("an unknown thing to pull is refused by name",
+  "nothing called" in PRV.PROVIDERS["klaviyo"].pull("unicorns")["message"])
+t("with no key it says which key",
+  "KLAVIYO_PRIVATE_KEY" in PRV.PROVIDERS["klaviyo"].pull("profiles")["message"])
+
+print("  -- 6, 7 Sheets, and the nightly mirror")
+t("Sheets says whether it is ready and why",
+  set(DAT.sheets_state()) == {"ready", "sheet", "why"})
+t("pushing with no credential is refused in words",
+  DAT.push_to_sheets(g, gr)["ok"] is False)
+t("the mirror is due on a fresh box", DAT.mirror_due(g) is True)
+DAT.mirror_if_due(g, gr)
+t("and not twice in one day", DAT.mirror_due(g) is False)
+t("it is keyed on the date, so a restart cannot run it twelve times",
+  "keyed on the date" in DAT.mirror_if_due.__doc__)
+t("the worker runs it, not a button",
+  "_OS.mirror(store)" in SRC["content_engine_api.py"])
+
+print("  -- 8 a member can hold their own password")
+_h = TEN2.hash_password("a-long-enough-one")
+t("a password round trips", TEN2.verify_password("a-long-enough-one", _h))
+t("a wrong one does not", TEN2.verify_password("wrong", _h) is False)
+t("it is not stored in the clear", "a-long-enough-one" not in _h)
+t("a short password is refused with the reason",
+  "ten characters" in TEN2.set_password(g, CORE.DEFAULT_WORKSPACE,
+                                        "x@y.com", "short")["message"])
+t("a non-member cannot be given one",
+  TEN2.set_password(g, CORE.DEFAULT_WORKSPACE, "stranger@x.com",
+                    "a-long-enough-one")["ok"] is False)
+TEN2.add_member(g, CORE.DEFAULT_WORKSPACE, "colleague@x.com", "member")
+t("a member can", TEN2.set_password(g, CORE.DEFAULT_WORKSPACE,
+                                    "colleague@x.com",
+                                    "a-long-enough-one")["ok"])
+_login = TEN2.check_login(g, "colleague@x.com", "a-long-enough-one")
+t("and can then sign in", _login["ok"] and _login["role"] == "member")
+t("a wrong password is refused",
+  TEN2.check_login(g, "colleague@x.com", "nope")["ok"] is False)
+t("an unknown address and a wrong password answer identically",
+  TEN2.check_login(g, "nobody@x.com", "x")["message"]
+  == TEN2.check_login(g, "colleague@x.com", "nope")["message"])
+t("the session cookie cannot be forged",
+  TEN2.user_from_cookie(g, "colleague@x.com|deadbeef") == "")
+t("and a real one names its owner",
+  TEN2.user_from_cookie(g, f"colleague@x.com|{_login['token']}")
+  == "colleague@x.com")
+t("the login form accepts an email as well as the shared password",
+  'form.get("email"' in SRC["content_engine_api.py"])
+
+print("  -- 9 exports can be narrowed")
+AUD.save_segment(gr, "Germans", {"operator": "AND", "conditions": [
+    {"field": "country", "operator": "equals", "value": "Germany"}]})
+_seg = gr.all("segments")[0]["id"]
+_all = DAT.rows_for(gr, "profiles")[1]
+_de = DAT.rows_for(gr, "profiles", {"segment": _seg})[1]
+t("a segment filter really narrows the rows",
+  0 < len(_de) < len(_all), f"{len(_de)} of {len(_all)}")
+t("a campaign filter narrows too",
+  len(DAT.rows_for(gr, "messages", {"campaign": gcid})[1]) <= len(
+      DAT.rows_for(gr, "messages")[1]))
+t("no filter means the whole table",
+  len(DAT.rows_for(gr, "profiles", {})[1]) == len(_all))
+t("the route takes the filter",
+  "segment: str" in SRC["content_engine_api.py"])
+
+print("  -- 10 recurring imports and near duplicates")
+t("a source needs a sheet id", DAT.save_source(g, "x", "")["ok"] is False)
+t("a source can be saved",
+  DAT.save_source(g, "Fair", "sheet123", "Sheet1", 2)["ok"])
+t("and is listed", any(x["sheet_id"] == "sheet123" for x in DAT.sources(g)))
+t("and dropped", DAT.drop_source(g, "sheet123", "Sheet1")["ok"]
+  and not DAT.sources(g))
+t("nothing due reads nothing", DAT.run_sources(g, gr, force=False)["sources"] == 0)
+_dupes = DAT.near_duplicates(gr, [{"email": "a.weber@clinicx.de",
+                                   "first_name": "Ann", "last_name": "Weber"}])
+t("somebody at the same company with the same name is FLAGGED",
+  len(_dupes) == 1 and "ann@clinicx.de" in _dupes[0]["matches"], str(_dupes))
+t("and never merged automatically",
+  "never merged" in DAT.near_duplicates.__doc__.lower())
+
+print("  -- 11 A/B assignment and promotion")
+_c = gr.one("campaigns", gcid)
+_c["subject_variants"] = ["Arm A line", "Arm B line"]
+gr.put("campaigns", _c)
+t("a person can be pinned to an arm",
+  SEND.assign_variant(gr, gcid, "ann@clinicx.de", "B")["ok"])
+t("and the pin beats the automatic bucket",
+  SEND.variant_for(gr.one("campaigns", gcid), "ann@clinicx.de")[0] == 1)
+t("an arm that does not exist is refused with the ones that do",
+  "pick one of" in SEND.assign_variant(gr, gcid, "ann@clinicx.de", "Z")["message"])
+t("promoting refuses while the arms are too small to mean anything",
+  SEND.promote_variant(gr, gcid)["ok"] is False)
+t("naming an arm promotes it",
+  SEND.promote_variant(gr, gcid, "B")["ok"]
+  and gr.one("campaigns", gcid)["subject_variants"] == ["Arm B line"])
+t("and the old arms are kept, not thrown away",
+  len(_L(gr.one("campaigns", gcid).get("promoted_from"))) == 2)
+t("a campaign with one line is not a test",
+  SEND.promote_variant(gr, gcid, "A")["ok"] is False)
+
+print("  -- 12, 13 the editors")
+import content_engine_os_editors as ED2
+t("the canvas has undo, zoom and duplicate",
+  all(x in ED2.FLOW_JS for x in ("osFxUndo", "osFxZoom", "osFxCopy")))
+t("every change is marked for undo before it happens",
+  ED2.FLOW_JS.count("osFxMark();") >= 5)
+t("the toolbar offers them", all(x in ED2.flow_canvas({})
+                                 for x in ("osFxUndo", "osFxZoom", "osFxCopy")))
+t("an image can be uploaded rather than only linked",
+  "osBbUpload" in ED2.BLOCK_JS and "os-up" in ED2.block_editor({}))
+t("two columns are a block type", "columns" in CT.BLOCK_TYPES)
+t("and every block type still has a form",
+  set(ED2.BLOCK_FIELDS) == set(CT.BLOCK_TYPES))
+t("two columns render as a table Outlook understands",
+  "width='50%'" in CT.render_blocks([{"type": "columns", "left": "a",
+                                      "right": "b"}]))
+t("an uploaded image is shared, and the screen says what that means",
+  "publicly readable" in OS.upload_image.__doc__.lower()
+  or "anybody with the link" in OS.upload_image.__doc__.lower())
+
+print("  -- 14 conversions and revenue")
+_cv = AN.record_conversion(gr, "ann@clinicx.de", value=2500, ref="booking-1")
+t("a conversion is recorded against the last email that person was sent",
+  _cv["ok"] and _cv["campaign_id"], str(_cv))
+t("the same one twice is recorded once",
+  AN.record_conversion(gr, "ann@clinicx.de", value=2500,
+                       ref="booking-1")["ok"] is False)
+t("a stranger cannot be attributed to an email nobody sent them",
+  AN.record_conversion(gr, "nobody@nowhere.com", value=1)["ok"] is False)
+t("the lead becomes a customer",
+  any(l.get("stage") == "CUSTOMER" for l in gr.all("leads")))
+_rev = AN.revenue(gr)
+t("revenue is the sum of what was recorded", _rev["revenue"] == 2500)
+t("and the model is named, not implied", "Last touch" in _rev["basis"])
+t("the beacon is public, because a thank-you page has no session",
+  '"/t/v"' in SRC["content_engine_api.py"]
+  and '"/t/v"' in SRC["content_engine_api.py"].split("_auth_gate")[1][:1600])
+
+print("  -- 15 the confirmation")
+t("it is rendered through the block renderer, not hand written HTML",
+  "CONTENT.render_blocks" in SRC["content_engine_os_send.py"])
+t("a confirmation can be resent", hasattr(SEND, "resend_confirmation"))
+CORE.set_consent(gr, "cy@shop.ch", "SUBSCRIBED", source="test")
+t("but never to somebody already confirmed",
+  SEND.resend_confirmation(g, gr, "cy@shop.ch")["ok"] is False)
+
+print("  -- 16, 17 segments and search")
+_got = OS.segment_get(g, _seg)
+t("a saved segment loads back into the builder",
+  _got["ok"] and _got["conditions"][0]["field"] == "country")
+t("an unknown one is refused", OS.segment_get(g, "nope")["ok"] is False)
+_tree = {"operator": "AND", "conditions": [
+    {"field": "country", "operator": "equals", "value": "Germany"},
+    {"operator": "OR", "conditions": [
+        {"field": "lead_score", "operator": "greater_than", "value": 70},
+        {"field": "company", "operator": "contains", "value": "clinic"}]}]}
+t("a bracket evaluates", AUD.validate(_tree)[0] is True)
+t("and reads as one", "(" in AUD.describe(_tree))
+_html = OS.search_profiles(g, "clinic")
+t("search looks past the 250 on screen",
+  "clinicx" in _html.lower(), _html[:120])
+t("a search that matches nobody says so",
+  "Nobody matches" in OS.search_profiles(g, "zzzznotreal"))
+t("an empty search returns everyone",
+  "@" in OS.search_profiles(g, ""))
+
+print("  -- 18 the authenticated surface has a ceiling")
+t("the limiter takes a ceiling", "ceiling" in SRC["content_engine_api.py"])
+t("and /os is inside it",
+  'request.url.path.startswith(("/os/", "/internal/"))'
+  in SRC["content_engine_api.py"])
+t("the reason is stated, not implied",
+  "Something is looping" in SRC["content_engine_api.py"])
+
+print("  -- 19 the migration counts what arrived")
+t("it verifies rather than trusting its own loop",
+  "COUNT WHAT ARRIVED" in SRC["content_engine_os_store.py"])
+t("a short table is reported, not swallowed",
+  "came back" in SRC["content_engine_os_store.py"])
+
+print("  -- all of it still draws")
+ghtml = SCR.build(OS.build_ctx(g, jobs=g.list_jobs()))
+t("no screen failed", "could not be drawn" not in ghtml)
+t("bounces have a button", "/os/bounces/read" in ghtml)
+t("Sheets has a button", "/os/sheets/push" in ghtml)
+t("a provider can be test-sent", "osSendTest" in ghtml)
+t("Klaviyo can be pulled", "osKlaviyo" in ghtml)
+t("a member can be given a password", "osSetPassword" in ghtml)
+t("a conversion can be recorded by hand", "osConversion" in ghtml)
+t("the beacon snippet is on the page", "/t/v?e=" in ghtml)
+t("a source can be added", "osSaveSource" in ghtml)
+t("an arm can be promoted", "osPromote" in ghtml)
+t("a confirmation can be resent", "osResendConfirm" in ghtml)
+t("a segment can be edited", "osEditSeg" in ghtml)
+t("profiles can be searched", "osSearch" in ghtml)
+_h2 = re.findall(r"function (os[A-Z]\w+)", SCR.JS + ED2.FLOW_JS + ED2.BLOCK_JS)
+_c2 = set(re.findall(r"(os[A-Z]\w+)\(", ghtml))
+t("every handler the new controls call is defined",
+  not sorted(c for c in _c2 if c not in _h2 and c != "osToast"),
+  str(sorted(c for c in _c2 if c not in _h2 and c != "osToast")))
 
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)

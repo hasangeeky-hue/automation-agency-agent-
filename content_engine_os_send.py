@@ -135,6 +135,15 @@ def variant_for(campaign, profile_id) -> tuple:
     variants = _L(_D(campaign).get("subject_variants"))
     if len(variants) < 2:
         return 0, (variants[0] if variants else _D(campaign).get("subject", ""))
+    pinned = _D(_D(campaign).get("variant_overrides")).get(
+        str(profile_id or "").strip().lower())
+    if not pinned:
+        # An override may be recorded against the address rather than the id.
+        pinned = _D(_D(campaign).get("variant_overrides")).get(profile_id)
+    if pinned:
+        i = ord(str(pinned).upper()[:1]) - 65
+        if 0 <= i < len(variants):
+            return i, variants[i]
     bucket = int(rid("ab", _D(campaign).get("id", ""), profile_id or "")[-6:],
                  16) % len(variants)
     return bucket, variants[bucket]
@@ -142,6 +151,91 @@ def variant_for(campaign, profile_id) -> tuple:
 
 def variant_label(i) -> str:
     return chr(65 + int(i or 0))          # 0 -> A, 1 -> B, 2 -> C
+
+
+def assign_variant(repo, campaign_id, email, variant) -> dict:
+    """Put ONE person on a named arm, overriding the automatic split.
+
+    Kept separate from the deterministic bucket rather than replacing it:
+    the split stays reproducible for everybody else, and the override is a
+    record you can see rather than a hidden exception."""
+    c = repo.one("campaigns", campaign_id)
+    if not c:
+        return {"ok": False, "message": "no such campaign"}
+    n = len(_L(c.get("subject_variants")))
+    v = str(variant or "").strip().upper()[:1]
+    if not v or ord(v) - 65 >= max(n, 1):
+        return {"ok": False,
+                "message": f"this campaign has {n} arm(s); pick one of "
+                           + ", ".join(variant_label(i) for i in range(n))}
+    fixed = _D(c.get("variant_overrides"))
+    fixed[norm_email(email)] = v
+    c["variant_overrides"] = fixed
+    repo.put("campaigns", c)
+    return {"ok": True, "message": f"{email} is pinned to arm {v}"}
+
+
+def promote_variant(repo, campaign_id, variant="") -> dict:
+    """Make one subject line the only one. Ends the test.
+
+    If no arm is named the analytics verdict decides, and it REFUSES while
+    the arms are too small: crowning a winner off forty emails is the most
+    common way a test makes a campaign worse."""
+    import content_engine_os_analytics as AN
+    c = repo.one("campaigns", campaign_id)
+    if not c:
+        return {"ok": False, "message": "no such campaign"}
+    variants = _L(c.get("subject_variants"))
+    if len(variants) < 2:
+        return {"ok": False, "message": "this campaign is not running a test"}
+    if not variant:
+        verdict = AN.ab_verdict(AN.variant_rows(repo, campaign_id))
+        if verdict.get("state") != "winner":
+            return {"ok": False, "state": verdict.get("state"),
+                    "message": "not promoting: " + str(verdict.get("message"))}
+        variant = verdict.get("leader")
+    i = ord(str(variant).upper()[:1]) - 65
+    if not (0 <= i < len(variants)):
+        return {"ok": False, "message": f"there is no arm {variant}"}
+    c["subject_variants"] = [variants[i]]
+    c["promoted_from"] = variants
+    repo.put("campaigns", c)
+    CORE.audit(repo, "founder", "variant_promoted", campaign_id,
+               variants[i][:80])
+    return {"ok": True, "subject": variants[i],
+            "message": f"arm {str(variant).upper()[:1]} is now the only "
+                       f"subject line: {variants[i][:70]!r}. Everyone queued "
+                       f"from here gets it."}
+
+
+def _from_company() -> str:
+    try:
+        import content_engine_connectors as C
+        return " \u00b7 ".join(x for x in (
+            C._env("EMAIL_COMPANY", "") or "Anthropos Automation",
+            C._env("EMAIL_ADDRESS", "")) if x)
+    except Exception:
+        return "Anthropos Automation"
+
+
+def resend_confirmation(store, repo, email) -> dict:
+    """ITEM 15, second half. Somebody says the confirmation never arrived.
+
+    Refused for anybody already confirmed, so this cannot be used to email
+    a subscriber a second time under the cover of a system message."""
+    import content_engine_os_optin as OPT
+    em = norm_email(email)
+    cur = next((c for c in repo.all("consents")
+                if c.get("email") == em), {})
+    if _D(cur).get("status") == "SUBSCRIBED":
+        return {"ok": False,
+                "message": f"{em} is already confirmed, so there is nothing "
+                           f"to resend"}
+    out = send_confirmation(store, repo, em, OPT.confirm_url(store, em))
+    out.setdefault("message", "")
+    if out.get("ok"):
+        out["message"] = f"confirmation sent to {em} again"
+    return out
 
 
 def send_confirmation(store, repo, email, url) -> dict:
@@ -163,10 +257,22 @@ def send_confirmation(store, repo, email, url) -> dict:
              + str(url) + "\n\n"
              "If you did not ask for this, ignore this message and nothing "
              "further will be sent.")
-    html = ("<p>Please confirm you want these emails.</p>"
-            f"<p><a href='{url}'>Yes, confirm my address</a></p>"
-            "<p style='color:#8a9199;font-size:13px'>If you did not ask for "
-            "this, ignore this message and nothing further will be sent.</p>")
+    # ITEM 15. Rendered through the block renderer, so the confirmation
+    # looks like the rest of your email rather than like a system notice
+    # from a different company.
+    html = CONTENT.render_blocks([
+        {"type": "heading", "content": "One click and you are on the list",
+         "level": 2},
+        {"type": "text",
+         "content": "Please confirm you want these emails. Nothing else will "
+                    "be sent until you do."},
+        {"type": "button", "label": "Yes, confirm my address", "url": str(url)},
+        {"type": "text",
+         "content": "If you did not ask for this, ignore this message. "
+                    "Nothing further will be sent and the address is "
+                    "forgotten."},
+        {"type": "footer",
+         "content": _from_company()}])
     res = prov.send(em, "Please confirm your email address", plain, html)
     CORE.audit(repo, "system", "confirmation_sent", em,
                "double opt-in" if res.get("ok") else str(res.get("error"))[:120])

@@ -36,7 +36,7 @@ import re
 from content_engine_os_core import _D, _L, now, rid
 
 BLOCK_TYPES = ("heading", "text", "image", "button", "divider", "spacer",
-               "social", "product", "footer")
+               "social", "product", "footer", "columns")
 
 #: The tokens a template may personalise with. Anything else is reported by
 #: the preview as an unknown token rather than silently rendered empty.
@@ -106,7 +106,7 @@ def rendered_message(job, email, touch=1) -> dict:
     plain, html = body, ""
     try:
         import content_engine_connectors as C
-        plain, html = C.Emailer().compose_outreach(body, job)
+        plain, html = C.Emailer().compose_outreach(body, job, email)
     except Exception as ex:                     # a broken mailer config must
         html = ""                               # not blank the preview
         _note = str(ex)
@@ -184,6 +184,19 @@ def render_block(b) -> str:
                 f"{e(b.get('description'))}</div>"
                 f"<div style='margin-top:8px;font-weight:600'>"
                 f"{e(b.get('price'))}</div></div></td></tr>")
+    if t == "columns":
+        # Two columns as a nested table. Outlook understands a table and
+        # does not understand flexbox, and a phone stacks them because the
+        # outer wrapper is already width-limited.
+        return (f"<tr><td style='{pad}'>"
+                f"<table role='presentation' width='100%' cellpadding='0' "
+                f"cellspacing='0'><tr>"
+                f"<td width='50%' valign='top' style='padding-right:8px;"
+                f"font-size:15px;line-height:1.6;color:#33383d'>"
+                f"{e(b.get('left'))}</td>"
+                f"<td width='50%' valign='top' style='padding-left:8px;"
+                f"font-size:15px;line-height:1.6;color:#33383d'>"
+                f"{e(b.get('right'))}</td></tr></table></td></tr>")
     if t == "footer":
         return (f"<tr><td style='{pad};padding-top:24px;padding-bottom:24px;"
                 f"font-size:12px;color:#8a9199;line-height:1.5'>"

@@ -39,6 +39,7 @@ import content_engine_os_audience as AUD
 import content_engine_os_core as CORE
 import content_engine_os_sheets as XL
 from content_engine_os_core import _D, _L, norm_email, now
+import json as _json
 
 log = logging.getLogger("content_engine.os.data")
 
@@ -154,7 +155,41 @@ DATASETS = {
 }
 
 
-def rows_for(repo, name) -> tuple:
+def _filtered(repo, name, rows, cols, flt) -> list:
+    """ITEM 9. Narrow an export to a segment, a list or one campaign.
+
+    Exports used to be whole tables only, which is useless the moment you
+    want to hand somebody the two hundred people in one segment rather
+    than everyone you have ever met."""
+    flt = _D(flt)
+    if not flt:
+        return rows
+    i_email = cols.index("email") if "email" in cols else -1
+    i_camp = cols.index("campaign") if "campaign" in cols else -1
+    keep = None
+    if flt.get("segment"):
+        seg = repo.one("segments", flt["segment"]) or {}
+        keep = {p.get("email") for p in AUD.members(repo, seg)}
+    elif flt.get("list"):
+        ids = {m.get("profile_id")
+               for m in repo.find("list_members", list_id=flt["list"])}
+        keep = {p.get("email") for p in repo.all("profiles")
+                if p.get("id") in ids}
+    elif flt.get("campaign"):
+        c = repo.one("campaigns", flt["campaign"]) or {}
+        if i_camp >= 0:
+            return [r for r in rows if r[i_camp] == c.get("name")]
+        keep = {m.get("email")
+                for m in repo.find("campaign_messages",
+                                   campaign_id=flt["campaign"])}
+    elif flt.get("code"):
+        keep = {r.get("email") for r in _L(AN.hygiene(repo).get(flt["code"]))}
+    if keep is None or i_email < 0:
+        return rows
+    return [r for r in rows if r[i_email] in keep]
+
+
+def rows_for(repo, name, flt=None) -> tuple:
     """(header, rows). Missing columns come back empty rather than raising:
     a dataset that half-exists must still download."""
     label, cols, fn = DATASETS[name]
@@ -163,13 +198,14 @@ def rows_for(repo, name) -> tuple:
     except Exception as ex:
         log.warning("dataset %s failed: %s", name, ex)
         data = []
-    return cols, [[_D(r).get(c, "") for c in cols] for r in data]
+    rows = [[_D(r).get(c, "") for c in cols] for r in data]
+    return cols, _filtered(repo, name, rows, cols, flt)
 
 
-def as_bytes(repo, name, fmt) -> tuple:
-    """(filename, mime, bytes) for one dataset."""
+def as_bytes(repo, name, fmt, flt=None) -> tuple:
+    """(filename, mime, bytes) for one dataset, optionally narrowed."""
     label, cols, _fn = DATASETS[name]
-    cols, rows = rows_for(repo, name)
+    cols, rows = rows_for(repo, name, flt)
     stamp = now()[:10]
     if fmt == "csv":
         return (f"{name}-{stamp}.csv", "text/csv; charset=utf-8",
@@ -497,3 +533,240 @@ def commit(store, repo, filename, data, mapping=None, *, list_name="",
                            else "")
                         + f". {skipped} row(s) skipped: no usable address, a "
                           f"repeat, or already suppressed.")}
+
+
+# ---------------------------------------------------------------------------
+# ITEM 6: GOOGLE SHEETS
+# ---------------------------------------------------------------------------
+def sheets_state() -> dict:
+    try:
+        import content_engine_connectors as C
+        sh = C.GoogleSheets()
+        return {"ready": bool(sh.available()), "sheet": sh.sheet_id or "",
+                "why": ("writing tabs into the sheet the service account was "
+                        "given" if sh.available() else
+                        "set GOOGLE_SHEETS_ID on the System Map; the key is "
+                        "the same one GSC, GA4 and Drive already use")}
+    except Exception as ex:
+        return {"ready": False, "sheet": "", "why": f"unavailable: {ex}"}
+
+
+def _sheet_write(sheet_id, token, tab, rows) -> bool:
+    """Replace a tab's contents. Clear then write, never append.
+
+    Appending would double every row on the second run, which is how a
+    mirror becomes a pile."""
+    import urllib.parse
+    try:
+        import content_engine_connectors as C
+        rq = C._requests()
+        if not rq:
+            return False
+        head = {"Authorization": f"Bearer {token}"}
+        base = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}"
+        # A tab that does not exist yet has to be made before it is written.
+        rq.post(f"{base}:batchUpdate", headers=head, timeout=30, json={
+            "requests": [{"addSheet": {"properties": {"title": tab}}}]})
+        rng = urllib.parse.quote(f"{tab}!A1:ZZ", safe="")
+        rq.post(f"{base}/values/{rng}:clear", headers=head, timeout=30,
+                json={})
+        r = rq.put(f"{base}/values/{rng}?valueInputOption=RAW", headers=head,
+                   timeout=90,
+                   json={"values": [["" if v is None else str(v)[:400]
+                                     for v in row] for row in rows]})
+        return r.status_code < 300
+    except Exception as ex:
+        log.warning("sheet write %s failed: %s", tab, ex)
+        return False
+
+
+def push_to_sheets(store, repo, tabs=None) -> dict:
+    """Mirror every table into the Google Sheet, one tab each. Write only."""
+    st = sheets_state()
+    if not st["ready"]:
+        return {"ok": False, "message": st["why"]}
+    import content_engine_connectors as C
+    token = C._google_token([C._GSHEETS_SCOPE])
+    if not token:
+        return {"ok": False, "message": "the Google key was refused"}
+    sheet_id = C.GoogleSheets().sheet_id
+    want = tabs or list(DATASETS)
+    done, failed = [], []
+    for name in want:
+        if name not in DATASETS:
+            continue
+        label, _c, _f = DATASETS[name]
+        cols, rows = rows_for(repo, name)
+        # A sheet cell tops out; big tables are truncated and SAY SO rather
+        # than failing the whole mirror.
+        capped = rows[:5000]
+        note = ([[f"showing the first 5000 of {len(rows)} rows; the full "
+                  f"table is in the Excel export"]] if len(rows) > 5000
+                else [])
+        (done if _sheet_write(sheet_id, token, label,
+                              [cols] + capped + note) else failed).append(label)
+    stamp = {"at": now(), "tabs": done, "failed": failed}
+    try:
+        store.set_setting("os_sheets_last", stamp)
+    except Exception:
+        pass
+    return {"ok": bool(done), "tabs": done, "failed": failed,
+            "message": (f"{len(done)} tab(s) written into the sheet"
+                        + (f", {len(failed)} refused" if failed else "")
+                        + ". Like Drive, this only ever writes.")}
+
+
+def sheets_last(store) -> dict:
+    try:
+        return _D(store.get_setting("os_sheets_last", {}))
+    except Exception:
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# ITEM 7: THE NIGHTLY MIRROR
+# ---------------------------------------------------------------------------
+MIRROR_KEY = "os_mirror_last_day"
+
+
+def mirror_due(store) -> bool:
+    try:
+        return str(store.get_setting(MIRROR_KEY, "")) != now()[:10]
+    except Exception:
+        return False
+
+
+def mirror_if_due(store, repo) -> dict:
+    """Called from the worker tick. Writes Drive and Sheets once a day.
+
+    Once a DAY, keyed on the date rather than on a timer, so a container
+    restart cannot make it run twelve times and a missed night is caught
+    the next morning rather than skipped."""
+    if not mirror_due(store):
+        return {"ok": True, "skipped": True, "message": "already mirrored today"}
+    out = {"drive": push_to_drive(store, repo),
+           "sheets": push_to_sheets(store, repo)}
+    try:
+        store.set_setting(MIRROR_KEY, now()[:10])
+    except Exception:
+        pass
+    return {"ok": True, "skipped": False, **out,
+            "message": (str(_D(out["drive"]).get("message", ""))[:90] + " | "
+                        + str(_D(out["sheets"]).get("message", ""))[:90])}
+
+
+# ---------------------------------------------------------------------------
+# ITEM 10: A RECURRING IMPORT, AND DE-DUPLICATION BEYOND THE ADDRESS
+# ---------------------------------------------------------------------------
+SOURCE_KEY = "os_import_sources"
+
+
+def sources(store) -> list:
+    try:
+        return _L(store.get_setting(SOURCE_KEY, []))
+    except Exception:
+        return []
+
+
+def save_source(store, name, sheet_id, tab="Sheet1", every_days=1) -> dict:
+    """A Google Sheet somebody keeps adding leads to, read on a schedule."""
+    if not str(sheet_id or "").strip():
+        return {"ok": False, "message": "paste the sheet id from its URL"}
+    rows = [r for r in sources(store)
+            if r.get("sheet_id") != sheet_id or r.get("tab") != tab]
+    rows.append({"name": name or tab, "sheet_id": sheet_id.strip(),
+                 "tab": tab or "Sheet1", "every_days": int(every_days or 1),
+                 "last_at": "", "added_at": now()})
+    store.set_setting(SOURCE_KEY, rows[:20])
+    return {"ok": True,
+            "message": f"{name or tab!r} will be read every "
+                       f"{int(every_days or 1)} day(s). Share the sheet with "
+                       f"the service account or it cannot be opened."}
+
+
+def drop_source(store, sheet_id, tab) -> dict:
+    rows = [r for r in sources(store)
+            if not (r.get("sheet_id") == sheet_id and r.get("tab") == tab)]
+    store.set_setting(SOURCE_KEY, rows)
+    return {"ok": True, "message": "that source will not be read again"}
+
+
+def read_sheet(sheet_id, tab) -> list:
+    import urllib.parse
+    try:
+        import content_engine_connectors as C
+        token = C._google_token([C._GSHEETS_SCOPE])
+        rq = C._requests()
+        if not (token and rq):
+            return []
+        rng = urllib.parse.quote(f"{tab}!A1:ZZ20000", safe="")
+        r = rq.get(f"https://sheets.googleapis.com/v4/spreadsheets/"
+                   f"{sheet_id}/values/{rng}",
+                   headers={"Authorization": f"Bearer {token}"}, timeout=60)
+        r.raise_for_status()
+        return _L(r.json().get("values"))
+    except Exception as ex:
+        log.warning("sheet read failed: %s", ex)
+        return []
+
+
+def run_sources(store, repo, *, force=False) -> dict:
+    """Read every due sheet and import it. Same preview rules, same audit."""
+    from datetime import datetime, timezone, timedelta
+    rows, ran, wrote = sources(store), [], 0
+    for src in rows:
+        last = CORE.parse_at(src.get("last_at"))
+        due = force or not last or (
+            datetime.now(timezone.utc) - last
+            >= timedelta(days=int(src.get("every_days") or 1)))
+        if not due:
+            continue
+        values = read_sheet(src.get("sheet_id"), src.get("tab"))
+        if len(values) < 2:
+            src["last_at"] = now()
+            src["last_result"] = "nothing to read"
+            continue
+        data = XL.write_csv(values)
+        out = commit(store, repo, f"{src.get('name')}.csv", data,
+                     source=f"sheet:{src.get('name')}")
+        src["last_at"] = now()
+        src["last_result"] = out.get("message", "")
+        wrote += int(out.get("written") or 0)
+        ran.append(src.get("name"))
+    try:
+        store.set_setting(SOURCE_KEY, rows)
+    except Exception:
+        pass
+    return {"ok": True, "sources": len(ran), "written": wrote,
+            "message": (f"{len(ran)} source(s) read, {wrote} person(s) written"
+                        if ran else "no source was due")}
+
+
+def _domain(email_addr) -> str:
+    return norm_email(email_addr).rsplit("@", 1)[-1]
+
+
+def near_duplicates(repo, rows) -> list:
+    """ITEM 10, second half. People who are probably already here under a
+    different address: same company domain AND same name.
+
+    Reported, never merged. Two people at one firm can share a surname, and
+    a merge you cannot undo is worse than a list you have to look at."""
+    known = {}
+    for p in repo.all("profiles"):
+        key = (_domain(p.get("email")),
+               str(p.get("first_name") or "").lower().strip(),
+               str(p.get("last_name") or "").lower().strip())
+        if key[0] and (key[1] or key[2]):
+            known.setdefault(key, []).append(p.get("email"))
+    out = []
+    for r in _L(rows):
+        r = _D(r)
+        key = (_domain(r.get("email")),
+               str(r.get("first_name") or "").lower().strip(),
+               str(r.get("last_name") or "").lower().strip())
+        hits = [x for x in known.get(key, []) if x != norm_email(r.get("email"))]
+        if hits:
+            out.append({"email": r.get("email"), "matches": hits[:3],
+                        "why": f"same name at {key[0]}"})
+    return out

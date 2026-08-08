@@ -365,7 +365,20 @@ def api_tick() -> dict:
     except Exception as e:
         log.warning("os queue drain skipped this tick: %s", e)
         queue = {"ok": False, "message": f"{type(e).__name__}: {e}"}
-    return {"advanced": status is not None, "status": status, "queue": queue}
+    # Once a day, from the worker: the Drive and Sheets mirror, the recurring
+    # sheet imports, and a read of the mailbox for bounces. Each is wrapped
+    # on its own so one failing cannot stop the other two.
+    extras = {}
+    for name, fn in (("mirror", lambda: _OS.mirror(store)),
+                     ("sources", lambda: _OS.source_run(store, force=False)),
+                     ("bounces", lambda: _OS.read_bounces(store))):
+        try:
+            import content_engine_os as _OS
+            extras[name] = fn()
+        except Exception as e:
+            extras[name] = {"ok": False, "message": f"{type(e).__name__}: {e}"}
+    return {"advanced": status is not None, "status": status, "queue": queue,
+            **extras}
 
 
 def api_answer_replies(limit: int = 20, dry_run: bool = False) -> dict:
@@ -1842,7 +1855,7 @@ def build_app():
         # would mean tracking silently never worked. They take an opaque token,
         # append one event (the list is hard-capped), and return an image or a
         # redirect. They read nothing and return no data.
-        if request.url.path.startswith(("/t/o/", "/t/c/")):
+        if request.url.path.startswith(("/t/o/", "/t/c/", "/t/v")):
             return await call_next(request)
         # THE CONSENT PAGES ARE PUBLIC BY NECESSITY. A person unsubscribing
         # has no session and must never be asked for one: an unsubscribe
@@ -1855,8 +1868,28 @@ def build_app():
                                 "/unsubscribe"):
             return await call_next(request)
         cookie_ok = request.cookies.get("aa_dash") == _dash_token()
+        # ITEM 8. A member with their own password gets in on their own
+        # cookie. The shared password still works and still means owner.
+        if not cookie_ok:
+            try:
+                import content_engine_os_tenancy as _TEN
+                cookie_ok = bool(_TEN.user_from_cookie(
+                    get_store(), request.cookies.get("aa_user")))
+            except Exception:
+                cookie_ok = False
         key = request.headers.get("x-api-key") or request.query_params.get("key")
         if cookie_ok or (key and key == pw):
+            # ITEM 18. A ceiling on the authenticated surface too. Not to
+            # keep an attacker out (they are already signed in) but so one
+            # runaway loop in a page or an agent cannot walk the whole
+            # engine at machine speed.
+            if request.url.path.startswith(("/os/", "/internal/")):
+                if not _os_rate(request, "os", 600):
+                    return JSONResponse(
+                        {"ok": False,
+                         "message": "that is more than 600 requests a minute "
+                                    "from one place. Something is looping."},
+                        status_code=429)
             return await call_next(request)
         # A BROWSER GETS A LOGIN FORM. A PROGRAM GETS 401.
         #
@@ -1966,12 +1999,31 @@ def build_app():
             resp.set_cookie("aa_dash", _dash_token(), httponly=True,
                             samesite="lax", max_age=60 * 60 * 24 * 14)
             return resp
+        # A member signing in with their own address and password. The
+        # shared password is checked first so the founder's own login is
+        # never slowed by a database read.
+        em = form.get("email", [""])[0].strip()
+        if em:
+            try:
+                import content_engine_os_tenancy as _TEN
+                got = _TEN.check_login(get_store(), em, password)
+            except Exception:
+                got = {"ok": False}
+            if got.get("ok"):
+                resp = RedirectResponse(url=dest, status_code=303)
+                resp.set_cookie("aa_user", f"{got['email']}|{got['token']}",
+                                httponly=True, samesite="lax",
+                                max_age=60 * 60 * 24 * 14)
+                resp.set_cookie("ce_ws", got["workspace_id"], httponly=True,
+                                samesite="lax")
+                return resp
         return HTMLResponse(_login_html("Wrong password", nxt=dest),
                             status_code=401)
 
     @app.get("/logout")
     def logout():
         resp = RedirectResponse(url="/", status_code=303)
+        resp.delete_cookie("aa_user")
         resp.delete_cookie("aa_dash")
         return resp
 
@@ -2843,16 +2895,17 @@ def build_app():
         fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
         return fwd or (getattr(request.client, "host", "") or "")
 
-    def _os_rate(request, bucket) -> bool:
+    def _os_rate(request, bucket, ceiling=None) -> bool:
         import time
+        ceiling = int(ceiling or _RATE_MAX)
         key = f"{bucket}|{_client_ip(request)}"
         cut = time.time() - _RATE_WINDOW
         hits = [t for t in _RATE.get(key, []) if t > cut]
         hits.append(time.time())
-        _RATE[key] = hits[-40:]
+        _RATE[key] = hits[-(ceiling + 4):]
         if len(_RATE) > 5000:                 # never grow without bound
             _RATE.clear()
-        return len(hits) <= _RATE_MAX
+        return len(hits) <= ceiling
 
     async def _form_or_json(request) -> dict:
         """A browser posts a form; an integration posts JSON. Both arrive
@@ -3177,13 +3230,17 @@ def build_app():
         return out
 
     @app.get("/os/export/{name}.{fmt}")
-    def os_export(name: str, fmt: str):
+    def os_export(name: str, fmt: str, segment: str = "", list: str = "",
+                  campaign: str = "", code: str = ""):
         """Every table, as CSV, Excel or JSON. name=workbook gives one file
         with a tab per table."""
         from fastapi.responses import Response
         OS, store, _ = _os()
         try:
-            fname, mime, data = OS.export(store, name, fmt, _ws(None))
+            flt = {k: v for k, v in (("segment", segment), ("list", list),
+                                     ("campaign", campaign), ("code", code))
+                   if v}
+            fname, mime, data = OS.export(store, name, fmt, _ws(None), flt)
         except KeyError:
             return JSONResponse({"ok": False,
                                  "message": f"there is no table called "
@@ -3243,6 +3300,157 @@ def build_app():
         _log_decision(store, "os_drive", str(len(out.get("written", []))),
                       out.get("message", ""))
         return out
+
+    @app.get("/os/profiles/search", response_class=HTMLResponse)
+    def os_profiles_search(q: str = ""):
+        OS, store, _ = _os()
+        return HTMLResponse(OS.search_profiles(store, q, _ws(None)))
+
+    @app.get("/os/segment/{sid}")
+    def os_segment_get(sid: str):
+        OS, store, _ = _os()
+        return OS.segment_get(store, sid, _ws(None))
+
+    @app.post("/os/bounces/read")
+    def os_bounces_read():
+        """Read the mailbox for bounces. SMTP has no webhook; the mailbox
+        is where the failures actually arrive."""
+        OS, store, _ = _os()
+        out = OS.read_bounces(store, _ws(None))
+        _log_decision(store, "os_bounces", str(out.get("hard")),
+                      out.get("message", ""))
+        return out
+
+    @app.post("/os/sheets/push")
+    def os_sheets_push():
+        OS, store, _ = _os()
+        return OS.sheets_push(store, _ws(None))
+
+    @app.post("/os/source/save")
+    async def os_source_save(request: Request):
+        d = await _body(request)
+        OS, store, _ = _os()
+        return OS.source_save(store, d.get("name"), d.get("sheet_id"),
+                              d.get("tab", "Sheet1"), d.get("every_days", 1))
+
+    @app.post("/os/source/drop")
+    async def os_source_drop(request: Request):
+        d = await _body(request)
+        OS, store, _ = _os()
+        return OS.source_drop(store, d.get("sheet_id"), d.get("tab"))
+
+    @app.post("/os/source/run")
+    def os_source_run():
+        OS, store, _ = _os()
+        return OS.source_run(store, _ws(None))
+
+    @app.post("/os/klaviyo/pull")
+    async def os_klaviyo_pull(request: Request):
+        d = await _body(request)
+        OS, store, _ = _os()
+        return OS.klaviyo_pull(store, d.get("what") or "profiles", _ws(None))
+
+    @app.post("/os/provider/send-test")
+    async def os_provider_send_test(request: Request):
+        """One real email through one adapter, to an address you name."""
+        d = await _body(request)
+        OS, store, _ = _os()
+        out = OS.send_test(d.get("name"), d.get("to"))
+        _log_decision(store, "provider_send_test", str(d.get("name")),
+                      out.get("message", ""))
+        return out
+
+    @app.post("/os/upload/image")
+    async def os_upload_image(request: Request):
+        d = await _body(request)
+        OS, store, _ = _os()
+        name, data = _uploaded(d)
+        if not data:
+            return {"ok": False, "message": "that image could not be decoded"}
+        return OS.upload_image(store, name, data)
+
+    @app.post("/os/variant/assign")
+    async def os_variant_assign(request: Request):
+        d = await _body(request)
+        import content_engine_os_send as _S
+        OS, store, _ = _os()
+        return _S.assign_variant(OS.repo(store, _ws(request)),
+                                 d.get("campaign_id"), d.get("email"),
+                                 d.get("variant"))
+
+    @app.post("/os/variant/promote")
+    async def os_variant_promote(request: Request):
+        """Make one subject line the only one. Refuses while the arms are
+        too small to mean anything."""
+        d = await _body(request)
+        import content_engine_os_send as _S
+        OS, store, _ = _os()
+        out = _S.promote_variant(OS.repo(store, _ws(request)),
+                                 d.get("campaign_id"), d.get("variant", ""))
+        _log_decision(store, "variant_promoted", str(d.get("campaign_id")),
+                      out.get("message", ""))
+        return out
+
+    @app.post("/os/confirmation/resend")
+    async def os_confirmation_resend(request: Request):
+        d = await _body(request)
+        import content_engine_os_send as _S
+        OS, store, _ = _os()
+        return _S.resend_confirmation(store, OS.repo(store, _ws(request)),
+                                      d.get("email"))
+
+    @app.post("/os/member/password")
+    async def os_member_password(request: Request):
+        d = await _body(request)
+        import content_engine_os_tenancy as _TEN
+        _OS, store, _ = _os()
+        got = _TEN.require(store, _ws(request), grant="admin")
+        if not got["ok"]:
+            return {"ok": False, "message": got["message"]}
+        if d.get("clear"):
+            return _TEN.clear_password(store, got["workspace_id"],
+                                       d.get("email"))
+        return _TEN.set_password(store, got["workspace_id"], d.get("email"),
+                                 d.get("password"))
+
+    @app.post("/os/conversion")
+    async def os_conversion(request: Request):
+        """Record a booking or a sale against the last email that person
+        was sent."""
+        d = await _body(request)
+        import content_engine_os_analytics as _AN
+        OS, store, _ = _os()
+        out = _AN.record_conversion(OS.repo(store, _ws(request)),
+                                    d.get("email"), value=d.get("value", 0),
+                                    currency=d.get("currency", "EUR"),
+                                    ref=d.get("ref", ""))
+        _log_decision(store, "conversion", str(d.get("email"))[:60],
+                      out.get("message", ""))
+        return out
+
+    @app.get("/t/v")
+    def track_conversion(e: str = "", value: float = 0.0, ref: str = "",
+                         currency: str = "EUR"):
+        """The conversion beacon. Public, because it is dropped on a thank
+        you page that nobody signs into.
+
+        It returns a 1x1 image so it can be an <img> tag on any page,
+        including one built in a website editor that cannot run scripts."""
+        from fastapi.responses import Response
+        import base64 as _b64
+        try:
+            import content_engine_os as _OS
+            import content_engine_os_analytics as _AN
+            st = get_store()
+            _AN.record_conversion(_OS.repo(st), e, value=value,
+                                  currency=currency, ref=ref)
+        except Exception as ex:
+            log.warning("conversion beacon: %s", ex)
+        png = _b64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+            "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+        return Response(content=png, media_type="image/png",
+                        headers={"Cache-Control": "no-store"})
 
     @app.post("/os/rest")
     async def os_rest(request: Request):

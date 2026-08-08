@@ -26,6 +26,7 @@ import content_engine_os_analytics as AN
 import content_engine_os_audience as AUD
 import content_engine_os_content as CONTENT
 import content_engine_os_core as CORE
+import content_engine_os_bounce as BOUNCE
 import content_engine_os_data as DATA
 import content_engine_os_flows as FLOWS
 import content_engine_os_optin as OPTIN
@@ -141,6 +142,12 @@ def build_ctx(store, *, jobs=None, reply_drafts=None,
         "datasets": safe(lambda: DATA.catalogue(r), []),
         "drive": safe(DATA.drive_state, {}),
         "drive_last": safe(lambda: DATA.drive_last(store), {}),
+        "sheets": safe(DATA.sheets_state, {}),
+        "sheets_last": safe(lambda: DATA.sheets_last(store), {}),
+        "sources": safe(lambda: DATA.sources(store), []),
+        "bounces": safe(lambda: BOUNCE.summary(store, r), {}),
+        "revenue": safe(lambda: AN.revenue(r), {}),
+        "logins": safe(lambda: TEN.people_with_logins(store, workspace_id), {}),
     }
 
 
@@ -353,7 +360,10 @@ def public(store, action, params=None, *, ip="") -> dict:
     if action == "confirm":
         return OPTIN.confirm(store, p.get("email"), p.get("t"), ip=ip)
     if action == "unsubscribe":
-        return OPTIN.unsubscribe(store, p.get("email"), p.get("t"))
+        if p.get("t"):
+            return OPTIN.unsubscribe(store, p.get("email"), p.get("t"), ip=ip)
+        # No token: an older email, whose link never named anybody.
+        return OPTIN.unsubscribe_self(store, p.get("email"), ip=ip)
     return {"ok": False, "message": f"no public action called {action!r}"}
 
 
@@ -361,6 +371,12 @@ def test_provider(name) -> dict:
     """Prove a provider's key. Routed through the facade so the HTTP layer
     never imports the provider module, which a gate enforces."""
     return PROV.test_provider(name)
+
+
+def send_test(name, to_addr) -> dict:
+    """One real email through one adapter. Through the facade, so the HTTP
+    layer never imports a provider, which a gate enforces."""
+    return PROV.send_test(name, to_addr)
 
 
 def register_webhook(name) -> dict:
@@ -405,7 +421,8 @@ def clean_audience(store, kind="silent", days=90,
 # ---------------------------------------------------------------------------
 # DATA IN AND OUT
 # ---------------------------------------------------------------------------
-def export(store, name, fmt, workspace_id=CORE.DEFAULT_WORKSPACE) -> tuple:
+def export(store, name, fmt, workspace_id=CORE.DEFAULT_WORKSPACE,
+           flt=None) -> tuple:
     """(filename, mime, bytes). One door for every download."""
     r = repo(store, workspace_id)
     if name == "workbook":
@@ -414,7 +431,8 @@ def export(store, name, fmt, workspace_id=CORE.DEFAULT_WORKSPACE) -> tuple:
         return DATA.everything_json(r)
     if name not in DATA.DATASETS:
         raise KeyError(name)
-    return DATA.as_bytes(r, name, fmt if fmt in ("csv", "json") else "xlsx")
+    return DATA.as_bytes(r, name, fmt if fmt in ("csv", "json") else "xlsx",
+                         flt)
 
 
 def import_preview(store, filename, data, mapping=None,
@@ -435,3 +453,120 @@ def drive_push(store, workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
 def import_preview_html(pv) -> dict:
     """The preview, as the fragment the Import screen injects."""
     return SCR.import_preview(pv)
+
+
+# ---------------------------------------------------------------------------
+# THE REMAINING ACTIONS
+# ---------------------------------------------------------------------------
+def read_bounces(store, workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    return BOUNCE.read(store, repo(store, workspace_id))
+
+
+def sheets_push(store, workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    return DATA.push_to_sheets(store, repo(store, workspace_id))
+
+
+def mirror(store, workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    """Once a day, from the worker. Drive and Sheets together."""
+    return DATA.mirror_if_due(store, repo(store, workspace_id))
+
+
+def source_save(store, name, sheet_id, tab, every_days) -> dict:
+    return DATA.save_source(store, name, sheet_id, tab, every_days)
+
+
+def source_drop(store, sheet_id, tab) -> dict:
+    return DATA.drop_source(store, sheet_id, tab)
+
+
+def source_run(store, workspace_id=CORE.DEFAULT_WORKSPACE, force=True) -> dict:
+    return DATA.run_sources(store, repo(store, workspace_id), force=force)
+
+
+def klaviyo_pull(store, what="profiles",
+                 workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    """Read out of a connected Klaviyo account. Profiles are imported;
+    anything else is reported so you can see what is there before this
+    engine starts copying it."""
+    out = PROV.PROVIDERS["klaviyo"].pull(what)
+    if not out.get("ok") or what != "profiles":
+        return out
+    import content_engine_os_agents as AGT
+    n = 0
+    for row in _L(out.get("rows")):
+        if not CORE.valid_email(_D(row).get("email")):
+            continue
+        got = AGT.call(store, "klaviyo_import", "leads.upsert",
+                       {"email": row.get("email"),
+                        "first_name": row.get("first_name"),
+                        "last_name": row.get("last_name"),
+                        "company": row.get("organization"),
+                        "job_title": row.get("title"),
+                        "phone": row.get("phone_number"),
+                        "source": "klaviyo"}, workspace_id=workspace_id)
+        n += 1 if got.get("ok") else 0
+    out["imported"] = n
+    out["message"] = f"{len(_L(out.get('rows')))} read from Klaviyo, {n} written"
+    return out
+
+
+def upload_image(store, filename, data) -> dict:
+    """Put an image where a mail client can fetch it.
+
+    Drive, with link sharing, because an image in an email MUST be
+    publicly readable to render at all. That is stated rather than done
+    quietly: anybody with the link can see this picture."""
+    st = DATA.drive_state()
+    if not st["ready"]:
+        return {"ok": False, "message": st["why"]}
+    if len(data) > 4 * 1024 * 1024:
+        return {"ok": False, "message": "images must be under 4 MB"}
+    import content_engine_connectors as C
+    kind = ("image/png" if str(filename).lower().endswith(".png")
+            else "image/gif" if str(filename).lower().endswith(".gif")
+            else "image/jpeg")
+    ref = DATA.save_file(C.GoogleDrive(), filename, data, kind)
+    if not ref:
+        return {"ok": False, "message": "Drive refused the upload"}
+    fid = ref.rsplit("/d/", 1)[-1].split("/")[0] if "/d/" in ref else \
+        ref.replace("drive:", "")
+    try:
+        token = C._google_token([C._GDRIVE_SCOPE])
+        rq = C._requests()
+        rq.post(f"https://www.googleapis.com/drive/v3/files/{fid}/permissions",
+                headers={"Authorization": f"Bearer {token}"}, timeout=30,
+                json={"role": "reader", "type": "anyone"})
+    except Exception as ex:
+        log.warning("could not share the image: %s", ex)
+    return {"ok": True, "url": f"https://drive.google.com/uc?export=view&id={fid}",
+            "message": "uploaded. Anyone with the link can see this image, "
+                       "which is what makes it render in an inbox."}
+
+
+def search_profiles(store, q, workspace_id=CORE.DEFAULT_WORKSPACE) -> str:
+    """ITEM 17. Search every profile, not only the ones on screen."""
+    import content_engine_os_audience as _AUD
+    q = str(q or "").strip().lower()
+    rows = AN.profile_rows(repo(store, workspace_id), limit=100000)
+    if q:
+        rows = [r for r in rows
+                if q in " ".join(str(r.get(k) or "").lower() for k in
+                                 ("email", "first_name", "last_name",
+                                  "company", "country", "city", "industry",
+                                  "job_title"))]
+    for r in rows:
+        r["name"] = " ".join(x for x in [r.get("first_name"),
+                                         r.get("last_name")] if x) or r.get("email")
+    return SCR.profile_table(rows[:250])
+
+
+def segment_get(store, seg_id, workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    """ITEM 16. Load a saved segment back into the builder."""
+    seg = repo(store, workspace_id).one("segments", seg_id)
+    if not seg:
+        return {"ok": False, "message": "no such segment"}
+    tree = _D(seg.get("tree"))
+    return {"ok": True, "id": seg_id, "name": seg.get("name"),
+            "match": tree.get("operator", "AND"),
+            "conditions": _L(tree.get("conditions")),
+            "described": seg.get("described", "")}

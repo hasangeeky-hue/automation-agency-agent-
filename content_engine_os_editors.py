@@ -76,7 +76,13 @@ def flow_canvas(flow, campaigns=None, lists=None) -> str:
         + palette +
         "<button class='os-mini' onclick='osFxLink()' id='os-fxlink'>"
         "Connect</button>"
+        "<button class='os-mini' onclick='osFxCopy()'>Duplicate</button>"
         "<button class='os-mini' onclick='osFxDrop()'>Delete step</button>"
+        "<button class='os-mini' onclick='osFxUndo()' id='os-fxundo'>"
+        "Undo</button>"
+        "<button class='os-mini' onclick='osFxZoom(-1)'>-</button>"
+        "<button class='os-mini' onclick='osFxZoom(0)'>Fit</button>"
+        "<button class='os-mini' onclick='osFxZoom(1)'>+</button>"
         "<button class='cta' onclick='osFxSave()'>Save the flow</button>"
         "</div>"
         "<div class='os-fxwrap'><div class='os-fxcanvas' id='os-fxcanvas'>"
@@ -89,7 +95,36 @@ def flow_canvas(flow, campaigns=None, lists=None) -> str:
 
 FLOW_JS = ("<script>"
            "var OSFX={id:'',g:{nodes:[],edges:[]},sel:'',link:false,opts:{},"
-           "cfg:{},drag:null};"
+           "cfg:{},drag:null,undo:[],zoom:1};"
+
+           # Every change pushes the WHOLE graph. A flow has a few dozen
+           # nodes, so a full snapshot costs nothing and cannot get the
+           # partial-undo bugs a diff-based stack collects.
+           "function osFxMark(){OSFX.undo.push(JSON.stringify(OSFX.g));"
+           "if(OSFX.undo.length>40)OSFX.undo.shift();"
+           "var b=document.getElementById('os-fxundo');"
+           "if(b)b.textContent='Undo ('+OSFX.undo.length+')';}"
+           "function osFxUndo(){if(!OSFX.undo.length){osToast({ok:false,"
+           "message:'nothing to undo'});return;}"
+           "OSFX.g=JSON.parse(OSFX.undo.pop());OSFX.sel='';osFxDraw();"
+           "osFxForm();var b=document.getElementById('os-fxundo');"
+           "if(b)b.textContent=OSFX.undo.length?'Undo ('+OSFX.undo.length+')'"
+           ":'Undo';}"
+
+           "function osFxZoom(d){var c=document.getElementById('os-fxcanvas');"
+           "if(!c)return;"
+           "if(d===0){OSFX.zoom=1;}else{OSFX.zoom=Math.min(1.6,Math.max(0.4,"
+           "OSFX.zoom+d*0.15));}"
+           "c.style.transform='scale('+OSFX.zoom+')';"
+           "c.style.transformOrigin='0 0';}"
+
+           "function osFxCopy(){if(!OSFX.sel){osToast({ok:false,message:"
+           "'click a step first'});return;}osFxMark();"
+           "var n=OSFX.g.nodes.filter(function(x){return x.id===OSFX.sel;})[0];"
+           "if(!n)return;var c=JSON.parse(JSON.stringify(n));"
+           "c.id='node'+(OSFX.g.nodes.length+1)+'_'+OSFX.g.nodes.length;"
+           "c.position_x=(n.position_x||0)+40;c.position_y=(n.position_y||0)+60;"
+           "OSFX.g.nodes.push(c);OSFX.sel=c.id;osFxDraw();osFxForm();}"
 
            "function osFxBoot(){var r=document.querySelector('.os-fx');"
            "if(!r)return;OSFX.id=r.dataset.flow;"
@@ -131,7 +166,7 @@ FLOW_JS = ("<script>"
            "((a[1]+b[1])/2+30)+\"' class='os-bl'>\"+ed.condition+\"</text>\"):'';"
            "return \"<path d='\"+p+\"' class='os-edge'/>\"+t;}).join('');}"
 
-           "function osFxDown(ev){var el=ev.currentTarget;"
+           "function osFxDown(ev){osFxMark();var el=ev.currentTarget;"
            "var id=el.dataset.id;"
            "if(OSFX.link&&OSFX.sel&&OSFX.sel!==id){osFxJoin(OSFX.sel,id);return;}"
            "OSFX.sel=id;osFxForm();"
@@ -157,7 +192,7 @@ FLOW_JS = ("<script>"
            "var b=document.getElementById('os-fxlink');"
            "if(b)b.textContent=OSFX.link?'Connect: pick the next step':'Connect';}"
 
-           "function osFxJoin(a,b){var cond='';"
+           "function osFxJoin(a,b){osFxMark();var cond='';"
            "var src=OSFX.g.nodes.filter(function(n){return n.id===a;})[0];"
            "if(src&&src.type==='CONDITION')cond=prompt("
            "'Which branch does this arrow carry? yes or no','yes')||'';"
@@ -167,12 +202,12 @@ FLOW_JS = ("<script>"
            "target_node_id:b,condition:cond});"
            "OSFX.link=false;osFxLink();osFxLink();osFxDraw();}"
 
-           "function osFxAdd(type){var n={id:'n'+Date.now(),type:type,"
+           "function osFxAdd(type){osFxMark();var n={id:'n'+Date.now(),type:type,"
            "config:{},position_x:40,position_y:40+OSFX.g.nodes.length*70};"
            "(OSFX.cfg[type]||[]).forEach(function(k){n.config[k]='';});"
            "OSFX.g.nodes.push(n);OSFX.sel=n.id;osFxDraw();osFxForm();}"
 
-           "function osFxDrop(){if(!OSFX.sel){osToast({ok:false,message:"
+           "function osFxDrop(){osFxMark();if(!OSFX.sel){osToast({ok:false,message:"
            "'click a step first'});return;}"
            "OSFX.g.nodes=OSFX.g.nodes.filter(function(n){return n.id!==OSFX.sel;});"
            "OSFX.g.edges=OSFX.g.edges.filter(function(e){"
@@ -214,6 +249,7 @@ FLOW_JS = ("<script>"
 #: Which fields each block asks for. One declaration; the form and the
 #: renderer read the same list.
 BLOCK_FIELDS = {
+    "columns": ("left", "right"),
     "heading": ("content", "level"),
     "text": ("content",),
     "image": ("url", "alt"),
@@ -241,6 +277,12 @@ def block_editor(template=None) -> str:
     palette = "".join(
         f"<button class='os-mini' onclick=\"osBbAdd('{b}')\">+ {e(b)}</button>"
         for b in BLOCK_TYPES)
+    # An image in an email must live at a URL a mail client can fetch.
+    # Uploading here puts it in Drive and returns that URL, so the
+    # founder does not have to host a picture somewhere first.
+    palette += ("<label class='os-mini os-up'>+ upload an image"
+                "<input type='file' accept='image/*' hidden "
+                "onchange='osBbUpload(this)'></label>")
     return (
         "<div class='os-bb' data-id='" + e(t.get("id")) + "' "
         "data-blocks='" + j(blocks) + "' "
@@ -301,6 +343,28 @@ BLOCK_JS = ("<script>"
             "OSBB.blocks[i][k]=v;clearTimeout(OSBB.t);"
             "OSBB.t=setTimeout(osBbPreview,400);}"
             "function osBbAdd(type){OSBB.blocks.push({type:type});osBbDraw();}"
+
+            "async function osBbUpload(el){"
+            "var f=el.files&&el.files[0];if(!f)return;"
+            "if(f.size>4194304){osToast({ok:false,message:"
+            "'images must be under 4 MB; mail clients will not load more'});"
+            "return;}"
+            "osToast({ok:true,message:'uploading '+f.name+'...'});"
+            "var b64=await osFileB64(f);"
+            "var j=await osAct('/os/upload/image',{filename:f.name,b64:b64});"
+            "if(j&&j.ok&&j.url){OSBB.blocks.push({type:'image',url:j.url,"
+            "alt:f.name});osBbDraw();}el.value='';}"
+
+            "async function osBbUpload(el){"
+            "var f=el.files&&el.files[0];if(!f)return;"
+            "if(f.size>4194304){osToast({ok:false,message:"
+            "'images must be under 4 MB; email clients will not load more'});"
+            "return;}"
+            "osToast({ok:true,message:'uploading '+f.name+'...'});"
+            "var b64=await osFileB64(f);"
+            "var j=await osAct('/os/upload/image',{filename:f.name,b64:b64});"
+            "if(j&&j.ok&&j.url){OSBB.blocks.push({type:'image',url:j.url,"
+            "alt:f.name});osBbDraw();}el.value='';}"
             "function osBbDrop(i){OSBB.blocks.splice(i,1);osBbDraw();}"
             "function osBbMove(from,to){if(from<0||from===to)return;"
             "var b=OSBB.blocks.splice(from,1)[0];OSBB.blocks.splice(to,0,b);"

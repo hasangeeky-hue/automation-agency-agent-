@@ -499,6 +499,54 @@ class KlaviyoProvider(_KeyedProvider):
                             + _env("KLAVIYO_API_REVISION", "2026-07-15")
                             if good else "Klaviyo refused: " + resp)}
 
+    def _get(self, path, params="") -> tuple:
+        return _get(f"https://a.klaviyo.com/api/{path}/{params}",
+                    self._headers())
+
+    def pull(self, what="profiles", limit=200) -> dict:
+        """ITEM 5. Read OUT of Klaviyo: profiles, lists, segments, campaigns,
+        flows, metrics.
+
+        The adapter was push-only, which made "Klaviyo integration" a
+        one-way claim. A client who already runs Klaviyo has their audience
+        THERE, and an integration that cannot read it is an integration
+        that cannot be switched on."""
+        # The NAME is checked before the key. A typo should be told it is a
+        # typo whether or not a credential happens to be present; being
+        # told about a missing key when you asked for "unicorns" sends you
+        # looking in the wrong place.
+        path = {"profiles": "profiles", "lists": "lists",
+                "segments": "segments", "campaigns": "campaigns",
+                "flows": "flows", "metrics": "metrics"}.get(str(what))
+        if not path:
+            return {"ok": False, "rows": [],
+                    "message": f"Klaviyo has nothing called {what!r}. It has: "
+                               f"profiles, lists, segments, campaigns, flows, "
+                               f"metrics"}
+        ok, why = self.available()
+        if not ok:
+            return {"ok": False, "rows": [], "message": why}
+        # Campaigns require a channel filter; the others do not.
+        params = ("?filter=equals(messages.channel,'email')&page[size]=" + str(limit)
+                  if path == "campaigns" else "?page[size]=" + str(limit))
+        good, resp = self._get(path, params)
+        if not good:
+            return {"ok": False, "rows": [], "message": "Klaviyo refused: " + resp}
+        try:
+            body = json.loads(resp)
+        except Exception:
+            return {"ok": False, "rows": [],
+                    "message": "Klaviyo answered with something that is not "
+                               "JSON"}
+        rows = []
+        for item in _L(body.get("data")):
+            at = _D(_D(item).get("attributes"))
+            rows.append({"id": _D(item).get("id"), **{
+                k: v for k, v in at.items()
+                if isinstance(v, (str, int, float, bool)) or v is None}})
+        return {"ok": True, "rows": rows, "kind": what,
+                "message": f"{len(rows)} {what} read from Klaviyo"}
+
     def handle_webhook(self, payload) -> list:
         return _map_events(payload, {
             "Received Email": "EMAIL_DELIVERED",
@@ -679,6 +727,31 @@ def sending_allowed(repo) -> tuple:
         return True, "no sender domain recorded yet; SMTP is sending directly"
     return True, (f"{rows[0]['domain']} is {rows[0]['state'].lower()}; press "
                   f"Check on Settings, Domains to read its SPF, DKIM and DMARC")
+
+
+def send_test(name, to_addr) -> dict:
+    """ITEM 4. Send ONE real email through an adapter, to an address you
+    name. This is the only way an adapter's send path is ever exercised
+    before a campaign depends on it, and it is a button rather than a leap
+    of faith on the day you switch providers."""
+    p = PROVIDERS.get(str(name or "").lower())
+    if not p:
+        return {"ok": False, "message": f"there is no provider called {name!r}"}
+    to_addr = str(to_addr or "").strip()
+    if "@" not in to_addr:
+        return {"ok": False, "message": "give an address to send the test to"}
+    ok, why = p.available()
+    if not ok:
+        return {"ok": False, "message": why}
+    res = p.send(to_addr, f"Test from your engine via {p.name}",
+                 "This is a test. If it arrived, the send path through "
+                 f"{p.name} works.\n\nNothing else was sent.",
+                 f"<p>This is a test. If it arrived, the send path through "
+                 f"<b>{p.name}</b> works.</p><p>Nothing else was sent.</p>")
+    return {"ok": bool(res.get("ok")), "provider": p.name,
+            "message": (f"one test email left through {p.name} to {to_addr}"
+                        if res.get("ok")
+                        else f"{p.name} refused it: {str(res.get('error'))[:200]}")}
 
 
 def test_provider(name) -> dict:

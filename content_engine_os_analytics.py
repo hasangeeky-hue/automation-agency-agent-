@@ -526,3 +526,63 @@ def hygiene(repo, over=10) -> dict:
             "worst": max([int(r.get("emails_sent") or 0) for r in rows] or [0]),
             "average": (round(sum(int(r.get("emails_sent") or 0) for r in rows)
                               / len(rows), 1) if rows else None)}
+
+
+# ---------------------------------------------------------------------------
+# ITEM 14: CONVERSIONS AND REVENUE
+# ---------------------------------------------------------------------------
+def record_conversion(repo, email, *, value=0.0, currency="EUR", ref="",
+                      campaign_id="") -> dict:
+    """One booking, one sale, one signed proposal.
+
+    Attribution is LAST TOUCH and says so on the screen. A multi-touch
+    model would produce a bigger number and a much smaller reason to
+    believe it, and this engine has one channel."""
+    em = CORE.norm_email(email)
+    pid = CORE.rid("prf", repo.ws, em)
+    if not repo.one("profiles", pid):
+        return {"ok": False,
+                "message": f"{em} is not somebody this engine has emailed, "
+                           f"so there is nothing to attribute this to"}
+    if not campaign_id:
+        sent = [m for m in repo.find("campaign_messages", email=em)
+                if m.get("sent_at")]
+        sent.sort(key=lambda m: str(m.get("sent_at")))
+        campaign_id = sent[-1].get("campaign_id") if sent else ""
+    try:
+        value = float(value or 0)
+    except Exception:
+        value = 0.0
+    got = CORE.record_event(repo, "EMAIL_CONVERTED", profile_id=pid,
+                            campaign_id=campaign_id,
+                            metadata={"value": value, "currency": currency,
+                                      "ref": str(ref)[:120]})
+    lead = repo.one("leads", CORE.rid("lead", repo.ws, pid))
+    if lead and lead.get("stage") not in ("CUSTOMER",):
+        lead["stage"] = "CUSTOMER"
+        repo.put("leads", lead)
+    return {"ok": bool(got), "campaign_id": campaign_id, "value": value,
+            "message": (f"{em} recorded as a conversion worth {value:,.0f} "
+                        f"{currency}, attributed to their last email"
+                        if got else
+                        "that exact conversion was already recorded")}
+
+
+def revenue(repo, campaign_id=None) -> dict:
+    """Money, from recorded conversions only. Never modelled."""
+    rows = [e_ for e_ in repo.all("email_events")
+            if e_.get("event_type") == "EMAIL_CONVERTED"
+            and (not campaign_id or e_.get("campaign_id") == campaign_id)]
+    total = sum(float(_D(e_.get("metadata")).get("value") or 0) for e_ in rows)
+    people = {e_.get("profile_id") for e_ in rows}
+    t = totals(repo, campaign_id)
+    return {"conversions": len(rows) or None, "customers": len(people) or None,
+            "revenue": round(total, 2) or None,
+            "currency": (_D(rows[0].get("metadata")).get("currency", "EUR")
+                         if rows else "EUR"),
+            "per_recipient": (round(total / t["sent"], 2)
+                              if t.get("sent") else None),
+            "rate": rate(len(people), t.get("sent")),
+            "basis": ("Last touch: a conversion is credited to the last "
+                      "email that person was sent. One channel, one model, "
+                      "and it is named rather than implied.")}
