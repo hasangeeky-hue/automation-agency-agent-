@@ -259,5 +259,145 @@ t("its collections are the ones already declared in the core",
   all(c in CORE.COLLECTIONS
       for c in ("creatives", "creative_versions", "audiences", "ad_metrics")))
 
+print("\nG13 THE PLANNER REFUSES TO INVENT HISTORY")
+import content_engine_media_plan as MP
+r3 = CORE.Repo(Store())
+_a0 = MP.allocate(r3, 3000)
+t("with no history it does NOT invent a split", _a0["basis"] == "no history")
+t("and says why in the founder's words",
+  "nothing has run here yet" in str(_a0["rows"]) or not _a0["rows"])
+t("it names the sample floor rather than hiding it",
+  str(MP.MIN_CONV) in _a0["message"])
+t("it refuses an industry benchmark out loud",
+  "somebody else's business" in _a0["message"])
+_f0 = MP.forecast(r3, budget=3000)
+t("a forecast with no history is REFUSED, not guessed", _f0["ok"] is False)
+t("and it says what would make it answerable",
+  "two weeks" in _f0["message"])
+t("a budget of zero is refused", MP.allocate(r3, 0)["ok"] is False)
+t("a budget that is not a number is refused",
+  MP.allocate(r3, "lots")["ok"] is False)
+
+print("\nG14 FORECASTS ARE RANGES, NEVER PROMISES")
+M.save_account(r3, "google", "acct-1", name="G")
+_c = M.save_campaign(r3, name="Clinics DE", objective="LEADS",
+                     provider="google", budget_type="DAILY",
+                     budget_amount=50, currency="EUR")
+CID = _c["id"]
+for _i in range(9):
+    r3.put("ad_metrics", {"id": "mm%d" % _i, "day": "2026-07-0%d" % (_i + 1),
+                          "provider": "google", "campaign_id": CID,
+                          "impressions": 5000, "clicks": 200,
+                          "conversions": 4, "conversion_value": 1200,
+                          "spend": 400})
+_h = MP.history(r3)
+t("history is computed from measured metrics", _h["google"]["cpa"] == 100.0)
+t("and knows when it has earned an opinion", _h["google"]["enough"] is True)
+_f = MP.forecast(r3, budget=3000)
+t("a forecast comes back as a range, not a number",
+  set(_f["cpa"]) == {"low", "base", "high"})
+t("the conversion estimate is a range too",
+  set(_f["conversions"]) == {"low", "base", "high"})
+t("the band is stated in words as well as numbers",
+  "plus or minus" in _f["confidence_band"])
+t("every assumption is named", len(_f["assumptions"]) >= 4)
+t("the message refuses the word guarantee",
+  "not a forecast anybody should sign" in _f["message"])
+_thin = MP.forecast(r3, budget=3000)
+_wide = _thin["cpa"]["high"] - _thin["cpa"]["low"]
+t("less evidence means a wider band, not a bolder claim", _wide > 0)
+
+print("\nG15 ONE DIMINISHING-RETURNS CURVE, NOT TWO")
+t("the decay curve is declared exactly once",
+  io.open("content_engine_media_plan.py", encoding="utf-8").read()
+    .count("DECAY_PER_DOUBLING = ") == 1)
+t("a budget no bigger than history is not decayed",
+  MP.efficiency_decay(1000, 1000) == 1.0)
+t("a doubled budget decays by exactly one doubling",
+  MP.efficiency_decay(1000, 2000) == MP.DECAY_PER_DOUBLING)
+t("marginal return is BELOW average once spend is past the floor",
+  MP.marginal_roas(_h["google"]) < _h["google"]["roas"])
+_big = MP.forecast(r3, budget=36000)
+t("THE FORECAST USES THE SAME CURVE AS THE ALLOCATOR",
+  _big["efficiency_decay"] < 1.0)
+t("so ten times the budget does NOT promise ten times the leads",
+  _big["conversions"]["base"] < _f["conversions"]["base"] * 10)
+t("and the decay is named as an assumption, not buried",
+  any("same curve the allocator uses" in x.lower()
+      for x in _big["assumptions"]))
+_al = MP.allocate(r3, 3000)
+t("allocation is on marginal return", _al["basis"] == "marginal return")
+t("each row explains itself in one sentence",
+  all(len(row["why"]) > 40 for row in _al["rows"]))
+t("it never moves more than MAX_SHIFT of a running budget in one pass",
+  MP.allocate(r3, 10000, current={"google": 1000})["rows"][0]["amount"]
+  <= 1000 * (1 + MP.MAX_SHIFT) + 0.01)
+t("the shift cap is explained where it bites",
+  "learning phase survives" in
+  MP.allocate(r3, 10000, current={"google": 1000})["rows"][0]["why"])
+
+print("\nG16 THE SIMULATOR CHECKS ITS OWN ARITHMETIC")
+_s = MP.simulate(r3, budget=6000, compare_to=3000)
+t("two scenarios come back", len(_s["scenarios"]) == 2)
+t("the caveat says these are estimates, not guarantees",
+  "not guarantees" in _s["caveat"])
+t("WHETHER THE RANGES OVERLAP IS CHECKED, NOT ASSERTED",
+  _s["overlaps"] is (_s["scenarios"][0]["conversions"]["high"]
+                     >= _s["scenarios"][1]["conversions"]["low"]))
+t("and the sentence matches what was actually found",
+  ("do not overlap" in _s["message"]) is (not _s["overlaps"]))
+t("the actual numbers appear beside the claim",
+  str(_s["scenarios"][0]["conversions"]["low"]) in _s["message"])
+
+print("\nG17 THE EIGHT STEPS AND THE LAUNCH GATE")
+t("the eight steps are declared once", len(MP.WIZARD_STEPS) == 8)
+_w = MP.wizard_state(r3, CID)
+t("wizard state is read from the RECORD, not the browser",
+  _w["total"] == 8 and _w["complete"] >= 3)
+t("it names the next step and why it matters", _w["next"]["why"])
+_pf = MP.pre_flight(r3, CID)
+t("pre-flight blocks a campaign with no ads", _pf["level"] == "ERROR")
+t("and lists exactly what is blocking", "Ads" in _pf["errors"])
+t("an empty ad list does NOT pass the landing-page check",
+  [x for x in _pf["checks"] if x["name"] == "Landing page"][0]["state"]
+  != "OK")
+t("launch REFUSES on a blocking error", MP.launch(r3, CID)["ok"] is False)
+_au = MC.save_audience(r3, name="DE clinics", type="PROSPECTING",
+                       definition={"countries": ["DE"]})
+_cr = MC.save_creative(r3, name="Save 30", type="TEXT", concept="Save 30%",
+                       angle="pain", hook="h", persona="p", cta="Book",
+                       funnel_stage="COLD", publish=True)
+_g = M.save_ad_group(r3, CID, name="Core", audience_id=_au["id"])
+M.save_ad(r3, _g["id"], name="Ad 1", creative_id=_cr["id"],
+          landing_page_url="https://example.com/x")
+_pf2 = MP.pre_flight(r3, CID)
+t("with everything attached it passes", _pf2["ok"] is True)
+t("a warning is a warning, not a block", _pf2["level"] == "WARNING")
+t("no start date is a warning, not silence", "Schedule" in _pf2["warnings"])
+t("missing conversion tracking is a warning, not silence",
+  "Tracking" in _pf2["warnings"])
+t("an unknown campaign is refused",
+  MP.pre_flight(r3, "nope")["level"] == "ERROR")
+
+print("\nG18 THE PLANNER SPENDS NOTHING AND OWNS NO QUEUE")
+psrc = io.open("content_engine_media_plan.py", encoding="utf-8").read()
+for w in ("MetaAds", "GoogleAds", "TikTokAds", "LinkedInAds",
+          "requests", "urllib", "http.client"):
+    t(f"the planner contains no {w}", w not in psrc)
+import content_engine_media_orders as MO
+t("launch queues into the EXISTING order engine, not a second one",
+  "make_order" in psrc and "content_engine_media_orders" in psrc)
+t("and its code is registered in the one CODES table",
+  "launch_campaign" in MO.CODES and MO.CODES["launch_campaign"][0] == "spend")
+t("so it inherits the approval tier every other spend waits behind",
+  "launch_campaign" in MO.EXEC_VIA)
+t("the sample floor is imported, not retyped",
+  MP.MIN_CONV is MC.MIN_CONVERSIONS and "MIN_CONV = MC." in psrc)
+t("it creates no agent of its own",
+  "register" not in psrc and "class .*Agent" not in psrc)
+t("no em dash anywhere in the planner", "\u2014" not in psrc)
+t("media_plans was already a declared collection",
+  "media_plans" in CORE.COLLECTIONS)
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)

@@ -47,6 +47,10 @@ CODES = {
     "tag_paused":      ("tracking", "a required tag exists but is paused or unpublished"),
     "pixel_missing":   ("tracking", "a channel pixel is absent from the container"),
     "event_silent":    ("tracking", "a tag exists but its event has not fired in 7 days"),
+    # The planner's one decision. It lives HERE rather than in a second queue
+    # so a launch waits behind the same approval tier as every other spend.
+    "launch_campaign": ("spend",    "create a planned campaign on its platform"),
+    "budget_allocate": ("spend",    "move budget between platforms on marginal return"),
 }
 
 # Every code is DRAFT: approved by a click, executed by the dispatch. The
@@ -59,6 +63,7 @@ EXEC_VIA = {
     "landing_fix": "seo_queue",
     "utm_fix": "gtm", "tag_missing": "gtm", "tag_paused": "gtm",
     "pixel_missing": "gtm", "event_silent": "gtm",
+    "launch_campaign": "media_os", "budget_allocate": "media_os",
 }
 
 # THE UTM LAW - one table. The campaign builder writes these; the tracking
