@@ -64,6 +64,10 @@ FIELDS = {
     "last_activity_at": {"kind": "date", "label": "Last activity"},
     "industry":     {"kind": "string", "label": "Industry (custom)"},
     "company_size": {"kind": "string", "label": "Company size (custom)"},
+    "priority":     {"kind": "enum", "label": "Priority",
+                     "options": ["urgent", "high", "medium", "low"]},
+    "pain_point":   {"kind": "string", "label": "Pain point"},
+    "offer":        {"kind": "string", "label": "Offer to pitch"},
 }
 
 # Which operators make sense for which kind of field. Offering "greater
@@ -261,7 +265,11 @@ def people(repo) -> list:
             "scanner_why": scan.get(pid, ""),
             "last_activity_at": act,
             "days_since_activity": CORE.days_ago(act),
-            "industry": pr.get("industry"), "company_size": pr.get("company_size"),
+            "industry": pr.get("industry"),
+            "company_size": pr.get("company_size"),
+            "priority": pr.get("priority"), "pain_point": pr.get("pain_point"),
+            "offer": pr.get("offer"), "business": pr.get("business"),
+            "why": pr.get("why"), "collected_at": pr.get("collected_at"),
             "properties": pr,
         })
         out.append(row)

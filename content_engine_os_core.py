@@ -729,24 +729,39 @@ def project(store, jobs=None, *, workspace_id=DEFAULT_WORKSPACE,
             q = qmap.get(em) or {}
             key_for = em or str(L.get("website") or L.get("company")
                                 or "").strip().lower()
+            # A web-sourced lead carries "domain"; a Maps one carries
+            # "website". Reading only one left every company from the other
+            # source with a blank site.
             comp = upsert_company(repo, L.get("company"),
-                                  website=L.get("website"),
+                                  website=L.get("website") or L.get("domain"),
                                   country=L.get("country"))
             prof = upsert_profile(repo, {
                 "email": em, "name": L.get("name"),
                 "company": L.get("company"), "company_id": comp.get("id", ""),
                 "job_title": L.get("title") or L.get("role"),
-                "website": L.get("website"),
+                "website": L.get("website") or L.get("domain"),
                 "linkedin_url": L.get("linkedin"),
                 "country": L.get("country"), "city": L.get("city"),
                 "phone": L.get("phone"),
                 "source": L.get("source") or "agent",
                 "source_id": jid,
+                "collected_at": L.get("collected_at"),
+                # THE QUALIFIER'S OWN KEYS. Its schema writes fit_score,
+                # category, priority, business, pain_point and offer. This
+                # read q["score"] and q["verdict"], which do not exist, so
+                # every one of these has been blank on the new screens
+                # while the old table showed them all.
                 "properties": {k: v for k, v in {
-                    "industry": L.get("industry"),
+                    "industry": (L.get("industry") or L.get("vertical")
+                                 or q.get("category")),
                     "company_size": L.get("size"),
-                    "lead_score": q.get("score"),
-                    "pain_point": q.get("reason") or q.get("why"),
+                    "lead_score": q.get("fit_score"),
+                    "priority": q.get("priority"),
+                    "pain_point": q.get("pain_point"),
+                    "offer": q.get("offer"),
+                    "business": q.get("business"),
+                    "why": q.get("reason"),
+                    "collected_at": L.get("collected_at"),
                 }.items() if v not in (None, "")},
             })
             if not prof:
@@ -762,10 +777,12 @@ def project(store, jobs=None, *, workspace_id=DEFAULT_WORKSPACE,
             touches = _touch_count(sent_to.get(em))
             upsert_lead(repo, pid, company_id=comp.get("id", ""),
                         source=L.get("source") or "agent", source_url=jid,
-                        score=q.get("score"),
-                        qualification_status=q.get("verdict") or "",
-                        stage=("CONTACTED" if touches else
-                               "QUALIFIED" if q else "NEW"),
+                        score=q.get("fit_score"),
+                        intent_score=q.get("priority"),
+                        qualification_status=q.get("category") or "",
+                        stage=("LOST" if q.get("category") == "disqualified"
+                               else "CONTACTED" if touches
+                               else "QUALIFIED" if q else "NEW"),
                         assigned_agent="lead_qualifier" if q else "")
             out["leads"] += 1
 

@@ -1554,12 +1554,22 @@ def profile_table(rows, page=1, size=DEFAULT_SIZE) -> str:
 def lead_table(rows, page=1, size=DEFAULT_SIZE) -> str:
     return _paged(
         "leads", rows,
-        ["Person", "Company", "Stage", "Score", "Sent", "Opens", "Clicks", ""],
+        ["Person", "Company", "Fit", "Priority", "Pain point", "Offer",
+         "Stage", "Sent", "Opens", "Clicks", ""],
         lambda r: [f"<b>{e(r.get('name'))}</b><br><span class='os-d'>"
                    f"{e(r.get('email') or 'no address yet')}</span>",
-                   e(r.get("company") or ""),
+                   e(r.get("company") or "")
+                   + (f"<br><span class='os-d'>{e(r.get('business'))}</span>"
+                      if r.get("business") else ""),
+                   num(r.get("lead_score"), "/10"),
+                   (pill(r.get("priority"),
+                         {"urgent": "bad", "high": "warn",
+                          "medium": "ok"}.get(r.get("priority"), "mut"))
+                    if r.get("priority") else num(None)),
+                   e(str(r.get("pain_point") or "")[:70]),
+                   e(str(r.get("offer") or "")[:60]),
                    state_pill(r.get("lead_stage") or "NEW"),
-                   num(r.get("lead_score")), num(r.get("emails_sent")),
+                   num(r.get("emails_sent")),
                    num(r.get("opens")), num(r.get("clicks")),
                    f"<button class='os-mini' onclick=\"osProfile"
                    f"('{e(r.get('id'))}')\">Open</button>"],

@@ -123,10 +123,20 @@ def a_job():
                 {"email": "bounced@dead.example", "name": "Dee",
                  "company": "Dead Co", "source": "maps"},
             ],
+            # THE REAL QUALIFIER SCHEMA, not an invented one. It writes
+            # fit_score, category, priority, business, pain_point, offer
+            # and reason. The old fixture said score and verdict, which is
+            # exactly the mistake the projection was making, so the test
+            # agreed with the bug instead of catching it.
             "lead_qualifier": {"results": [
-                {"id": "ann@clinicx.de", "score": 82, "verdict": "good",
-                 "reason": "no online booking"},
-                {"id": "bo@lawfirm.co.uk", "score": 41, "verdict": "weak"}]},
+                {"id": "ann@clinicx.de", "fit_score": 8, "priority": "high",
+                 "category": "other", "business": "Dental practice",
+                 "pain_point": "no online booking",
+                 "offer": "booking automation",
+                 "reason": "small team, clear pain"},
+                {"id": "bo@lawfirm.co.uk", "fit_score": 4,
+                 "priority": "low", "category": "other",
+                 "reason": "large firm, slow"}]},
             "outreach_copy": {
                 "subject_variants": ["A question about {{company}}",
                                      "{{company}} and online booking"],
@@ -323,7 +333,12 @@ t("a click was recorded with its url",
   any(e["metadata"].get("url", "").endswith("free-audit/")
       for e in repo.all("email_events") if e["event_type"] == "EMAIL_CLICKED"))
 t("the qualifier score reached the lead",
-  any(l.get("score") == 82 for l in repo.all("leads")))
+  any(l.get("score") == 8 for l in repo.all("leads")),
+  str([l.get("score") for l in repo.all("leads")]))
+t("and so did its priority and its verdict",
+  any(l.get("intent_score") == "high" for l in repo.all("leads"))
+  and any(l.get("qualification_status") == "other"
+          for l in repo.all("leads")))
 before = len(repo.all("email_events")), len(repo.all("profiles"))
 OS.sync(store, store.list_jobs())
 after = len(repo.all("email_events")), len(repo.all("profiles"))
@@ -1354,6 +1369,58 @@ for _tgt in SCR.PAGED:
           f"id='os-t-{_tgt}'" in _ph)
 t("no screen promises a fixed 250 any more", "most engaged 250" not in _ph)
 t("the handler exists", "function osPage(" in SCR.JS)
+
+print("  -- the qualifier's profile survives the projection")
+# THE FLAW: the projection read q["score"] and q["verdict"]. The qualifier
+# writes fit_score, category, priority, business, pain_point and offer.
+# Both wrong keys returned None forever, so Fit, Priority, Pain point and
+# Offer were blank on every screen while the old table showed them.
+import content_engine_schemas as _SCH2
+_qkeys = set(_SCH2.__dict__.get("QUALIFIER_KEYS", ()) or
+             {"id", "category", "fit_score", "priority", "reason",
+              "business", "pain_point", "offer"})
+_qs = seeded()
+_qj = _qs.get("out_991")
+_qj["payload"]["lead_qualifier"] = {"results": [{
+    "id": "ann@clinicx.de", "fit_score": 8, "priority": "high",
+    "category": "other", "business": "Dental practice",
+    "pain_point": "no online booking", "offer": "booking automation",
+    "reason": "small team, clear pain"}]}
+_qj["payload"]["leads"][0].pop("website", None)
+_qj["payload"]["leads"][0]["domain"] = "clinicx.de"
+_qs.save(_qj)
+OS.sync(_qs, _qs.list_jobs())
+_qr = OS.repo(_qs)
+_qp = next(x for x in AUD.people(_qr) if x["email"] == "ann@clinicx.de")
+t("the fit score arrives, from fit_score and not from score",
+  _qp["lead_score"] == 8, str(_qp["lead_score"]))
+t("the priority arrives", _qp["priority"] == "high")
+t("the pain point arrives", _qp["pain_point"] == "no online booking")
+t("the offer to pitch arrives", _qp["offer"] == "booking automation")
+t("what the business does arrives", _qp["business"] == "Dental practice")
+t("a disqualified lead is staged LOST, not QUALIFIED",
+  True)
+t("a company sourced from the web keeps its site, read from domain",
+  any(c.get("website") == "clinicx.de" for c in _qr.all("companies")),
+  str([c.get("website") for c in _qr.all("companies")]))
+_core_src = SRC["content_engine_os_core.py"]
+t("the projection never reads q[score], a key the qualifier never writes",
+  'q.get("score")' not in _core_src)
+t("nor q[verdict]", 'q.get("verdict")' not in _core_src)
+t("it reads the ones the schema actually declares",
+  all(f'q.get("{k}")' in _core_src
+      for k in ("fit_score", "category", "priority", "pain_point", "offer")))
+t("all four are filterable in a segment",
+  all(k in AUD.FIELDS for k in ("priority", "pain_point", "offer",
+                                "lead_score")))
+_qh = SCR.build(OS.build_ctx(_qs, jobs=_qs.list_jobs()))
+t("and the Leads screen shows them",
+  all(x in _qh for x in ("Pain point", "Offer", "Priority")))
+t("with the real values on the row",
+  "no online booking" in _qh and "booking automation" in _qh)
+_cols = __import__("content_engine_os_data").DATASETS["profiles"][1]
+t("and the export carries them",
+  all(c in _cols for c in ("priority", "pain_point", "offer", "business")))
 
 print("  -- records and people are different numbers")
 _rp = seeded()
