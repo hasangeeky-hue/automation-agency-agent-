@@ -123,6 +123,11 @@ COLLECTIONS = (
     "consents", "suppressions",
     "sender_domains", "providers",
     "agent_runs", "agent_actions", "audit_logs", "daily_metrics",
+    # THE MEDIA BUYING OS. Same store, same tenancy, same Repo: a lead, an
+    # email and an ad campaign share one truth rather than three.
+    "ad_accounts", "media_campaigns", "ad_groups", "ads", "audiences",
+    "creatives", "creative_versions", "media_plans", "ad_metrics",
+    "sync_runs", "media_anomalies",
 )
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
