@@ -580,9 +580,13 @@ def revenue(repo, campaign_id=None) -> dict:
             "revenue": round(total, 2) or None,
             "currency": (_D(rows[0].get("metadata")).get("currency", "EUR")
                          if rows else "EUR"),
+            # Zero of 750 with NOTHING ever recorded is an absence, not a
+            # rate. Reporting 0.0% beside "no conversions" says two
+            # different things about the same fact in the same row.
             "per_recipient": (round(total / t["sent"], 2)
-                              if t.get("sent") else None),
-            "rate": rate(len(people), t.get("sent")),
+                              if (t.get("sent") and rows) else None),
+            "rate": (rate(len(people), t.get("sent")) if rows
+                     else (None, "nothing recorded yet")),
             "basis": ("Last touch: a conversion is credited to the last "
                       "email that person was sent. One channel, one model, "
                       "and it is named rather than implied.")}

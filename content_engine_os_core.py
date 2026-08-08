@@ -495,8 +495,15 @@ def record_event(repo: Repo, kind, *, profile_id="", campaign_id="",
     if kind not in EVENT_TYPES:
         return {}
     at = at or now()
+    # The last part is what separates two facts that are otherwise
+    # identical. A URL for a click; the ADDRESS for anything that happened
+    # to somebody this engine has no profile for, which is exactly the
+    # case for a bounce from an address that was never a lead. Without it,
+    # two bounces in the same second collapsed into one.
+    _m = _D(metadata)
     key = event_key(kind, profile_id, campaign_id, message_id, at,
-                    _D(metadata).get("url", ""))
+                    _m.get("url") or _m.get("email") or _m.get("message_id")
+                    or "")
     seen = _index if _index is not None else {
         r.get("event_key") for r in repo.all("email_events")}
     if key in seen:

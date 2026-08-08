@@ -720,12 +720,23 @@ def send_deliver(ctx) -> str:
                ("Complaints", d.get("complaints"), ""),
                ("Unsubscribes", d.get("unsubscribes"), ""),
                ("Suppressed", d.get("suppressed"), "will never be emailed")])
+        + section("The address your links point at",
+                  (lambda pb: (
+                      tiles([("Public address", None,
+                              (pb.get("host") or pb.get("url") or "not set")[:40]),
+                             ("State", None, pb.get("state", "unknown"))])
+                      + (f"<p class='os-warn'>{e(pb.get('why'))}</p>"
+                         if not pb.get("ok") else
+                         f"<p class='os-note'>{e(pb.get('why'))}</p>")))
+                  (_D(ctx.get("public_base"))))
         + section("Bounces, read out of your mailbox",
                   tiles([("Bounces recorded", _D(ctx.get("bounces")).get("total"), ""),
                          ("Permanent", _D(ctx.get("bounces")).get("hard"),
                           "suppressed"),
                          ("Temporary", _D(ctx.get("bounces")).get("soft"),
                           "recorded, not suppressed"),
+                         ("Addresses", _D(ctx.get("bounces")).get("addresses"),
+                          "distinct"),
                          ("Being watched", _D(ctx.get("bounces")).get("watching"),
                           "rested after four")])
                   + "<div class='os-brow'>"

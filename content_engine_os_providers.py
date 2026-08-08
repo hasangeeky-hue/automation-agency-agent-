@@ -776,3 +776,44 @@ def register_provider_webhook(name) -> dict:
                 "message": "set PUBLIC_BASE_URL first; a webhook needs an "
                            "address this engine can actually be reached at"}
     return p.register_webhook(base + p.webhook_path())
+
+
+# ---------------------------------------------------------------------------
+# THE PUBLIC ADDRESS
+# ---------------------------------------------------------------------------
+def public_base() -> dict:
+    """What every unsubscribe and tracking link in your email points at.
+
+    This lives in one environment variable that nobody looks at, and it
+    ends up in front of every recipient and every spam filter. A bare IP
+    address over plain HTTP is the single worst thing that can be in a
+    cold email: it reads as phishing to a person, it is scored as
+    phishing by a filter, and the recipient's address travels in the query
+    string unencrypted.
+    """
+    import re as _re
+    url = (_env("PUBLIC_BASE_URL") or _env("ENGINE_PUBLIC_URL") or "").strip()
+    if not url:
+        return {"ok": False, "url": "", "state": "missing",
+                "why": "PUBLIC_BASE_URL is not set, so links cannot be "
+                       "tracked and the unsubscribe page cannot be reached "
+                       "from an email at all"}
+    host = url.split("//", 1)[-1].split("/")[0]
+    bare = bool(_re.match(r"^\d{1,3}(\.\d{1,3}){3}(:\d+)?$", host))
+    https = url.lower().startswith("https://")
+    if https and not bare:
+        return {"ok": True, "url": url, "state": "good",
+                "why": f"links point at {host}, over HTTPS"}
+    faults = []
+    if bare:
+        faults.append("a bare IP address, which reads as phishing to a "
+                      "person and is scored as phishing by a filter")
+    if not https:
+        faults.append("plain HTTP, so the recipient's own address travels "
+                      "unencrypted in the link")
+    return {"ok": False, "url": url, "state": "risky", "host": host,
+            "why": ("every unsubscribe and tracking link in your email "
+                    "points at " + host + ", which is " + " and ".join(faults)
+                    + ". Point PUBLIC_BASE_URL at a name on your own domain "
+                      "over HTTPS and every link written from then on is "
+                      "clean.")}

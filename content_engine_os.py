@@ -130,6 +130,7 @@ def build_ctx(store, *, jobs=None, reply_drafts=None,
         "providers": safe(lambda: PROV.provider_rows(), []),
         "domains": safe(lambda: PROV.domain_rows(r), []),
         "sender_why": safe(lambda: PROV.sending_allowed(r)[1], ""),
+        "public_base": safe(PROV.public_base, {}),
         # -- the second pass: rules, people, storage, replies -------------
         "replies": _L(reply_drafts),
         "schedule": safe(lambda: SCHED.describe(store), {}),

@@ -1265,6 +1265,32 @@ t("with no mailbox it says so instead of failing",
 t("the summary says whether it can read at all",
   "ready" in BOU.summary(g, gr))
 
+# Two bounces from two addresses this engine has never seen, in the same
+# second. They collapsed into one event on the live box: identical key,
+# because the key had nothing in it that told them apart.
+_b1 = CORE.record_event(gr, "EMAIL_BOUNCED", profile_id="",
+                        at="2026-08-08T10:00:00+00:00",
+                        metadata={"email": "one@dead.de", "kind": "soft"})
+_b2 = CORE.record_event(gr, "EMAIL_BOUNCED", profile_id="",
+                        at="2026-08-08T10:00:00+00:00",
+                        metadata={"email": "two@dead.de", "kind": "soft"})
+t("two bounces from two addresses stay two facts",
+  bool(_b1) and bool(_b2))
+t("and the same one twice is still recorded once",
+  not CORE.record_event(gr, "EMAIL_BOUNCED", profile_id="",
+                        at="2026-08-08T10:00:00+00:00",
+                        metadata={"email": "one@dead.de", "kind": "soft"}))
+t("the summary counts distinct addresses, not just events",
+  BOU.summary(g, gr)["addresses"] == 2, str(BOU.summary(g, gr)))
+_r0 = AN.revenue(OS.repo(seeded()))
+t("no conversions reads as an absence, not as 0.0%",
+  _r0["rate"][0] is None and _r0["per_recipient"] is None, str(_r0["rate"]))
+t("and it says so in words", "nothing recorded" in _r0["rate"][1])
+_pb = PRV.public_base()
+t("the public address is checked at all", "state" in _pb)
+t("a bare IP over http is called risky",
+  "phishing" in _pb["why"] or _pb["state"] == "good" or _pb["state"] == "missing")
+
 print("  -- 4 an adapter's send path can be proven")
 t("a test send exists and refuses without an address",
   PRV.send_test("smtp", "")["ok"] is False)

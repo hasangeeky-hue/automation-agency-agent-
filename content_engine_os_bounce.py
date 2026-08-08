@@ -223,7 +223,7 @@ def read(store, repo, *, limit=100) -> dict:
         CORE.record_event(repo, "EMAIL_BOUNCED", profile_id=pid,
                           at=str(msg.get("Date", "")) and now(),
                           metadata={"kind": kind, "code": code, "why": why,
-                                    "message_id": mid})
+                                    "email": em, "message_id": mid})
         if kind == "hard":
             CORE.suppress(repo, em, "BOUNCE", f"{code or 'permanent'}: {why}")
             hard += 1
@@ -272,11 +272,14 @@ def summary(store, repo) -> dict:
           if e_.get("event_type") == "EMAIL_BOUNCED"]
     hard = len([e_ for e_ in ev
                 if _D(e_.get("metadata")).get("kind") == "hard"])
+    addresses = {_D(e_.get("metadata")).get("email") for e_ in ev
+                 if _D(e_.get("metadata")).get("email")}
     try:
         soft_counts = _D(store.get_setting(SOFT_KEY, {}))
     except Exception:
         soft_counts = {}
-    return {"total": len(ev) or None, "hard": hard or None,
+    return {"total": len(ev) or None, "addresses": len(addresses) or None,
+            "hard": hard or None,
             "soft": (len(ev) - hard) or None,
             "watching": len([1 for v in soft_counts.values()
                              if 0 < int(v) < SOFT_LIMIT]) or None,
