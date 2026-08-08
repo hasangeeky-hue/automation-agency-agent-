@@ -3176,6 +3176,74 @@ def build_app():
                       out.get("message", ""))
         return out
 
+    @app.get("/os/export/{name}.{fmt}")
+    def os_export(name: str, fmt: str):
+        """Every table, as CSV, Excel or JSON. name=workbook gives one file
+        with a tab per table."""
+        from fastapi.responses import Response
+        OS, store, _ = _os()
+        try:
+            fname, mime, data = OS.export(store, name, fmt, _ws(None))
+        except KeyError:
+            return JSONResponse({"ok": False,
+                                 "message": f"there is no table called "
+                                            f"{name!r}"}, status_code=404)
+        except Exception as e2:
+            log.exception("export failed")
+            return JSONResponse({"ok": False,
+                                 "message": f"{type(e2).__name__}: {e2}"},
+                                status_code=500)
+        return Response(content=data, media_type=mime, headers={
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "Cache-Control": "no-store"})
+
+    def _uploaded(d) -> tuple:
+        """(filename, bytes). The browser sends base64 in JSON rather than
+        multipart, so no new server dependency is needed to accept a file."""
+        import base64
+        raw = str(d.get("b64") or "")
+        if "," in raw[:80] and raw[:5] == "data:":
+            raw = raw.split(",", 1)[1]
+        try:
+            return str(d.get("filename") or "upload.csv"), base64.b64decode(raw)
+        except Exception:
+            return "", b""
+
+    @app.post("/os/import/preview", response_class=HTMLResponse)
+    async def os_import_preview(request: Request):
+        """Read the file and show what WOULD happen. Writes nothing."""
+        d = await _body(request)
+        OS, store, _ = _os()
+        name, data = _uploaded(d)
+        if not data:
+            return HTMLResponse("<p class='os-warn'>that file could not be "
+                                "decoded</p>")
+        pv = OS.import_preview(store, name, data, d.get("mapping"),
+                               _ws(request))
+        return HTMLResponse(OS.import_preview_html(pv))
+
+    @app.post("/os/import/commit")
+    async def os_import_commit(request: Request):
+        """Write the file in, through the audited service layer."""
+        d = await _body(request)
+        OS, store, _ = _os()
+        name, data = _uploaded(d)
+        if not data:
+            return {"ok": False, "message": "that file could not be decoded"}
+        out = OS.import_commit(store, name, data, d.get("mapping"),
+                               d.get("list_name") or "", _ws(request))
+        _log_decision(store, "os_import", name[:60], out.get("message", ""))
+        return out
+
+    @app.post("/os/drive/push")
+    def os_drive_push():
+        """Mirror everything into the Google Drive folder. Never reads back."""
+        OS, store, _ = _os()
+        out = OS.drive_push(store, _ws(None))
+        _log_decision(store, "os_drive", str(len(out.get("written", []))),
+                      out.get("message", ""))
+        return out
+
     @app.post("/os/rest")
     async def os_rest(request: Request):
         """Park somebody, or wake them. Deliberately NOT suppression: a

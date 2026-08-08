@@ -44,6 +44,9 @@ of them exist because something specific DID go wrong.
   G24 the removal             the old formation is gone from disk
   G25 list hygiene            a scanner is named, not silently deleted; a
                               rested person is not a suppressed one
+  G26 tables                  ONE table element, so columns line up
+  G27 data in and out         every table downloads, a foreign spreadsheet
+                              imports, and Drive is a mirror
 ============================================================================
 """
 
@@ -571,8 +574,7 @@ ctx = OS.build_ctx(store, jobs=store.list_jobs())
 html = SCR.build(ctx, live="<div id='legacy-outbox'>send</div>")
 t("every screen in the rail has a panel",
   set(SCR.PANELS) == {pid for _, items in SCR.NAV for pid, _ in items})
-t("twenty seven screens render", len(SCR.PANELS) == 27,
-  str(len(SCR.PANELS)))
+t("thirty screens render", len(SCR.PANELS) == 30, str(len(SCR.PANELS)))
 t("no screen failed to draw", "could not be drawn" not in html,
   html[html.find("could not be drawn") - 120:
        html.find("could not be drawn") + 160] if "could not be drawn" in html
@@ -934,7 +936,7 @@ t("the boards file is one function now",
 t("the section carries no card markup",
   "<div class='card " not in SCR.build(OS.build_ctx(store,
                                                     jobs=store.list_jobs())))
-t("twenty seven screens", len(SCR.PANELS) == 27, str(len(SCR.PANELS)))
+t("thirty screens", len(SCR.PANELS) == 30, str(len(SCR.PANELS)))
 handlers2 = re.findall(r"function (os[A-Z]\w+)", SCR.JS + ED.FLOW_JS
                        + ED.BLOCK_JS)
 called2 = set(re.findall(r"(os[A-Z]\w+)\(", full))
@@ -1055,6 +1057,149 @@ api_src = SRC["content_engine_api.py"] if "content_engine_api.py" in SRC else ""
 t("the routes exist", '"/os/rest"' in io.open("content_engine_api.py",
                                               encoding="utf-8").read()
   and '"/os/audience/clean"' in io.open("content_engine_api.py",
+                                        encoding="utf-8").read())
+
+print("\nG26 TABLES LINE UP")
+tb = SCR.table(["Person", "Company", "Sent", "Opens"],
+               [["<b>Jill Monti</b><br><span class='os-d'>j@x.com</span>",
+                 "Channel Fish Processing", SCR.num(30), SCR.num(47)],
+                ["<b>Raymond Levine</b>", "Schneider Wallace Cottrell Kim",
+                 SCR.num(30), SCR.num(33)]])
+t("a table is ONE element, not a stack of per-row grids",
+  tb.count("<table>") == 1 and "grid-template-columns" not in tb)
+t("it has a real header row",
+  "<thead>" in tb and tb.count("</th>") == 4)
+t("every row is a tr with the same number of cells",
+  tb.count("<tr>") == 3 and tb.count("<td") == 8)
+# Two numeric columns, and the class lands on the header AND both cells,
+# which is what makes the heading sit over its own numbers.
+t("a numeric column is found and right aligned, header included",
+  tb.count("class='os-r'") == 6, str(tb.count("class='os-r'")))
+t("a NAME is bold too and must NOT be right aligned",
+  "<td class='os-r'><b>Jill" not in tb and "<td><b>Jill" in tb)
+t("a column of dashes still counts as numeric",
+  SCR._numeric([[SCR.num(None)], [SCR.num(3)]], 0) is True)
+t("a column of words does not",
+  SCR._numeric([["<b>Ann</b>"], ["<b>Bo</b>"]], 0) is False)
+full2 = SCR.build(OS.build_ctx(store, jobs=store.list_jobs()))
+t("the assembled section has no per-row grid left",
+  "class='os-tr'" not in full2)
+t("numbers use tabular figures, so 30 sits under 750",
+  "tabular-nums" in SCR.CSS)
+t("a wide table scrolls inside its own box, not the page",
+  "overflow-x:auto" in SCR.CSS)
+
+print("\nG27 DATA IN AND OUT")
+import content_engine_os_data as DATA
+import content_engine_os_sheets as XL
+import json as _json
+dstore = seeded()
+OS.sync(dstore, dstore.list_jobs())
+drepo = OS.repo(dstore)
+t("every dataset declares a label, columns and a source",
+  all(len(v) == 3 and v[1] for v in DATA.DATASETS.values()))
+_bad = []
+for _dn in DATA.DATASETS:
+    _cols, _rws = DATA.rows_for(drepo, _dn)
+    if not all(len(x) == len(_cols) for x in _rws):
+        _bad.append(_dn)
+t("every table produces rows exactly the width of its header",
+  not _bad, str(_bad))
+wname, wmime, wdata = DATA.workbook(drepo)
+t("the workbook is a real zip", wdata[:2] == b"PK")
+t("and carries Excel's own mime type", "spreadsheetml.sheet" in wmime)
+wb = XL.read_xlsx(wdata)
+t("its first tab reads back with a header",
+  bool(wb) and bool(wb[0]) and wb[0][0] == "email", str(wb[:1])[:120])
+t("one tab per table", len(DATA.DATASETS) == 10)
+cname, cmime, cdata = DATA.as_bytes(drepo, "profiles", "csv")
+t("a CSV starts with the BOM, so Excel reads UTF-8 correctly",
+  cdata[:3] == b"\xef\xbb\xbf")
+t("and reads back with the same number of columns",
+  len(XL.read_csv(cdata)[0]) == len(DATA.DATASETS["profiles"][1]))
+jname, jmime, jdata = DATA.as_bytes(drepo, "profiles", "json")
+_j = _json.loads(jdata)
+t("the JSON export is a list of objects, not a list of lists",
+  (not _j) or isinstance(_j[0], dict))
+
+foreign = ("E-Mail;Vorname;Nachname;Firma;Land;Branche;Notizen\r\n"
+           "neu@praxis.de;Lena;Braun;Praxis Braun;Germany;Healthcare;fair\r\n"
+           "ann@clinicx.de;Ann;Weber;Clinic X;Germany;Healthcare;known\r\n"
+           "broken-address;X;Y;Z;;;\r\n"
+           "neu@praxis.de;Lena;Braun;Praxis Braun;Germany;;dup\r\n"
+           ).encode("utf-8")
+pv = DATA.preview(drepo, "leads.csv", foreign)
+t("a semicolon CSV is read as columns, not as one column",
+  pv["ok"] and len(pv["header"]) == 7, str(pv.get("header")))
+t("German headers map to the right fields",
+  pv["mapping"][0] == "email" and pv["mapping"][1] == "first_name"
+  and pv["mapping"][3] == "company", str(pv.get("mapping")))
+t("a column nobody recognises is KEPT as a custom property",
+  "Notizen" in pv["custom"])
+t("new, existing, repeated and broken are each counted separately",
+  (pv["new"], pv["update"], pv["duplicate"], pv["invalid"]) == (1, 1, 1, 1),
+  str((pv["new"], pv["update"], pv["duplicate"], pv["invalid"])))
+t("the preview says nothing has been written",
+  "Nothing has been written" in pv["message"])
+_before = len(drepo.all("profiles"))
+DATA.preview(drepo, "leads.csv", foreign)
+t("and previewing really wrote nothing",
+  len(drepo.all("profiles")) == _before)
+CORE.suppress(drepo, "gone@dead.de", "BOUNCE", "test")
+pv2 = DATA.preview(drepo, "x.csv",
+                   b"email\r\ngone@dead.de\r\nfresh@new.de\r\n")
+t("a suppressed address is refused by the importer",
+  pv2["suppressed"] == 1, str(pv2)[:160])
+cm = DATA.commit(dstore, drepo, "leads.csv", foreign, list_name="Fair leads")
+t("committing writes the new people", cm["written"] == 2, str(cm))
+t("and skips exactly what the preview said it would", cm["skipped"] == 2)
+t("an existing person is updated, never duplicated",
+  len([p for p in drepo.all("profiles")
+       if p.get("email") == "ann@clinicx.de"]) == 1)
+who = next(p for p in AUD.people(drepo) if p["email"] == "neu@praxis.de")
+t("the custom column survived onto the person",
+  who["properties"].get("Notizen") == "fair", str(who["properties"]))
+t("the list was created and filled", cm["listed"] == 2)
+t("the import is audited exactly like an agent action",
+  any(a_.get("agent_type") == "csv_import" for a_ in drepo.all("agent_runs")))
+xb = XL.write_xlsx([("Leads", [["email", "first name", "company"],
+                               ["x@y.de", "Xavier", "YCo"]])])
+t("an uploaded Excel file is read the same way",
+  DATA.preview(drepo, "x.xlsx", xb)["new"] == 1)
+t("an .xlsx renamed to .csv is still read as a workbook",
+  DATA.preview(drepo, "x.csv", xb)["ok"] is True)
+t("a file over the limit is refused in words, with the limit",
+  "limit is" in DATA.preview(drepo, "big.csv",
+                             b"x" * (DATA.MAX_UPLOAD + 1))["message"])
+t("a header with no rows under it is refused in words",
+  "no data underneath" in DATA.preview(drepo, "h.csv",
+                                       b"email\r\n")["message"])
+t("a file with no email column is refused, and says why",
+  "email address" in DATA.preview(drepo, "n.csv",
+                                  b"name;city\r\nBo;Leeds\r\n")["message"])
+ds = DATA.drive_state()
+t("Drive says whether it is ready and why",
+  "ready" in ds and len(ds["why"]) > 20)
+t("Drive is a mirror, and the code says so where it writes",
+  "never a source" in DATA.push_to_drive.__doc__.lower())
+t("pushing with no credential is refused in words, not with a traceback",
+  DATA.push_to_drive(dstore, drepo)["ok"] is False)
+dhtml = SCR.build(OS.build_ctx(dstore, jobs=dstore.list_jobs()))
+t("the Export screen offers the whole workbook",
+  "/os/export/workbook.xlsx" in dhtml)
+t("every table on the Export screen offers all three formats",
+  "/os/export/profiles.csv" in dhtml
+  and "/os/export/profiles.xlsx" in dhtml
+  and "/os/export/profiles.json" in dhtml)
+t("the Import screen takes a file", "type='file'" in dhtml)
+t("thirty screens", len(SCR.PANELS) == 30, str(len(SCR.PANELS)))
+_api = io.open("content_engine_api.py", encoding="utf-8").read()
+for _r in ('"/os/export/{name}.{fmt}"', '"/os/import/preview"',
+           '"/os/import/commit"', '"/os/drive/push"'):
+    t(f"route {_r} exists", _r in _api)
+t("the upload needs no new server dependency",
+  "UploadFile" not in _api and "= File(" not in _api
+  and "python-multipart" not in io.open("deploy/requirements.txt",
                                         encoding="utf-8").read())
 
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")

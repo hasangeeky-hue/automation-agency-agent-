@@ -56,6 +56,8 @@ NAV = [
     ("Analytics", [("ancampaign", "Campaign analytics"),
                    ("anlead", "Lead analytics"), ("anab", "A/B tests"),
                    ("anattrib", "Attribution")]),
+    ("Data", [("dataexport", "Export"), ("dataimport", "Import"),
+              ("datadrive", "Google Drive")]),
     ("Settings", [("setemail", "Email"), ("setdomains", "Domains"),
                   ("setintegrations", "Integrations"),
                   ("setcompliance", "Compliance"), ("setteam", "Team"),
@@ -122,16 +124,64 @@ def rate_tile(label, pct_and_of, sub="") -> str:
     return tile(label, pct, sub or of, "%")
 
 
-def table(headers, rows, empty="Nothing here yet.") -> str:
+_NUMCELL = re.compile(r"^<b(?: class='os-none')?>(?:[\d,.\-]|--)")
+
+
+def _numeric(rows, i) -> bool:
+    """Is column i a measurement?
+
+    num() is the only thing in this file that emits "<b>" followed by a
+    digit or a dash, so the test is exact rather than a guess. A person's
+    name is also bold, which is why the digit matters: without it the
+    Profiles screen would right-align everybody's name."""
+    seen = False
+    for r in rows:
+        if i >= len(r):
+            continue
+        cell = str(r[i] or "").strip()
+        if not cell:
+            continue
+        if not _NUMCELL.match(cell):
+            return False
+        seen = True
+    return seen
+
+
+def table(headers, rows, empty="Nothing here yet.", *, dataset="") -> str:
+    """ONE table element, not a stack of grids.
+
+    Every row used to be its own CSS grid, which meant every row sized its
+    own columns independently and nothing lined up with the row above it.
+    A real table shares one set of column widths by construction, which is
+    the entire reason the element exists.
+
+    Numeric columns are found and right-aligned with tabular figures, so
+    30 sits under 750 rather than beside it."""
     if not rows:
         return f"<p class='os-empty'>{e(empty)}</p>"
-    cols = f"grid-template-columns:repeat({len(headers)},minmax(0,auto))"
-    head = "".join(f"<span>{h}</span>" for h in headers)
-    body = "".join("<div class='os-tr' style='" + cols + "'>"
-                   + "".join(f"<span>{c}</span>" for c in r) + "</div>"
-                   for r in rows)
-    return ("<div class='os-tbl'><div class='os-tr os-th' style='" + cols
-            + "'>" + head + "</div>" + body + "</div>")
+    num_cols = {i for i in range(len(headers)) if _numeric(rows, i)}
+
+    def cls(i):
+        return " class='os-r'" if i in num_cols else ""
+
+    head = "".join(f"<th{cls(i)}>{h}</th>" for i, h in enumerate(headers))
+    body = "".join(
+        "<tr>" + "".join(f"<td{cls(i)}>{c}</td>" for i, c in enumerate(r))
+        + "</tr>" for r in rows)
+    dl = (f"<div class='os-dl'>{download_menu(dataset)}</div>"
+          if dataset else "")
+    return (dl + "<div class='os-tbl'><table><thead><tr>" + head
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+def download_menu(dataset) -> str:
+    """Every table you can read, you can take away."""
+    if not dataset:
+        return ""
+    return ("<span class='os-d'>Download</span>"
+            + "".join(f"<a class='os-mini' href='/os/export/{e(dataset)}."
+                      f"{f}' download>{f.upper()}</a>"
+                      for f in ("csv", "xlsx", "json")))
 
 
 def panel(title, note, body) -> str:
@@ -391,7 +441,7 @@ def aud_profiles(ctx) -> str:
                 f"<button class='os-mini' onclick=\"osProfile"
                 f"('{e(r.get('id'))}')\">Open</button>"] for r in rows],
               "No profiles yet. Press Re-read the engine to import the leads "
-              "already sitting in your campaigns."))
+              "already sitting in your campaigns.", dataset="profiles"))
 
 
 def aud_lists(ctx) -> str:
@@ -467,7 +517,8 @@ def eng_campaigns(ctx) -> str:
           num(c.get("edited") or None),
           f"<button class='os-mini os-primary' onclick=\"osCamp"
           f"('{e(c.get('id'))}')\">Open</button>"] for c in rows],
-        "No campaigns yet. Press Re-read the engine, or create one below.")
+        "No campaigns yet. Press Re-read the engine, or create one below.",
+        dataset="campaigns")
     wizard = (
         "<div class='os-form'>"
         "<input id='os-cn' class='os-in' placeholder='Campaign name'>"
@@ -614,7 +665,7 @@ def send_queue(ctx) -> str:
                   pill("yes", "ok") if r.get("approved") else pill("no", "warn"),
                   num(r.get("attempts")), e(r.get("provider")),
                   e(r.get("error") or r.get("sent_at") or "")]
-                 for r in rows], "The queue is empty."))
+                 for r in rows], "The queue is empty.", dataset="queue"))
 
 
 _VERDICT_TONE = {"scanner": "warn", "silent": "bad", "looking": "warn",
@@ -687,7 +738,7 @@ def send_deliver(ctx) -> str:
                              f"</button>")]
                            for r in rows],
                           "Nobody is being over-worked. Every address is "
-                          "inside the limits."))
+                          "inside the limits.", dataset="hygiene"))
         + section("Why people are suppressed",
                   donut(list(_D(d.get("by_reason")).items()))))
 
@@ -1126,6 +1177,169 @@ def set_storage(ctx) -> str:
 
 
 # ---------------------------------------------------------------------------
+# DATA: EXPORT, IMPORT, DRIVE
+# ---------------------------------------------------------------------------
+def import_preview(pv) -> str:
+    """What the file would do, before it does it."""
+    pv = _D(pv)
+    if not pv.get("ok"):
+        return (f"<p class='os-warn'>{e(pv.get('message'))}</p>"
+                + (table(["Column in your file", "Mapped to"],
+                         [[e(h), f"<code>{e(_D(pv.get('mapping')).get(i, ''))}"
+                           f"</code>"]
+                          for i, h in enumerate(_L(pv.get("header")))])
+                   if pv.get("header") else ""))
+    mapping = _D(pv.get("mapping"))
+    header = _L(pv.get("header"))
+    counts = [("New people", pv.get("new"), "will be written"),
+              ("Already here", pv.get("update"), "updated, never duplicated"),
+              ("Repeated in the file", pv.get("duplicate"), "kept once"),
+              ("No usable address", pv.get("invalid"), "skipped"),
+              ("Suppressed", pv.get("suppressed"), "skipped on purpose")]
+    fields = _L(pv.get("fields"))
+    def sel(i, cur):
+        opts = "".join(
+            f"<option value='{e(f)}'{' selected' if f == cur else ''}>"
+            f"{e(f)}</option>" for f in fields)
+        extra = ("" if cur in fields else
+                 f"<option value='{e(cur)}' selected>{e(cur)}</option>")
+        return (f"<select class='os-in os-map' data-i='{i}'>{extra}{opts}"
+                f"</select>")
+    return (
+        "<div class='os-sec'>"
+        + tiles([(lab, n or None, why) for lab, n, why in counts])
+        + f"<p class='os-note'>{e(pv.get('message'))}</p>"
+        + section("How the columns were read",
+                  table(["Column in your file", "Read as"],
+                        [[f"<b>{e(h)}</b>", sel(i, mapping.get(i, "skip"))]
+                         for i, h in enumerate(header)]))
+        + (section("Kept as custom properties",
+                   "<p class='os-note'>"
+                   + e(", ".join(_L(pv.get("custom"))))
+                   + ". A column nobody recognises is kept against the "
+                     "person rather than thrown away, and segments can "
+                     "filter on it.</p>")
+           if _L(pv.get("custom")) else "")
+        + section("The first few rows, as they would be written",
+                  table(["Email", "First name", "Company", "Country",
+                         "Everything else"],
+                        [[e(_D(r).get("email")), e(_D(r).get("first_name")),
+                          e(_D(r).get("company")), e(_D(r).get("country")),
+                          e(", ".join(f"{k}={v}" for k, v in
+                                      _D(_D(r).get("properties")).items()))]
+                         for r in _L(pv.get("sample"))]))
+        + "<div class='os-brow'>"
+          "<button class='cta os-go' onclick='osImportCommit()'>"
+          f"Write {e(pv.get('new'))} new and update {e(pv.get('update'))}"
+          "</button>"
+          "<span class='os-note'>Nothing has been written yet.</span>"
+          "</div></div>")
+
+
+
+def data_export(ctx) -> str:
+    rows = _L(ctx.get("datasets"))
+    return panel(
+        "Export",
+        "Every table this engine holds, as a spreadsheet or as JSON. The "
+        "workbook puts all of them in one file with a tab each, which is "
+        "the version to open when you want to look rather than to load.",
+        "<div class='os-brow'>"
+        "<a class='cta os-go' href='/os/export/workbook.xlsx' download>"
+        "Everything, one Excel workbook</a>"
+        "<a class='cta' href='/os/export/everything.json' download>"
+        "Everything, one JSON file</a>"
+        "<span class='os-note'>The workbook opens in Excel, Numbers and "
+        "Google Sheets. Nothing is styled: it is there to be filtered and "
+        "pivoted, not admired.</span></div>"
+        + table(["Table", "What is in it", "Columns", "Rows", "Download"],
+                [[f"<b>{e(d.get('label'))}</b>",
+                  f"<code>{e(d.get('name'))}</code>",
+                  num(d.get("columns")), num(d.get("rows")),
+                  download_menu(d.get("name"))] for d in rows],
+                "Nothing to export yet."))
+
+
+def data_import(ctx) -> str:
+    lists = _L(ctx.get("lists"))
+    return panel(
+        "Import",
+        "Bring a customer or lead list in from a CSV or an Excel file. It is "
+        "read and shown to you first; nothing is written until you press the "
+        "second button.",
+        "<div class='os-form'>"
+        "<input type='file' id='os-imp' class='os-in' "
+        "accept='.csv,.xlsx,.xlsm,.json,text/csv'>"
+        "<input id='os-impl' class='os-in' placeholder='Add them to a new "
+        "list called... (optional)'>"
+        "<button class='cta' onclick='osImportPreview()'>Read the file"
+        "</button></div>"
+        "<p class='os-note'>CSV, Excel or JSON, up to 8 MB. Column names are "
+        "matched against the ones real exports use, so an Apollo, Sales "
+        "Navigator or Maps file usually maps itself. A column nobody "
+        "recognises is kept as a custom property rather than thrown away. "
+        "A German Excel writes semicolons instead of commas and that is "
+        "handled.</p>"
+        "<div id='os-imprev'></div>"
+        + section("What happens to a row",
+                  table(["Outcome", "What it means"],
+                        [["new", "written as a profile and a lead"],
+                         ["already here", "the existing person is updated, "
+                                          "never duplicated"],
+                         ["repeated in the file", "kept once"],
+                         ["no usable address", "skipped, and counted"],
+                         ["suppressed", "skipped: somebody who asked you to "
+                                        "stop is not un-asked by a "
+                                        "spreadsheet"]]))
+        + (section("Lists you already have",
+                   table(["List", "People"],
+                         [[e(l.get("name")), num(l.get("members"))]
+                          for l in lists])) if lists else ""))
+
+
+def data_drive(ctx) -> str:
+    d = _D(ctx.get("drive"))
+    last = _D(ctx.get("drive_last"))
+    return panel(
+        "Google Drive",
+        "A copy of everything, in the folder your Google service account "
+        "already has. Postgres stays the source of truth: this writes, and "
+        "never reads back, so Drive cannot quietly become a second version "
+        "of the answer.",
+        tiles([("Connected", None, "yes" if d.get("ready") else "not yet"),
+               ("Folder", None, (d.get("folder") or "not set")[:22]),
+               ("Last written", None,
+                str(last.get("at") or "never")[:16]),
+               ("Files last time", len(_L(last.get("files"))) or None, "")])
+        + f"<p class='os-note'>{e(d.get('why'))}</p>"
+        + "<div class='os-brow'>"
+          "<button class='cta' onclick=\"osAct('/os/drive/push')\""
+        + ("" if d.get("ready") else " disabled")
+        + ">Write everything to Drive now</button>"
+        + (f"<a class='os-mini' href='{e(last.get('workbook'))}' "
+           f"target='_blank' rel='noopener'>Open the last workbook</a>"
+           if last.get("workbook", "").startswith("http") else "")
+        + "</div>"
+        + section("What gets written",
+                  table(["File", "What it is"],
+                        [["<code>engagement-os-DATE.xlsx</code>",
+                          "one workbook, one tab per table: people, leads, "
+                          "companies, campaigns, every email sent, events, "
+                          "consent, the queue, list hygiene and the daily "
+                          "totals"],
+                         ["<code>engagement-os-DATE.json</code>",
+                          "the same data as JSON, for anything that reads a "
+                          "feed rather than a spreadsheet"]]))
+        + (section("Last run",
+                   table(["File", "Result"],
+                         [[e(f), pill("written", "ok")]
+                          for f in _L(last.get("files"))]
+                         + [[e(f), pill("refused", "bad")]
+                            for f in _L(last.get("failed"))]))
+           if last else ""))
+
+
+# ---------------------------------------------------------------------------
 # THE CAMPAIGN DETAIL. Two columns. This is the screen the founder wanted.
 # ---------------------------------------------------------------------------
 def campaign_detail(ctx, cid) -> str:
@@ -1356,6 +1570,8 @@ PANELS = {
     "setemail": set_email, "setdomains": set_domains,
     "setintegrations": set_integrations, "setcompliance": set_compliance,
     "setteam": set_team, "setstorage": set_storage,
+    "dataexport": data_export, "dataimport": data_import,
+    "datadrive": data_drive,
 }
 
 
@@ -1454,15 +1670,25 @@ CSS = """
 .os-none{color:var(--osdim)!important;font-weight:400!important}
 .os-tbl{border:1px solid var(--osln);border-radius:8px;overflow-x:auto;
  background:var(--os2)}
-.os-tr{display:grid;gap:10px;padding:9px 12px;border-bottom:1px solid var(--osln);
- align-items:center;min-width:640px}
-.os-tr:last-child{border-bottom:0}
-/* A 640px minimum inside a 400px sidebar puts a scrollbar on every small
-   table. In the narrow column the row wraps instead. */
-.os-narrow .os-tr{min-width:0;word-break:break-word}
-.os-th{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
- color:var(--osdim);background:rgba(255,255,255,.02)}
-.os-tr b{font-variant-numeric:tabular-nums}
+.os-tbl table{width:100%;border-collapse:collapse;font-size:13px}
+.os-tbl th,.os-tbl td{padding:10px 14px;text-align:left;vertical-align:middle;
+ border-bottom:1px solid var(--osln)}
+.os-tbl tbody tr:last-child td{border-bottom:0}
+.os-tbl tbody tr:hover{background:rgba(76,141,255,.05)}
+.os-tbl th{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+ color:var(--osdim);background:rgba(255,255,255,.03);white-space:nowrap;
+ position:sticky;top:0;z-index:1}
+.os-tbl td b{font-variant-numeric:tabular-nums}
+/* Numbers line up under numbers, which is the whole point of a column. */
+.os-tbl .os-r{text-align:right;font-variant-numeric:tabular-nums;
+ white-space:nowrap}
+.os-tbl td:first-child{min-width:180px}
+.os-narrow .os-tbl td,.os-narrow .os-tbl th{padding:8px 10px;
+ word-break:break-word}
+.os-narrow .os-tbl td:first-child{min-width:0}
+.os-dl{display:flex;gap:6px;align-items:center;justify-content:flex-end;
+ margin:0 0 6px}
+.os-dl a{text-decoration:none}
 .os-empty{color:var(--osdim);padding:14px 2px;margin:0}
 .os-note{color:var(--osmut);font-size:12.5px;line-height:1.55;margin:8px 0 0;
  max-width:820px}
@@ -1735,6 +1961,36 @@ JS = ("<script>"
       "if(!confirm('Rest everyone in that group for 90 days? They are not "
       "suppressed and you can wake any of them.'))return;"
       "await osAct('/os/audience/clean',{kind:kind,days:90});}"
+
+      "function osFileB64(f){return new Promise(function(res,rej){"
+      "var r=new FileReader();r.onload=function(){"
+      "res(String(r.result).split(',')[1]||'');};r.onerror=rej;"
+      "r.readAsDataURL(f);});}"
+
+      "async function osImportPreview(){"
+      "var el=document.getElementById('os-imp');"
+      "if(!el||!el.files||!el.files[0]){osToast({ok:false,message:"
+      "'choose a file first'});return;}"
+      "var f=el.files[0];"
+      "if(f.size>8388608){osToast({ok:false,message:'that file is over 8 MB'});"
+      "return;}"
+      "osToast({ok:true,message:'reading '+f.name+'...'});"
+      "var b64=await osFileB64(f);window.__osFile={name:f.name,b64:b64};"
+      "try{var r=await fetch('/os/import/preview',{method:'POST',"
+      "headers:{'Content-Type':'application/json'},"
+      "body:JSON.stringify({filename:f.name,b64:b64})});"
+      "document.getElementById('os-imprev').innerHTML=await r.text();}"
+      "catch(e){osToast({ok:false,message:'could not read that file'});}}"
+
+      "async function osImportCommit(){"
+      "var f=window.__osFile;if(!f){osToast({ok:false,message:"
+      "'read a file first'});return;}"
+      "var l=document.getElementById('os-impl');"
+      "if(!confirm('Write these people in? Existing profiles are updated, "
+      "never duplicated.'))return;"
+      "var j=await osAct('/os/import/commit',{filename:f.name,b64:f.b64,"
+      "list_name:l?l.value:''});"
+      "if(j&&j.ok)osImportPreview();}"
 
       "async function osTemplate(id){try{"
       "var r=await fetch('/os/template/'+id);osOpen(await r.text());"

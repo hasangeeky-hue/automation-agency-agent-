@@ -26,6 +26,7 @@ import content_engine_os_analytics as AN
 import content_engine_os_audience as AUD
 import content_engine_os_content as CONTENT
 import content_engine_os_core as CORE
+import content_engine_os_data as DATA
 import content_engine_os_flows as FLOWS
 import content_engine_os_optin as OPTIN
 import content_engine_os_providers as PROV
@@ -137,6 +138,9 @@ def build_ctx(store, *, jobs=None, reply_drafts=None,
         "table_counts": safe(lambda: ST.counts(workspace_id), {}),
         "connectors": safe(_connector_state, {}),
         "hygiene": safe(lambda: AN.hygiene(r), {}),
+        "datasets": safe(lambda: DATA.catalogue(r), []),
+        "drive": safe(DATA.drive_state, {}),
+        "drive_last": safe(lambda: DATA.drive_last(store), {}),
     }
 
 
@@ -396,3 +400,38 @@ def clean_audience(store, kind="silent", days=90,
             "message": (f"{n} person(s) rested for {days} days. They are not "
                         f"suppressed: they stay in every count and you can "
                         f"wake any of them from this table.")}
+
+
+# ---------------------------------------------------------------------------
+# DATA IN AND OUT
+# ---------------------------------------------------------------------------
+def export(store, name, fmt, workspace_id=CORE.DEFAULT_WORKSPACE) -> tuple:
+    """(filename, mime, bytes). One door for every download."""
+    r = repo(store, workspace_id)
+    if name == "workbook":
+        return DATA.workbook(r)
+    if name == "everything":
+        return DATA.everything_json(r)
+    if name not in DATA.DATASETS:
+        raise KeyError(name)
+    return DATA.as_bytes(r, name, fmt if fmt in ("csv", "json") else "xlsx")
+
+
+def import_preview(store, filename, data, mapping=None,
+                   workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    return DATA.preview(repo(store, workspace_id), filename, data, mapping)
+
+
+def import_commit(store, filename, data, mapping=None, list_name="",
+                  workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    return DATA.commit(store, repo(store, workspace_id), filename, data,
+                       mapping, list_name=list_name)
+
+
+def drive_push(store, workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    return DATA.push_to_drive(store, repo(store, workspace_id))
+
+
+def import_preview_html(pv) -> dict:
+    """The preview, as the fragment the Import screen injects."""
+    return SCR.import_preview(pv)
