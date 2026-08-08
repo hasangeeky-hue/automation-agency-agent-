@@ -163,5 +163,101 @@ t("the media states are NOT the email states",
 t("the media collections do not collide with the email ones",
   "campaigns" not in M.COLLECTIONS and "media_campaigns" in M.COLLECTIONS)
 
+print("\nG9  THE CREATIVE ENGINE")
+import content_engine_media_creative as MC
+r2 = CORE.Repo(Store())
+c1 = MC.save_creative(r2, name="Save 30 percent", type="UGC",
+                      concept="Save 30%", angle="pain-point",
+                      hook="Still booking by phone?",
+                      persona="practice manager", cta="Book a call",
+                      funnel_stage="COLD", publish=True)
+t("a creative publishes as version 1", c1["ok"] and c1["version"] == 1)
+c2 = MC.save_creative(r2, name="Save 30 percent", type="VIDEO",
+                      concept="Save 30%", angle="pain-point", publish=True)
+t("publishing again appends a version", c2["version"] == 2)
+t("and version one is still readable", len(r2.all("creative_versions")) == 2)
+t("an invented format is refused with the real list",
+  "is not a format" in MC.save_creative(r2, name="x",
+                                        type="HOLOGRAM")["message"])
+t("an invented funnel stage is refused too",
+  "is not a funnel stage" in MC.save_creative(r2, name="x",
+                                              funnel_stage="LUNAR")["message"])
+_bare = MC.save_creative(r2, name="bare creative")
+t("a creative with no attributes saves but is flagged as unlearnable",
+  _bare["ok"] and _bare["unattributed"] and "learned from" in _bare["message"])
+t("an agent's invented field is dropped rather than stored",
+  MC.from_agent({"name": "x", "vibe": "cosmic"})["refused"] == ["vibe"])
+
+print("\nG10 ATTRIBUTES, NOT JUST CREATIVES")
+m = MC.matrix(r2, "angle")
+t("the matrix groups by an attribute", m["ok"] and m["dimension"] == "angle")
+t("an invented dimension is refused with the real list",
+  MC.matrix(r2, "astrology")["ok"] is False
+  and "is not an attribute" in MC.matrix(r2, "astrology")["message"])
+t("with no spend it REFUSES to name a winner",
+  m["verdict"]["state"] == "early")
+t("and says how much is needed before it would",
+  "impressions" in m["verdict"]["message"]
+  and str(MC.MIN_IMPRESSIONS) in m["verdict"]["message"].replace(",", ""))
+t("the learning brief is empty rather than invented",
+  "Nothing has earned a verdict" in MC.learn(r2)["message"])
+t("every attribute is examined, not only the obvious one",
+  len(MC.learn(r2)["findings"]) == len(MC.ATTRIBUTES))
+t("fatigue refuses on a creative with no impressions",
+  MC.fatigue(r2, c1["id"])["score"] is None)
+t("and says fatigue is measured, not assumed",
+  "measured, not assumed" in MC.fatigue(r2, c1["id"])["message"])
+t("an unknown creative is refused",
+  MC.fatigue(r2, "nope")["ok"] is False)
+t("the sample floor is one number, used by matrix AND verdict",
+  MC.MIN_IMPRESSIONS >= 1000 and MC.MIN_CONVERSIONS >= 10)
+
+print("\nG11 THE AUDIENCE ENGINE")
+a1 = MC.save_audience(r2, name="German clinics", type="PROSPECTING",
+                      definition={"countries": ["DE"],
+                                  "job_titles": ["practice manager"],
+                                  "age_min": 30})
+t("an audience saves", a1["ok"], str(a1))
+_bad = MC.save_audience(r2, name="x", definition={"star_sign": "leo"})
+t("a field no platform understands is refused AT SAVE TIME",
+  _bad["ok"] is False)
+t("and the refusal lists what CAN be targeted",
+  "It can target on" in _bad["message"])
+t("an invented audience type is refused",
+  MC.save_audience(r2, name="x", type="COSMIC")["ok"] is False)
+mp = MC.map_to_provider({"countries": ["DE"], "job_titles": ["x"]}, "meta")
+t("a platform that cannot express a clause DROPS it explicitly",
+  mp["dropped"] == ["job_titles"], str(mp))
+t("and says the audience is now wider than the one you defined",
+  "wider than the one you defined" in mp["message"])
+t("linkedin CAN target job titles",
+  not MC.map_to_provider({"job_titles": ["x"]}, "linkedin")["dropped"])
+t("google CAN target search keywords, and meta cannot",
+  not MC.map_to_provider({"keywords": ["x"]}, "google")["dropped"]
+  and MC.map_to_provider({"keywords": ["x"]}, "meta")["dropped"] == ["keywords"])
+t("a definition every platform supports says so",
+  "can express all of it" in MC.map_to_provider({"countries": ["DE"]},
+                                                "google")["message"])
+t("coverage reports every platform at once",
+  len(MC.coverage({"countries": ["DE"]})) == len(MC.TARGET_SUPPORT))
+t("an unknown platform is refused rather than guessed",
+  MC.map_to_provider({"countries": ["DE"]}, "snapchat")["ok"] is False)
+t("the audience row names which platforms are only partial",
+  MC.audience_rows(r2)[0]["partial"])
+t("saturation refuses when nothing has run against the audience",
+  MC.saturation(r2, a1["id"])["level"] is None)
+
+print("\nG12 NO PLATFORM CODE, NO SECOND STORE")
+csrc = io.open("content_engine_media_creative.py", encoding="utf-8").read()
+for w in ("MetaAds", "GoogleAds", "TikTokAds", "requests", "urllib"):
+    t(f"the creative engine contains no {w}", w not in csrc)
+t("it uses the same Repo as everything else",
+  "content_engine_os_core" in csrc)
+t("the sample floor is declared once",
+  csrc.count("MIN_IMPRESSIONS = ") == 1)
+t("its collections are the ones already declared in the core",
+  all(c in CORE.COLLECTIONS
+      for c in ("creatives", "creative_versions", "audiences", "ad_metrics")))
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)
