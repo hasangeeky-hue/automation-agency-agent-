@@ -56,6 +56,9 @@ import content_engine_vx2_shapes as shapes
 _MODULES = ("cockpit", "factory", "seo", "outreach", "media", "bi", "risk",
             "sga", "system")
 
+#: What a section is called once it stops being a table of tabs.
+_SECTION_LABELS = {"outreach": "Leads and outreach"}
+
 # board id -> (label, question, which sections it absorbs)
 BOARDS = (
     ("decide", "Decide", "What needs me?", ("cockpit",)),
@@ -129,6 +132,22 @@ def build_manifest() -> list:
     out = []
     for mod in _MODULES:
         M = importlib.import_module(f"content_engine_{mod}_boards")
+        # A MODULE THAT IS NO LONGER A BOARD MODULE CONTRIBUTES ONE ENTRY.
+        # Leads and outreach stopped being fourteen tabs of cards when it
+        # became the engagement OS; it is one destination now. Carrying it
+        # as a single honest row keeps every button that navigates to it
+        # resolving, rather than silently pointing nowhere.
+        if not getattr(M, "_TAB_BOARDS", None) and not getattr(M, "TABS", None):
+            out.append({
+                "board": sec_to_board.get(mod, "run"), "module": mod,
+                "tab": mod, "icon": "📨",
+                "label": _SECTION_LABELS.get(mod, mod.title()),
+                "shape": "COUNT", "cards": 0, "fn": None,
+                "note": ("This section is no longer a board of cards. It is "
+                         "its own environment on the dashboard, so VX2 lists "
+                         "it once and sends you there."),
+            })
+            continue
         tabs = {t[0]: (t[1], t[2]) for t in getattr(M, "TABS", ())}
         counts = getattr(M, "_TAB_COUNTS", {}) or getattr(M, "CARD_COUNTS", {})
         seen = set()

@@ -97,9 +97,23 @@ SEGMENT_OPS = ("equals", "not_equals", "contains", "not_contains",
 LEAD_STAGES = ("NEW", "ENRICHED", "QUALIFIED", "CONTACTED", "ENGAGED",
                "INTERESTED", "MEETING", "OPPORTUNITY", "CUSTOMER", "LOST")
 
+#: Who may do what. One list, imported by the tenancy module and by the
+#: route guard, so a role that grants nothing cannot be invented in a form.
+ROLES = ("owner", "admin", "member", "viewer")
+
+#: role -> what it may do. "write" covers creating and editing; "send"
+#: covers approving a queue; "admin" covers members, domains and providers.
+ROLE_GRANTS = {
+    "owner":  ("read", "write", "send", "admin"),
+    "admin":  ("read", "write", "send", "admin"),
+    "member": ("read", "write"),
+    "viewer": ("read",),
+}
+
 #: Every collection the OS persists. Repo refuses an unknown name so a typo
 #: cannot silently create a second, invisible store.
 COLLECTIONS = (
+    "workspaces", "users", "workspace_members",
     "profiles", "profile_properties", "companies", "leads",
     "lists", "list_members", "segments",
     "templates", "template_versions",
@@ -139,9 +153,18 @@ def valid_email(v) -> bool:
 
 def rate(n, d):
     """(percent, "N of D"). Every rate in this OS carries its denominator,
-    because a percentage with no population behind it is a rumour."""
-    import content_engine_email_campaigns as _EC
-    return _EC._rate(n, d)
+    because a percentage with no population behind it is a rumour.
+
+    A rate over nothing is (None, "nothing sent yet"), never 0%: zero
+    percent of zero is a statement about a population that does not exist.
+    """
+    try:
+        n, d = float(n or 0), float(d or 0)
+    except Exception:
+        return None, ""
+    if d <= 0:
+        return None, "nothing to measure yet"
+    return round(n / d * 100, 1), f"{int(n):,} of {int(d):,}"
 
 
 def rid(prefix: str, *parts) -> str:
@@ -311,7 +334,13 @@ def upsert_profile(repo: Repo, data: dict) -> dict:
     rec["email"] = em
     if not rec.get("first_name") and data.get("name"):
         rec["first_name"], rec["last_name"] = split_name(data.get("name"))
-    rec.setdefault("consent", "NEVER_SUBSCRIBED")
+    if not rec.get("consent"):
+        # A consent record can exist BEFORE the profile does: somebody fills
+        # in the signup form, the address is recorded as PENDING, and only
+        # then is a profile written. Defaulting to NEVER_SUBSCRIBED here
+        # would silently overwrite a real permission with an absence.
+        rec["consent"] = (consent_index(repo).get(rec["email"])
+                          or "NEVER_SUBSCRIBED")
     out = repo.put("profiles", rec)
     props = _D(data.get("properties"))
     for k, v in props.items():
@@ -550,7 +579,7 @@ def _touch_count(sent_to_val) -> int:
 
 
 def project(store, jobs=None, *, workspace_id=DEFAULT_WORKSPACE,
-            reply_drafts=None) -> dict:
+            reply_drafts=None, repo=None) -> dict:
     """Read the engine's live outreach jobs and write them into the OS.
 
     THIS IS THE BRIDGE. Everything the founder already has (leads, sends,
@@ -559,7 +588,7 @@ def project(store, jobs=None, *, workspace_id=DEFAULT_WORKSPACE,
     idempotent: ids are content-derived and events are keyed, so a second
     pass changes nothing.
     """
-    repo = Repo(store, workspace_id)
+    repo = repo if repo is not None else Repo(store, workspace_id)
     jobs = [j for j in _L(jobs) if isinstance(j, dict)]
     out = {"profiles": 0, "leads": 0, "campaigns": 0, "messages": 0,
            "events": 0, "suppressions": 0}

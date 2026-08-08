@@ -360,7 +360,7 @@ def resolve_audience(repo, kind, ref="", tree=None) -> dict:
         pool, label = rows, "everyone"
 
     eligible, dropped = [], {"suppressed": [], "unsubscribed": [],
-                             "never_subscribed": [], "invalid_address": []}
+                             "not_confirmed": [], "invalid_address": []}
     for p in pool:
         em = norm_email(p.get("email"))
         if not CORE.valid_email(em):
@@ -371,6 +371,14 @@ def resolve_audience(repo, kind, ref="", tree=None) -> dict:
             continue
         if p.get("consent") == "UNSUBSCRIBED":
             dropped["unsubscribed"].append(em)
+            continue
+        if p.get("consent") == "PENDING":
+            # PENDING IS NOT A SUBSCRIBER. Somebody filled in the form and
+            # never clicked the confirmation, which is a no. Treating it as
+            # a yes would make double opt-in a decoration and would be the
+            # single worst thing on this screen for a founder sending into
+            # Germany.
+            dropped["not_confirmed"].append(em)
             continue
         eligible.append(p)
     return {"label": label, "pool": len(pool), "eligible": eligible,

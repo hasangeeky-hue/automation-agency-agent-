@@ -69,6 +69,19 @@ def _post(url, payload, headers, timeout=20) -> tuple:
         return False, str(ex)
 
 
+def _get(url, headers, timeout=15) -> tuple:
+    req = urllib.request.Request(url, method="GET")
+    for k, v in headers.items():
+        req.add_header(k, v)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return True, (r.read() or b"").decode("utf-8", "replace")[:600]
+    except urllib.error.HTTPError as ex:
+        return False, f"{ex.code}: {(ex.read() or b'').decode('utf-8', 'replace')[:300]}"
+    except Exception as ex:
+        return False, str(ex)
+
+
 # ---------------------------------------------------------------------------
 # THE INTERFACE
 # ---------------------------------------------------------------------------
@@ -104,6 +117,33 @@ class EmailProvider:
         return {"ok": False, "supported": False,
                 "message": f"{self.name} cannot recall a message once it has "
                            f"left; cancel the queue instead"}
+
+    # -- proving it, rather than claiming it --------------------------------
+    def test_connection(self) -> dict:
+        """Make a REAL authenticated call and report the raw answer.
+
+        available() only says a key is present. This says the key works.
+        The difference matters: a typo in a key produces a screen that
+        looks connected and a queue that fails one row at a time."""
+        ok, why = self.available()
+        if not ok:
+            return {"ok": False, "message": why}
+        return {"ok": False,
+                "message": f"{self.name} has no cheap identity endpoint, so "
+                           f"the first queued send is the real test"}
+
+    def webhook_path(self) -> str:
+        return f"/os/webhook/{self.name}"
+
+    def register_webhook(self, url) -> dict:
+        """Subscribe this engine's endpoint with the provider.
+
+        Where a provider has no subscription API, this says so and gives
+        the URL to paste, which is honest work rather than a button that
+        pretends."""
+        return {"ok": False, "url": url,
+                "message": f"{self.name} has no subscription API; paste this "
+                           f"URL into its dashboard: {url}"}
 
 
 class _KeyedProvider(EmailProvider):
@@ -167,6 +207,44 @@ class SMTPProvider(EmailProvider):
     def handle_webhook(self, payload) -> list:
         return []
 
+    def test_connection(self) -> dict:
+        """Open the mailbox, authenticate, hang up. Sends nothing.
+
+        This is the one provider really wired on this box, so this is a
+        real answer rather than a promise."""
+        ok, why = self.available()
+        if not ok:
+            return {"ok": False, "message": why}
+        import smtplib
+        import ssl
+        host = _env("SMTP_HOST") or _env("EMAIL_SMTP_HOST")
+        port = int(_env("SMTP_PORT", "587") or 587)
+        user = _env("SMTP_USER") or _env("EMAIL_SMTP_USER")
+        pw = _env("SMTP_PASS") or _env("EMAIL_SMTP_PASS")
+        try:
+            if port == 465:
+                srv = smtplib.SMTP_SSL(host, port, timeout=12,
+                                       context=ssl.create_default_context())
+            else:
+                srv = smtplib.SMTP(host, port, timeout=12)
+                srv.ehlo()
+                try:
+                    srv.starttls(context=ssl.create_default_context())
+                    srv.ehlo()
+                except Exception:
+                    pass
+            if user and pw:
+                srv.login(user, pw)
+            srv.quit()
+            return {"ok": True,
+                    "message": f"authenticated against {host}:{port} as "
+                               f"{user or 'an anonymous sender'}; nothing was "
+                               f"sent"}
+        except Exception as ex:
+            return {"ok": False,
+                    "message": f"{host}:{port} refused: "
+                               f"{type(ex).__name__}: {str(ex)[:200]}"}
+
 
 # ---------------------------------------------------------------------------
 # BUILT TO THE SOCKET
@@ -193,6 +271,18 @@ class SESProvider(_KeyedProvider):
         return {"ok": good, "provider_message_id":
                 _D(_safe_json(resp)).get("MessageId", ""),
                 "error": "" if good else resp}
+
+    def test_connection(self) -> dict:
+        ok, why = self.available()
+        if not ok:
+            return {"ok": False, "message": why}
+        region = _env("AWS_REGION", "eu-central-1")
+        good, resp = _get(
+            f"https://email.{region}.amazonaws.com/v2/email/identities",
+            {"Authorization": f"AWS4-HMAC-SHA256 {_env(self.key_env)}"})
+        return {"ok": good,
+                "message": ("SES answered: " + resp[:200]) if good
+                           else "SES refused: " + resp}
 
     def handle_webhook(self, payload) -> list:
         return _map_events(payload, {
@@ -222,6 +312,30 @@ class SendGridProvider(_KeyedProvider):
             {"Authorization": f"Bearer {_env(self.key_env)}"})
         return {"ok": good, "provider_message_id": "",
                 "error": "" if good else resp}
+
+    def test_connection(self) -> dict:
+        ok, why = self.available()
+        if not ok:
+            return {"ok": False, "message": why}
+        good, resp = _get("https://api.sendgrid.com/v3/scopes",
+                          {"Authorization": f"Bearer {_env(self.key_env)}"})
+        return {"ok": good,
+                "message": ("SendGrid accepted the key" if good
+                            else "SendGrid refused: " + resp)}
+
+    def register_webhook(self, url) -> dict:
+        ok, why = self.available()
+        if not ok:
+            return {"ok": False, "url": url, "message": why}
+        good, resp = _post(
+            "https://api.sendgrid.com/v3/user/webhooks/event/settings",
+            {"enabled": True, "url": url, "processed": True, "delivered": True,
+             "open": True, "click": True, "bounce": True, "spam_report": True,
+             "unsubscribe": True},
+            {"Authorization": f"Bearer {_env(self.key_env)}"})
+        return {"ok": good, "url": url,
+                "message": (f"SendGrid will now post events to {url}" if good
+                            else "SendGrid refused: " + resp)}
 
     def handle_webhook(self, payload) -> list:
         return _map_events(payload, {
@@ -253,6 +367,38 @@ class MailgunProvider(_KeyedProvider):
                 "provider_message_id": _D(_safe_json(resp)).get("id", ""),
                 "error": "" if good else resp}
 
+    def _auth(self) -> str:
+        import base64
+        return base64.b64encode(f"api:{_env(self.key_env)}".encode()).decode()
+
+    def test_connection(self) -> dict:
+        ok, why = self.available()
+        if not ok:
+            return {"ok": False, "message": why}
+        dom = _env("MAILGUN_DOMAIN", "")
+        good, resp = _get(f"https://api.mailgun.net/v3/domains/{dom}",
+                          {"Authorization": f"Basic {self._auth()}"})
+        return {"ok": good,
+                "message": (f"Mailgun knows {dom}" if good
+                            else "Mailgun refused: " + resp)}
+
+    def register_webhook(self, url) -> dict:
+        ok, why = self.available()
+        if not ok:
+            return {"ok": False, "url": url, "message": why}
+        dom = _env("MAILGUN_DOMAIN", "")
+        wins, fails = [], []
+        for kind in ("delivered", "opened", "clicked", "permanent_fail",
+                     "complained", "unsubscribed"):
+            good, _resp = _post(
+                f"https://api.mailgun.net/v3/domains/{dom}/webhooks",
+                {"id": kind, "url": url},
+                {"Authorization": f"Basic {self._auth()}"})
+            (wins if good else fails).append(kind)
+        return {"ok": bool(wins), "url": url,
+                "message": (f"{len(wins)} Mailgun event(s) now post to {url}"
+                            + (f"; {len(fails)} refused" if fails else ""))}
+
     def handle_webhook(self, payload) -> list:
         return _map_events(payload, {
             "accepted": "EMAIL_SENT", "delivered": "EMAIL_DELIVERED",
@@ -281,6 +427,17 @@ class PostmarkProvider(_KeyedProvider):
         return {"ok": good,
                 "provider_message_id": _D(_safe_json(resp)).get("MessageID", ""),
                 "error": "" if good else resp}
+
+    def test_connection(self) -> dict:
+        ok, why = self.available()
+        if not ok:
+            return {"ok": False, "message": why}
+        good, resp = _get("https://api.postmarkapp.com/server",
+                          {"X-Postmark-Server-Token": _env(self.key_env),
+                           "Accept": "application/json"})
+        return {"ok": good,
+                "message": ("Postmark accepted the token" if good
+                            else "Postmark refused: " + resp)}
 
     def handle_webhook(self, payload) -> list:
         return _map_events(payload, {
@@ -331,6 +488,16 @@ class KlaviyoProvider(_KeyedProvider):
                            {"data": {"type": "profile", "attributes": attrs}},
                            self._headers())
         return {"ok": good, "message": "profile pushed" if good else resp}
+
+    def test_connection(self) -> dict:
+        ok, why = self.available()
+        if not ok:
+            return {"ok": False, "message": why}
+        good, resp = _get("https://a.klaviyo.com/api/accounts/", self._headers())
+        return {"ok": good,
+                "message": ("Klaviyo accepted the key on revision "
+                            + _env("KLAVIYO_API_REVISION", "2026-07-15")
+                            if good else "Klaviyo refused: " + resp)}
 
     def handle_webhook(self, payload) -> list:
         return _map_events(payload, {
@@ -400,8 +567,14 @@ def provider_rows() -> list:
     out = []
     for name, p in PROVIDERS.items():
         ok, why = p.available()
+        base = (_env("PUBLIC_BASE_URL") or _env("ENGINE_PUBLIC_URL")
+                or "").rstrip("/")
         out.append({"name": name, "live": ok, "why": why, "docs": p.docs,
                     "key_env": p.key_env,
+                    "webhook": (base + p.webhook_path()) if base
+                               else "set PUBLIC_BASE_URL to get a webhook url",
+                    "can_register": type(p).register_webhook
+                                    is not EmailProvider.register_webhook,
                     "selected": name == str(_env("EMAIL_PROVIDER", "smtp")).lower()})
     return sorted(out, key=lambda r: (not r["live"], r["name"]))
 
@@ -506,3 +679,27 @@ def sending_allowed(repo) -> tuple:
         return True, "no sender domain recorded yet; SMTP is sending directly"
     return True, (f"{rows[0]['domain']} is {rows[0]['state'].lower()}; press "
                   f"Check on Settings, Domains to read its SPF, DKIM and DMARC")
+
+
+def test_provider(name) -> dict:
+    """Prove a provider, one button. Never sends an email."""
+    p = PROVIDERS.get(str(name or "").lower())
+    if not p:
+        return {"ok": False, "message": f"there is no provider called {name!r}"}
+    out = p.test_connection()
+    out["provider"] = p.name
+    return out
+
+
+def register_provider_webhook(name) -> dict:
+    """Subscribe this engine's endpoint with the provider, where it can be
+    done over the API, and hand over the URL to paste where it cannot."""
+    p = PROVIDERS.get(str(name or "").lower())
+    if not p:
+        return {"ok": False, "message": f"there is no provider called {name!r}"}
+    base = (_env("PUBLIC_BASE_URL") or _env("ENGINE_PUBLIC_URL") or "").rstrip("/")
+    if not base:
+        return {"ok": False,
+                "message": "set PUBLIC_BASE_URL first; a webhook needs an "
+                           "address this engine can actually be reached at"}
+    return p.register_webhook(base + p.webhook_path())

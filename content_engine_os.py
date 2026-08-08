@@ -27,7 +27,9 @@ import content_engine_os_audience as AUD
 import content_engine_os_content as CONTENT
 import content_engine_os_core as CORE
 import content_engine_os_flows as FLOWS
+import content_engine_os_optin as OPTIN
 import content_engine_os_providers as PROV
+import content_engine_os_schedule as SCHED
 import content_engine_os_screens as SCR
 import content_engine_os_send as SEND
 from content_engine_os_core import _D, _L, Repo
@@ -45,15 +47,22 @@ FIELD_GAPS = {
 }
 
 
-def repo(store, workspace_id=CORE.DEFAULT_WORKSPACE) -> Repo:
-    return Repo(store, workspace_id)
+def repo(store, workspace_id=CORE.DEFAULT_WORKSPACE):
+    """THE factory. Returns the table-backed repository when Postgres is
+    reachable and the settings-backed one when it is not, with the same six
+    methods either way. Every OS caller goes through here, so switching
+    backends is one function rather than forty call sites."""
+    import content_engine_os_store as ST
+    return ST.repo_for(store, workspace_id)
 
 
 def sync(store, jobs=None, reply_drafts=None,
          workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
     """Project the engine into the OS, then rebuild the daily rollup."""
+    import content_engine_os_tenancy as TEN
+    TEN.ensure_home(store)
     out = CORE.project(store, jobs, workspace_id=workspace_id,
-                       reply_drafts=reply_drafts)
+                       reply_drafts=reply_drafts, repo=repo(store, workspace_id))
     r = repo(store, workspace_id)
     FLOWS.ensure_default(r)
     roll = AN.rollup(r)
@@ -66,7 +75,9 @@ def sync(store, jobs=None, reply_drafts=None,
 
 def build_ctx(store, *, jobs=None, reply_drafts=None,
               workspace_id=CORE.DEFAULT_WORKSPACE, do_sync=True) -> dict:
-    """Everything the twenty two screens read. One assembly, one pass."""
+    """Everything the twenty seven screens read. One assembly, one pass."""
+    import content_engine_os_store as ST
+    import content_engine_os_tenancy as TEN
     r = repo(store, workspace_id)
     if do_sync:
         try:
@@ -117,7 +128,27 @@ def build_ctx(store, *, jobs=None, reply_drafts=None,
         "providers": safe(lambda: PROV.provider_rows(), []),
         "domains": safe(lambda: PROV.domain_rows(r), []),
         "sender_why": safe(lambda: PROV.sending_allowed(r)[1], ""),
+        # -- the second pass: rules, people, storage, replies -------------
+        "replies": _L(reply_drafts),
+        "schedule": safe(lambda: SCHED.describe(store), {}),
+        "workspaces": safe(lambda: TEN.workspaces_for(store), []),
+        "members": safe(lambda: TEN.members(store, workspace_id), []),
+        "backend": safe(lambda: ST.backend(), {}),
+        "table_counts": safe(lambda: ST.counts(workspace_id), {}),
+        "connectors": safe(_connector_state, {}),
     }
+
+
+def _connector_state() -> dict:
+    """Which outside services are reachable, asked rather than remembered."""
+    try:
+        import content_engine_connectors as C
+        return {"serper": bool(C._env("SERPER_API_KEY")),
+                "prospeo": bool(C._env("PROSPEO_API_KEY")),
+                "public_base": bool(C._env("PUBLIC_BASE_URL")
+                                    or C._env("ENGINE_PUBLIC_URL"))}
+    except Exception:
+        return {}
 
 
 def section(store, *, jobs=None, reply_drafts=None, live=None,
@@ -133,17 +164,56 @@ def section(store, *, jobs=None, reply_drafts=None, live=None,
 # ---------------------------------------------------------------------------
 def campaign_html(store, cid, *, jobs=None, email="", touch=1) -> str:
     r = repo(store)
+    variants = AN.variant_rows(r, cid)
     ctx = {"campaigns": AN.campaign_rows(r),
            "messages": AN.message_rows(r, cid),
            "detail_totals": AN.totals(r, cid),
            "detail_links": AN.link_rows(r, cid),
-           "detail_curve": AN.open_curve(r, cid)}
+           "detail_curve": AN.open_curve(r, cid),
+           "detail_variants": variants,
+           "detail_verdict": AN.ab_verdict(variants)}
     who = str(email or "").strip().lower()
     if not who and ctx["messages"]:
         who = ctx["messages"][0].get("email")
         touch = ctx["messages"][0].get("touch") or 1
     ctx["detail_preview"] = preview(store, cid, who, touch, jobs=jobs)
+    ctx["detail_checks"] = preflight(ctx["detail_preview"])
     return SCR.campaign_detail(ctx, cid)
+
+
+def preflight(prev) -> dict:
+    """The link audit and the spam signals, for the email actually resolved.
+
+    These checks existed before and had nothing real to read: they were
+    pointed at a preview that never resolved. They now run on the exact
+    bytes the transport is handed."""
+    prev = _D(prev)
+    if not prev.get("ok"):
+        return {}
+    try:
+        import content_engine_email_preview as EP
+        import content_engine_connectors as C
+        base = (C._env("PUBLIC_BASE_URL") or C._env("ENGINE_PUBLIC_URL") or "")
+        sig = EP.spam_signals(prev.get("subject"), prev.get("html"))
+        links = EP.links(prev.get("html"), base)
+        empties = EP.resolve(prev.get("subject", "") + " "
+                             + str(prev.get("body", "")), prev.get("lead"))[1]
+        return {"signals": sig, "links": links,
+                "failing": [x["name"] for x in sig if not x["ok"]],
+                "blocking": bool(empties),
+                "block_reason": ("This would send with "
+                                 + ", ".join("{{" + t + "}}" for t in empties[:4])
+                                 + " empty. Fill the field on those leads, or "
+                                   "remove the token." if empties else "")}
+    except Exception as ex:
+        log.warning("preflight unavailable: %s", ex)
+        return {}
+
+
+def template_html(store, tid) -> str:
+    """One template, in the drag editor."""
+    r = repo(store)
+    return SCR.ED.block_editor(r.one("templates", tid) or {"id": tid})
 
 
 def preview(store, cid, email, touch=1, *, jobs=None) -> dict:
@@ -237,3 +307,56 @@ def save_edit(store, cid, email, touch, subject, body) -> dict:
         out["message"] = (f"saved. {email} now receives exactly this at step "
                           f"{int(touch or 1)}, and so does the preview.")
     return out
+
+
+# ---------------------------------------------------------------------------
+# THE REST OF THE ACTIONS
+# ---------------------------------------------------------------------------
+def save_rules(store, from_hour, to_hour, weekdays_only, hourly) -> dict:
+    a = SCHED.set_window(store, from_hour, to_hour, weekdays_only)
+    if not a.get("ok"):
+        return a
+    b = SCHED.set_hourly_cap(store, hourly)
+    return {"ok": bool(b.get("ok")),
+            "message": a["message"] + ", and " + str(b.get("message"))}
+
+
+def render_blocks(blocks) -> dict:
+    """The preview inside the email builder, drawn by the SAME renderer the
+    sender uses. A preview built by different code is a decoration."""
+    return {"ok": True, "html": CONTENT.render_blocks(blocks)}
+
+
+def migrate(store, workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    import content_engine_os_store as ST
+    return ST.migrate(store, workspace_id)
+
+
+def drain(store, jobs=None) -> dict:
+    """The worker's entry point into the OS queue."""
+    return SEND.drain(store, jobs=jobs)
+
+
+def public(store, action, params=None, *, ip="") -> dict:
+    """The opt-in surface, kept behind one function so the HTTP layer never
+    reaches into the consent module directly."""
+    p = _D(params)
+    if action == "signup":
+        return OPTIN.signup(store, p.get("email"), source=p.get("source", ""),
+                            ip=ip, name=p.get("name", ""),
+                            company=p.get("company", ""))
+    if action == "confirm":
+        return OPTIN.confirm(store, p.get("email"), p.get("t"), ip=ip)
+    if action == "unsubscribe":
+        return OPTIN.unsubscribe(store, p.get("email"), p.get("t"))
+    return {"ok": False, "message": f"no public action called {action!r}"}
+
+
+def test_provider(name) -> dict:
+    """Prove a provider's key. Routed through the facade so the HTTP layer
+    never imports the provider module, which a gate enforces."""
+    return PROV.test_provider(name)
+
+
+def register_webhook(name) -> dict:
+    return PROV.register_provider_webhook(name)

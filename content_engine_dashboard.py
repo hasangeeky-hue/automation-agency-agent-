@@ -4442,11 +4442,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     try:
         import content_engine_outreach_boards as _OB
         _octx = dict(outreach_ctx or {})
-        _octx["live"] = {"outbox": _outbox(jobs),
-                         "replies": _replies_inbox(reply_drafts),
-                         "leads_table": _leads_table(jobs),
-                         "maps_form": maps_form,
-                         "outbox_pointer": _outbox_pointer(jobs)}
+        # THE OLD CARDS ARE GONE FROM THIS SECTION.
+        # The outbox, the replies inbox, the leads table and the Maps form
+        # used to be pasted in here already rendered. Every one of them now
+        # has a native screen in the OS (Campaigns, Inbox, Leads, Sources)
+        # calling the SAME endpoints, so nothing about sending, answering or
+        # sourcing changed - only where the button lives. Passing them again
+        # would put two of each control on one page, which is the exact
+        # stacking the founder scored zero on.
+        _octx["live"] = {}
         _outreach_all = _OB.outreach_section(_octx)
     except Exception as _e6:
         log.exception("Leads & Outreach boards failed to render - showing the "

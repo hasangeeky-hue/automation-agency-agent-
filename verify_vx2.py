@@ -44,22 +44,42 @@ import content_engine_dashboard as D
 # ---------------------------------------------------------------------------
 # 1-4  THE MANIFEST IS THE REAL SYSTEM, NOT A DESCRIPTION OF IT
 # ---------------------------------------------------------------------------
-@gate(1, "the manifest holds exactly 127 subsections")
+# THE NUMBER CHANGED, AND HERE IS WHY.
+# Leads and outreach used to be fourteen tabs of cards inside VX2's
+# manifest. It became the engagement OS, which is one environment on the
+# dashboard rather than a table of tabs, so it contributes ONE destination
+# instead of fourteen: 127 - 14 + 1 = 114. The gates below were not
+# loosened to make a failure go away; they were re-pointed at what the
+# manifest now honestly describes, and gate 2 was split so the section
+# that is no longer a board is checked as a section.
+SUBSECTIONS = 114
+SECTIONS_NOT_BOARDS = {"outreach"}
+
+
+@gate(1, f"the manifest holds exactly {SUBSECTIONS} subsections")
 def _g1():
-    assert len(V.MANIFEST) == 127, f"manifest has {len(V.MANIFEST)}"
-    return "127"
+    assert len(V.MANIFEST) == SUBSECTIONS, f"manifest has {len(V.MANIFEST)}"
+    return str(SUBSECTIONS)
 
 
 @gate(2, "every subsection is read from a module's own TABS, not typed by hand")
 def _g2():
     import importlib
     for m in V.MANIFEST:
+        if m["module"] in SECTIONS_NOT_BOARDS:
+            M = importlib.import_module(f"content_engine_{m['module']}_boards")
+            assert not getattr(M, "TABS", ()), (
+                f"{m['module']} declares tabs again; it is meant to be one "
+                f"section now")
+            assert m["tab"] == m["module"], "a section stands for itself"
+            continue
         M = importlib.import_module(f"content_engine_{m['module']}_boards")
         tabs = {t[0] for t in getattr(M, "TABS", ())}
         assert m["tab"] in tabs, (
             f"{m['tab']} is in the manifest but not in "
             f"content_engine_{m['module']}_boards.TABS")
-    return f"all 127 tabs exist in their module"
+    return (f"{SUBSECTIONS - len(SECTIONS_NOT_BOARDS)} tabs read from their "
+            f"module, {len(SECTIONS_NOT_BOARDS)} section carried whole")
 
 
 @gate(3, "no subsection is claimed twice, and none is lost")
@@ -72,8 +92,10 @@ def _g3():
     for mod in V._MODULES:
         M = importlib.import_module(f"content_engine_{mod}_boards")
         declared += len(getattr(M, "TABS", ()))
-    assert declared == 127, f"the nine modules declare {declared} tabs, not 127"
-    return f"{declared} declared, 127 carried, 0 duplicated"
+    want = SUBSECTIONS - len(SECTIONS_NOT_BOARDS)
+    assert declared == want, (
+        f"the nine modules declare {declared} tabs, not {want}")
+    return f"{declared} declared, {SUBSECTIONS} carried, 0 duplicated"
 
 
 @gate(4, "a subsection with no renderer says why, in words")
@@ -261,7 +283,7 @@ def _g14():
     return f"{kb:.0f} KB, all four boards (the old dashboard shipped 5,700 KB)"
 
 
-@gate(14.2, "LEVEL 3: every one of the 127 readouts renders by its URL")
+@gate(14.2, "LEVEL 3: every readout renders by its URL")
 def _g142():
     ok, empty_notes = 0, 0
     for m in V.MANIFEST:
@@ -273,9 +295,10 @@ def _g142():
         ok += 1
         if m["fn"] is None:
             empty_notes += 1
-            assert "own panel" in html, f"{m['tab']} lost its honest note"
-    assert ok == 127
-    return f"127 of 127, {empty_notes} carrying an honest note"
+            assert ("own panel" in html or "own environment" in html), (
+                f"{m['tab']} lost its honest note")
+    assert ok == SUBSECTIONS
+    return f"{ok} of {SUBSECTIONS}, {empty_notes} carrying an honest note"
 
 
 @gate(14.4, "LEVEL 4: every line carries its full record")

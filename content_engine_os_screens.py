@@ -35,7 +35,9 @@ import re
 import content_engine_os_analytics as AN
 import content_engine_os_audience as AUD
 import content_engine_os_core as CORE
+import content_engine_os_editors as ED
 import content_engine_os_flows as FLOWS
+import content_engine_os_schedule as SCHED
 from content_engine_os_core import _D, _L
 
 #: The rail. (group, [(id, label)]). One definition; the panels are built
@@ -47,15 +49,17 @@ NAV = [
     ("Audience", [("audprofiles", "Profiles"), ("audlists", "Lists"),
                   ("audsegments", "Segments")]),
     ("Engagement", [("engcampaigns", "Campaigns"), ("engflows", "Flows"),
-                    ("engtemplates", "Templates")]),
-    ("Sending", [("sendqueue", "Queue"), ("senddeliver", "Deliverability")]),
+                    ("engtemplates", "Templates"), ("enginbox", "Inbox")]),
+    ("Sending", [("sendqueue", "Queue"), ("senddeliver", "Deliverability"),
+                 ("sendrules", "Send rules")]),
     ("Automation", [("autoagents", "Agents"), ("autoruns", "Agent runs")]),
     ("Analytics", [("ancampaign", "Campaign analytics"),
-                   ("anlead", "Lead analytics"),
+                   ("anlead", "Lead analytics"), ("anab", "A/B tests"),
                    ("anattrib", "Attribution")]),
     ("Settings", [("setemail", "Email"), ("setdomains", "Domains"),
                   ("setintegrations", "Integrations"),
-                  ("setcompliance", "Compliance")]),
+                  ("setcompliance", "Compliance"), ("setteam", "Team"),
+                  ("setstorage", "Storage")]),
 ]
 
 STATE_TONE = {"DRAFT": "mut", "REVIEW": "warn", "SCHEDULED": "warn",
@@ -317,11 +321,37 @@ def acq_companies(ctx) -> str:
 def acq_sources(ctx) -> str:
     acq = _D(ctx.get("acquisition"))
     src = _L(acq.get("by_source"))
-    return panel("Sources", "Where every person in this workspace came from.",
-                 donut([(k, v) for k, v in src])
-                 + table(["Source", "People"],
-                         [[e(k), num(v)] for k, v in src],
-                         "Nothing has been sourced yet."))
+    serper = _D(ctx.get("connectors")).get("serper")
+    finder = (
+        "<div class='os-form'>"
+        "<input id='os-mv' class='os-in' placeholder='Business type, for "
+        "example tax consultants, dentists, law firms'>"
+        "<input id='os-mc' class='os-in' placeholder='City, for example "
+        "Zurich, Munich, Manchester'>"
+        "<select id='os-mn' class='os-in'>"
+        "<option value='10'>10 leads</option>"
+        "<option value='20' selected>20 leads</option>"
+        "<option value='30'>30 leads</option>"
+        "<option value='40'>40 leads</option></select>"
+        "<button class='cta' onclick='osFindLeads()'"
+        + ("" if serper else " disabled") + ">Find leads</button></div>"
+        + ("" if serper else
+           "<p class='os-warn'>Serper is not connected, so nothing can be "
+           "sourced. Save SERPER_API_KEY on the System Map first.</p>")
+        + "<p class='os-note'>This reads real local businesses (name, phone, "
+          "website, rating), finds a verified address for each, and writes "
+          "them in as profiles and leads. Nothing is emailed by this button: "
+          "they enter the normal path of qualify, write, preview, your "
+          "approval, then a capped send.</p>")
+    return panel("Sources",
+                 "Where every person in this workspace came from, and where "
+                 "to find more.",
+                 section("Find local businesses", finder)
+                 + section("Where they came from",
+                           donut([(k, v) for k, v in src])
+                           + table(["Source", "People"],
+                                   [[e(k), num(v)] for k, v in src],
+                                   "Nothing has been sourced yet.")))
 
 
 def acq_enrich(ctx) -> str:
@@ -476,7 +506,7 @@ def eng_flows(ctx) -> str:
                      ("Completed", f.get("completed"), ""),
                      ("Goal met", f.get("goal_met"), ""),
                      ("Steps", f.get("nodes"), f"{f.get('edges')} arrows")])
-            + graph_svg(_D(f.get("graph")))
+            + ED.flow_canvas(f, _L(ctx.get("campaigns")), _L(ctx.get("lists")))
             + "<div class='os-brow'>"
             + (f"<button class='cta' onclick=\"osAct('/os/flow/pause',"
                f"{{id:'{e(f.get('id'))}'}})\">Pause</button>"
@@ -547,13 +577,16 @@ def eng_templates(ctx) -> str:
         "HTML that survives Outlook. A published version is never "
         "overwritten, so what you sent stays readable after you edit it.",
         table(["Template", "Subject", "Version", "Versions kept", "Blocks",
-               "Updated"],
+               "Updated", ""],
               [[f"<b>{e(t.get('name'))}</b>", e(t.get("subject")),
                 num(t.get("version")), num(t.get("versions")),
-                num(t.get("blocks")), e(str(t.get("updated_at"))[:10])]
+                num(t.get("blocks")), e(str(t.get("updated_at"))[:10]),
+                f"<button class='os-mini' onclick=\"osTemplate"
+                f"('{e(t.get('id'))}')\">Edit</button>"]
                for t in rows],
               "No templates yet. Your live campaigns carry their copy on the "
-              "campaign itself, which is why they still preview correctly."))
+              "campaign itself, which is why they still preview correctly.")
+        + section("Build one", ED.block_editor(_D(ctx.get("edit_template")))))
 
 
 # ---------------------------------------------------------------------------
@@ -739,12 +772,26 @@ def set_email(ctx) -> str:
         "ESP, so swapping one for another is a setting rather than a "
         "rewrite. A provider with no key says so in words; add the key and "
         "it turns on with no rebuild.",
-        table(["Provider", "State", "What it needs", "What it is"],
+        table(["Provider", "State", "What it needs", "Prove it",
+               "Webhook"],
               [[f"<b>{e(p.get('name'))}</b>"
                 + (" " + pill("in use", "ok") if p.get("selected") else ""),
-                pill("connected", "ok") if p.get("live") else pill("needs a key", "warn"),
+                pill("connected", "ok") if p.get("live")
+                else pill("needs a key", "warn"),
                 f"<code>{e(p.get('key_env'))}</code>",
-                e(p.get("why"))] for p in rows], "")
+                f"<button class='os-mini' onclick=\"osTestProvider"
+                f"('{e(p.get('name'))}')\">Test</button>",
+                (f"<code class='os-wh'>{e(p.get('webhook'))}</code>"
+                 + (f"<br><button class='os-mini' onclick=\"osHook"
+                    f"('{e(p.get('name'))}')\">Register</button>"
+                    if p.get("can_register") else
+                    "<br><span class='os-d'>paste this into its "
+                    "dashboard</span>"))] for p in rows], "")
+        + "<p class='os-note'>A key being present and a key working are "
+          "different facts. Test makes a real authenticated call and prints "
+          "what came back, because a screen showing a connected badge for a "
+          "key with a typo in it is worse than an empty one. Nothing is "
+          "sent by that button.</p>"
         + section("The rule that does not bend",
                   "<p class='os-note'>No agent and no request handler may "
                   "call a provider. Everything goes through the queue, and "
@@ -834,6 +881,183 @@ def set_compliance(ctx) -> str:
 
 
 # ---------------------------------------------------------------------------
+# INBOX, SEND RULES, A/B, TEAM, STORAGE
+# ---------------------------------------------------------------------------
+def eng_inbox(ctx) -> str:
+    """Replies, with the agent's draft answer beside each one.
+
+    This replaces the old card block that used to be pasted onto this
+    section. Same endpoints, so nothing about answering changed; it simply
+    lives inside the OS now instead of beside it."""
+    drafts = _L(ctx.get("replies"))
+    cards = []
+    for d in drafts[:60]:
+        d = _D(d)
+        did = e(d.get("id"))
+        cards.append(
+            "<div class='os-reply'>"
+            f"<div class='os-rhead'><b>{e(d.get('from') or d.get('email'))}</b>"
+            f"{state_pill(d.get('status') or 'draft')}"
+            f"<span class='os-d'>{e(str(d.get('at') or '')[:16])}</span></div>"
+            f"<p class='os-quote'>{e(str(d.get('incoming') or d.get('text') or '')[:600])}</p>"
+            f"<input class='os-in' id='os-rs-{did}' "
+            f"value='{e(d.get('subject'))}' placeholder='Subject'>"
+            f"<textarea class='os-ta' rows='6' id='os-rb-{did}'>"
+            f"{e(d.get('body') or d.get('draft'))}</textarea>"
+            "<div class='os-brow'>"
+            f"<button class='os-mini' onclick=\"osReplySave('{did}')\">"
+            "Save the edit</button>"
+            f"<button class='cta' onclick=\"osReplySend('{did}')\">"
+            "Send this reply</button>"
+            f"<button class='os-mini' onclick=\"osReplyDrop('{did}')\">"
+            "Dismiss</button></div></div>")
+    return panel(
+        "Inbox",
+        "Every reply, with an answer the agent drafted. Nothing here is sent "
+        "until you press send, and what you edit is what leaves.",
+        "<div class='os-brow'>"
+        "<button class='cta' onclick=\"osAct('/replies/refresh')\">"
+        "Fetch replies</button>"
+        f"<span class='os-note'>{len(drafts)} waiting</span></div>"
+        + ("".join(cards) or "<p class='os-empty'>No replies waiting. Press "
+                             "Fetch replies to read the mailbox.</p>"))
+
+
+def send_rules(ctx) -> str:
+    r = _D(ctx.get("schedule"))
+    w = _D(r.get("window"))
+    return panel(
+        "Send rules",
+        "When an email is allowed to leave, and what happens when one fails. "
+        "Your five markets span nine hours: a batch released at 09:00 in "
+        "Munich reaches Vancouver at midnight, and a cold email that arrives "
+        "at midnight is read at 08:00 under forty others.",
+        tiles([("Window opens", w.get("from_hour"), "recipient local time", ":00"),
+               ("Window closes", w.get("to_hour"), "recipient local time", ":00"),
+               ("Weekdays only", None, "yes" if w.get("weekdays_only") else "no"),
+               ("An hour's cap", r.get("hourly_cap"), r.get("why")),
+               ("Room left this hour", r.get("room"), ""),
+               ("Retry ladder", None, r.get("ladder")),
+               ("Attempts before it stops", r.get("max_attempts"), "")])
+        + section("Change the window",
+                  "<div class='os-form'>"
+                  "<input id='os-wf' class='os-in' type='number' min='0' "
+                  f"max='23' value='{e(w.get('from_hour'))}' placeholder='from'>"
+                  "<input id='os-wt' class='os-in' type='number' min='1' "
+                  f"max='24' value='{e(w.get('to_hour'))}' placeholder='to'>"
+                  "<select id='os-ww' class='os-in'>"
+                  "<option value='1'"
+                  + (" selected" if w.get("weekdays_only") else "")
+                  + ">weekdays only</option><option value='0'"
+                  + ("" if w.get("weekdays_only") else " selected")
+                  + ">any day</option></select>"
+                  "<input id='os-wh' class='os-in' type='number' min='1' "
+                  f"max='1000' value='{e(r.get('hourly_cap'))}' "
+                  "placeholder='per hour'>"
+                  "<button class='cta' onclick='osSaveRules()'>Save</button>"
+                  "</div>")
+        + section("Timezones this engine knows",
+                  "<p class='os-note'>" + e(", ".join(_L(r.get("zones"))))
+                  + ". A profile's own timezone wins; the country is the "
+                    "fallback; anything else is treated as UTC and labelled "
+                    "approximate on the queue row rather than presented as a "
+                    "fact.</p>"))
+
+
+def an_ab(ctx) -> str:
+    rows = [c for c in _L(ctx.get("campaigns")) if (c.get("variants") or 0) > 1]
+    return panel(
+        "A/B tests",
+        "A subject line test, per campaign. Assignment is deterministic: the "
+        "same person always lands on the same arm, so re-queueing or "
+        "restarting the worker cannot move somebody mid-test and quietly "
+        "invalidate the result.",
+        table(["Campaign", "Arms", "Recipients", "Sent", "Opens", ""],
+              [[f"<b>{e(c.get('subject') or c.get('name'))}</b>",
+                num(c.get("variants")), num(c.get("recipients")),
+                num(c.get("sent")), num(c.get("opens")),
+                f"<button class='os-mini' onclick=\"osCamp"
+                f"('{e(c.get('id'))}')\">Open</button>"] for c in rows],
+              "No campaign is running more than one subject line yet. Add a "
+              "second variant on a campaign and both arms appear here.")
+        + section("Why this screen refuses to crown a winner early",
+                  "<p class='os-note'>Below roughly a hundred sends an arm, a "
+                  "five point gap is noise. Declaring a winner off forty "
+                  "emails is the most common way an A/B test makes a campaign "
+                  "worse, so the verdict says \"too early\" in those words "
+                  "until the arms are big enough to mean something.</p>"))
+
+
+def set_team(ctx) -> str:
+    spaces = _L(ctx.get("workspaces"))
+    people = _L(ctx.get("members"))
+    return panel(
+        "Team",
+        "Workspaces keep data apart. Nothing crosses a boundary: a profile, "
+        "a campaign and an event all carry a workspace, and the backend "
+        "filters on it rather than trusting the page.",
+        section("Workspaces",
+                table(["Workspace", "Your role", "People", "Created", ""],
+                      [[f"<b>{e(w.get('name'))}</b>", state_pill(w.get("role")),
+                        num(w.get("members")), e(str(w.get("created_at"))[:10]),
+                        f"<button class='os-mini' onclick=\"osSwitchWs"
+                        f"('{e(w.get('id'))}')\">Switch</button>"]
+                       for w in spaces], "")
+                + "<div class='os-form'>"
+                  "<input id='os-wsn' class='os-in' placeholder='New "
+                  "workspace name'>"
+                  "<button class='cta' onclick='osNewWs()'>Create</button>"
+                  "</div>")
+        + section("People in this workspace",
+                  table(["Email", "Role", "What that allows", "Invited", ""],
+                        [[e(m.get("email")), state_pill(m.get("role")),
+                          e(m.get("grants")), e(m.get("invited_at")),
+                          f"<button class='os-mini' onclick=\"osDropMember"
+                          f"('{e(m.get('email'))}')\">Remove</button>"]
+                         for m in people], "")
+                  + "<div class='os-form'>"
+                    "<input id='os-mem' class='os-in' placeholder='email'>"
+                    "<select id='os-mrole' class='os-in'>"
+                    + "".join(f"<option>{e(r)}</option>" for r in CORE.ROLES)
+                    + "</select><button class='cta' onclick='osAddMember()'>"
+                      "Add</button></div>")
+        + section("What this is not, plainly",
+                  "<p class='os-note'>The dashboard session is still the only "
+                  "way into this engine, and whoever holds it is the owner. "
+                  "The people listed above scope data and record who did "
+                  "what through the API; they do not yet hold their own "
+                  "dashboard password. That is a real limit and it is said "
+                  "here rather than implied by a screen that looks like more "
+                  "than it is.</p>"))
+
+
+def set_storage(ctx) -> str:
+    b = _D(ctx.get("backend"))
+    counts = _D(ctx.get("table_counts"))
+    live = b.get("mode") == "postgres"
+    return panel(
+        "Storage",
+        "Where this OS keeps its records, and how many of them there are.",
+        tiles([("Backend", None, b.get("mode")),
+               ("Tables", b.get("tables") or None, ""),
+               ("Records", sum(counts.values()) or None, "in tables")])
+        + f"<p class='os-note'>{e(b.get('why'))}</p>"
+        + "<div class='os-brow'>"
+          "<button class='cta' onclick=\"osAct('/os/migrate')\">"
+          "Copy the JSON store into the tables</button>"
+          "<span class='os-note'>A copy, never a move. The JSON stays exactly "
+          "where it is, so setting OS_STORE=json puts the old world back with "
+          "nothing lost.</span></div>"
+        + (table(["Table", "Rows"],
+                 [[f"<code>os_{e(k)}</code>", num(v)]
+                  for k, v in sorted(counts.items(), key=lambda kv: -kv[1])
+                  if v], "The tables are empty; press the button above.")
+           if live else
+           "<p class='os-empty'>Postgres is not in use, so there are no "
+           "tables to count.</p>"))
+
+
+# ---------------------------------------------------------------------------
 # THE CAMPAIGN DETAIL. Two columns. This is the screen the founder wanted.
 # ---------------------------------------------------------------------------
 def campaign_detail(ctx, cid) -> str:
@@ -881,6 +1105,8 @@ def campaign_detail(ctx, cid) -> str:
             f"{e(prev.get('body'))}</textarea>"
             f"<button class='cta' onclick=\"osSaveEdit('{e(cid)}')\">"
             "Save this version</button>"
+            f"<button class='os-mini' onclick=\"osSendOne('{e(cid)}')\">"
+            "Send this one now</button>"
             "<p class='os-note'>What you save here is what sends. The sender "
             "reads the same record this editor writes.</p></div>")
            if prev.get("ok") else "")
@@ -909,6 +1135,36 @@ def campaign_detail(ctx, cid) -> str:
                           num(l.get("people"))]
                          for l in _L(ctx.get("detail_links"))],
                         "No clicks yet."))
+        + (section("Subject lines under test",
+                   table(["Arm", "Subject", "Sent", "Opens", "Open rate"],
+                         [[pill(v.get("variant"), "ok"), e(v.get("subject")),
+                           num(v.get("sent")), num(v.get("opened")),
+                           num(pair(v.get("open_rate"))[0], "%")
+                           + f"<br><span class='os-d'>"
+                             f"{e(pair(v.get('open_rate'))[1])}</span>"]
+                          for v in _L(ctx.get("detail_variants"))])
+                   + f"<p class='os-note'>"
+                     f"{e(_D(ctx.get('detail_verdict')).get('message'))}</p>")
+           if len(_L(ctx.get("detail_variants"))) > 1 else "")
+        + (section("Before it goes",
+                   "<div class='os-tiles'>"
+                   + "".join(
+                       tile(sig.get("name"),
+                            None,
+                            ("passes" if sig.get("ok") else "look at this")
+                            + ": " + str(sig.get("value")))
+                       for sig in _L(_D(ctx.get("detail_checks")).get("signals")))
+                   + "</div>"
+                   + table(["Link", "Where a click really goes", "Secure"],
+                           [[e(l.get("url")), e(l.get("tracked_as")),
+                             pill("https", "ok") if l.get("https")
+                             else pill("http", "bad")]
+                            for l in _L(_D(ctx.get("detail_checks")).get("links"))],
+                           "This email carries no links.")
+                   + (f"<p class='os-warn'>"
+                      f"{e(_D(ctx.get('detail_checks')).get('block_reason'))}</p>"
+                      if _D(ctx.get("detail_checks")).get("blocking") else ""))
+           if _D(ctx.get("detail_checks")) else "")
         + section("Move this campaign",
                   "<div class='os-brow'>"
                   f"<button class='os-mini' onclick=\"osAct('/os/campaign/plan',"
@@ -1023,12 +1279,15 @@ PANELS = {
     "audprofiles": aud_profiles, "audlists": aud_lists,
     "audsegments": aud_segments,
     "engcampaigns": eng_campaigns, "engflows": eng_flows,
-    "engtemplates": eng_templates,
+    "engtemplates": eng_templates, "enginbox": eng_inbox,
     "sendqueue": send_queue, "senddeliver": send_deliver,
+    "sendrules": send_rules,
     "autoagents": auto_agents, "autoruns": auto_runs,
     "ancampaign": an_campaign, "anlead": an_lead, "anattrib": an_attrib,
+    "anab": an_ab,
     "setemail": set_email, "setdomains": set_domains,
     "setintegrations": set_integrations, "setcompliance": set_compliance,
+    "setteam": set_team, "setstorage": set_storage,
 }
 
 
@@ -1069,14 +1328,17 @@ def build(ctx, live=None) -> str:
             panels.append(f"<div class='os-panel{on}' id='os-p-{pid}'>"
                           f"{body}</div>")
             first = False
-    return ("<div class='osx'>" + CSS_TAG + JS + band(ctx)
+    return ("<div class='osx'>" + CSS_TAG
+            + "<style>" + ED.CSS + "</style>"
+            + JS + ED.FLOW_JS + ED.BLOCK_JS + band(ctx)
             + "<div class='os-shell'>"
             + "<nav class='os-rail'>" + "".join(rail) + "</nav>"
             + "<div class='os-main'>" + "".join(panels) + "</div>"
             + "</div>"
             "<div class='os-overlay' id='os-overlay' onclick='osClose(event)'>"
             "<div class='os-sheet'><button class='os-x' onclick='osClose()'>"
-            "Close</button><div id='os-detail'></div></div></div></div>")
+            "Close</button><div id='os-detail'></div></div></div>"
+            + ED.BOOT_JS + "</div>")
 
 
 CSS = """
@@ -1237,6 +1499,13 @@ CSS = """
 .os-dhead h3{margin:0;font-size:19px}
 .os-dhead p{margin:0;color:var(--osmut);width:100%;font-size:13px}
 .os-col{min-width:0}
+.os-reply{background:var(--os2);border:1px solid var(--osln);border-radius:8px;
+ padding:14px;margin:0 0 12px}
+.os-rhead{display:flex;gap:10px;align-items:center;margin:0 0 8px}
+.os-quote{margin:0 0 10px;padding:10px 12px;border-left:3px solid var(--osln);
+ color:var(--osmut);font-size:13px;white-space:pre-wrap}
+.os-reply .os-in{width:100%;margin:0 0 8px}
+.os-wh{font-size:11px;word-break:break-all;color:var(--osmut)}
 """
 
 CSS_TAG = "<style>" + CSS + "</style>"
@@ -1341,4 +1610,57 @@ JS = ("<script>"
 
       "async function osConsent(email){var s=document.getElementById('os-cst');"
       "await osAct('/os/consent',{email:email,status:s?s.value:''});}"
+
+      "async function osFindLeads(){"
+      "var v=document.getElementById('os-mv'),c=document.getElementById('os-mc'),"
+      "n=document.getElementById('os-mn');"
+      "if(!v||!v.value.trim()||!c||!c.value.trim()){osToast({ok:false,"
+      "message:'say what to look for and where'});return;}"
+      "osToast({ok:true,message:'searching; this takes a moment'});"
+      "await osAct('/leads/maps',{vertical:v.value,city:c.value,"
+      "count:parseInt(n?n.value:'20',10)});}"
+
+      "async function osReplySave(id){"
+      "var s=document.getElementById('os-rs-'+id),"
+      "b=document.getElementById('os-rb-'+id);"
+      "await osAct('/reply/edit',{id:id,subject:s?s.value:'',"
+      "body:b?b.value:''});}"
+      "async function osReplySend(id){await osReplySave(id);"
+      "await osAct('/reply/send',{id:id});}"
+      "async function osReplyDrop(id){await osAct('/reply/dismiss',{id:id});}"
+
+      "async function osSaveRules(){"
+      "var f=document.getElementById('os-wf'),t=document.getElementById('os-wt'),"
+      "w=document.getElementById('os-ww'),h=document.getElementById('os-wh');"
+      "await osAct('/os/rules',{from_hour:f?f.value:8,to_hour:t?t.value:17,"
+      "weekdays_only:w?w.value==='1':true,hourly:h?h.value:40});}"
+
+      "async function osNewWs(){var n=document.getElementById('os-wsn');"
+      "await osAct('/os/workspace/create',{name:n?n.value:''});}"
+      "async function osSwitchWs(id){var j=await osAct('/os/workspace/switch',"
+      "{id:id});if(j&&j.ok)location.reload();}"
+      "async function osAddMember(){var e2=document.getElementById('os-mem'),"
+      "r=document.getElementById('os-mrole');"
+      "await osAct('/os/member/add',{email:e2?e2.value:'',"
+      "role:r?r.value:'member'});}"
+      "async function osDropMember(email){"
+      "await osAct('/os/member/remove',{email:email});}"
+
+      "async function osTestProvider(name){"
+      "osToast({ok:true,message:'asking '+name+'...'});"
+      "await osAct('/os/provider/test',{name:name});}"
+      "async function osHook(name){await osAct('/os/provider/webhook',"
+      "{name:name});}"
+
+      "async function osSendOne(cid){var w=document.getElementById('os-who');"
+      "if(!w||!w.value)return;var p=w.value.split('|');"
+      "if(!confirm('Send this exact email to '+p[0]+' now?'))return;"
+      "await osSaveEdit(cid);"
+      "await osAct('/os/send-one',{campaign_id:cid,email:p[0],"
+      "touch:p[1]||1});osPreview(cid);}"
+
+      "async function osTemplate(id){try{"
+      "var r=await fetch('/os/template/'+id);osOpen(await r.text());"
+      "setTimeout(function(){try{osBbBoot();}catch(e){}},0);}"
+      "catch(e){osToast({ok:false,message:'could not open that template'});}}"
       "</script>")

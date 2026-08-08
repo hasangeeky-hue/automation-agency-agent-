@@ -348,8 +348,24 @@ def api_ready_to_measure(job_id: str) -> dict:
 
 
 def api_tick() -> dict:
-    status = orch.tick(get_store())
-    return {"advanced": status is not None, "status": status}
+    """One pass of the engine. Called by the worker container on a loop.
+
+    The OS queue is drained HERE rather than from a button, which is what
+    makes it a worker rather than a form. It is wrapped: an OS problem must
+    never stop the content pipeline that has been running for months. It
+    still sends nothing that a human has not approved, because drain() only
+    picks up rows carrying approved=True."""
+    store = get_store()
+    status = orch.tick(store)
+    queue = {}
+    try:
+        import content_engine_os as _OS
+        jobs = store.list_jobs(status=None) if hasattr(store, "list_jobs") else []
+        queue = _OS.drain(store, jobs=jobs)
+    except Exception as e:
+        log.warning("os queue drain skipped this tick: %s", e)
+        queue = {"ok": False, "message": f"{type(e).__name__}: {e}"}
+    return {"advanced": status is not None, "status": status, "queue": queue}
 
 
 def api_answer_replies(limit: int = 20, dry_run: bool = False) -> dict:
@@ -1828,6 +1844,16 @@ def build_app():
         # redirect. They read nothing and return no data.
         if request.url.path.startswith(("/t/o/", "/t/c/")):
             return await call_next(request)
+        # THE CONSENT PAGES ARE PUBLIC BY NECESSITY. A person unsubscribing
+        # has no session and must never be asked for one: an unsubscribe
+        # behind a login is an unsubscribe that does not work, which is both
+        # a legal problem and a spam complaint waiting to happen. They are
+        # rate limited instead (see _os_rate), they return the same page
+        # whether or not the address is known, and they can only reach the
+        # consent functions.
+        if request.url.path in ("/subscribe", "/subscribe/confirm",
+                                "/unsubscribe"):
+            return await call_next(request)
         cookie_ok = request.cookies.get("aa_dash") == _dash_token()
         key = request.headers.get("x-api-key") or request.query_params.get("key")
         if cookie_ok or (key and key == pw):
@@ -2806,6 +2832,54 @@ def build_app():
     # ---------------------------------------------------------------
     # THE ENGAGEMENT OS
     # ---------------------------------------------------------------
+    #: A small in-process limiter for the PUBLIC pages only. Not a
+    #: replacement for a proper edge limiter: it is here so a single machine
+    #: cannot walk a list of addresses through the signup form, which is the
+    #: realistic abuse of a public consent endpoint.
+    _RATE = {}
+    _RATE_MAX, _RATE_WINDOW = 12, 60.0
+
+    def _client_ip(request) -> str:
+        fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        return fwd or (getattr(request.client, "host", "") or "")
+
+    def _os_rate(request, bucket) -> bool:
+        import time
+        key = f"{bucket}|{_client_ip(request)}"
+        cut = time.time() - _RATE_WINDOW
+        hits = [t for t in _RATE.get(key, []) if t > cut]
+        hits.append(time.time())
+        _RATE[key] = hits[-40:]
+        if len(_RATE) > 5000:                 # never grow without bound
+            _RATE.clear()
+        return len(hits) <= _RATE_MAX
+
+    async def _form_or_json(request) -> dict:
+        """A browser posts a form; an integration posts JSON. Both arrive
+        at the same consent function rather than at two of them."""
+        ctype = (request.headers.get("content-type") or "").lower()
+        if "application/json" in ctype:
+            try:
+                return await request.json()
+            except Exception:
+                return {}
+        try:
+            return {k: v for k, v in (await request.form()).items()}
+        except Exception:
+            return {}
+
+    def _ws(request=None) -> str:
+        """The workspace this request is entitled to. A cookie is a REQUEST;
+        the guard decides."""
+        import content_engine_os_tenancy as TEN
+        want = ""
+        if request is not None:
+            try:
+                want = request.cookies.get(TEN.WS_COOKIE) or ""
+            except Exception:
+                want = ""
+        return TEN.require(get_store(), want, grant="read")["workspace_id"]
+
     def _os():
         """(module, store, jobs). One helper so no route re-derives them."""
         import content_engine_os as _OS
@@ -3075,6 +3149,182 @@ def build_app():
         OS, store, _ = _os()
         return SEND.ingest_webhook(OS.repo(store), d, provider)
 
+    @app.post("/os/send-one")
+    async def os_send_one(request: Request):
+        """Send ONE email to ONE person, right now, from the campaign detail.
+
+        This is the founder's own proven single-send path (the same function
+        the old outbox button called), reached from the screen where he has
+        just read the email and can see who gets it. It saves nothing new:
+        api_outreach_send_one resolves through the same resolver the preview
+        used, so the bytes on screen are the bytes that leave."""
+        d = await _body(request)
+        OS, store, _ = _os()
+        c = OS.repo(store, _ws(request)).one("campaigns",
+                                             d.get("campaign_id") or "")
+        jid = (c or {}).get("job_id")
+        if not jid:
+            return {"ok": False,
+                    "message": "this campaign is not one of the engine's "
+                               "outreach jobs, so use Queue and Approve "
+                               "instead"}
+        out = api_outreach_send_one(jid, d.get("email"), d.get("touch"))
+        out.setdefault("message",
+                       f"sent to {d.get('email')}" if out.get("ok")
+                       else str(out.get("error") or "not sent"))
+        _log_decision(store, "os_send_one", str(d.get("email"))[:60],
+                      out.get("message", ""))
+        return out
+
+    @app.post("/os/rules")
+    async def os_rules(request: Request):
+        """The sending window and the hourly throttle."""
+        d = await _body(request)
+        OS, store, _ = _os()
+        return OS.save_rules(store, d.get("from_hour"), d.get("to_hour"),
+                             d.get("weekdays_only", True), d.get("hourly"))
+
+    @app.post("/os/migrate")
+    def os_migrate():
+        """Copy the JSON collections into real tables. A copy, never a move."""
+        OS, store, _ = _os()
+        out = OS.migrate(store, _ws(request=None))
+        _log_decision(store, "os_migrate", str(out.get("copied")),
+                      out.get("message", ""))
+        return out
+
+    @app.get("/os/template/{tid}", response_class=HTMLResponse)
+    def os_template(tid: str):
+        OS, store, _ = _os()
+        return HTMLResponse(OS.template_html(store, tid))
+
+    @app.post("/os/template/render")
+    async def os_template_render(request: Request):
+        """The builder's live preview, through the sender's own renderer."""
+        d = await _body(request)
+        OS, _store, _ = _os()
+        return OS.render_blocks(d.get("blocks"))
+
+    @app.post("/os/workspace/create")
+    async def os_workspace_create(request: Request):
+        d = await _body(request)
+        import content_engine_os_tenancy as TEN
+        _OS, store, _ = _os()
+        return TEN.create_workspace(store, d.get("name"))
+
+    @app.post("/os/workspace/switch")
+    async def os_workspace_switch(request: Request):
+        """Switching is a REQUEST. The guard decides whether it is honoured,
+        so a guessed id lands you back in your own workspace rather than in
+        somebody else's."""
+        d = await _body(request)
+        import content_engine_os_tenancy as TEN
+        _OS, store, _ = _os()
+        got = TEN.require(store, d.get("id"), grant="read")
+        r = JSONResponse({"ok": True, "workspace_id": got["workspace_id"],
+                          "message": (f"now working in "
+                                      f"{got['workspace_id']} as "
+                                      f"{got['role']}")})
+        r.set_cookie(TEN.WS_COOKIE, got["workspace_id"], httponly=True,
+                     samesite="lax")
+        return r
+
+    @app.post("/os/member/add")
+    async def os_member_add(request: Request):
+        d = await _body(request)
+        import content_engine_os_tenancy as TEN
+        _OS, store, _ = _os()
+        got = TEN.require(store, _ws(request), grant="admin")
+        if not got["ok"]:
+            return {"ok": False, "message": got["message"]}
+        return TEN.add_member(store, got["workspace_id"], d.get("email"),
+                              d.get("role", "member"))
+
+    @app.post("/os/member/remove")
+    async def os_member_remove(request: Request):
+        d = await _body(request)
+        import content_engine_os_tenancy as TEN
+        _OS, store, _ = _os()
+        got = TEN.require(store, _ws(request), grant="admin")
+        if not got["ok"]:
+            return {"ok": False, "message": got["message"]}
+        return TEN.remove_member(store, got["workspace_id"], d.get("email"))
+
+    @app.post("/os/provider/test")
+    async def os_provider_test(request: Request):
+        """Prove a key works. Makes one authenticated call and sends nothing."""
+        d = await _body(request)
+        OS, store, _ = _os()
+        out = OS.test_provider(d.get("name"))
+        _log_decision(store, "provider_test", str(d.get("name")),
+                      out.get("message", ""))
+        return out
+
+    @app.post("/os/provider/webhook")
+    async def os_provider_webhook(request: Request):
+        d = await _body(request)
+        OS, _store, _ = _os()
+        return OS.register_webhook(d.get("name"))
+
+    # ---------------------------------------------------------------
+    # THE CONSENT PAGES. Public, rate limited, and they never reveal
+    # whether an address is already known.
+    # ---------------------------------------------------------------
+    @app.get("/subscribe", response_class=HTMLResponse)
+    def subscribe_form():
+        import content_engine_os_optin as OPT
+        return HTMLResponse(OPT.signup_page())
+
+    @app.post("/subscribe", response_class=HTMLResponse)
+    async def subscribe(request: Request):
+        import content_engine_os_optin as OPT
+        OS, store, _ = _os()
+        if not _os_rate(request, "subscribe"):
+            return HTMLResponse(OPT.message_page(
+                "One moment", "That was a lot of requests from one place. "
+                              "Try again in a minute."), status_code=429)
+        d = await _form_or_json(request)
+        OS.public(store, "signup", d, ip=_client_ip(request))
+        # The SAME page either way: telling a stranger whether an address is
+        # already on the list is an address-checking service.
+        return HTMLResponse(OPT.message_page(
+            "Check your inbox",
+            "If that address can receive email, a confirmation is on its way. "
+            "Nothing else will be sent until you click the link in it."))
+
+    @app.get("/subscribe/confirm", response_class=HTMLResponse)
+    def subscribe_confirm(request: Request, e: str = "", t: str = ""):
+        import content_engine_os_optin as OPT
+        OS, store, _ = _os()
+        out = OS.public(store, "confirm", {"email": e, "t": t},
+                        ip=_client_ip(request))
+        if not out.get("ok"):
+            return HTMLResponse(OPT.message_page(
+                "That link did not work", str(out.get("message"))),
+                status_code=400)
+        return HTMLResponse(OPT.message_page(
+            "You are confirmed", "Thank you. You can leave at any time from "
+                                 "the bottom of any email."))
+
+    @app.get("/unsubscribe", response_class=HTMLResponse)
+    def unsubscribe_form(e: str = "", t: str = ""):
+        import content_engine_os_optin as OPT
+        return HTMLResponse(OPT.unsubscribe_page(e, t))
+
+    @app.post("/unsubscribe", response_class=HTMLResponse)
+    async def unsubscribe(request: Request):
+        import content_engine_os_optin as OPT
+        OS, store, _ = _os()
+        if not _os_rate(request, "unsub"):
+            return HTMLResponse(OPT.message_page(
+                "One moment", "That was a lot of requests from one place. "
+                              "Try again in a minute."), status_code=429)
+        d = await _form_or_json(request)
+        out = OS.public(store, "unsubscribe", d, ip=_client_ip(request))
+        return HTMLResponse(OPT.message_page(
+            "Done" if out.get("ok") else "That link did not work",
+            str(out.get("message"))))
+
     # ---------------------------------------------------------------
     # THE AGENT DOOR. Audited, tenant scoped, and it cannot send.
     # ---------------------------------------------------------------
@@ -3099,103 +3349,9 @@ def build_app():
                         f"{domain}.{verb}", d.get("params") or d,
                         jobs=jobs)
 
-    @app.post("/outreach/segment")
-    async def outreach_segment(request: Request):
-        """Save or remove a segment. One condition vocabulary, validated."""
-        import content_engine_email_segments as ES
-        try:
-            d = await request.json()
-        except Exception:
-            d = {}
-        store = get_store()
-        name = str(d.get("name") or "")
-        if d.get("remove"):
-            return ES.delete_segment(store, name)
-        out = ES.save_segment(store, name, d.get("conditions") or [],
-                              d.get("match") or "all")
-        if out.get("ok"):
-            _log_decision(store, "segment_saved", name[:50],
-                          out.get("message", ""))
-        return out
 
-    @app.post("/outreach/preview")
-    async def outreach_preview(request: Request):
-        """Build the preview for a campaign and store it for the screen.
 
-        This is also the GATE: the send path reads email_preview.blocking
-        and refuses while a personalisation token would render empty."""
-        import content_engine_email_preview as EP
-        import content_engine_os_content as OSC
-        try:
-            d = await request.json()
-        except Exception:
-            d = {}
-        store = get_store()
-        jobs = store.list_jobs(status=None) if hasattr(store, "list_jobs") else []
-        cid = str(d.get("id") or "")
-        job = next((j for j in jobs
-                    if str((j or {}).get("job_id")) == cid), None)
-        p = ((job or {}).get("payload") or {})
-        # THE FIX. This used to read payload.subject and payload.html, which
-        # no job in this engine carries, so every campaign answered "nothing
-        # to preview" while the sender was working perfectly. It now resolves
-        # through the engine's own send path for a REAL recipient.
-        who = str(d.get("email") or "").strip().lower()
-        if not who:
-            who = str(((p.get("leads") or [{}])[0]).get("email") or "")
-        got = OSC.rendered_message(job or {}, who, int(d.get("touch") or 1))
-        lead = got.get("lead") or (p.get("leads") or [{}])[0]
-        subject = d.get("subject") or got.get("subject") or ""
-        html = d.get("html") or got.get("html") or got.get("body") or ""
-        if not (subject or html):
-            return {"ok": False,
-                    "message": (got.get("error")
-                                or "that campaign has no leads with copy "
-                                   "resolved yet, so there is nothing to "
-                                   "render for anyone")}
-        import content_engine_connectors as C
-        base = C._env("PUBLIC_BASE_URL") or C._env("ENGINE_PUBLIC_URL") or ""
-        prev = EP.render(subject, html, lead, base=base,
-                         from_name=C._env("EMAIL_FROM_NAME") or "",
-                         preheader=p.get("preheader") or "")
-        store.set_setting("email_preview", prev)
-        return {"ok": True, "blocking": prev["blocking"],
-                "message": (prev["block_reason"] if prev["blocking"]
-                            else f"preview built: {len(prev['links'])} link(s), "
-                                 f"{len(prev['failing'])} spam check(s) to "
-                                 f"look at")}
 
-    @app.post("/outreach/flow/run")
-    def outreach_flow_run():
-        """Queue who is due. Sends nothing."""
-        import content_engine_seo_ops as O
-        store = get_store()
-        jobs = store.list_jobs(status=None) if hasattr(store, "list_jobs") else []
-        out = O.run_email_flow(store, jobs)
-        _log_decision(store, "flow_run", f"{out.get('queued')} queued",
-                      out.get("message", ""))
-        return {"ok": True, **out}
-
-    @app.post("/outreach/flow/approve")
-    def outreach_flow_approve():
-        """Approve the queue. THE PREVIEW GATE APPLIES: if the stored
-        preview is blocking, nothing is approved and the reason is
-        returned, because a token that renders empty cannot be unsent."""
-        import content_engine_email_segments as ES
-        store = get_store()
-        prev = store.get_setting("email_preview", {}) or {}
-        if prev.get("blocking"):
-            return {"ok": False, "error": prev.get("block_reason"),
-                    "message": "refused: " + str(prev.get("block_reason"))}
-        q = ES.flow_queue(store)
-        if not q:
-            return {"ok": True, "message": "the queue is empty; run the flow "
-                                           "first"}
-        store.set_setting("email_flow_approved", q)
-        _log_decision(store, "flow_approved", f"{len(q)} person-step(s)", "")
-        return {"ok": True, "approved": len(q),
-                "message": f"{len(q)} person-step(s) approved. The sender "
-                           f"picks them up on its next pass."}
 
     @app.post("/social/competitors")
     def social_measure_competitors():

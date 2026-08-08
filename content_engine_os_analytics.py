@@ -293,3 +293,78 @@ def deliverability(repo) -> dict:
             "complaints": t["complaints"], "complaint_rate": t["complaint_rate"],
             "unsubscribes": t["unsubscribes"], "unsub_rate": t["unsub_rate"],
             "suppressed": len(supp), "by_reason": by_reason}
+
+
+# ---------------------------------------------------------------------------
+# A/B
+# ---------------------------------------------------------------------------
+def variant_rows(repo, campaign_id) -> list:
+    """One row per subject line under test, with what it actually did.
+
+    Opens are counted UNIQUE BY PERSON and the denominator is that arm's
+    own recipients, never the campaign total. Comparing A's opens against
+    the whole campaign is how a test proves whatever you hoped."""
+    msgs = repo.find("campaign_messages", campaign_id=campaign_id)
+    if not msgs:
+        return []
+    ev = {}
+    for e_ in repo.all("email_events"):
+        if e_.get("campaign_id") != campaign_id:
+            continue
+        ev.setdefault(e_.get("message_id"), []).append(e_)
+    arms = {}
+    for m in msgs:
+        v = m.get("variant") or "A"
+        a = arms.setdefault(v, {"variant": v, "subject": m.get("subject", ""),
+                                "recipients": 0, "sent": 0,
+                                "opened": set(), "clicked": set()})
+        a["recipients"] += 1
+        if m.get("state") == "SENT" or m.get("sent_at"):
+            a["sent"] += 1
+        if not a["subject"] and m.get("subject"):
+            a["subject"] = m.get("subject")
+        for x in ev.get(m.get("id"), []):
+            if x.get("event_type") == "EMAIL_OPENED":
+                a["opened"].add(m.get("profile_id"))
+            elif x.get("event_type") == "EMAIL_CLICKED":
+                a["clicked"].add(m.get("profile_id"))
+    out = []
+    for v, a in sorted(arms.items()):
+        out.append({"variant": v, "subject": a["subject"],
+                    "recipients": a["recipients"], "sent": a["sent"],
+                    "opened": len(a["opened"]), "clicked": len(a["clicked"]),
+                    "open_rate": rate(len(a["opened"]), a["sent"]),
+                    "click_rate": rate(len(a["clicked"]), a["sent"])})
+    return out
+
+
+def ab_verdict(rows) -> dict:
+    """Which arm won, and whether the difference means anything yet.
+
+    THE HONEST PART: below about a hundred sends per arm, a five point gap
+    is noise. Declaring a winner off forty emails is the single most common
+    way an A/B test makes a campaign worse, so this says "too early" in
+    those words rather than crowning something."""
+    rows = [r for r in _L(rows) if r.get("sent")]
+    if len(rows) < 2:
+        return {"state": "none",
+                "message": "only one subject line is in play, so there is "
+                           "nothing to compare"}
+    best = max(rows, key=lambda r: (r["open_rate"][0] or 0))
+    worst = min(rows, key=lambda r: (r["open_rate"][0] or 0))
+    gap = (best["open_rate"][0] or 0) - (worst["open_rate"][0] or 0)
+    smallest = min(r["sent"] for r in rows)
+    if smallest < 100:
+        return {"state": "early", "leader": best["variant"], "gap": gap,
+                "message": f"{best['variant']} is ahead by {gap:.1f} points, "
+                           f"but the smaller arm has only {smallest} sends. "
+                           f"Below about 100 an arm, a gap that size is "
+                           f"noise. Keep both running."}
+    if gap < 5:
+        return {"state": "tied", "leader": "", "gap": gap,
+                "message": f"the arms are within {gap:.1f} points of each "
+                           f"other, which is close enough to call a draw"}
+    return {"state": "winner", "leader": best["variant"], "gap": gap,
+            "message": f"{best['variant']} wins by {gap:.1f} points over "
+                       f"{smallest}+ sends an arm: "
+                       f"{best['subject'][:60]!r}"}

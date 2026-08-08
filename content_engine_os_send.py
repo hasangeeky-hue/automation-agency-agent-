@@ -42,6 +42,7 @@ import content_engine_os_audience as AUD
 import content_engine_os_content as CONTENT
 import content_engine_os_core as CORE
 import content_engine_os_providers as PROV
+import content_engine_os_schedule as SCHED
 from content_engine_os_core import (CAMPAIGN_MOVES, CAMPAIGN_STATES, _D, _L,
                                     norm_email, now, rid)
 
@@ -64,6 +65,7 @@ GATE_REASONS = {
     "NO_CONTENT": "no subject or body resolves for this person",
     "RATE_LIMIT": "past today's sending cap",
     "ALREADY_QUEUED": "already queued for this campaign",
+    "NOT_CONFIRMED": "signed up but never confirmed, so not a subscriber",
 }
 
 
@@ -120,6 +122,58 @@ def save_campaign(repo, *, campaign_id="", name="", audience_kind="all",
 # ---------------------------------------------------------------------------
 # CONTENT RESOLUTION FOR ONE RECIPIENT
 # ---------------------------------------------------------------------------
+def variant_for(campaign, profile_id) -> tuple:
+    """(index, subject) for the A/B test on this campaign.
+
+    DETERMINISTIC, never random. The same person always lands on the same
+    arm, so re-running the plan, re-queueing, or restarting the worker
+    cannot move somebody from A to B halfway through a test and quietly
+    invalidate the result.
+
+    One variant is not a test, and this returns index 0 with no fuss."""
+    variants = _L(_D(campaign).get("subject_variants"))
+    if len(variants) < 2:
+        return 0, (variants[0] if variants else _D(campaign).get("subject", ""))
+    bucket = int(rid("ab", _D(campaign).get("id", ""), profile_id or "")[-6:],
+                 16) % len(variants)
+    return bucket, variants[bucket]
+
+
+def variant_label(i) -> str:
+    return chr(65 + int(i or 0))          # 0 -> A, 1 -> B, 2 -> C
+
+
+def send_confirmation(store, repo, email, url) -> dict:
+    """The double opt-in confirmation. Transactional, not marketing.
+
+    It lives in THIS module because this module is the only one allowed to
+    hold a provider. It deliberately skips the consent gate (the whole
+    point is that consent does not exist yet) and skips nothing else: a
+    suppressed address is still refused, because somebody who bounced or
+    complained does not get a fresh email just for filling in a form."""
+    em = norm_email(email)
+    if em in CORE.suppression_index(repo):
+        return {"ok": False, "message": GATE_REASONS["SUPPRESSED"]}
+    prov = PROV.get_provider()
+    ok, why = prov.available()
+    if not ok:
+        return {"ok": False, "message": why}
+    plain = ("Please confirm you want these emails.\n\n"
+             + str(url) + "\n\n"
+             "If you did not ask for this, ignore this message and nothing "
+             "further will be sent.")
+    html = ("<p>Please confirm you want these emails.</p>"
+            f"<p><a href='{url}'>Yes, confirm my address</a></p>"
+            "<p style='color:#8a9199;font-size:13px'>If you did not ask for "
+            "this, ignore this message and nothing further will be sent.</p>")
+    res = prov.send(em, "Please confirm your email address", plain, html)
+    CORE.audit(repo, "system", "confirmation_sent", em,
+               "double opt-in" if res.get("ok") else str(res.get("error"))[:120])
+    return {"ok": bool(res.get("ok")),
+            "message": "confirmation sent" if res.get("ok")
+                       else str(res.get("error"))[:200]}
+
+
 def message_for(repo, campaign, person, touch=1, *, jobs=None) -> dict:
     """What this exact person receives. TWO SOURCES, ONE ANSWER.
 
@@ -138,9 +192,17 @@ def message_for(repo, campaign, person, touch=1, *, jobs=None) -> dict:
         if job:
             got = CONTENT.rendered_message(job, person.get("email"), touch)
             if got.get("ok"):
+                # A projected campaign still belongs to whichever arm of the
+                # test this person is in, even though its copy came from the
+                # older sender. Reporting needs the label either way.
+                vi, _v = variant_for(campaign, person.get("id"))
+                got.setdefault("variant", variant_label(vi))
+                got.setdefault("variants",
+                               len(_L(campaign.get("subject_variants"))))
                 return got
     tpl = repo.one("templates", campaign.get("template_id") or "") or {}
-    subject = campaign.get("subject") or tpl.get("subject") or ""
+    vi, vsubject = variant_for(campaign, person.get("id"))
+    subject = vsubject or campaign.get("subject") or tpl.get("subject") or ""
     html = campaign.get("html") or tpl.get("html") or ""
     body = campaign.get("body") or ""
     if not html and body:
@@ -169,7 +231,9 @@ def message_for(repo, campaign, person, touch=1, *, jobs=None) -> dict:
     return {"ok": bool(subject or html or body), "subject": fill(subject),
             "plain": fill(body or CONTENT.e("")), "html": fill(html),
             "body": fill(body), "empty_tokens": sorted(set(empties)),
-            "touch": int(touch), "lead": person, "edited": False}
+            "touch": int(touch), "lead": person, "edited": False,
+            "variant": variant_label(vi),
+            "variants": len(_L(campaign.get("subject_variants")))}
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +301,7 @@ def plan(repo, campaign_id, *, jobs=None, touch=1) -> dict:
         ok_rows.append({"profile": p, "message": msg})
     for group, why in (("suppressed", "SUPPRESSED"),
                        ("unsubscribed", "UNSUBSCRIBED"),
+                       ("not_confirmed", "NOT_CONFIRMED"),
                        ("invalid_address", "INVALID")):
         for em in aud["dropped_detail"].get(group, []):
             refused.append({"email": em, "why": why})
@@ -385,76 +450,151 @@ def cancel(repo, campaign_id) -> dict:
 # ---------------------------------------------------------------------------
 # THE WORKER. The only place a provider is called.
 # ---------------------------------------------------------------------------
-def work_queue(repo, *, jobs=None, limit=50, provider_name=None) -> dict:
-    """Send approved, queued rows. Re-checks every gate at send time.
+def work_queue(repo, *, jobs=None, limit=100, provider_name=None,
+               store=None) -> dict:
+    """Send approved, queued rows. Re-checks EVERY gate at send time.
 
     Re-checking is not paranoia: a person can unsubscribe between the queue
     write and the worker pass, and honouring that is the difference between
-    a compliance story and an incident."""
+    a compliance story and an incident.
+
+    FOUR REASONS A ROW IS PASSED OVER RATHER THAN SENT, each recorded on
+    the row so the queue screen can say which:
+      not due          it is scheduled for later, or waiting out a retry
+      outside window   it is the middle of the night where they are
+      no room          today's warm-up cap or this hour's throttle is spent
+      suppressed       they left while the row was waiting
+    """
+    store = store or getattr(repo, "store", None)
     prov = PROV.get_provider(provider_name)
     ok_prov, why = prov.available()
     if not ok_prov:
-        return {"ok": False, "sent": 0, "message": why}
+        return {"ok": False, "sent": 0, "held": 0, "failed": 0,
+                "message": why}
     supp = CORE.suppression_index(repo)
-    profs = {p.get("id"): p for p in repo.all("profiles")}
-    room, _ = _rate_room()
-    sent = held = failed = 0
+    people = {p.get("id"): p for p in AUD.people(repo)}
+    day_room, day_why = _rate_room()
+    hour_room, hour_why = ((SCHED.throttle_room(store)) if store
+                           else (None, "no hourly throttle without a store"))
+    # WITHOUT A STORE THERE IS NO WINDOW. A caller that cannot supply the
+    # settings store cannot be told what hours the founder sends in, and
+    # inventing the default there would hold every email for reasons the
+    # caller never chose. The worker always passes one.
+    win = SCHED.window(store) if store else None
+    sent = held = failed = waiting = 0
     rows = [j for j in repo.all("email_jobs")
             if j.get("status") == "QUEUED" and j.get("approved")]
     for j in rows[:limit]:
-        if room is not None and sent >= room:
+        if day_room is not None and sent >= day_room:
             held += 1
+            j["error_message"] = f"held: {day_why}"
+            repo.put("email_jobs", j)
+            continue
+        if hour_room is not None and sent >= hour_room:
+            held += 1
+            j["error_message"] = f"held: {hour_why}"
+            repo.put("email_jobs", j)
+            continue
+        if not SCHED.due(j):
+            waiting += 1
             continue
         em = norm_email(j.get("email"))
-        p = profs.get(j.get("profile_id")) or {}
-        if em in supp or p.get("consent") == "UNSUBSCRIBED":
-            j["status"] = "SUPPRESSED"
-            j["error_message"] = GATE_REASONS["SUPPRESSED"]
+        person = people.get(j.get("profile_id")) or {}
+        if em in supp or person.get("consent") == "UNSUBSCRIBED":
+            j.update({"status": "SUPPRESSED",
+                      "error_message": GATE_REASONS["SUPPRESSED"]})
             repo.put("email_jobs", j)
             held += 1
             continue
+        ok_win, win_why = SCHED.in_window(person, win) if win else (True, "")
+        if not ok_win:
+            j["next_attempt_at"] = SCHED.next_open(person, win)
+            j["error_message"] = f"waiting: {win_why}"
+            repo.put("email_jobs", j)
+            waiting += 1
+            continue
         c = repo.one("campaigns", j.get("campaign_id")) or {}
-        person = next((x for x in AUD.people(repo)
-                       if x.get("id") == j.get("profile_id")), p)
         msg = message_for(repo, c, person, j.get("touch") or 1, jobs=jobs)
         if not msg.get("ok"):
-            j["status"] = "FAILED"
-            j["error_message"] = GATE_REASONS["NO_CONTENT"]
+            j.update({"status": "FAILED", "failed_at": now(),
+                      "error_message": GATE_REASONS["NO_CONTENT"]})
             repo.put("email_jobs", j)
             failed += 1
             continue
         j["status"] = "PROCESSING"
         j["attempts"] = int(j.get("attempts") or 0) + 1
+        j["variant"] = msg.get("variant") or "A"
         repo.put("email_jobs", j)
         res = prov.send(em, msg.get("subject", ""), msg.get("plain", ""),
                         msg.get("html", ""))
         if res.get("ok"):
             j.update({"status": "SENT", "sent_at": now(),
                       "provider_message_id": res.get("provider_message_id", ""),
-                      "error_message": ""})
+                      "error_message": "", "next_attempt_at": ""})
             CORE.record_event(repo, "EMAIL_SENT", profile_id=j.get("profile_id"),
                               campaign_id=j.get("campaign_id"),
-                              message_id=j.get("message_id"))
+                              message_id=j.get("message_id"),
+                              metadata={"variant": j.get("variant")})
             m = repo.one("campaign_messages", j.get("message_id"))
             if m:
                 m.update({"state": "SENT", "sent_at": now(),
+                          "variant": j.get("variant"),
                           "subject": msg.get("subject", "")})
                 repo.put("campaign_messages", m)
+            if store:
+                SCHED.note_sent(store, 1)
             sent += 1
         else:
-            j.update({"status": "FAILED", "failed_at": now(),
-                      "error_message": str(res.get("error"))[:300]})
-            failed += 1
+            err = str(res.get("error"))[:300]
+            back = SCHED.backoff(j.get("attempts"), err)
+            j.update({"status": "QUEUED" if back["retry"] else "FAILED",
+                      "failed_at": now(), "error_message": f"{err} | {back['why']}",
+                      "next_attempt_at": back["next_attempt_at"]})
+            if back["retry"]:
+                waiting += 1
+            else:
+                failed += 1
         repo.put("email_jobs", j)
     for cid in {j.get("campaign_id") for j in rows}:
-        left = [j for j in repo.find("email_jobs", campaign_id=cid)
-                if j.get("status") in ("QUEUED", "PROCESSING")]
+        left = [x for x in repo.find("email_jobs", campaign_id=cid)
+                if x.get("status") in ("QUEUED", "PROCESSING")]
         c = repo.one("campaigns", cid) or {}
         if not left and c.get("state") in ("QUEUED", "SENDING"):
             move_campaign(repo, cid, "SENDING" if c.get("state") == "QUEUED"
                           else "SENT")
     return {"ok": True, "sent": sent, "held": held, "failed": failed,
-            "message": f"{sent} sent, {held} held, {failed} failed"}
+            "waiting": waiting,
+            "message": (f"{sent} sent, {waiting} waiting for their window or "
+                        f"a retry, {held} held by a cap, {failed} failed")}
+
+
+def drain(store, *, jobs=None, workspace_id=None, limit=100) -> dict:
+    """THE WORKER ENTRY POINT. Called every scheduler tick, in the worker
+    container, not from a web request.
+
+    It walks every workspace, because a queue that only drains for whoever
+    happens to be looking at the dashboard is not a queue."""
+    import content_engine_os_store as ST
+    import content_engine_os_tenancy as TEN
+    ids = ([workspace_id] if workspace_id
+           else [w["id"] for w in TEN.workspaces_for(store)] or
+           [CORE.DEFAULT_WORKSPACE])
+    total = {"sent": 0, "held": 0, "failed": 0, "waiting": 0}
+    for wid in ids:
+        repo = ST.repo_for(store, wid)
+        try:
+            out = work_queue(repo, jobs=jobs, limit=limit, store=store)
+        except Exception as ex:
+            log.exception("queue drain failed for %s", wid)
+            continue
+        for k in total:
+            total[k] += int(out.get(k) or 0)
+    total["ok"] = True
+    total["workspaces"] = len(ids)
+    total["message"] = (f"{total['sent']} sent, {total['waiting']} waiting, "
+                        f"{total['held']} held, {total['failed']} failed "
+                        f"across {len(ids)} workspace(s)")
+    return total
 
 
 def queue_rows(repo) -> list:

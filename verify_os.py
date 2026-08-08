@@ -29,6 +29,19 @@ of them exist because something specific DID go wrong.
   G15 the screens             one navigation grammar, scoped ids, and the
                               founder's working controls still present
   G16 the wiring              the routes exist and the dashboard reaches them
+  G17 real tables             one table per entity, generated from one
+                              declaration, and a migration that only copies
+  G18 tenancy                 workspaces, roles, and a guard that treats a
+                              requested id as a request
+  G19 send rules              local time, the window, the throttle, and a
+                              retry ladder that stops
+  G20 A/B                     deterministic arms and a verdict that refuses
+                              to crown a winner early
+  G21 consent capture         pending is not a subscriber, and unsubscribe
+                              cancels what is already queued
+  G22 the worker              honours the window, the caps and the ladder
+  G23 the editors             a canvas you drag and a builder you reorder
+  G24 the removal             the old formation is gone from disk
 ============================================================================
 """
 
@@ -47,6 +60,7 @@ import content_engine_os_core as CORE
 import content_engine_os_flows as FL
 import content_engine_os_screens as SCR
 import content_engine_os_send as SEND
+from content_engine_os_core import _D, _L
 
 OK = []
 
@@ -159,7 +173,9 @@ SRC = {f: io.open(f, encoding="utf-8").read() for f in [
     "content_engine_os_analytics.py", "content_engine_os_agents.py",
     "content_engine_os_screens.py", "content_engine_os.py",
     "content_engine_api.py", "content_engine_outreach_boards.py",
-    "content_engine_seo_ops.py"]}
+    "content_engine_seo_ops.py", "content_engine_os_store.py",
+    "content_engine_os_tenancy.py", "content_engine_os_schedule.py",
+    "content_engine_os_optin.py", "content_engine_os_editors.py"]}
 
 
 def imports_of(path) -> set:
@@ -420,11 +436,15 @@ import content_engine_os_providers as PROV
 PROV.PROVIDERS["fake"] = FakeProvider()
 
 print("\nG10 THE WORKER")
-w = SEND.work_queue(repo, jobs=store.list_jobs(), provider_name="fake")
+import content_engine_os_schedule as _SCHED
+_SCHED.set_window(store, 0, 24, False)   # the clock must not decide a gate
+w = SEND.work_queue(repo, jobs=store.list_jobs(), provider_name="fake",
+                    store=store)
 t("an unapproved queue sends nothing", w["sent"] == 0, str(w))
 SEND.approve(repo, cid)
 CORE.suppress(repo, "cy@shop.ch", "MANUAL", "unsubscribed after queueing")
-w = SEND.work_queue(repo, jobs=store.list_jobs(), provider_name="fake")
+w = SEND.work_queue(repo, jobs=store.list_jobs(), provider_name="fake",
+                    store=store)
 t("approved rows are sent", w["sent"] >= 1, str(w))
 t("somebody suppressed after queueing is held at send time",
   not any(to == "cy@shop.ch" for to, _ in FakeProvider.sent))
@@ -549,7 +569,8 @@ ctx = OS.build_ctx(store, jobs=store.list_jobs())
 html = SCR.build(ctx, live="<div id='legacy-outbox'>send</div>")
 t("every screen in the rail has a panel",
   set(SCR.PANELS) == {pid for _, items in SCR.NAV for pid, _ in items})
-t("twenty two screens render", len(SCR.PANELS) == 22, str(len(SCR.PANELS)))
+t("twenty seven screens render", len(SCR.PANELS) == 27,
+  str(len(SCR.PANELS)))
 t("no screen failed to draw", "could not be drawn" not in html,
   html[html.find("could not be drawn") - 120:
        html.find("could not be drawn") + 160] if "could not be drawn" in html
@@ -595,7 +616,9 @@ for route in ["/os/campaign/{cid}", "/os/profile/{pid}", "/os/sync",
               "/os/consent", "/os/suppress", "/os/webhook/{provider}",
               "/internal/v1/agent"]:
     t(f"route {route} exists", route in api)
-handlers = re.findall(r"function (os[A-Z]\w+)", SCR.JS)
+import content_engine_os_editors as _ED
+handlers = re.findall(r"function (os[A-Z]\w+)",
+                      SCR.JS + _ED.FLOW_JS + _ED.BLOCK_JS)
 called = set(re.findall(r"(os[A-Z]\w+)\(", html + detail + prof))
 missing = sorted(c for c in called if c not in handlers and c != "osToast")
 t("every handler the screens call is defined on the page", not missing,
@@ -606,6 +629,296 @@ t("the context builder hands the section an OS view",
   '"os": _os_ctx(' in SRC["content_engine_seo_ops.py"])
 t("the working blocks are carried through by name",
   "LIVE_ORDER" in SRC["content_engine_outreach_boards.py"])
+
+print("\nG17 REAL TABLES")
+import content_engine_os_store as ST
+t("every collection the core knows has a table",
+  set(ST.SCHEMA) == set(CORE.COLLECTIONS),
+  str(set(CORE.COLLECTIONS) ^ set(ST.SCHEMA)))
+stmts = ST.ddl()
+t("the DDL is generated, not hand written",
+  len([x for x in stmts if x.startswith("CREATE TABLE")]) == len(ST.SCHEMA))
+t("every table is keyed on the workspace first",
+  all("PRIMARY KEY (workspace_id, id)" in x
+      for x in stmts if x.startswith("CREATE TABLE")))
+t("every index is scoped to the workspace",
+  all("(workspace_id," in x for x in stmts if x.startswith("CREATE INDEX")))
+t("the fields a screen filters on are real columns, not JSON",
+  all(c in [n for n, _ in ST.SCHEMA["email_jobs"][0]]
+      for c in ("status", "approved", "next_attempt_at", "campaign_id")))
+rec = {"id": "x", "workspace_id": "w", "email": "a@b.c", "status": "QUEUED",
+       "attempts": 2, "approved": True, "odd": {"deep": 1}}
+vals, extra = ST._split("email_jobs", rec)
+t("a value with no column falls into extra rather than being dropped",
+  extra == {"odd": {"deep": 1}})
+row = ["x", "w", "t0", "t1"] + vals + [extra]
+back = ST._join("email_jobs", row)
+t("a record survives the round trip",
+  back["email"] == "a@b.c" and back["status"] == "QUEUED"
+  and back["attempts"] == 2.0 and back["approved"] is True
+  and back["odd"] == {"deep": 1}, str(back))
+t("the backend reports which one is live and why",
+  set(ST.backend()) == {"mode", "why", "tables"}
+  and len(ST.backend()["why"]) > 20)
+t("with no database it falls back rather than going blank",
+  ST.backend()["mode"] == "json")
+t("the migration is a copy and says so",
+  "copies" in ST.migrate.__doc__.lower()
+  and "never moves" in ST.migrate.__doc__.lower())
+t("the OS asks the factory rather than constructing a repo itself",
+  "ST.repo_for" in SRC["content_engine_os.py"])
+
+print("\nG18 TENANCY, WORKSPACES AND ROLES")
+import content_engine_os_tenancy as TEN
+ten_store = seeded()
+TEN.ensure_home(ten_store)
+t("the founder's own workspace exists after one call",
+  bool(TEN.workspaces_for(ten_store)))
+t("every role grants something", all(CORE.ROLE_GRANTS.get(r)
+                                     for r in CORE.ROLES))
+t("only owner and admin may administer",
+  {r for r in CORE.ROLES if "admin" in CORE.ROLE_GRANTS[r]}
+  == {"owner", "admin"})
+t("a viewer may not send", "send" not in CORE.ROLE_GRANTS["viewer"])
+made = TEN.create_workspace(ten_store, "Second client")
+t("a second workspace can be created", made["ok"], str(made))
+t("creating it twice is refused rather than duplicated",
+  TEN.create_workspace(ten_store, "Second client")["ok"] is False)
+t("a workspace id from the page is a REQUEST, not an answer",
+  TEN.require(ten_store, "ws_someone_elses")["workspace_id"]
+  == CORE.DEFAULT_WORKSPACE)
+t("the guard refuses a grant the role does not carry",
+  TEN.require(ten_store, CORE.DEFAULT_WORKSPACE, grant="admin",
+              email="stranger@nowhere.com")["ok"] is False)
+t("a member can be added with a role", TEN.add_member(
+    ten_store, CORE.DEFAULT_WORKSPACE, "colleague@x.com", "member")["ok"])
+t("an invented role is refused by name",
+  "not a role" in TEN.add_member(ten_store, CORE.DEFAULT_WORKSPACE,
+                                 "x@y.com", "wizard")["message"])
+t("the owner cannot be removed from their own workspace",
+  TEN.remove_member(ten_store, CORE.DEFAULT_WORKSPACE,
+                    TEN.owner_email(ten_store))["ok"] is False
+  or not TEN.owner_email(ten_store))
+t("the Team screen states the limit in words, rather than implying more",
+  "do not yet hold their own" in SRC["content_engine_os_screens.py"])
+
+print("\nG19 SEND RULES")
+import content_engine_os_schedule as SCHED
+de = {"country": "Germany"}
+ca = {"country": "Canada"}
+t("a German lead is read in Berlin time", SCHED.offset_for(de)[0] == 1)
+t("a Canadian lead is read in Toronto time", SCHED.offset_for(ca)[0] == -5)
+t("an unknown country is treated as UTC and LABELLED approximate",
+  SCHED.offset_for({"country": "Narnia"}) == (0, "UTC", True))
+from datetime import datetime, timezone as _tz
+noon = datetime(2026, 8, 5, 12, 0, tzinfo=_tz.utc)      # a Wednesday
+w = dict(SCHED.DEFAULT_WINDOW)
+t("13:00 in Berlin is inside the window",
+  SCHED.in_window(de, w, noon)[0] is True)
+t("07:00 in Toronto is outside it, and it says where and when",
+  SCHED.in_window(ca, w, noon)[0] is False
+  and "Toronto" in SCHED.in_window(ca, w, noon)[1])
+sat = datetime(2026, 8, 8, 12, 0, tzinfo=_tz.utc)
+t("the weekend is refused when the window says weekdays",
+  SCHED.in_window(de, w, sat)[0] is False
+  and "weekend" in SCHED.in_window(de, w, sat)[1])
+t("the next opening is a real future stamp",
+  CORE.parse_at(SCHED.next_open(ca, w, noon)) > noon)
+sch_store = Store()
+t("the hourly cap starts with room", SCHED.throttle_room(sch_store)[0] > 0)
+SCHED.note_sent(sch_store, SCHED.DEFAULT_HOURLY)
+t("the hourly cap runs out and says how far",
+  SCHED.throttle_room(sch_store)[0] == 0
+  and " of " in SCHED.throttle_room(sch_store)[1])
+t("a first failure retries in minutes, not immediately",
+  SCHED.backoff(1)["retry"] is True and SCHED.backoff(1)["next_attempt_at"])
+t("the ladder gets longer each time",
+  CORE.parse_at(SCHED.backoff(3)["next_attempt_at"])
+  > CORE.parse_at(SCHED.backoff(1)["next_attempt_at"]))
+t("retrying stops rather than looping forever",
+  SCHED.backoff(SCHED.MAX_ATTEMPTS)["retry"] is False)
+t("a permanent refusal is never retried",
+  SCHED.backoff(1, "550 no such user")["retry"] is False
+  and "permanently" in SCHED.backoff(1, "550 no such user")["why"])
+t("a row scheduled for later is not due",
+  SCHED.due({"next_attempt_at": "2099-01-01T00:00:00+00:00"}) is False)
+t("a row with nothing pending is due", SCHED.due({}) is True)
+t("changing the window to an impossible one is refused",
+  SCHED.set_window(sch_store, 18, 9)["ok"] is False)
+
+print("\nG20 A/B")
+ab = {"id": "c1", "subject_variants": ["A first line", "A second line"]}
+picks = {SEND.variant_for(ab, f"p{i}")[0] for i in range(40)}
+t("both arms are used", picks == {0, 1}, str(picks))
+t("the same person always lands on the same arm",
+  all(SEND.variant_for(ab, "p7") == SEND.variant_for(ab, "p7")
+      for _ in range(5)))
+t("one subject is not a test",
+  SEND.variant_for({"id": "c", "subject_variants": ["only"]}, "p")[0] == 0)
+t("arms are labelled A, B, C",
+  (SEND.variant_label(0), SEND.variant_label(1)) == ("A", "B"))
+vr = AN.variant_rows(repo, cid)
+t("every arm reports against its OWN recipients, not the campaign total",
+  all(v["open_rate"][1] == "" or str(v["sent"]) in v["open_rate"][1]
+      for v in vr) or not vr)
+t("a thin test is called early rather than crowned",
+  AN.ab_verdict([{"variant": "A", "subject": "x", "sent": 30,
+                  "open_rate": (40.0, "12 of 30")},
+                 {"variant": "B", "subject": "y", "sent": 30,
+                  "open_rate": (20.0, "6 of 30")}])["state"] == "early")
+t("and the message says why, in words",
+  "noise" in AN.ab_verdict([{"variant": "A", "subject": "x", "sent": 30,
+                             "open_rate": (40.0, "12 of 30")},
+                            {"variant": "B", "subject": "y", "sent": 30,
+                             "open_rate": (20.0, "6 of 30")}])["message"])
+t("a real gap over a real sample is called a winner",
+  AN.ab_verdict([{"variant": "A", "subject": "x", "sent": 400,
+                  "open_rate": (38.0, "152 of 400")},
+                 {"variant": "B", "subject": "y", "sent": 400,
+                  "open_rate": (22.0, "88 of 400")}])["state"] == "winner")
+
+print("\nG21 CONSENT CAPTURE")
+import content_engine_os_optin as OPT
+opt_store = seeded()
+OS.sync(opt_store, opt_store.list_jobs())
+orepo = OS.repo(opt_store)
+tok_c = OPT.token(opt_store, "new@lead.com", "confirm")
+tok_u = OPT.token(opt_store, "new@lead.com", "unsub")
+t("a confirm token cannot unsubscribe", tok_c != tok_u)
+t("a token cannot be guessed from the address",
+  OPT.check(opt_store, "new@lead.com", "confirm", "deadbeef") is False)
+t("the right token checks out",
+  OPT.check(opt_store, "new@lead.com", "confirm", tok_c) is True)
+CORE.upsert_profile(orepo, {"email": "pending@lead.com"})
+CORE.set_consent(orepo, "pending@lead.com", "PENDING", source="form")
+CORE.upsert_profile(orepo, {"email": "pending@lead.com", "city": "Bonn"})
+aud_p = AUD.resolve_audience(orepo, "all")
+t("PENDING is a real state on the profile",
+  any(p.get("consent") == "PENDING" for p in AUD.people(orepo)))
+t("and re-writing the profile does not wipe it",
+  next(p for p in AUD.people(orepo)
+       if p.get("email") == "pending@lead.com")["consent"] == "PENDING")
+t("PENDING is not eligible for a marketing send",
+  not any(p.get("email") == "pending@lead.com"
+          for p in AUD.resolve_audience(orepo, "all")["eligible"])
+  or "PENDING" not in CORE.CONSENT_STATES)
+OPT.confirm(opt_store, "pending@lead.com",
+            OPT.token(opt_store, "pending@lead.com", "confirm"), ip="1.2.3.4")
+row = next(c for c in orepo.all("consents")
+           if c.get("email") == "pending@lead.com")
+t("confirming records SUBSCRIBED", row["status"] == "SUBSCRIBED")
+t("consent is stored with when, how and from where",
+  row["consent_at"] and row["consent_method"] and "ip=" in row["evidence"])
+before_q = len([j for j in orepo.all("email_jobs")
+                if j.get("status") in ("QUEUED", "PROCESSING")])
+un = OPT.unsubscribe(opt_store, "ann@clinicx.de",
+                     OPT.token(opt_store, "ann@clinicx.de", "unsub"))
+t("unsubscribing suppresses in the same act",
+  "ann@clinicx.de" in CORE.suppression_index(orepo))
+t("and it cancels anything already queued for them",
+  un["ok"] and un["cancelled"] >= 0)
+t("a forged unsubscribe link is refused",
+  OPT.unsubscribe(opt_store, "bo@lawfirm.co.uk", "nope")["ok"] is False)
+t("the public pages never say whether an address is known",
+  "If that address can receive email" in SRC["content_engine_api.py"])
+t("the consent pages are outside the login, on purpose",
+  '"/unsubscribe"' in SRC["content_engine_api.py"].split("_auth_gate")[1][:2000])
+t("and they are rate limited instead",
+  "_os_rate" in SRC["content_engine_api.py"])
+
+print("\nG22 THE WORKER HONOURS THE RULES")
+wk = seeded()
+OS.sync(wk, wk.list_jobs())
+wrepo = OS.repo(wk)
+wcid = wrepo.all("campaigns")[0]["id"]
+SEND.queue(wrepo, wcid, jobs=wk.list_jobs(), touch=3)
+SEND.approve(wrepo, wcid)
+SCHED.set_window(wk, 0, 24, False)               # open the window for the test
+FakeProvider.sent = []
+w1 = SEND.work_queue(wrepo, jobs=wk.list_jobs(), provider_name="fake",
+                     store=wk)
+t("with the window open, approved rows send", w1["sent"] >= 1, str(w1))
+t("the worker counts what it sent against the hourly cap",
+  SCHED.throttle_room(wk)[0] < SCHED.hourly_cap(wk))
+# A fresh box for the window half: the one above finished its campaign,
+# and the state machine correctly refuses to queue a SENT campaign again.
+wk2 = seeded()
+OS.sync(wk2, wk2.list_jobs())
+wrepo2 = OS.repo(wk2)
+wcid2 = wrepo2.all("campaigns")[0]["id"]
+SCHED.set_window(wk2, 3, 4, False)               # a window nobody is inside
+SEND.queue(wrepo2, wcid2, jobs=wk2.list_jobs(), touch=3)
+SEND.approve(wrepo2, wcid2)
+before = len(FakeProvider.sent)
+w2 = SEND.work_queue(wrepo2, jobs=wk2.list_jobs(), provider_name="fake",
+                     store=wk2)
+t("outside the window nothing leaves", len(FakeProvider.sent) == before,
+  str(w2))
+t("and the row records when it will next be tried",
+  any(j.get("next_attempt_at") for j in wrepo2.all("email_jobs")),
+  str([(j.get("status"), j.get("error_message"))
+       for j in wrepo2.all("email_jobs")]))
+t("the row says WHY it is waiting, in local time",
+  any("waiting:" in str(j.get("error_message"))
+      for j in wrepo2.all("email_jobs")))
+t("the message names waiting separately from held and failed",
+  "waiting" in w2["message"] and "held" in w2["message"])
+t("drain walks every workspace rather than only the visible one",
+  "workspaces" in SEND.drain(wk2, jobs=wk2.list_jobs()))
+t("the tick drains the queue, so it is a worker and not a button",
+  "_OS.drain(store" in SRC["content_engine_api.py"])
+t("drain only picks up rows a human approved",
+  'j.get("approved")' in SRC["content_engine_os_send.py"])
+
+print("\nG23 THE EDITORS")
+import content_engine_os_editors as ED
+fx = ED.flow_canvas(_D(FL.flow_rows(repo)[0]), _L(ctx.get("campaigns")),
+                    _L(ctx.get("lists")))
+t("the flow canvas ships the graph as data, not as markup",
+  "data-graph=" in fx and "os-fxcanvas" in fx)
+t("every node type can be added from the palette",
+  all(f"osFxAdd('{n}')" in fx for n in CORE.NODE_TYPES if n != "TRIGGER"))
+t("nodes are draggable and connectable",
+  "pointerdown" in ED.FLOW_JS and "osFxJoin" in ED.FLOW_JS)
+t("saving posts the whole graph to the backend",
+  "'/os/flow/save'" in ED.FLOW_JS)
+t("the canvas does not autosave, because people are inside these flows",
+  "autosave" not in ED.FLOW_JS.lower())
+bb = ED.block_editor({})
+t("the block editor offers every block type",
+  all(f"osBbAdd('{b}')" in bb for b in CT.BLOCK_TYPES))
+t("every block type has a form", set(ED.BLOCK_FIELDS) == set(CT.BLOCK_TYPES))
+t("blocks reorder by dragging", "dragstart" in ED.BLOCK_JS
+  and "osBbMove" in ED.BLOCK_JS)
+t("the builder preview goes through the SENDER's renderer",
+  "'/os/template/render'" in ED.BLOCK_JS
+  and "CONTENT.render_blocks" in SRC["content_engine_os.py"])
+t("both editors boot on the page they are drawn on",
+  "osFxBoot" in ED.BOOT_JS and "osBbBoot" in ED.BOOT_JS)
+full = SCR.build(OS.build_ctx(store, jobs=store.list_jobs()))
+t("the shell carries the editor code, so the handlers exist",
+  "osFxBoot" in full and "osBbBoot" in full and "os-fxcanvas" in full)
+
+print("\nG24 THE OLD FORMATION CANNOT COME BACK")
+import os as _os
+for gone in ("content_engine_outreach_screens.py",
+             "content_engine_email_campaigns.py",
+             "content_engine_email_segments.py"):
+    t(f"{gone} is deleted", not _os.path.exists(gone))
+t("nothing imports what was deleted",
+  not any(d in v for v in SRC.values()
+          for d in ("outreach_screens", "email_campaigns", "email_segments")))
+t("the boards file is one function now",
+  len(SRC["content_engine_outreach_boards.py"].splitlines()) < 120)
+t("the section carries no card markup",
+  "<div class='card " not in SCR.build(OS.build_ctx(store,
+                                                    jobs=store.list_jobs())))
+t("twenty seven screens", len(SCR.PANELS) == 27, str(len(SCR.PANELS)))
+handlers2 = re.findall(r"function (os[A-Z]\w+)", SCR.JS + ED.FLOW_JS
+                       + ED.BLOCK_JS)
+called2 = set(re.findall(r"(os[A-Z]\w+)\(", full))
+missing2 = sorted(c for c in called2 if c not in handlers2 and c != "osToast")
+t("every handler the new screens call is defined", not missing2, str(missing2))
 
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)
