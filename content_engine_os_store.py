@@ -172,7 +172,21 @@ TABLE = "os_{}".format
 
 
 def ddl() -> list:
-    """Every CREATE TABLE and CREATE INDEX, generated from SCHEMA alone."""
+    """Every CREATE TABLE, ALTER and CREATE INDEX, generated from SCHEMA.
+
+    THE ALTERS ARE NOT OPTIONAL, and this is why. CREATE TABLE IF NOT
+    EXISTS does nothing to a table that already exists, so adding one
+    column to SCHEMA and shipping it made every INSERT fail against the
+    live database with "column rest_until does not exist". The fallback
+    caught it and the dashboard kept working on the JSON store, which is
+    the fallback doing its job and is still the wrong outcome: the founder
+    had a Postgres backend one deploy and a JSON one the next, with a
+    single log line to say so.
+
+    Running an ADD COLUMN IF NOT EXISTS for every column on every boot
+    makes the schema self-healing. It is idempotent, it costs a handful of
+    milliseconds on a table that is already correct, and it means a column
+    added here can never again half-arrive."""
     out = []
     for coll, (cols, idx) in SCHEMA.items():
         t = TABLE(coll)
@@ -183,6 +197,10 @@ def ddl() -> list:
             + ["extra jsonb NOT NULL DEFAULT '{}'::jsonb",
                "PRIMARY KEY (workspace_id, id)"])
         out.append(f"CREATE TABLE IF NOT EXISTS {t} (\n  {body}\n)")
+        for c, typ in cols:
+            out.append(f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS {c} {typ}")
+        out.append(f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS extra jsonb "
+                   f"NOT NULL DEFAULT '{{}}'::jsonb")
         for c in idx:
             out.append(f"CREATE INDEX IF NOT EXISTS {t}_{c}_ix "
                        f"ON {t} (workspace_id, {c})")
@@ -351,13 +369,27 @@ def connect(force=False):
         return None
     try:
         import psycopg
-        conn = psycopg.connect(dsn, autocommit=False)
+        conn = psycopg.connect(dsn, autocommit=True)
+        failed = []
         with conn.cursor() as cur:
             for stmt in ddl():
-                cur.execute(stmt)
-        conn.commit()
+                try:
+                    cur.execute(stmt)
+                except Exception as ex:
+                    # One statement failing must not abandon the other
+                    # twenty five tables. autocommit is on for exactly this
+                    # reason: in a transaction, one bad statement poisons
+                    # every statement after it.
+                    failed.append(f"{stmt.split(chr(10))[0][:60]}: {ex}")
+        conn.autocommit = False
+        if failed:
+            log.error("schema statements refused: %s", failed[:5])
         _STATE.update(ready=True, conn=conn, mode="postgres",
-                      why=f"{len(SCHEMA)} tables live in Postgres")
+                      why=(f"{len(SCHEMA)} tables live in Postgres"
+                           if not failed else
+                           f"{len(SCHEMA)} tables live in Postgres, "
+                           f"{len(failed)} schema statement(s) refused; see "
+                           f"the log"))
         return conn
     except Exception as ex:
         log.error("os tables unavailable, staying on the settings store: %s", ex)

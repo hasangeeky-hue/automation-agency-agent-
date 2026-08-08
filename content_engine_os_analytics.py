@@ -469,10 +469,16 @@ def verdict_for(row, over) -> tuple:
     opens = int(row.get("opens") or 0)
     clicks = int(row.get("clicks") or 0)
     if row.get("is_scanner") == "yes":
+        # USE THE REASON THAT WAS ACTUALLY COMPUTED. Writing a second
+        # sentence here printed "37 clicks against 41 opens is a security
+        # scanner" for somebody flagged on the instant-click rule, which is
+        # both the wrong reason and arithmetic that contradicts itself in
+        # front of the reader.
+        why = row.get("scanner_why") or SCANNER_RULES["more_clicks_than_opens"]
         return ("scanner",
-                f"{_n(clicks, 'click')} against {_n(opens, 'open')} is a "
-                f"security scanner, not a reader",
-                "exclude from the click rate; keep emailing the human")
+                f"{_n(clicks, 'click')}, {_n(opens, 'open')}: {why}",
+                "exclude from the click rate; the human behind this "
+                "mailbox may still be worth writing to")
     if sent >= over and opens == 0:
         return ("silent",
                 f"{_n(sent, 'email')} and not one open: this address is "
@@ -508,6 +514,7 @@ def hygiene(repo, over=10) -> dict:
             "company": r.get("company") or "",
             "sent": r.get("emails_sent"), "opens": r.get("opens"),
             "clicks": r.get("clicks"), "code": code, "why": why,
+            "rule": r.get("scanner_why", ""),
             "action": action, "resting": r.get("resting"),
             "rest_until": str(r.get("rest_until") or "")[:10],
             "profile_id": r.get("id")})

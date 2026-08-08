@@ -645,6 +645,25 @@ t("every table is keyed on the workspace first",
       for x in stmts if x.startswith("CREATE TABLE")))
 t("every index is scoped to the workspace",
   all("(workspace_id," in x for x in stmts if x.startswith("CREATE INDEX")))
+# THE GATE YOUR BOX EARNED. Adding rest_until to SCHEMA shipped without an
+# ALTER, so every INSERT failed against the live database and the whole
+# backend fell back to JSON with one log line. A column added here must
+# arrive on a table that already exists.
+_alters = [x for x in stmts if x.startswith("ALTER TABLE")]
+_want = sum(len(c) for c, _i in ST.SCHEMA.values()) + len(ST.SCHEMA)
+t("every column has an ALTER, so adding one cannot break a live database",
+  len(_alters) == _want, f"{len(_alters)} alters for {_want} columns")
+t("every ALTER is idempotent",
+  all("ADD COLUMN IF NOT EXISTS" in x for x in _alters))
+t("a column added to SCHEMA reaches an existing table",
+  any("rest_until" in x for x in _alters))
+t("the alters run after the create, never before",
+  min(i for i, x in enumerate(stmts) if x.startswith("ALTER"))
+  > min(i for i, x in enumerate(stmts) if x.startswith("CREATE TABLE")))
+t("one refused statement does not abandon the other tables",
+  "must not abandon" in ST.connect.__doc__ or
+  "must not abandon" in io.open("content_engine_os_store.py",
+                                encoding="utf-8").read())
 t("the fields a screen filters on are real columns, not JSON",
   all(c in [n for n, _ in ST.SCHEMA["email_jobs"][0]]
       for c in ("status", "approved", "next_attempt_at", "campaign_id")))
@@ -941,6 +960,20 @@ t("a recipient who clicks more than they open is named a scanner",
   bot in scan, str(list(scan)[:2]))
 t("and the reason is a sentence, not a code",
   "cannot do" in scan[bot] or "reads and decides" in scan[bot])
+# THE SECOND DEFECT YOUR BOX FOUND. The verdict wrote its own sentence and
+# printed "37 clicks against 41 opens is a security scanner" for somebody
+# flagged on the instant-click rule: the wrong reason, and arithmetic that
+# contradicts itself on screen.
+_fast = {"is_scanner": "yes", "clicks": 3, "opens": 9, "emails_sent": 9,
+         "scanner_why": AN.SCANNER_RULES["clicked_instantly"]}
+_code, _why, _act = AN.verdict_for(_fast, 10)
+t("a verdict quotes the rule that actually fired",
+  "reads and decides" in _why, _why)
+t("and never claims more clicks than opens when there were fewer",
+  "clicks against" not in _why or "3 clicks, 9 opens" in _why, _why)
+t("the row carries the rule so the screen can group by it",
+  "rule" in (AN.hygiene(hrepo, over=2)["rows"] or [{}])[0]
+  or not AN.hygiene(hrepo, over=2)["rows"])
 t("a normal recipient is NOT called a scanner",
   CORE.rid("prf", hrepo.ws, "ann@clinicx.de") not in scan)
 t("the group names ARE the verdict codes, so cleaning cannot miss",
