@@ -1809,6 +1809,42 @@ def api_dashboard_html() -> str:
     return D.dashboard_html(**_dashboard_kwargs())
 
 
+def api_leads_html() -> str:
+    """Leads and Outreach, ON ITS OWN PAGE.
+
+    The control centre renders every section at once and comes to just over
+    four megabytes. The engagement OS lives at the bottom of that, so
+    reaching it means scrolling past everything else and waiting for
+    everything else to draw first. This is the same section, the same
+    context and the same code, served alone.
+
+    It is NOT a second dashboard. Nothing is duplicated: it calls the one
+    builder the control centre calls, so the two cannot drift.
+    """
+    import content_engine_dashboard as D
+    import content_engine_os as OS
+    import content_engine_os_screens as SCR
+    store = get_store()
+    jobs = store.list_jobs(status=None) if hasattr(store, "list_jobs") else []
+    ctx = OS.build_ctx(store, jobs=jobs, reply_drafts=_reply_drafts())
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Leads &amp; Outreach</title>"
+        "<style>" + D.CSS + "</style></head><body>"
+        "<div class='top'><div class='brand'><div class='logo'>A</div>"
+        "<div><h1>Leads &amp; Outreach</h1>"
+        "<small>Everyone you know, and every email you sent them</small>"
+        "</div></div>"
+        "<div style='display:flex;gap:9px;align-items:center'>"
+        "<a href='/' style='color:#8FA0C8;font-size:12px;text-decoration:none;"
+        "border:1px solid #1B2640;border-radius:7px;padding:5px 11px'>"
+        "Back to the control centre</a></div></div>"
+        "<div class='shell'><div class='main' style='width:100%'>"
+        + SCR.build(ctx) + "</div></div>"
+        + D.dashboard_script({}) + "</body></html>")
+
+
 def api_vx2_html(active: str = "decide") -> str:
     """Render VX2: the same nine boards, four doors, 127 subsections.
 
@@ -1938,6 +1974,14 @@ def build_app():
     # VX2 - the new layout, served BESIDE the old one. Same login, same data,
     # same handlers. "/" is untouched, so nothing that works today can break
     # here, and switching back is a URL, not a rollback.
+    @app.get("/leads", response_class=HTMLResponse)
+    def leads_page(request: Request):
+        """The engagement OS, alone, so it is not at the bottom of four
+        megabytes of everything else."""
+        if not dash_authed(request.cookies):
+            return HTMLResponse(_login_html(nxt="/leads"), headers=_NO_CACHE)
+        return HTMLResponse(api_leads_html(), headers=_NO_CACHE)
+
     @app.get("/vx2", response_class=HTMLResponse)
     def vx2(request: Request, b: str = "decide"):
         if not dash_authed(request.cookies):

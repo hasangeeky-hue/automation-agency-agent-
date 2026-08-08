@@ -338,6 +338,7 @@ def band(ctx) -> str:
         "<button class='cta' onclick=\"osAct('/os/sync')\">Re-read the "
         "engine</button>"
         "<button class='cta' onclick=\"osNav('sendqueue')\">Queue</button>"
+        "<a class='cta' href='/leads'>Open this on its own page</a>"
         "</div></div>")
 
 

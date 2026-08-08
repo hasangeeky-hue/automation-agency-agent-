@@ -1295,6 +1295,21 @@ t("the daily job carries the question, not only the offer",
 t("and it records which slice of the market it asked for",
   "sourcing_day" in _sched_src)
 
+print("  -- the section has its own page")
+_api_src = io.open("content_engine_api.py", encoding="utf-8").read()
+t("there is a route for it", '"/leads"' in _api_src)
+t("it needs a session like everything else", "dash_authed" in
+  _api_src.split('def leads_page')[1][:400])
+_leads_fn = _api_src.split("def api_leads_html")[1].split("def api_vx2_html")[0]
+t("it calls the SAME builder, so the two cannot drift",
+  "SCR.build(ctx)" in _leads_fn)
+t("and the same context builder", "OS.build_ctx" in _leads_fn)
+t("it renders the section and nothing else, so it stays small",
+  "dashboard_html" not in _leads_fn)
+t("the band offers the door", "href='/leads'" in SCR.band({}))
+t("it is not a second dashboard, and says so",
+  "NOT a second dashboard" in _api_src)
+
 print("  -- pages, and a rows-per-page you choose")
 _pg = seeded()
 _pj = _pg.get("out_991")
