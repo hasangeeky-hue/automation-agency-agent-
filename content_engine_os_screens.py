@@ -396,8 +396,18 @@ def acq_leads(ctx) -> str:
                  "A lead is the opportunity. The person is a profile, and one "
                  "company can produce several leads over time, which is why "
                  "they are separate records rather than columns on each other.",
-                 tiles([("Leads", _D(ctx.get("acquisition")).get("leads"), ""),
-                        ("On this list", len(rows), "most engaged first")])
+                 tiles([("People", len(rows), "distinct human beings"),
+                        ("Lead records", _D(ctx.get("sync")).get("lead_records"),
+                         "one per campaign each"),
+                        ("Most campaigns one person is in",
+                         _D(ctx.get("sync")).get("most_repeated"), "")])
+                 + ("<p class='os-note'>The old table listed a lead once per "
+                    "campaign, so the same person appeared in every campaign "
+                    "they were sourced into and the list looked far longer "
+                    "than the number of people in it. Both numbers are here: "
+                    "the records you remember, and the people they are."
+                    "</p>" if _D(ctx.get("sync")).get("most_repeated", 0) > 1
+                    else "")
                  + f"<div id='os-t-leads'>{lead_table(rows)}</div>")
 
 

@@ -81,9 +81,10 @@ def build_ctx(store, *, jobs=None, reply_drafts=None,
     import content_engine_os_store as ST
     import content_engine_os_tenancy as TEN
     r = repo(store, workspace_id)
+    synced = {}
     if do_sync:
         try:
-            sync(store, jobs, reply_drafts, workspace_id)
+            synced = sync(store, jobs, reply_drafts, workspace_id)
         except Exception as ex:
             log.warning("os sync skipped: %s", ex)
 
@@ -108,7 +109,7 @@ def build_ctx(store, *, jobs=None, reply_drafts=None,
         gaps[f] = {"missing": len([p for p in profiles if not p.get(f)]),
                    "why": why}
     return {
-        "workspace_id": workspace_id,
+        "workspace_id": workspace_id, "sync": synced,
         "summary": safe(lambda: CORE.summary(r), {}),
         "acquisition": safe(lambda: AN.acquisition(r), {}),
         "campaigns": safe(lambda: AN.campaign_rows(r), []),

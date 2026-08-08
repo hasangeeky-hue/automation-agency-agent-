@@ -650,7 +650,8 @@ def project(store, jobs=None, *, workspace_id=DEFAULT_WORKSPACE,
     repo = repo if repo is not None else Repo(store, workspace_id)
     jobs = [j for j in _L(jobs) if isinstance(j, dict)]
     out = {"profiles": 0, "leads": 0, "campaigns": 0, "messages": 0,
-           "events": 0, "suppressions": 0}
+           "events": 0, "suppressions": 0, "lead_records": 0,
+           "appears_in": {}}
     seen_events = {r.get("event_key") for r in repo.all("email_events")}
     before_ev = len(seen_events)
 
@@ -681,7 +682,11 @@ def project(store, jobs=None, *, workspace_id=DEFAULT_WORKSPACE,
             continue
         p = _D(job.get("payload"))
         jid = str(job.get("job_id") or "")
-        leads = _L(p.get("leads"))
+        # PARITY WITH THE OLD LEADS TABLE, which read
+        #   _L(p.get("leads")) or _L(p.get("raw_leads"))
+        # A job whose sourcing produced nothing but whose raw pull survived
+        # showed there and would not have shown here. One reader, one answer.
+        leads = _L(p.get("leads")) or _L(p.get("raw_leads"))
         qmap = {norm_email(r.get("id")): r
                 for r in _L(_D(p.get("lead_qualifier")).get("results"))}
         sent_to = _D(p.get("sent_to"))
@@ -722,6 +727,8 @@ def project(store, jobs=None, *, workspace_id=DEFAULT_WORKSPACE,
         for L in leads:
             em = norm_email(L.get("email"))
             q = qmap.get(em) or {}
+            key_for = em or str(L.get("website") or L.get("company")
+                                or "").strip().lower()
             comp = upsert_company(repo, L.get("company"),
                                   website=L.get("website"),
                                   country=L.get("country"))
@@ -746,6 +753,12 @@ def project(store, jobs=None, *, workspace_id=DEFAULT_WORKSPACE,
                 continue
             pid = prof["id"]
             out["profiles"] += 1
+            # ONE PERSON, MANY ROWS. The old table listed a lead once per
+            # campaign, so 31 people across 13 campaigns read as 250 rows
+            # and looked like 250 leads. Counting both makes the difference
+            # visible instead of feeling like loss.
+            out["lead_records"] += 1
+            out["appears_in"][em or key_for] =                 out["appears_in"].get(em or key_for, 0) + 1
             touches = _touch_count(sent_to.get(em))
             upsert_lead(repo, pid, company_id=comp.get("id", ""),
                         source=L.get("source") or "agent", source_url=jid,
@@ -823,6 +836,16 @@ def project(store, jobs=None, *, workspace_id=DEFAULT_WORKSPACE,
                 repo.put("leads", lead)
 
     out["events_total"] = before_ev + out["events"]
+    # THE TWO NUMBERS PEOPLE CONFUSE, SEPARATED.
+    #   lead_records  how many rows the old table listed: one per lead per
+    #                 campaign, which is why 31 people read as 250 leads
+    #   people        how many distinct human beings that actually is
+    # "profiles" used to be the upsert count, which is neither, and it is
+    # the number that made this look like data loss.
+    out["people"] = len(out["appears_in"])
+    out["profiles"] = out["people"]
+    out["repeated"] = {k: v for k, v in out["appears_in"].items() if v > 1}
+    out["most_repeated"] = max(out["appears_in"].values()) if out["appears_in"] else 0
     return out
 
 

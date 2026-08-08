@@ -1355,6 +1355,26 @@ for _tgt in SCR.PAGED:
 t("no screen promises a fixed 250 any more", "most engaged 250" not in _ph)
 t("the handler exists", "function osPage(" in SCR.JS)
 
+print("  -- records and people are different numbers")
+_rp = seeded()
+_rj = _rp.get("out_991")
+_rp.save({**_rj, "job_id": "out_992"})
+_rp.save({**_rj, "job_id": "out_993"})
+_ro = OS.sync(_rp, _rp.list_jobs())
+t("the same person in three campaigns is THREE records",
+  _ro["lead_records"] == 12, str(_ro["lead_records"]))
+t("but FOUR people", _ro["people"] == 4, str(_ro["people"]))
+t("and the repeat is reported, not hidden", _ro["most_repeated"] == 3)
+t("the old table's number was the record count, which is why it looked "
+  "longer", _ro["lead_records"] > _ro["people"])
+_rh = SCR.build(OS.build_ctx(_rp, jobs=_rp.list_jobs()))
+t("the Leads screen shows BOTH numbers",
+  "Lead records" in _rh and "distinct human beings" in _rh)
+t("and explains the difference in words",
+  "looked far longer" in _rh)
+t("a job with only raw_leads is read too, as the old table did",
+  "raw_leads" in SRC["content_engine_os_core.py"].split("PARITY")[1][:200])
+
 print("  -- leads with no address are still leads")
 _nl = seeded()
 _j = _nl.get("out_991")
