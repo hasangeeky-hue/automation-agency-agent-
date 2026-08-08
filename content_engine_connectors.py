@@ -1940,6 +1940,28 @@ def _stamp_collected(leads):
     return out
 
 
+def _known_addresses() -> set:
+    """Every address this engine already holds.
+
+    Read from the engagement OS, which is the one place that knows about
+    every campaign rather than only this one. Wrapped and lazy: sourcing
+    must keep working if the OS is unavailable, and a failure here should
+    cost a duplicate rather than the whole run."""
+    try:
+        import content_engine_api as _A
+        import content_engine_os as _OS
+        repo = _OS.repo(_A.get_store())
+        out = {str(p.get("email") or "").strip().lower()
+               for p in repo.all("profiles")}
+        out |= {str(s.get("email") or "").strip().lower()
+                for s in repo.all("suppressions")}
+        return {e for e in out if e}
+    except Exception as e:
+        log.warning("could not read who we already have (%s); sourcing will "
+                    "run without that filter", e)
+        return set()
+
+
 def source_leads(job: dict) -> list:
     """Feeds lead_sourcing (which then dedupes + verifies). Pulls from:
       1) Google Maps (when config.lead_source == 'maps') — local businesses
@@ -4095,6 +4117,7 @@ def wire_all() -> dict:
     # Lead sourcing engages if LinkedIn or web search is configured.
     if LinkedIn().available() or (_env("SEARCH_PROVIDER") and _env("SEARCH_API_KEY")):
         cs.SOURCE_FN = source_leads
+        cs.KNOWN_FN = _known_addresses
 
     # Backlink data only if a JSON blob was provided.
     if _env("BACKLINKS_JSON"):

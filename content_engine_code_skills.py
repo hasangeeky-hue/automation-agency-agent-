@@ -33,6 +33,11 @@ from typing import Callable, Optional
 
 # --- pluggable I/O hooks (default: offline, read from payload) --------------
 SOURCE_FN: Optional[Callable[[dict], list]] = None   # -> raw leads
+
+#: Addresses this engine already knows. Wired to the engagement OS at
+#: startup. A sourcing run that returns somebody you have already emailed
+#: thirty times is not a lead, it is a bill.
+KNOWN_FN: Optional[Callable[[], set]] = None
 VERIFY_FN: Optional[Callable[[str], bool]] = None    # -> email deliverable?
 BACKLINK_FN: Optional[Callable[[dict], dict]] = None # -> {client, competitors}
 PUBLISH_FN: Optional[Callable[[dict, dict], str]] = None  # -> CMS ref (WordPress)
@@ -55,9 +60,18 @@ def lead_sourcing(job: dict) -> dict:
     raw = SOURCE_FN(job) if SOURCE_FN else payload.get("raw_leads", [])
     verify = VERIFY_FN or _default_verify
 
+    # ALREADY-KNOWN IS A KIND OF DUPLICATE, and it is the expensive kind.
+    # Deduping inside one batch stopped the same person appearing twice on
+    # Tuesday. It did nothing about the same person appearing on Tuesday,
+    # Wednesday and every day for a fortnight, which is how thirty one
+    # people came to receive seven hundred and fifty emails.
+    try:
+        known = KNOWN_FN() if KNOWN_FN else set()
+    except Exception:
+        known = set()
     seen: set[str] = set()
     leads: list[dict] = []
-    dropped_dupe = dropped_invalid = 0
+    dropped_dupe = dropped_invalid = dropped_known = 0
     for lead in raw or []:
         email = (lead.get("email") or "").strip().lower()
         key = email or (lead.get("domain") or lead.get("company") or "").strip().lower()
@@ -66,6 +80,9 @@ def lead_sourcing(job: dict) -> dict:
             continue
         if key in seen:
             dropped_dupe += 1
+            continue
+        if email and email in known:
+            dropped_known += 1
             continue
         seen.add(key)
         if email and not verify(email):
@@ -80,6 +97,11 @@ def lead_sourcing(job: dict) -> dict:
         "verified": len(leads),
         "dropped_duplicate": dropped_dupe,
         "dropped_invalid": dropped_invalid,
+        "dropped_already_known": dropped_known,
+        "note": (f"{dropped_known} of these were people this engine already "
+                 f"has. Sourcing the same list every day is what made one "
+                 f"person receive thirty emails."
+                 if dropped_known else ""),
     }
 
 

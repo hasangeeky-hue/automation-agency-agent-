@@ -62,6 +62,47 @@ def _isval(getset, key, default):
         return int(default)
 
 
+#: The founder's own market, as (what they do, where). Sourcing walks this
+#: list one entry per day, so Monday does not ask the same question as
+#: Sunday. Settings-driven: SCHED_ICP_ROTATION overrides it live, one
+#: "vertical|city" pair per line, without a rebuild.
+ICP_ROTATION = (
+    ("dentists", "Munich"), ("law firms", "Zurich"),
+    ("tax consultants", "Berlin"), ("physiotherapists", "Vienna"),
+    ("Shopify agencies", "London"), ("dental clinics", "Manchester"),
+    ("accountants", "Toronto"), ("chiropractors", "Chicago"),
+    ("marketing agencies", "Hamburg"), ("private clinics", "Geneva"),
+    ("solicitors", "Birmingham"), ("orthodontists", "Vancouver"),
+    ("bookkeepers", "Frankfurt"), ("cosmetic clinics", "Zurich"),
+)
+
+
+def todays_icp(store, day=None) -> dict:
+    """One entry from the rotation, chosen by the DATE.
+
+    By the date rather than at random, so two runs on the same day ask the
+    same question and a re-plan cannot spend twice on different people.
+    """
+    from datetime import date as _date
+    getset = getattr(store, "get_setting", None)
+    raw = _sval(getset, "SCHED_ICP_ROTATION", "")
+    pairs = []
+    for line in str(raw or "").splitlines():
+        if "|" in line:
+            a_, b_ = line.split("|", 1)
+            if a_.strip() and b_.strip():
+                pairs.append((a_.strip(), b_.strip()))
+    pairs = pairs or list(ICP_ROTATION)
+    d = day or _date.today()
+    vertical, city = pairs[d.toordinal() % len(pairs)]
+    return {"vertical": vertical, "city": city,
+            "icp": {"ideal_industries": [vertical], "ideal_size": ""},
+            "search_keywords": vertical,
+            "maps_query": f"{vertical} in {city}",
+            "lead_search_query": f"{vertical} {city}",
+            "rotation_size": len(pairs)}
+
+
 def plan_today(store, force: bool = False) -> dict:
     """Create today's batch of jobs (idempotent per day). Returns a summary.
     Cadence is read from settings first (SCHED_CHANNELS / SCHED_*_PER_DAY etc.),
@@ -88,9 +129,25 @@ def plan_today(store, force: bool = False) -> dict:
         created.append({"job_id": jid, "type": job_type})
 
     # 1) COLD EMAIL FIRST (priority: warm the pipeline before paid marketing).
+    # THE JOB CARRIES A QUESTION NOW. It used to carry only the offer, so
+    # source_leads asked the provider {"industries": [], "keywords": ""} -
+    # the same empty question every morning, which returned the same twenty
+    # five people every morning. Ten days of that is how thirty one people
+    # came to receive seven hundred and fifty emails.
+    _icp = todays_icp(store)
     for i in range(_isval(getset, "SCHED_OUTREACH_PER_DAY", 1)):
         make("outreach_campaign", f"outreach_{i}",
-             {"config": {"our_offer": brand["offer"]},
+             {"config": {"our_offer": brand["offer"],
+                         "icp": _icp["icp"],
+                         "search_keywords": _icp["search_keywords"],
+                         "lead_search_query": _icp["lead_search_query"],
+                         "maps_query": _icp["maps_query"],
+                         "lead_source": _sval(getset, "SCHED_LEAD_SOURCE",
+                                              "provider"),
+                         "lead_limit": _isval(getset, "SCHED_LEADS_PER_DAY",
+                                              25),
+                         "sourcing_day": _icp["vertical"] + " in "
+                                         + _icp["city"]},
               "raw_leads": [], "category": "other", "lead": {},
               "buckets": [], "_scheduled": True})
 

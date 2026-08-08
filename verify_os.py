@@ -1240,6 +1240,61 @@ t("a typed unsubscribe works and is recorded as typed",
 t("and it suppresses in the same act",
   "bo@lawfirm.co.uk" in CORE.suppression_index(gr))
 
+print("  -- sourcing cannot return somebody you already have")
+import content_engine_code_skills as _CS
+import content_engine_scheduler as _SCH
+from datetime import date as _date
+_old_known, _old_src, _old_ver = _CS.KNOWN_FN, _CS.SOURCE_FN, _CS.VERIFY_FN
+_CS.KNOWN_FN = lambda: {"ann@clinicx.de"}
+_CS.SOURCE_FN = None
+_CS.VERIFY_FN = lambda e: True
+_job = {"payload": {"raw_leads": [{"email": "ann@clinicx.de"},
+                                  {"email": "new@x.de"},
+                                  {"email": "new@x.de"},
+                                  {"company": "No Address Ltd"}]}}
+_res = _CS.lead_sourcing(_job)
+t("somebody already in the engine is dropped at sourcing",
+  _res["dropped_already_known"] == 1, str(_res))
+t("a repeat inside the same batch is still dropped",
+  _res["dropped_duplicate"] == 1)
+t("a genuinely new address survives",
+  [l.get("email") for l in _job["payload"]["leads"]] == ["new@x.de",
+                                                         None]
+  or "new@x.de" in [l.get("email") for l in _job["payload"]["leads"]])
+t("a lead with no address is still sourced, it just cannot be mailed",
+  any(l.get("company") == "No Address Ltd"
+      for l in _job["payload"]["leads"]))
+t("the count says WHY, in the founder's own words",
+  "thirty emails" in _res["note"])
+_CS.KNOWN_FN = lambda: (_ for _ in ()).throw(RuntimeError("os down"))
+t("if the engine cannot be read, sourcing still runs rather than stopping",
+  _CS.lead_sourcing({"payload": {"raw_leads": [{"email": "z@z.de"}]}})
+  ["verified"] == 1)
+_CS.KNOWN_FN, _CS.SOURCE_FN, _CS.VERIFY_FN = _old_known, _old_src, _old_ver
+
+class _St:
+    def __init__(self): self.d = {}
+    def get_setting(self, k, v=None): return self.d.get(k, v)
+    def set_setting(self, k, v): self.d[k] = v
+_st = _St()
+_a = _SCH.todays_icp(_st, _date(2026, 8, 8))
+_b = _SCH.todays_icp(_st, _date(2026, 8, 9))
+t("the daily job asks a different question each morning",
+  _a["maps_query"] != _b["maps_query"], f'{_a["maps_query"]} vs {_b["maps_query"]}')
+t("but the SAME question twice on one day, so a re-plan cannot spend twice",
+  _SCH.todays_icp(_st, _date(2026, 8, 8)) == _a)
+t("the rotation is the founder's own market",
+  len(_SCH.ICP_ROTATION) >= 10
+  and any("Munich" in c or "Zurich" in c for _v, c in _SCH.ICP_ROTATION))
+_st.set_setting("SCHED_ICP_ROTATION", "vets|Bern\nopticians|Basel")
+t("and it can be replaced from settings without a rebuild",
+  _SCH.todays_icp(_st)["rotation_size"] == 2)
+_sched_src = io.open("content_engine_scheduler.py", encoding="utf-8").read()
+t("the daily job carries the question, not only the offer",
+  '"icp": _icp["icp"]' in _sched_src)
+t("and it records which slice of the market it asked for",
+  "sourcing_day" in _sched_src)
+
 print("  -- pages, and a rows-per-page you choose")
 _pg = seeded()
 _pj = _pg.get("out_991")
