@@ -814,29 +814,20 @@ def api_clear_plan():
 
 
 def _outreach_email_for(job, email, touch=1):
-    """(lead, qual, subject, body) for one recipient at a given sequence step
-    (1=intro, 2=bump, 3=final). Touch 1 uses the founder's manual edit
-    (payload['email_edits'][email]) if present; touches 2 & 3 are follow-ups."""
-    p = job.get("payload", {}) or {}
-    leads = p.get("leads") or []
-    lead = next((L for L in leads if (L.get("email") or "").strip().lower() == email.lower()), None)
-    if not lead:
-        return None
-    qmap = {str(r.get("id", "")).lower(): r for r in ((p.get("lead_qualifier") or {}).get("results") or [])}
-    q = qmap.get(email.lower()) or {}
-    import content_engine_connectors as C
-    oc = p.get("outreach_copy", {}) or {}
-    base_subj = (oc.get("subject_variants") or ["Quick idea for {{company}}"])[0]
-    # An edit can now be saved against ANY touch. Edits used to be keyed by
-    # email alone and only consulted for touch 1, so emails 2 and 3 could be
-    # read in the outbox but never changed.
-    edits = p.get("email_edits", {}) or {}
-    edit = edits.get(f"{email.lower()}|{int(touch)}") or (
-        edits.get(email.lower()) if int(touch) <= 1 else None)
-    if edit and edit.get("body"):
-        return (lead, q, edit.get("subject") or "", edit.get("body") or "")
-    return (lead, q) + C.outreach_touch(lead, q, base_subj, oc.get("body", ""),
-                                        touch, oc)
+    """(lead, qual, subject, body) for one recipient at a given sequence step.
+
+    THE RESOLVER NOW HAS ONE HOME. It used to live here, private to the API
+    module, which meant the preview screen could not reach it: it read
+    payload.subject and payload.html, fields no job carries, so every
+    campaign previewed as empty while the sender worked perfectly. The
+    logic moved to content_engine_os_content.resolve_email and both the
+    preview and the send path call it. What you preview is what sends.
+
+    This wrapper stays because the outbox, the batch sender and the single
+    sender all call it by this name.
+    """
+    import content_engine_os_content as OSC
+    return OSC.resolve_email(job, email, touch)
 
 
 def _outreach_alias(mailer=None):
@@ -884,10 +875,14 @@ def _append_ref(p, email, ref, subject=None, step=None, alias=None,
                         email, e)
 
 
-def api_outreach_edit(job_id, email, subject, body, touch=1):
+def api_outreach_edit(job_id, email, subject, body, touch=1, store=None):
     """Save the founder's manual edit of one email (fix the agent's text). The
-    edited version is what previews AND what sends."""
-    store = get_store()
+    edited version is what previews AND what sends.
+
+    THE ONE WRITER of payload['email_edits']. `store` is injectable so the
+    engagement OS and the tests write through this same function rather
+    than growing a second writer that could disagree with the reader."""
+    store = store if store is not None else get_store()
     try:
         job = store.get(job_id)
     except Exception:
@@ -2808,6 +2803,302 @@ def build_app():
         return {"ok": True, **{k: out.get(k) for k in
                                ("at", "live", "message")}}
 
+    # ---------------------------------------------------------------
+    # THE ENGAGEMENT OS
+    # ---------------------------------------------------------------
+    def _os():
+        """(module, store, jobs). One helper so no route re-derives them."""
+        import content_engine_os as _OS
+        st = get_store()
+        js = st.list_jobs(status=None) if hasattr(st, "list_jobs") else []
+        return _OS, st, js
+
+    async def _body(request):
+        try:
+            return await request.json()
+        except Exception:
+            return {}
+
+    @app.get("/os/campaign/{cid}", response_class=HTMLResponse)
+    def os_campaign(cid: str, email: str = "", touch: int = 1):
+        """The campaign detail: the real email on the left, the numbers on
+        the right. The preview resolves through the engine's own send path,
+        so what is drawn here is what leaves the building."""
+        OS, store, jobs = _os()
+        try:
+            return HTMLResponse(OS.campaign_html(store, cid, jobs=jobs,
+                                                 email=email, touch=touch))
+        except Exception as e:
+            log.exception("campaign detail failed")
+            return HTMLResponse("<p class='os-empty'>That campaign could not "
+                                f"be drawn: {type(e).__name__}: {e}</p>")
+
+    @app.get("/os/profile/{pid}", response_class=HTMLResponse)
+    def os_profile(pid: str):
+        OS, store, _ = _os()
+        try:
+            return HTMLResponse(OS.profile_html(store, pid))
+        except Exception as e:
+            log.exception("profile detail failed")
+            return HTMLResponse("<p class='os-empty'>That person could not be "
+                                f"drawn: {type(e).__name__}: {e}</p>")
+
+    @app.post("/os/sync")
+    def os_sync():
+        """Re-read the engine's live jobs into the OS. Idempotent."""
+        OS, store, jobs = _os()
+        out = OS.sync(store, jobs)
+        _log_decision(store, "os_sync", f"{out.get('profiles')} profiles",
+                      out.get("message", ""))
+        return {"ok": True, **out}
+
+    @app.post("/os/message/save")
+    async def os_message_save(request: Request):
+        """Save the founder's correction of ONE email.
+
+        It writes payload.email_edits, which is the first thing the resolver
+        consults, so this is not a note about the email: it IS the email."""
+        d = await _body(request)
+        OS, store, _ = _os()
+        return OS.save_edit(store, d.get("campaign_id", ""),
+                            (d.get("email") or "").strip().lower(),
+                            d.get("touch") or 1, d.get("subject", ""),
+                            d.get("body", ""))
+
+    @app.post("/os/campaign/save")
+    async def os_campaign_save(request: Request):
+        d = await _body(request)
+        import content_engine_os_send as SEND
+        OS, store, _ = _os()
+        return SEND.save_campaign(
+            OS.repo(store), campaign_id=d.get("id", ""), name=d.get("name", ""),
+            audience_kind=d.get("audience_kind", "all"),
+            audience_id=d.get("audience_id", ""),
+            subject=d.get("subject", ""), body=d.get("body", ""),
+            scheduled_at=d.get("scheduled_at", ""))
+
+    @app.post("/os/campaign/plan")
+    async def os_campaign_plan(request: Request):
+        """The review step. Runs every gate the real send runs, so the
+        number it reports is the number that would leave."""
+        d = await _body(request)
+        import content_engine_os_send as SEND
+        OS, store, jobs = _os()
+        pl = SEND.plan(OS.repo(store), d.get("id", ""), jobs=jobs,
+                       touch=int(d.get("touch") or 1))
+        if not pl.get("ok"):
+            return pl
+        why = ", ".join(f"{n} {SEND.GATE_REASONS[k]}"
+                        for k, n in pl["refused_counts"].items() if n)
+        return {"ok": True, "deliverable": pl["deliverable"],
+                "pool": pl["pool"],
+                "message": (f"{pl['deliverable']} of {pl['pool']} would "
+                            f"receive this"
+                            + (f". Refused: {why}" if why else "")
+                            + (f". {pl['rate_why']}." if pl.get("rate_why")
+                               else ""))}
+
+    @app.post("/os/campaign/queue")
+    async def os_campaign_queue(request: Request):
+        d = await _body(request)
+        import content_engine_os_send as SEND
+        OS, store, jobs = _os()
+        out = SEND.queue(OS.repo(store), d.get("id", ""), jobs=jobs,
+                         touch=int(d.get("touch") or 1))
+        _log_decision(store, "os_queued", str(d.get("id"))[:40],
+                      out.get("message", ""))
+        return out
+
+    @app.post("/os/campaign/approve")
+    async def os_campaign_approve(request: Request):
+        """The human act. Until this runs the worker will not touch a row."""
+        d = await _body(request)
+        import content_engine_os_send as SEND
+        OS, store, _ = _os()
+        out = SEND.approve(OS.repo(store), d.get("id", ""))
+        _log_decision(store, "os_approved", str(d.get("id"))[:40],
+                      out.get("message", ""))
+        return out
+
+    @app.post("/os/campaign/cancel")
+    async def os_campaign_cancel(request: Request):
+        d = await _body(request)
+        import content_engine_os_send as SEND
+        OS, store, _ = _os()
+        return SEND.cancel(OS.repo(store), d.get("id", ""))
+
+    @app.post("/os/campaign/state")
+    async def os_campaign_state(request: Request):
+        d = await _body(request)
+        import content_engine_os_send as SEND
+        OS, store, _ = _os()
+        return SEND.move_campaign(OS.repo(store), d.get("id", ""),
+                                  str(d.get("state") or "").upper())
+
+    @app.post("/os/queue/work")
+    def os_queue_work():
+        """Send the approved rows. THE ONLY PATH TO A PROVIDER."""
+        import content_engine_os_send as SEND
+        OS, store, jobs = _os()
+        out = SEND.work_queue(OS.repo(store), jobs=jobs)
+        _log_decision(store, "os_sent", f"{out.get('sent')} sent",
+                      out.get("message", ""))
+        return out
+
+    @app.post("/os/segment/save")
+    async def os_segment_save(request: Request):
+        d = await _body(request)
+        import content_engine_os_audience as AUD
+        OS, store, _ = _os()
+        return AUD.save_segment(OS.repo(store), d.get("name"), d.get("tree"))
+
+    @app.post("/os/segment/count")
+    async def os_segment_count(request: Request):
+        """Answer "how many people" before anything is saved."""
+        d = await _body(request)
+        import content_engine_os_audience as AUD
+        OS, store, _ = _os()
+        ok, why = AUD.validate(d.get("tree"))
+        if not ok:
+            return {"ok": False, "message": why}
+        repo = OS.repo(store)
+        n = len(AUD.members(repo, {"tree": d.get("tree")}))
+        return {"ok": True, "size": n,
+                "message": f"{n} people match: {AUD.describe(d.get('tree'))}"}
+
+    @app.post("/os/segment/delete")
+    async def os_segment_delete(request: Request):
+        d = await _body(request)
+        import content_engine_os_audience as AUD
+        OS, store, _ = _os()
+        return AUD.delete_segment(OS.repo(store), d.get("id", ""))
+
+    @app.post("/os/list/save")
+    async def os_list_save(request: Request):
+        d = await _body(request)
+        import content_engine_os_audience as AUD
+        OS, store, _ = _os()
+        return AUD.save_list(OS.repo(store), d.get("name"),
+                             d.get("description", ""))
+
+    @app.post("/os/template/save")
+    async def os_template_save(request: Request):
+        d = await _body(request)
+        import content_engine_os_content as CT
+        OS, store, _ = _os()
+        return CT.save_template(OS.repo(store), d.get("name"),
+                                blocks=d.get("blocks"),
+                                subject=d.get("subject", ""),
+                                preview_text=d.get("preview_text", ""),
+                                publish=bool(d.get("publish")))
+
+    @app.post("/os/flow/save")
+    async def os_flow_save(request: Request):
+        d = await _body(request)
+        import content_engine_os_flows as FL
+        OS, store, _ = _os()
+        return FL.save_flow(OS.repo(store), flow_id=d.get("id", ""),
+                            name=d.get("name", ""), nodes=d.get("nodes"),
+                            edges=d.get("edges"))
+
+    @app.post("/os/flow/activate")
+    async def os_flow_activate(request: Request):
+        d = await _body(request)
+        import content_engine_os_flows as FL
+        OS, store, _ = _os()
+        return FL.activate(OS.repo(store), d.get("id", ""))
+
+    @app.post("/os/flow/pause")
+    async def os_flow_pause(request: Request):
+        d = await _body(request)
+        import content_engine_os_flows as FL
+        OS, store, _ = _os()
+        return FL.pause(OS.repo(store), d.get("id", ""))
+
+    @app.post("/os/flow/enroll")
+    async def os_flow_enroll(request: Request):
+        d = await _body(request)
+        import content_engine_os_flows as FL
+        OS, store, _ = _os()
+        return FL.enroll(OS.repo(store), d.get("id", ""),
+                         d.get("profile_ids") or [])
+
+    @app.post("/os/flow/advance")
+    def os_flow_advance():
+        """Move everyone forward one pass. Queues; never sends."""
+        import content_engine_os_flows as FL
+        OS, store, jobs = _os()
+        return FL.advance(OS.repo(store), jobs=jobs)
+
+    @app.post("/os/domain/check")
+    async def os_domain_check(request: Request):
+        d = await _body(request)
+        OS, store, _ = _os()
+        return OS.check_domain(store, d.get("domain"), d.get("selector", ""))
+
+    @app.post("/os/consent")
+    async def os_consent(request: Request):
+        d = await _body(request)
+        import content_engine_os_core as CO
+        OS, store, _ = _os()
+        out = CO.set_consent(OS.repo(store), d.get("email"),
+                             str(d.get("status") or "").upper(),
+                             source="dashboard", method="recorded by the founder")
+        out.setdefault("message", f"{d.get('email')} recorded as "
+                                  f"{d.get('status')}")
+        return out
+
+    @app.post("/os/suppress")
+    async def os_suppress(request: Request):
+        d = await _body(request)
+        import content_engine_os_core as CO
+        OS, store, _ = _os()
+        out = CO.suppress(OS.repo(store), d.get("email"),
+                          str(d.get("reason") or "MANUAL").upper(),
+                          d.get("note", ""))
+        out.setdefault("message", f"{d.get('email')} will never be emailed "
+                                  f"again")
+        return out
+
+    @app.post("/os/rollup")
+    def os_rollup():
+        import content_engine_os_analytics as AZ
+        OS, store, _ = _os()
+        return AZ.rollup(OS.repo(store))
+
+    @app.post("/os/webhook/{provider}")
+    async def os_webhook(provider: str, request: Request):
+        """An ESP callback. Idempotent by construction: the event key is
+        derived from its content, so a redelivery writes nothing twice."""
+        d = await _body(request)
+        import content_engine_os_send as SEND
+        OS, store, _ = _os()
+        return SEND.ingest_webhook(OS.repo(store), d, provider)
+
+    # ---------------------------------------------------------------
+    # THE AGENT DOOR. Audited, tenant scoped, and it cannot send.
+    # ---------------------------------------------------------------
+    @app.post("/internal/v1/agent")
+    async def internal_agent(request: Request):
+        d = await _body(request)
+        import content_engine_os_agents as AGT
+        _, store, jobs = _os()
+        return AGT.call(store, d.get("agent") or "unnamed",
+                        d.get("action") or "", d.get("params") or {},
+                        jobs=jobs)
+
+    @app.post("/internal/v1/{domain}/{verb}")
+    async def internal_domain(domain: str, verb: str, request: Request):
+        """REST shaped sugar over the same door: /internal/v1/leads/upsert
+        is exactly {"action": "leads.upsert"}. One implementation, so the
+        two shapes can never drift apart."""
+        d = await _body(request)
+        import content_engine_os_agents as AGT
+        _, store, jobs = _os()
+        return AGT.call(store, d.get("agent") or "unnamed",
+                        f"{domain}.{verb}", d.get("params") or d,
+                        jobs=jobs)
+
     @app.post("/outreach/segment")
     async def outreach_segment(request: Request):
         """Save or remove a segment. One condition vocabulary, validated."""
@@ -2834,7 +3125,7 @@ def build_app():
         This is also the GATE: the send path reads email_preview.blocking
         and refuses while a personalisation token would render empty."""
         import content_engine_email_preview as EP
-        import content_engine_email_campaigns as EC
+        import content_engine_os_content as OSC
         try:
             d = await request.json()
         except Exception:
@@ -2845,13 +3136,23 @@ def build_app():
         job = next((j for j in jobs
                     if str((j or {}).get("job_id")) == cid), None)
         p = ((job or {}).get("payload") or {})
-        lead = (p.get("leads") or [{}])[0]
-        subject = d.get("subject") or p.get("subject") or ""
-        html = d.get("html") or p.get("html") or p.get("body") or ""
+        # THE FIX. This used to read payload.subject and payload.html, which
+        # no job in this engine carries, so every campaign answered "nothing
+        # to preview" while the sender was working perfectly. It now resolves
+        # through the engine's own send path for a REAL recipient.
+        who = str(d.get("email") or "").strip().lower()
+        if not who:
+            who = str(((p.get("leads") or [{}])[0]).get("email") or "")
+        got = OSC.rendered_message(job or {}, who, int(d.get("touch") or 1))
+        lead = got.get("lead") or (p.get("leads") or [{}])[0]
+        subject = d.get("subject") or got.get("subject") or ""
+        html = d.get("html") or got.get("html") or got.get("body") or ""
         if not (subject or html):
             return {"ok": False,
-                    "message": "that campaign carries no subject or body "
-                               "yet, so there is nothing to preview"}
+                    "message": (got.get("error")
+                                or "that campaign has no leads with copy "
+                                   "resolved yet, so there is nothing to "
+                                   "render for anyone")}
         import content_engine_connectors as C
         base = C._env("PUBLIC_BASE_URL") or C._env("ENGINE_PUBLIC_URL") or ""
         prev = EP.render(subject, html, lead, base=base,

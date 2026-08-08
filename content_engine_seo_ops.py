@@ -1059,6 +1059,17 @@ def _profiles_cached(store, jobs, reply_drafts):
         return []
 
 
+def _os_ctx(store, jobs, reply_drafts):
+    """The engagement OS view. Guarded: if the OS cannot build, the section
+    says so in words rather than taking the whole dashboard down with it."""
+    try:
+        import content_engine_os as OS
+        return OS.build_ctx(store, jobs=jobs, reply_drafts=reply_drafts)
+    except Exception as e:
+        log.exception("engagement OS context failed")
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 def run_email_flow(store, jobs=None) -> dict:
     """Work out who is due and QUEUE them. Sends nothing, by design."""
     people = _profiles_cached(store, jobs, None)
@@ -1121,6 +1132,10 @@ def build_outreach_ctx(store, *, jobs=None, reply_drafts=None, bookings=None,
         "reply_drafts": reply_drafts if isinstance(reply_drafts, list) else [],
         "preview": _get(store, "email_preview", {}) or {},
         "auth_checks": _get(store, "email_auth_checks", []) or [],
+        # THE ENGAGEMENT OS. Projected from these same jobs, so the twenty
+        # two screens open on the founder's real leads, campaigns, sends,
+        # opens and clicks rather than on an empty new store.
+        "os": _os_ctx(store, jobs, reply_drafts),
     }
 
 

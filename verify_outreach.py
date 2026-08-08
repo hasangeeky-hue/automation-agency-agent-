@@ -250,55 +250,80 @@ def _g13():
     return f"14 panels, {len(shapes)} context shapes, no crash"
 
 
-@gate(14, "the section replaced the cards and has no legacy chrome")
+@gate(14, "the section is the OS shell, with one navigation grammar")
 def _g14():
-    sec = OB.outreach_section({})
+    # The shape this gate used to assert (a band plus a tab strip) was the
+    # rejected build. The section now serves the engagement OS: a band, a
+    # grouped rail, a panel, and nothing else stacked on top.
+    import content_engine_os as _OS
+    ctx = {"os": _OS.build_ctx(_S(), jobs=_JOBS),
+           "live": {"outbox": "<b>REALSENDCONTROLS</b>"}}
+    sec = OB.outreach_section(ctx)
     stray = re.findall(r"<div class='card (?:overflowcard )?sev-", sec)
     assert not stray, f"{len(stray)} old cards still render"
     body = re.sub(r"<style>.*?</style>|<script>.*?</script>", "", sec,
                   flags=re.S)
-    assert "sgroups" not in body, "the old group rail is back"
-    assert "cbtn" not in body, "the old run bar is back"
-    assert body.count("s3band") == 1, "the band must render exactly once"
+    for chrome, what in (("sgroups", "the old group rail"),
+                         ("cbtn", "the old run bar"),
+                         ("class='stabs'", "the old tab strip"),
+                         ("s3band", "the old band")):
+        assert chrome not in body, f"{what} is back"
+    assert body.count("class='os-rail'") == 1, "there must be exactly one rail"
     ids = re.findall(r"\sid='([^']+)'", sec)
     dup = sorted({i for i in ids if ids.count(i) > 1})
     assert not dup, f"duplicate ids: {dup[:6]}"
-    return f"0 cards, 0 legacy chrome, 1 band, {len(ids)} unique ids"
+    return f"0 cards, 0 legacy chrome, 1 rail, {len(ids)} unique ids"
 
 
-@gate(15, "the tabs speak Klaviyo and the ids never moved")
+@gate(15, "the rail is the founder's information architecture")
 def _g15():
-    labels = {t: l for t, _i, l in OB.TABS}
-    for tid, want in (("olaunch", "Dashboard"), ("ooutbox", "Campaigns"),
-                      ("osequence", "Flows"), ("omanager", "Profiles"),
-                      ("oicp", "Segments"), ("orouting", "Preview"),
-                      ("oreplies", "Inbox")):
-        assert labels.get(tid) == want, f"{tid} reads '{labels.get(tid)}'"
-    assert len(OB.TABS) == 14
-    return "14 tabs, Klaviyo's words, original ids"
+    import content_engine_os_screens as SCR
+    groups = [g for g, _ in SCR.NAV if g]
+    for want in ("Acquisition", "Audience", "Engagement", "Sending",
+                 "Automation", "Analytics", "Settings"):
+        assert want in groups, f"the rail lost {want}"
+    ids = [pid for _g, items in SCR.NAV for pid, _l in items]
+    assert len(ids) == len(set(ids)) == 22, f"{len(ids)} destinations"
+    assert set(ids) == set(SCR.PANELS), "a destination with no screen"
+    return f"{len(groups)} groups, {len(ids)} screens, all reachable"
 
 
 @gate(16, "the live send controls were carried over, not re-implemented")
 def _g16():
-    sec = OB.outreach_section({}, live="<b>REALSENDCONTROLS</b>")
+    import content_engine_os as _OS
+    ctx = {"os": _OS.build_ctx(_S(), jobs=_JOBS)}
+    sec = OB.outreach_section(ctx, live={"outbox": "<b>REALSENDCONTROLS</b>"})
     assert "REALSENDCONTROLS" in sec, (
         "the pre-rendered send block was dropped - the outbox buttons would "
         "stop working")
-    src = io.open("content_engine_outreach_screens.py", encoding="utf-8").read()
-    for bad in ("Emailer", "send_personalized", "smtplib", "requests."):
-        assert bad not in src, f"the renderer contains {bad}"
-    return "live block carried; the renderer sends nothing"
+    sec2 = OB.outreach_section(dict(ctx, live={"outbox": "<b>VIACTX</b>"}))
+    assert "VIACTX" in sec2, "the dashboard passes the blocks inside ctx"
+    for f in ("content_engine_os_screens.py", "content_engine_os_analytics.py"):
+        src = io.open(f, encoding="utf-8").read()
+        for bad in ("Emailer", "send_personalized", "smtplib", "requests."):
+            assert bad not in src, f"{f} contains {bad}"
+    return "live blocks carried both ways; the renderers send nothing"
 
 
-@gate(17, "the four endpoints exist and refuse empty input in words")
+@gate(17, "the routes exist and empty input is answered in words")
 def _g17():
     api = io.open("content_engine_api.py", encoding="utf-8").read()
     for r in ('"/outreach/segment"', '"/outreach/preview"',
-              '"/outreach/flow/run"', '"/outreach/flow/approve"'):
+              '"/outreach/flow/run"', '"/outreach/flow/approve"',
+              '"/os/sync"', '"/os/campaign/{cid}"', '"/os/message/save"',
+              '"/os/campaign/queue"', '"/os/campaign/approve"',
+              '"/os/queue/work"', '"/os/segment/count"',
+              '"/os/flow/advance"', '"/os/webhook/{provider}"',
+              '"/internal/v1/agent"'):
         assert r in api, f"missing route {r}"
-    assert "nothing to preview" in api
+    assert "render for anyone" in api, (
+        "the preview must say WHY it is empty, and it must no longer claim "
+        "a campaign carries no subject when the resolver was simply never "
+        "asked")
     assert "the queue is empty" in api
-    return "4 routes; empty input answered, not crashed"
+    assert 'p.get("html")' not in api, (
+        "the preview is reading a payload field no job carries again")
+    return "14 routes; empty input answered, not crashed"
 
 
 @gate(18, "the ctx carries the Klaviyo layer without disturbing the old keys")

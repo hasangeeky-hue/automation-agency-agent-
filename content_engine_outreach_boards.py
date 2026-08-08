@@ -1390,56 +1390,43 @@ def outreach_pages(ctx) -> dict:
             for tab, boards in _TAB_BOARDS.items()}
 
 
+#: The order the founder's working blocks are carried through in. They are
+#: passed in ALREADY RENDERED by the dashboard, so every send button on
+#: them keeps calling the endpoint it always did.
+LIVE_ORDER = ("outbox_pointer", "outbox", "replies", "leads_table",
+              "maps_form")
+
+
 def outreach_section(ctx, live=None) -> str:
-    """Klaviyo grammar: one band, one tab strip, one panel.
+    """The Email and Lead Engagement OS, as one section.
 
-    THE LEGACY CHROME IS GONE. The group rail and the run bar were a second
-    and third navigation grammar stacked on the section - the exact
-    fragmentation the founder scored 0/10 on SGA. The band carries what the
-    run bar used to.
+    ONE NAVIGATION GRAMMAR. A band, a grouped rail, a panel. The tab strip
+    that used to sit here was a second grammar on top of the rail and the
+    run bar was a third; that stacking is what the founder scored zero on
+    twice, so there is exactly one now.
 
-    `live` keeps its old meaning: pre-rendered interactive blocks (the real
-    send controls) that must not be re-implemented here. They are appended
-    to the Campaigns panel so no send path changes.
+    THE LIVE BLOCKS COME BACK. The previous build silently dropped the
+    outbox, the replies inbox, the leads table and the Maps form. They are
+    reattached to Overview, unmodified, because they are the controls that
+    actually send.
     """
-    H = _H()
     ctx = ctx if isinstance(ctx, dict) else {}
-    import content_engine_outreach_screens as OLS
-    import content_engine_seo_screens as SSCR
-    panels = OLS.build_panels(ctx)
-    if live:
-        panels["ooutbox"] = (panels.get("ooutbox", "")
-                             + "<p class='ol-k'>Send controls</p>"
-                             + str(live))
-    # A chip counts a real thing or nothing at all.
-    _camps = ctx.get("campaigns") or []
-    _q = ctx.get("flow_queue") or []
-    _dr = ctx.get("reply_drafts") or []
-    _sg = ctx.get("segments") or []
-    _chips = {"ooutbox": len(_camps) or None, "osequence": len(_q) or None,
-              "oreplies": len(_dr) or None, "oicp": len(_sg) or None}
-    bar = "".join(
-        f"<button class='stab{' on' if i == 0 else ''}' id='stab-{tid}' "
-        f"onclick=\"seoTab('{tid}')\"><span>{icon}</span>{H._esc(label)}"
-        + (f"<span class='n'>{_chips[tid]}</span>"
-           if _chips.get(tid) is not None else "")
-        + "</button>"
-        for i, (tid, icon, label) in enumerate(TABS))
-    body = "".join(
-        f"<div class='spanel{' on' if i == 0 else ''}' id='spanel-{tid}'>"
-        f"{panels.get(tid, '')}</div>"
-        for i, (tid, _, _) in enumerate(TABS))
-    bridge = ("<style>.seoscr{--pap:var(--s2);--card:var(--s1);"
-              "--ln:var(--line);--tx:var(--ink);--dm:var(--mut);"
-              "--ft:var(--dim);--ac:var(--blue);--warnc:var(--warn);"
-              "--okc:var(--good);--badbg:rgba(255,107,147,.09);"
-              "--warnbg:rgba(245,177,76,.09);--okbg:rgba(63,217,139,.09);"
-              "--hov:rgba(76,141,255,.07)}"
-              + SSCR.CSS + OLS.CSS + "</style>")
-    return ("<div class='seoscr'>" + bridge + SSCR.JS + OLS.JS
-            + _TAB_CSS + OLS.band(ctx)
-            + "<div class='stabs'>" + bar + "</div>"
-            + "<div class='spanels'>" + body + "</div></div>")
+    import content_engine_os_screens as SCR
+    osctx = dict(ctx.get("os") or {})
+    if not osctx:
+        return ("<div class='card full' style='border-color:#F5B14C'>"
+                "<p class='ct'>The engagement OS has nothing to read yet</p>"
+                "<p class='cc'>The context builder did not hand this section "
+                "an OS view. Press Re-read the engine once the page loads, or "
+                "check the server log for the reason.</p></div>")
+    osctx.setdefault("attribution", ctx.get("attribution") or {})
+    blocks = live if isinstance(live, dict) else (ctx.get("live") or {})
+    joined = ""
+    if isinstance(blocks, dict):
+        joined = "".join(str(blocks.get(k) or "") for k in LIVE_ORDER)
+    elif blocks:
+        joined = str(blocks)
+    return SCR.build(osctx, live=joined or None)
 
 
 # ---------------------------------------------------------------- self-check
