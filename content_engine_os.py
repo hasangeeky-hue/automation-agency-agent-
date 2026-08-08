@@ -571,3 +571,8 @@ def segment_get(store, seg_id, workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
             "match": tree.get("operator", "AND"),
             "conditions": _L(tree.get("conditions")),
             "described": seg.get("described", "")}
+
+
+def set_public_base(store, url) -> dict:
+    """Checked before it is written. See providers.set_public_base."""
+    return PROV.set_public_base(store, url)

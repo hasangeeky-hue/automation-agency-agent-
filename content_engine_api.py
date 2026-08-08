@@ -3311,6 +3311,17 @@ def build_app():
         OS, store, _ = _os()
         return OS.segment_get(store, sid, _ws(None))
 
+    @app.post("/os/public-base")
+    async def os_public_base(request: Request):
+        """Set the address every link in your email points at. Refuses a
+        host that does not resolve, does not answer, or is not HTTPS."""
+        d = await _body(request)
+        OS, store, _ = _os()
+        out = OS.set_public_base(store, d.get("url"))
+        _log_decision(store, "public_base", str(d.get("url"))[:80],
+                      out.get("message", ""))
+        return out
+
     @app.post("/os/bounces/read")
     def os_bounces_read():
         """Read the mailbox for bounces. SMTP has no webhook; the mailbox

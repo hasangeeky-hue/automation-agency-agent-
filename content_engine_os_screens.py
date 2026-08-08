@@ -729,6 +729,18 @@ def send_deliver(ctx) -> str:
                          if not pb.get("ok") else
                          f"<p class='os-note'>{e(pb.get('why'))}</p>")))
                   (_D(ctx.get("public_base"))))
+        + section("Change it",
+                  "<div class='os-form'>"
+                  "<input id='os-pb' class='os-in' style='min-width:340px' "
+                  "placeholder='https://track.yourdomain.com'>"
+                  "<button class='cta' onclick='osSetBase()'>Point links "
+                  "here</button></div>"
+                  "<p class='os-note'>Checked before it is saved: the host "
+                  "must resolve, must answer, and must be HTTPS. Setting an "
+                  "address whose DNS record does not exist yet would point "
+                  "every unsubscribe link at a name the world cannot find, "
+                  "which is worse than a bare IP because at least the IP "
+                  "answers.</p>")
         + section("Bounces, read out of your mailbox",
                   tiles([("Bounces recorded", _D(ctx.get("bounces")).get("total"), ""),
                          ("Permanent", _D(ctx.get("bounces")).get("hard"),
@@ -2252,6 +2264,11 @@ JS = ("<script>"
       "variant:v?v.value:''});}"
       "async function osResendConfirm(){var e2=document.getElementById('os-rce');"
       "await osAct('/os/confirmation/resend',{email:e2?e2.value:''});}"
+
+      "async function osSetBase(){var u=document.getElementById('os-pb');"
+      "if(!u||!u.value.trim()){osToast({ok:false,message:'paste the address'});"
+      "return;}osToast({ok:true,message:'checking DNS and the certificate...'});"
+      "await osAct('/os/public-base',{url:u.value.trim()});}"
 
       "async function osTemplate(id){try{"
       "var r=await fetch('/os/template/'+id);osOpen(await r.text());"

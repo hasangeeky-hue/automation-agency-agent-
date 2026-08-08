@@ -817,3 +817,57 @@ def public_base() -> dict:
                     + ". Point PUBLIC_BASE_URL at a name on your own domain "
                       "over HTTPS and every link written from then on is "
                       "clean.")}
+
+
+def set_public_base(store, url) -> dict:
+    """Point every link in your email at a new address, CHECKED FIRST.
+
+    This exists because the address was once set to a hostname whose DNS
+    record had not been created yet. Nothing complained: the value looked
+    perfect, the screen said "good", and every unsubscribe link written
+    from that moment pointed at a name the world could not resolve. An
+    unsubscribe that fails at DNS is worse than one on a bare IP, because
+    at least the IP answers.
+
+    So this refuses in order, and each refusal says which step to fix:
+      1. is it a URL at all
+      2. does the host resolve
+      3. does it actually answer
+      4. is it HTTPS, unless it is the raw IP fallback
+    Nothing is written until all four pass.
+    """
+    import socket
+    url = str(url or "").strip().rstrip("/")
+    if not url.startswith(("http://", "https://")):
+        return {"ok": False,
+                "message": "that is not a URL. It must start with https:// "
+                           "(or http:// for the raw IP fallback)"}
+    host = url.split("//", 1)[1].split("/")[0].split(":")[0]
+    try:
+        socket.getaddrinfo(host, None)
+    except Exception:
+        return {"ok": False, "host": host,
+                "message": f"{host} does not resolve. Add the DNS A record "
+                           f"first and wait for it, or every unsubscribe "
+                           f"link written from now on points at a name the "
+                           f"world cannot find."}
+    ok, body = _get(url + "/unsubscribe", {})
+    if not ok and "404" not in str(body)[:8]:
+        return {"ok": False, "host": host,
+                "message": f"{host} resolves but did not answer: "
+                           f"{str(body)[:150]}. Check the proxy and the "
+                           f"certificate before pointing links at it."}
+    import re as _re
+    bare = bool(_re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host))
+    if not url.startswith("https://") and not bare:
+        return {"ok": False, "host": host,
+                "message": f"{host} answers, but over plain HTTP. Get the "
+                           f"certificate first: a recipient's own address "
+                           f"would travel unencrypted in every link."}
+    store.set_setting("PUBLIC_BASE_URL", url)
+    store.set_setting("EMAIL_UNSUBSCRIBE_URL", url + "/unsubscribe")
+    state = public_base()
+    return {"ok": True, "url": url, "state": state.get("state"),
+            "message": (f"links now point at {host}. "
+                        + str(state.get("why", ""))
+                        + " Emails already sent keep their old link.")}

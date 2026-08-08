@@ -1295,6 +1295,22 @@ _r0 = AN.revenue(OS.repo(seeded()))
 t("no conversions reads as an absence, not as 0.0%",
   _r0["rate"][0] is None and _r0["per_recipient"] is None, str(_r0["rate"]))
 t("and it says so in words", "nothing recorded" in _r0["rate"][1])
+# The near-miss that earned this gate: the address was set to a hostname
+# whose DNS record had not been created, so every unsubscribe link pointed
+# at a name the world could not resolve. Nothing complained.
+_st = Store()
+t("a host that does not resolve is refused, and the message says so",
+  "does not resolve" in PRV.set_public_base(
+      _st, "https://this-name-does-not-exist-12345.example")["message"])
+t("and nothing was written",
+  _st.get_setting("PUBLIC_BASE_URL") is None)
+t("something that is not a URL is refused",
+  PRV.set_public_base(_st, "track.example.com")["ok"] is False)
+t("the four checks run in order, each naming the step to fix",
+  "is it a URL at all" in PRV.set_public_base.__doc__
+  and "does it actually answer" in PRV.set_public_base.__doc__)
+t("the raw IP fallback is still allowed over http, deliberately",
+  "bare" in PRV.set_public_base.__code__.co_varnames)
 _pb = PRV.public_base()
 t("the public address is checked at all", "state" in _pb)
 t("a bare IP over http is called risky",
