@@ -48,10 +48,65 @@ def _day(v) -> str:
     return str(v or "")[:10]
 
 
+#: A click within this many seconds of the send was not a decision.
+SCANNER_SECONDS = 30
+
+#: Two independent tells. Both are things a person cannot do.
+SCANNER_RULES = {
+    "more_clicks_than_opens":
+        "clicked more times than the email was ever opened, which a reader "
+        "cannot do: a security scanner follows every link without rendering "
+        "the message",
+    "clicked_instantly":
+        f"clicked within {SCANNER_SECONDS} seconds of the send, more than "
+        f"once: nobody reads and decides that fast, twice",
+}
+
+
+def scanners(repo) -> dict:
+    """{profile_id: why}. Who is a machine.
+
+    THIS NEVER DELETES ANYTHING. Scanner events stay in the event table
+    exactly as they arrived, because they are a true record of what the
+    tracker saw. What changes is the reporting: a corporate link scanner
+    following every URL in every email will make your best-looking lead
+    the one who has never read a word, and a click rate built on that is
+    a number that will send you to the wrong meeting.
+    """
+    sends, opens, clicks, first_click = {}, {}, {}, {}
+    fast = {}
+    for e_ in repo.all("email_events"):
+        pid, k = e_.get("profile_id"), e_.get("event_type")
+        if not pid:
+            continue
+        if k == "EMAIL_SENT":
+            sends[e_.get("message_id")] = CORE.parse_at(e_.get("timestamp"))
+        elif k == "EMAIL_OPENED":
+            opens[pid] = opens.get(pid, 0) + 1
+        elif k == "EMAIL_CLICKED":
+            clicks[pid] = clicks.get(pid, 0) + 1
+            first_click.setdefault((pid, e_.get("message_id")),
+                                   CORE.parse_at(e_.get("timestamp")))
+    for (pid, mid), at in first_click.items():
+        sent_at = sends.get(mid)
+        if not (at and sent_at):
+            continue
+        if (at - sent_at).total_seconds() <= SCANNER_SECONDS:
+            fast[pid] = fast.get(pid, 0) + 1
+    out = {}
+    for pid, n in clicks.items():
+        if n >= 2 and n > opens.get(pid, 0):
+            out[pid] = SCANNER_RULES["more_clicks_than_opens"]
+        elif fast.get(pid, 0) >= 2:
+            out[pid] = SCANNER_RULES["clicked_instantly"]
+    return out
+
+
 def rollup(repo) -> dict:
     """One pass over the events, into daily_metrics rows keyed by
     (day, campaign). Idempotent: the row id is derived from the pair, so a
     second run overwrites rather than doubles."""
+    machines = scanners(repo)
     buckets = {}
     for e_ in repo.all("email_events"):
         k = e_.get("event_type")
@@ -59,7 +114,14 @@ def rollup(repo) -> dict:
             continue
         key = (_day(e_.get("timestamp")), e_.get("campaign_id") or "")
         b = buckets.setdefault(key, {s: 0 for s in _SHORT.values()})
+        b.setdefault("machine_opens", 0)
+        b.setdefault("machine_clicks", 0)
         b[_SHORT[k]] += 1
+        if e_.get("profile_id") in machines:
+            if k == "EMAIL_OPENED":
+                b["machine_opens"] += 1
+            elif k == "EMAIL_CLICKED":
+                b["machine_clicks"] += 1
     # Unique-by-person opens and clicks. Five opens from one recipient is
     # one person being reminded, not five people interested.
     uniq = {}
@@ -68,15 +130,20 @@ def rollup(repo) -> dict:
             continue
         key = (_day(e_.get("timestamp")), e_.get("campaign_id") or "")
         which = "u_opens" if e_.get("event_type") == "EMAIL_OPENED" else "u_clicks"
-        uniq.setdefault(key, {"u_opens": set(), "u_clicks": set()})[which].add(
-            e_.get("profile_id"))
+        slot = uniq.setdefault(key, {"u_opens": set(), "u_clicks": set(),
+                                     "h_opens": set(), "h_clicks": set()})
+        slot[which].add(e_.get("profile_id"))
+        if e_.get("profile_id") not in machines:
+            slot["h" + which[1:]].add(e_.get("profile_id"))
     for (day, cid), b in buckets.items():
         u = uniq.get((day, cid), {})
         repo.put("daily_metrics", {
             "id": rid("dm", repo.ws, day, cid), "day": day,
             "campaign_id": cid,
             "unique_opens": len(u.get("u_opens", ())),
-            "unique_clicks": len(u.get("u_clicks", ())), **b})
+            "unique_clicks": len(u.get("u_clicks", ())),
+            "human_opens": len(u.get("h_opens", ())),
+            "human_clicks": len(u.get("h_clicks", ())), **b})
     return {"ok": True, "days": len({d for d, _ in buckets}),
             "rows": len(buckets),
             "message": f"{len(buckets)} daily row(s) rebuilt"}
@@ -88,7 +155,8 @@ def totals(repo, campaign_id=None) -> dict:
     if campaign_id:
         rows = [r for r in rows if r.get("campaign_id") == campaign_id]
     t = {v: 0 for v in _SHORT.values()}
-    t.update({"unique_opens": 0, "unique_clicks": 0})
+    t.update({"unique_opens": 0, "unique_clicks": 0, "human_opens": 0,
+              "human_clicks": 0, "machine_opens": 0, "machine_clicks": 0})
     for r in rows:
         for k in t:
             t[k] += int(r.get(k) or 0)
@@ -101,6 +169,11 @@ def totals(repo, campaign_id=None) -> dict:
         **t, "delivered": delivered, "bounced": bounced,
         "open_rate": rate(t["unique_opens"], sent),
         "click_rate": rate(t["unique_clicks"], sent),
+        # THE NUMBER TO ACT ON. The raw click rate above counts security
+        # scanners following every link; this one does not, and both are
+        # shown so nothing is quietly removed from a total you have seen.
+        "human_open_rate": rate(t["human_opens"], sent),
+        "human_click_rate": rate(t["human_clicks"], sent),
         "ctor": rate(t["unique_clicks"], t["unique_opens"]),
         "unsub_rate": rate(t["unsubscribes"], sent),
         "complaint_rate": rate(t["complaints"], sent),
@@ -368,3 +441,81 @@ def ab_verdict(rows) -> dict:
             "message": f"{best['variant']} wins by {gap:.1f} points over "
                        f"{smallest}+ sends an arm: "
                        f"{best['subject'][:60]!r}"}
+
+
+# ---------------------------------------------------------------------------
+# LIST HYGIENE
+# ---------------------------------------------------------------------------
+#: A verdict per person, in the order that matters. The first one that
+#: fits wins, so somebody who is both a scanner and over-mailed is
+#: reported as a scanner: it is the fact that changes what you believe.
+#: THE VERDICTS. The group names below are these codes, derived rather
+#: than typed a second time: the first version of this file called the
+#: verdict "scanner" and the group "scanners", so cleaning that group found
+#: nothing and said so cheerfully. One list, or they drift again.
+VERDICT_CODES = ("scanner", "silent", "looking", "overmailed")
+
+
+def _n(n, word) -> str:
+    """"1 open", "4 clicks". A screen that says "1 opens" is a screen
+    somebody wrote and nobody read."""
+    n = int(n or 0)
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def verdict_for(row, over) -> tuple:
+    """(code, sentence, suggested action)."""
+    sent = int(row.get("emails_sent") or 0)
+    opens = int(row.get("opens") or 0)
+    clicks = int(row.get("clicks") or 0)
+    if row.get("is_scanner") == "yes":
+        return ("scanner",
+                f"{_n(clicks, 'click')} against {_n(opens, 'open')} is a "
+                f"security scanner, not a reader",
+                "exclude from the click rate; keep emailing the human")
+    if sent >= over and opens == 0:
+        return ("silent",
+                f"{_n(sent, 'email')} and not one open: this address is "
+                f"either dead or filtering you to junk",
+                "rest them, and stop paying for the send")
+    if sent >= over and clicks == 0 and opens:
+        return ("looking",
+                f"{_n(sent, 'email')}, {_n(opens, 'open')}, never a click",
+                "the offer is not landing; change it before sending again")
+    if sent >= over:
+        return ("overmailed",
+                f"{_n(sent, 'email')} to one person",
+                "rest them; the frequency gate refuses the next one anyway")
+    return ("", "", "")
+
+
+def hygiene(repo, over=10) -> dict:
+    """Everyone the list should stop sending to, and why.
+
+    `over` is a LIFETIME count, deliberately, because the frequency gate
+    only looks at a fourteen day window: somebody who received thirty
+    emails over four months passes that gate and should still not receive
+    a thirty-first."""
+    import content_engine_os_audience as AUD
+    rows = AUD.people(repo)
+    groups = {c: [] for c in VERDICT_CODES}
+    for r in rows:
+        code, why, action = verdict_for(r, over)
+        if not code:
+            continue
+        groups[code].append({
+            "email": r.get("email"), "name": r.get("first_name") or "",
+            "company": r.get("company") or "",
+            "sent": r.get("emails_sent"), "opens": r.get("opens"),
+            "clicks": r.get("clicks"), "code": code, "why": why,
+            "action": action, "resting": r.get("resting"),
+            "rest_until": str(r.get("rest_until") or "")[:10],
+            "profile_id": r.get("id")})
+    everyone = [x for c in VERDICT_CODES for x in groups[c]]
+    return {"rows": sorted(everyone, key=lambda x: -(x["sent"] or 0)),
+            **groups, "over": over,
+            "people": len(rows),
+            "resting": len([r for r in rows if r.get("resting") == "yes"]),
+            "worst": max([int(r.get("emails_sent") or 0) for r in rows] or [0]),
+            "average": (round(sum(int(r.get("emails_sent") or 0) for r in rows)
+                              / len(rows), 1) if rows else None)}

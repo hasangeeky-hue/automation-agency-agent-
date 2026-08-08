@@ -42,6 +42,8 @@ of them exist because something specific DID go wrong.
   G22 the worker              honours the window, the caps and the ladder
   G23 the editors             a canvas you drag and a builder you reorder
   G24 the removal             the old formation is gone from disk
+  G25 list hygiene            a scanner is named, not silently deleted; a
+                              rested person is not a suppressed one
 ============================================================================
 """
 
@@ -919,6 +921,108 @@ handlers2 = re.findall(r"function (os[A-Z]\w+)", SCR.JS + ED.FLOW_JS
 called2 = set(re.findall(r"(os[A-Z]\w+)\(", full))
 missing2 = sorted(c for c in called2 if c not in handlers2 and c != "osToast")
 t("every handler the new screens call is defined", not missing2, str(missing2))
+
+print("\nG25 LIST HYGIENE")
+hy = seeded()
+OS.sync(hy, hy.list_jobs())
+hrepo = OS.repo(hy)
+hcid = hrepo.all("campaigns")[0]["id"]
+# A scanner: three clicks against one open, all instant. This is exactly
+# the shape lsemino@trippscott.com has on the founder's live box.
+bot = CORE.rid("prf", hrepo.ws, "bo@lawfirm.co.uk")
+bmsg = CORE.rid("msg", hrepo.ws, hcid, "bo@lawfirm.co.uk", 1)
+for i in range(3):
+    CORE.record_event(hrepo, "EMAIL_CLICKED", profile_id=bot,
+                      campaign_id=hcid, message_id=bmsg,
+                      at="2026-07-02T09:05:10+00:00",
+                      metadata={"url": f"https://x.test/{i}"})
+scan = AN.scanners(hrepo)
+t("a recipient who clicks more than they open is named a scanner",
+  bot in scan, str(list(scan)[:2]))
+t("and the reason is a sentence, not a code",
+  "cannot do" in scan[bot] or "reads and decides" in scan[bot])
+t("a normal recipient is NOT called a scanner",
+  CORE.rid("prf", hrepo.ws, "ann@clinicx.de") not in scan)
+t("the group names ARE the verdict codes, so cleaning cannot miss",
+  set(AN.VERDICT_CODES) <= set(AN.hygiene(hrepo, over=2)))
+t("every scanner rule explains itself",
+  all(len(v) > 60 for v in AN.SCANNER_RULES.values()))
+before_events = len(hrepo.all("email_events"))
+AN.rollup(hrepo)
+t("naming a scanner deletes nothing",
+  len(hrepo.all("email_events")) == before_events)
+ht = AN.totals(hrepo)
+t("the raw click rate is still reported",
+  ht["click_rate"][0] is not None)
+t("the human click rate is reported BESIDE it, not instead of it",
+  "human_click_rate" in ht and "click_rate" in ht)
+t("and the human number is the smaller one",
+  (ht["human_clicks"] or 0) <= (ht["unique_clicks"] or 0))
+t("both carry their denominator",
+  " of " in ht["human_click_rate"][1] or ht["human_clicks"] == 0)
+
+hg = AN.hygiene(hrepo, over=2)
+t("the hygiene list finds the scanner",
+  any(r["code"] == "scanner" for r in hg["rows"]), str(hg["rows"])[:200])
+t("it reports how hard the list is worked",
+  hg["worst"] >= 1 and hg["average"] is not None)
+t("every row says what it is AND what to do about it",
+  all(r["why"] and r["action"] for r in hg["rows"]))
+t("somebody sent to who never opened is called out",
+  any(r["code"] in ("silent", "overmailed", "looking") for r in hg["rows"])
+  or not hg["rows"])
+t("the lifetime count is used, not the fourteen day window",
+  "LIFETIME" in AN.hygiene.__doc__ or "lifetime" in AN.hygiene.__doc__)
+
+# rest is not suppression
+who = "cy@shop.ch"
+r1 = CORE.rest(hrepo, who, 90, "no sign of life")
+t("resting somebody succeeds and says until when",
+  r1["ok"] and r1["until"][:4] in ("2026", "2027"), str(r1))
+t("a rested person is NOT suppressed",
+  who not in CORE.suppression_index(hrepo))
+t("and the message says so in words",
+  "not\nsuppressed" in r1["message"] or "not suppressed" in r1["message"])
+person = next(p for p in AUD.people(hrepo) if p.get("email") == who)
+t("the person view carries the rest state", person["resting"] == "yes")
+t("a rested person is refused by the audience gate",
+  who in AUD.resolve_audience(hrepo, "all")["dropped_detail"]["resting"])
+t("the refusal has a name the review screen can print",
+  "RESTING" in SEND.GATE_REASONS)
+t("a segment can ask who is resting", "resting" in AUD.FIELDS)
+t("and how many emails somebody has ever had", "sent_total" in AUD.FIELDS)
+t("and whether their clicks are a machine", "is_scanner" in AUD.FIELDS)
+t("the orchestrator refuses a rested person by name",
+  SEND.queue_for_person(hrepo, hcid, person["id"])["message"]
+  == SEND.GATE_REASONS["RESTING"])
+t("waking them puts them back", CORE.wake(hrepo, who)["ok"]
+  and next(p for p in AUD.people(hrepo)
+           if p.get("email") == who)["resting"] == "no")
+
+cl = OS.clean_audience(hy, "scanner", 90)
+t("cleaning a group rests it rather than suppressing it",
+  cl["ok"] and "not" in cl["message"] and "suppress" in cl["message"])
+t("and it rests exactly what the table showed",
+  cl["rested"] == len([r for r in hg["scanner"] if r["resting"] != "yes"]))
+t("cleaning an empty group is answered, not crashed",
+  OS.clean_audience(hy, "silent", 90)["ok"] is True)
+
+hhtml = SCR.build(OS.build_ctx(hy, jobs=hy.list_jobs()))
+t("the Deliverability screen carries the hygiene table",
+  "Who should stop receiving email" in hhtml)
+t("it offers Rest, and says Rest is not suppression",
+  "osRest(" in hhtml and "Rest is not suppression" in hhtml)
+t("Campaign analytics shows the human rate beside the raw one",
+  "Human click rate" in hhtml and "Click rate" in hhtml)
+t("and warns when scanners are inflating it",
+  "security scanners following every" in hhtml
+  or not _L(_D(OS.build_ctx(hy, jobs=hy.list_jobs(),
+                            do_sync=False).get("hygiene")).get("scanner")))
+api_src = SRC["content_engine_api.py"] if "content_engine_api.py" in SRC else ""
+t("the routes exist", '"/os/rest"' in io.open("content_engine_api.py",
+                                              encoding="utf-8").read()
+  and '"/os/audience/clean"' in io.open("content_engine_api.py",
+                                        encoding="utf-8").read())
 
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)

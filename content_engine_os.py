@@ -136,6 +136,7 @@ def build_ctx(store, *, jobs=None, reply_drafts=None,
         "backend": safe(lambda: ST.backend(), {}),
         "table_counts": safe(lambda: ST.counts(workspace_id), {}),
         "connectors": safe(_connector_state, {}),
+        "hygiene": safe(lambda: AN.hygiene(r), {}),
     }
 
 
@@ -360,3 +361,38 @@ def test_provider(name) -> dict:
 
 def register_webhook(name) -> dict:
     return PROV.register_provider_webhook(name)
+
+
+# ---------------------------------------------------------------------------
+# LIST HYGIENE ACTIONS
+# ---------------------------------------------------------------------------
+def rest_person(store, email, days=90, wake=False,
+                workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    r = repo(store, workspace_id)
+    return CORE.wake(r, email) if wake else CORE.rest(r, email, days,
+                                                      "rested by hand")
+
+
+def clean_audience(store, kind="silent", days=90,
+                   workspace_id=CORE.DEFAULT_WORKSPACE) -> dict:
+    """Rest a whole group at once. Never suppresses, never deletes.
+
+    The groups come from AN.hygiene, so what this rests is exactly what the
+    table above the button was showing: there is no second definition of
+    "silent" hiding in here."""
+    r = repo(store, workspace_id)
+    h = AN.hygiene(r)
+    group = _L(h.get(kind))
+    if not group:
+        return {"ok": True, "rested": 0,
+                "message": f"nobody is in the {kind} group right now"}
+    n = 0
+    for row in group:
+        if row.get("resting") == "yes":
+            continue
+        if CORE.rest(r, row.get("email"), days, row.get("why", "")).get("ok"):
+            n += 1
+    return {"ok": True, "rested": n,
+            "message": (f"{n} person(s) rested for {days} days. They are not "
+                        f"suppressed: they stay in every count and you can "
+                        f"wake any of them from this table.")}

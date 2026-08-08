@@ -55,6 +55,11 @@ FIELDS = {
     "opens":        {"kind": "number", "label": "Opens"},
     "clicks":       {"kind": "number", "label": "Clicks"},
     "days_since_activity": {"kind": "number", "label": "Days since activity"},
+    "sent_total":   {"kind": "number", "label": "Emails ever sent"},
+    "is_scanner":   {"kind": "enum", "label": "Clicks are a scanner",
+                     "options": ["yes", "no"]},
+    "resting":      {"kind": "enum", "label": "Resting",
+                     "options": ["yes", "no"]},
     "created_at":   {"kind": "date", "label": "Created"},
     "last_activity_at": {"kind": "date", "label": "Last activity"},
     "industry":     {"kind": "string", "label": "Industry (custom)"},
@@ -200,6 +205,17 @@ def validate(node, _depth=0) -> tuple:
 # ---------------------------------------------------------------------------
 # The person view a segment is asked about
 # ---------------------------------------------------------------------------
+def _scanners_cached(repo):
+    """Who is a machine. Imported lazily so this module keeps no dependency
+    on analytics, which reads it back."""
+    try:
+        import content_engine_os_analytics as _AN
+        return _AN.scanners(repo)
+    except Exception:
+        return {}
+
+
+
 def people(repo) -> list:
     """Every profile flattened into the fields a segment can ask about,
     with its engagement counted from events. Built once per evaluation so a
@@ -209,6 +225,7 @@ def people(repo) -> list:
     for r in repo.all("profile_properties"):
         props.setdefault(r.get("profile_id"), {})[r.get("key")] = r.get("value")
     leads = {l.get("primary_profile_id"): l for l in repo.all("leads")}
+    scan = CORE._D(_scanners_cached(repo))
     sent, opens, clicks, last = {}, {}, {}, {}
     for e_ in repo.all("email_events"):
         pid, k = e_.get("profile_id"), e_.get("event_type")
@@ -235,8 +252,13 @@ def people(repo) -> list:
             "created_at": p.get("created_at"),
             "lead_stage": lead.get("stage"), "lead_id": lead.get("id"),
             "lead_score": lead.get("score", pr.get("lead_score")),
-            "emails_sent": sent.get(pid, 0), "opens": opens.get(pid, 0),
-            "clicks": clicks.get(pid, 0),
+            "emails_sent": sent.get(pid, 0), "sent_total": sent.get(pid, 0),
+            "opens": opens.get(pid, 0), "clicks": clicks.get(pid, 0),
+            "rest_until": p.get("rest_until", ""),
+            "rest_reason": p.get("rest_reason", ""),
+            "resting": "yes" if CORE.resting(p) else "no",
+            "is_scanner": "yes" if pid in scan else "no",
+            "scanner_why": scan.get(pid, ""),
             "last_activity_at": act,
             "days_since_activity": CORE.days_ago(act),
             "industry": pr.get("industry"), "company_size": pr.get("company_size"),
@@ -360,7 +382,8 @@ def resolve_audience(repo, kind, ref="", tree=None) -> dict:
         pool, label = rows, "everyone"
 
     eligible, dropped = [], {"suppressed": [], "unsubscribed": [],
-                             "not_confirmed": [], "invalid_address": []}
+                             "not_confirmed": [], "resting": [],
+                             "invalid_address": []}
     for p in pool:
         em = norm_email(p.get("email"))
         if not CORE.valid_email(em):
@@ -371,6 +394,9 @@ def resolve_audience(repo, kind, ref="", tree=None) -> dict:
             continue
         if p.get("consent") == "UNSUBSCRIBED":
             dropped["unsubscribed"].append(em)
+            continue
+        if p.get("resting") == "yes":
+            dropped["resting"].append(em)
             continue
         if p.get("consent") == "PENDING":
             # PENDING IS NOT A SUBSCRIBER. Somebody filled in the form and

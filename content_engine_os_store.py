@@ -60,8 +60,9 @@ SCHEMA = {
                         ("website", "text"), ("phone", "text"),
                         ("linkedin_url", "text"), ("source", "text"),
                         ("source_id", "text"), ("consent", "text"),
-                        ("last_activity_at", "text")],
-                       ["email", "consent", "country", "company_id"]),
+                        ("last_activity_at", "text"), ("rest_until", "text")],
+                       ["email", "consent", "country", "company_id",
+                        "rest_until"]),
     "profile_properties": ([("profile_id", "text"), ("key", "text"),
                             ("value_type", "text")], ["profile_id", "key"]),
     "companies":      ([("name", "text"), ("website", "text"),
@@ -156,7 +157,9 @@ SCHEMA = {
                         ("unsubscribes", "double precision"),
                         ("complaints", "double precision"),
                         ("conversions", "double precision"),
-                        ("queued", "double precision")],
+                        ("queued", "double precision"),
+                        ("machine_opens", "double precision"),
+                        ("machine_clicks", "double precision")],
                        ["day", "campaign_id"]),
 }
 

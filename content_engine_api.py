@@ -3176,6 +3176,30 @@ def build_app():
                       out.get("message", ""))
         return out
 
+    @app.post("/os/rest")
+    async def os_rest(request: Request):
+        """Park somebody, or wake them. Deliberately NOT suppression: a
+        suppression is a permanent legal record and cannot be undone without
+        asking them, and most of these people have simply had enough."""
+        d = await _body(request)
+        OS, store, _ = _os()
+        out = OS.rest_person(store, d.get("email"), int(d.get("days") or 90),
+                             bool(d.get("wake")), _ws(request))
+        _log_decision(store, "os_rest", str(d.get("email"))[:60],
+                      out.get("message", ""))
+        return out
+
+    @app.post("/os/audience/clean")
+    async def os_audience_clean(request: Request):
+        """Rest a whole group from the hygiene table."""
+        d = await _body(request)
+        OS, store, _ = _os()
+        out = OS.clean_audience(store, d.get("kind") or "silent",
+                                int(d.get("days") or 90), _ws(request))
+        _log_decision(store, "os_clean", str(d.get("kind")),
+                      out.get("message", ""))
+        return out
+
     @app.post("/os/rules")
     async def os_rules(request: Request):
         """The sending window and the hourly throttle."""

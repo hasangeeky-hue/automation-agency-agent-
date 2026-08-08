@@ -307,7 +307,7 @@ class Repo:
 PROFILE_FIELDS = ("email", "phone", "first_name", "last_name", "company_id",
                   "company", "job_title", "website", "linkedin_url",
                   "country", "city", "timezone", "language", "source",
-                  "source_id", "last_activity_at")
+                  "source_id", "last_activity_at", "rest_until")
 
 
 def split_name(full) -> tuple:
@@ -426,6 +426,48 @@ def suppress(repo: Repo, email, reason, note="") -> dict:
         prof["consent"] = "SUPPRESSED"
         repo.put("profiles", prof)
     return {"ok": True, "email": em, "reason": reason}
+
+
+def rest(repo, email, days=90, reason="") -> dict:
+    """Park somebody. NOT the same thing as suppressing them.
+
+    Suppression is permanent and is a legal record. Rest is a decision:
+    this person has had thirty emails and shown nothing, so stop for a
+    while. They stay in every count, every segment still matches them, and
+    the audience gate simply refuses to send until the date passes. Burning
+    a real prospect for ever because a sequence ran too long is the
+    expensive mistake; a suppression cannot be undone without asking them.
+    """
+    em = norm_email(email)
+    prof = repo.one("profiles", rid("prf", repo.ws, em))
+    if not prof:
+        return {"ok": False, "message": f"{em} is not in this workspace"}
+    until = (datetime.now(timezone.utc)
+             + timedelta(days=int(days or 90))).isoformat(timespec="seconds")
+    prof["rest_until"] = until
+    prof["rest_reason"] = reason or "no sign of life"
+    repo.put("profiles", prof)
+    audit(repo, "founder", "profile_rested", em, f"{days}d: {reason}")
+    return {"ok": True, "until": until,
+            "message": f"{em} is resting until {until[:10]}. Nothing will be "
+                       f"sent to them before then, and they are not "
+                       f"suppressed."}
+
+
+def wake(repo, email) -> dict:
+    em = norm_email(email)
+    prof = repo.one("profiles", rid("prf", repo.ws, em))
+    if not prof:
+        return {"ok": False, "message": f"{em} is not in this workspace"}
+    prof["rest_until"] = ""
+    prof["rest_reason"] = ""
+    repo.put("profiles", prof)
+    return {"ok": True, "message": f"{em} can be emailed again"}
+
+
+def resting(profile) -> bool:
+    until = parse_at(_D(profile).get("rest_until"))
+    return bool(until and until > datetime.now(timezone.utc))
 
 
 def suppression_index(repo: Repo) -> dict:

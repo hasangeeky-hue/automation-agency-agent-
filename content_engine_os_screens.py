@@ -617,23 +617,79 @@ def send_queue(ctx) -> str:
                  for r in rows], "The queue is empty."))
 
 
+_VERDICT_TONE = {"scanner": "warn", "silent": "bad", "looking": "warn",
+                 "overmailed": "warn"}
+
+
 def send_deliver(ctx) -> str:
     d = _D(ctx.get("deliverability"))
+    h = _D(ctx.get("hygiene"))
+    rows = _L(h.get("rows"))
+    counts = [("Scanners", len(_L(h.get("scanner"))),
+               "their clicks are a machine"),
+              ("No sign of life", len(_L(h.get("silent"))),
+               "sent to, never opened"),
+              ("Opening, never clicking", len(_L(h.get("looking"))),
+               "the offer is not landing"),
+              ("Over-mailed", len(_L(h.get("overmailed"))),
+               f"past {h.get('over')} emails"),
+              ("Resting", h.get("resting"), "parked, not suppressed")]
     return panel(
         "Deliverability",
-        "Bounces and complaints are the numbers that decide whether anything "
-        "you send arrives at all.",
+        "Bounces and complaints decide whether anything you send arrives. "
+        "Below them is the list itself: who should stop receiving email, and "
+        "why, in one place.",
         tiles([("Sent", d.get("sent"), ""),
                ("Bounced", d.get("bounced"), "reported by the provider"),
                ("Complaints", d.get("complaints"), ""),
                ("Unsubscribes", d.get("unsubscribes"), ""),
                ("Suppressed", d.get("suppressed"), "will never be emailed")])
-        + section("Why people are suppressed",
-                  donut(list(_D(d.get("by_reason")).items())))
         + "<p class='os-note'>Delivered and bounced stay blank until a "
           "provider webhook reports them. SMTP has no delivery receipt, and "
           "showing zero bounces would be a claim rather than a measurement."
-          "</p>")
+          "</p>"
+        + section("How hard this list is being worked", tiles([
+            ("People", h.get("people"), "in this workspace"),
+            ("Most emails to one person", h.get("worst"), ""),
+            ("Average each", h.get("average"), "")]
+            + [(lab, n or None, why) for lab, n, why in counts]))
+        + section("Who should stop receiving email",
+                  "<div class='os-brow'>"
+                  "<button class='cta' onclick=\"osClean('silent')\">"
+                  "Rest everyone with no sign of life</button>"
+                  "<button class='os-mini' onclick=\"osClean('overmailed')\">"
+                  "Rest the over-mailed</button>"
+                  "<span class='os-note'>Rest is not suppression. They stay "
+                  "in every count and every segment; the gate simply refuses "
+                  "to send until the date passes, because burning a real "
+                  "prospect for ever is the expensive mistake and a "
+                  "suppression cannot be undone without asking them.</span>"
+                  "</div>"
+                  + table(["Person", "Sent", "Opens", "Clicks", "What it is",
+                           "What to do", ""],
+                          [[f"<b>{e(r.get('email'))}</b>"
+                            + (f"<br><span class='os-d'>{e(r.get('company'))}"
+                               f"</span>" if r.get("company") else ""),
+                            num(r.get("sent")), num(r.get("opens")),
+                            num(r.get("clicks")),
+                            pill(r.get("code"),
+                                 _VERDICT_TONE.get(r.get("code"), "mut"))
+                            + f"<br><span class='os-d'>{e(r.get('why'))}"
+                              f"</span>",
+                            e(r.get("action")),
+                            (pill("resting to " + r.get("rest_until"), "ok")
+                             + f"<br><button class='os-mini' onclick="
+                               f"\"osWake('{e(r.get('email'))}')\">Wake"
+                               f"</button>"
+                             if r.get("resting") == "yes" else
+                             f"<button class='os-mini' onclick=\"osRest"
+                             f"('{e(r.get('email'))}')\">Rest 90 days"
+                             f"</button>")]
+                           for r in rows],
+                          "Nobody is being over-worked. Every address is "
+                          "inside the limits."))
+        + section("Why people are suppressed",
+                  donut(list(_D(d.get("by_reason")).items()))))
 
 
 # ---------------------------------------------------------------------------
@@ -705,10 +761,22 @@ def an_campaign(ctx) -> str:
                   "<div class='os-tiles'>"
                   + rate_tile("Open rate", t.get("open_rate"))
                   + rate_tile("Click rate", t.get("click_rate"))
+                  + rate_tile("Human open rate", t.get("human_open_rate"),
+                              "scanners removed")
+                  + rate_tile("Human click rate", t.get("human_click_rate"),
+                              "scanners removed")
                   + rate_tile("Click to open", t.get("ctor"))
                   + rate_tile("Unsubscribe rate", t.get("unsub_rate"))
                   + rate_tile("Complaint rate", t.get("complaint_rate"))
-                  + "</div>")
+                  + "</div>"
+                  + (f"<p class='os-warn'>"
+                     f"{e(len(_L(_D(ctx.get('hygiene')).get('scanner'))))} "
+                     f"recipient(s) are security scanners following every "
+                     f"link. Both numbers are shown rather than one quietly "
+                     f"corrected: the raw rate is what the tracker saw, the "
+                     f"human rate is what to act on. They are listed under "
+                     f"Sending, Deliverability.</p>"
+                     if _L(_D(ctx.get("hygiene")).get("scanner")) else ""))
         + section("When people open",
                   bars(_L(ctx.get("open_curve")), key="opens", label="label"))
         + "</div>"
@@ -1658,6 +1726,15 @@ JS = ("<script>"
       "await osSaveEdit(cid);"
       "await osAct('/os/send-one',{campaign_id:cid,email:p[0],"
       "touch:p[1]||1});osPreview(cid);}"
+
+      "async function osRest(email){await osAct('/os/rest',{email:email,"
+      "days:90});}"
+      "async function osWake(email){await osAct('/os/rest',{email:email,"
+      "wake:true});}"
+      "async function osClean(kind){"
+      "if(!confirm('Rest everyone in that group for 90 days? They are not "
+      "suppressed and you can wake any of them.'))return;"
+      "await osAct('/os/audience/clean',{kind:kind,days:90});}"
 
       "async function osTemplate(id){try{"
       "var r=await fetch('/os/template/'+id);osOpen(await r.text());"

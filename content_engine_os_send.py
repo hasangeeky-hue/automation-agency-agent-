@@ -66,6 +66,7 @@ GATE_REASONS = {
     "RATE_LIMIT": "past today's sending cap",
     "ALREADY_QUEUED": "already queued for this campaign",
     "NOT_CONFIRMED": "signed up but never confirmed, so not a subscriber",
+    "RESTING": "resting: they have had enough for now",
 }
 
 
@@ -302,6 +303,7 @@ def plan(repo, campaign_id, *, jobs=None, touch=1) -> dict:
     for group, why in (("suppressed", "SUPPRESSED"),
                        ("unsubscribed", "UNSUBSCRIBED"),
                        ("not_confirmed", "NOT_CONFIRMED"),
+                       ("resting", "RESTING"),
                        ("invalid_address", "INVALID")):
         for em in aud["dropped_detail"].get(group, []):
             refused.append({"email": em, "why": why})
@@ -388,6 +390,8 @@ def queue_for_person(repo, campaign_id, profile_id, *, touch=1, jobs=None,
         return {"ok": False, "message": GATE_REASONS["INVALID"]}
     if em in CORE.suppression_index(repo):
         return {"ok": False, "message": GATE_REASONS["SUPPRESSED"]}
+    if person.get("resting") == "yes":
+        return {"ok": False, "message": GATE_REASONS["RESTING"]}
     if person.get("consent") == "UNSUBSCRIBED":
         return {"ok": False, "message": GATE_REASONS["UNSUBSCRIBED"]}
     if _sent_recently(repo, profile_id) >= FREQUENCY_MAX:
@@ -500,9 +504,12 @@ def work_queue(repo, *, jobs=None, limit=100, provider_name=None,
             continue
         em = norm_email(j.get("email"))
         person = people.get(j.get("profile_id")) or {}
-        if em in supp or person.get("consent") == "UNSUBSCRIBED":
+        if (em in supp or person.get("consent") == "UNSUBSCRIBED"
+                or person.get("resting") == "yes"):
             j.update({"status": "SUPPRESSED",
-                      "error_message": GATE_REASONS["SUPPRESSED"]})
+                      "error_message": (GATE_REASONS["RESTING"]
+                                        if person.get("resting") == "yes"
+                                        else GATE_REASONS["SUPPRESSED"])})
             repo.put("email_jobs", j)
             held += 1
             continue
