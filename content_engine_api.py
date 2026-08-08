@@ -3321,6 +3321,18 @@ def build_app():
                       out.get("message", ""))
         return out
 
+    @app.post("/os/bounces/reread")
+    def os_bounces_reread():
+        """Forget what has been read and read the whole mailbox again.
+        Safe to press twice: an event is keyed by the bounce's own date and
+        the address it names."""
+        OS, store, _ = _os()
+        import content_engine_os_bounce as _B
+        out = _B.reread(store, OS.repo(store, _ws(None)))
+        _log_decision(store, "os_bounces_reread", str(out.get("hard")),
+                      out.get("message", ""))
+        return out
+
     @app.post("/os/sheets/push")
     def os_sheets_push():
         OS, store, _ = _os()

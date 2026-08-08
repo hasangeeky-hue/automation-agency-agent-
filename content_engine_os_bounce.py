@@ -68,6 +68,36 @@ SOFT_WORDS = ("quota", "mailbox full", "over quota", "temporarily",
 
 SEEN_KEY = "os_bounce_seen"
 
+#: Clearing this and re-reading is now SAFE, because an event is keyed by
+#: the bounce's own date and the address it names rather than by when the
+#: mailbox happened to be read.
+RESET_KEYS = (SEEN_KEY, "os_soft_bounces")
+
+
+def sent_at_of(msg) -> str:
+    """WHEN the bounce happened, from its own Date header.
+
+    This was the read time, which is wrong twice over. A bounce from three
+    days ago landed on today's row of the daily chart, and because the
+    timestamp changed on every pass the event key changed with it: clear
+    the seen list, re-read, and the same failure was recorded again as a
+    new fact. Taking the time from the message makes the event idempotent
+    by its own content, which is the only kind of idempotent worth having.
+    """
+    raw = str(_D(dict(msg.items()) if hasattr(msg, "items") else {}).get("Date")
+              or (msg.get("Date") if hasattr(msg, "get") else "") or "")
+    if raw:
+        try:
+            from email.utils import parsedate_to_datetime
+            d = parsedate_to_datetime(raw)
+            if d.tzinfo is None:
+                from datetime import timezone as _tz
+                d = d.replace(tzinfo=_tz.utc)
+            return d.isoformat(timespec="seconds")
+        except Exception:
+            pass
+    return now()
+
 
 def classify(text) -> tuple:
     """(kind, code, why). kind is "hard", "soft" or "".
@@ -221,7 +251,7 @@ def read(store, repo, *, limit=100) -> dict:
             seen.add(mid)
         pid = profs.get(em, "")
         CORE.record_event(repo, "EMAIL_BOUNCED", profile_id=pid,
-                          at=str(msg.get("Date", "")) and now(),
+                          at=sent_at_of(msg),
                           metadata={"kind": kind, "code": code, "why": why,
                                     "email": em, "message_id": mid})
         if kind == "hard":
@@ -289,3 +319,20 @@ def summary(store, repo) -> dict:
                     "set IMAP_HOST, IMAP_USER and IMAP_PASSWORD on the System "
                     "Map; the reply agent already uses them, so this turns on "
                     "with no rebuild")}
+
+
+def reread(store, repo, *, limit=200) -> dict:
+    """Forget what has been read and read it all again.
+
+    Safe to press twice: the event key is derived from the bounce's own
+    date and the address it names, so a second pass over the same mailbox
+    writes nothing new. Useful exactly once, after an upgrade, to fill in
+    what earlier passes recorded without an address."""
+    for k in RESET_KEYS:
+        try:
+            store.set_setting(k, [] if k == SEEN_KEY else {})
+        except Exception:
+            pass
+    out = read(store, repo, limit=limit)
+    out["message"] = "re-read from scratch: " + str(out.get("message", ""))
+    return out

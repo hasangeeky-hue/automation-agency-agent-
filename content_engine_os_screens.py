@@ -743,6 +743,8 @@ def send_deliver(ctx) -> str:
                     "<button class='cta' onclick=\"osAct('/os/bounces/read')\""
                   + ("" if _D(ctx.get("bounces")).get("ready") else " disabled")
                   + ">Read the mailbox now</button>"
+                    "<button class='os-mini' onclick=\"osAct("
+                    "'/os/bounces/reread')\">Re-read everything</button>"
                     "<span class='os-note'>"
                   + e(_D(ctx.get("bounces")).get("why")) + "</span></div>"
                   + "<p class='os-note'>SMTP has no delivery receipt, so a "

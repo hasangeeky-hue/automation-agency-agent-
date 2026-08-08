@@ -1280,6 +1280,15 @@ t("and the same one twice is still recorded once",
   not CORE.record_event(gr, "EMAIL_BOUNCED", profile_id="",
                         at="2026-08-08T10:00:00+00:00",
                         metadata={"email": "one@dead.de", "kind": "soft"}))
+_msg = __import__("email").message_from_string(
+    "From: mailer-daemon@x\nDate: Wed, 05 Aug 2026 09:00:00 +0000\n\nx")
+t("a bounce event carries the bounce's OWN date, not the read time",
+  BOU.sent_at_of(_msg).startswith("2026-08-05"), BOU.sent_at_of(_msg))
+t("a bounce with no date falls back to now rather than to nothing",
+  len(BOU.sent_at_of(
+      __import__("email").message_from_string("x: y\n\n"))) > 10)
+t("re-reading is offered, and says it is safe to press twice",
+  "writes nothing new" in BOU.reread.__doc__)
 t("the summary counts distinct addresses, not just events",
   BOU.summary(g, gr)["addresses"] == 2, str(BOU.summary(g, gr)))
 _r0 = AN.revenue(OS.repo(seeded()))
