@@ -423,6 +423,15 @@ def pre_flight(r, campaign_id) -> dict:
             "WARNING" if thin else "OK",
             (f"missing {', '.join(thin)}, so this can be measured but not "
              f"learned from" if thin else "fully attributed"))
+        # THE COMPATIBILITY ENGINE, spec section 12: is this asset a shape
+        # the platform accepts, judged from real dimensions, never waved
+        # through on an unknown.
+        if p:
+            import content_engine_media_manifest as MAN
+            comp = MAN.compatibility(cr, p)
+            add(f"Compatibility: {cr.get('name', cid)}",
+                "OK" if comp["verdict"] == "SUPPORTED" else "WARNING",
+                f"{comp['verdict']}: {comp['why'][:110]}")
 
     # all([]) is True, which would have printed "every ad has one" over a
     # campaign with no ads at all. An empty set is not a pass.

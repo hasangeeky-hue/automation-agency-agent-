@@ -831,7 +831,7 @@ def s_launch(r, ctx) -> str:
         cre = (r.one("creatives", ads[0].get("creative_id"))
                if ads and ads[0].get("creative_id") else None) or {}
         prev = (f"<div class='mc-preview' id='mc-prev-{cid}'>"
-                f"<span class='mc-prevtag'>Ad preview &middot; "
+                f"<span class='mc-prevtag'>Approximate preview &middot; "
                 f"{e(c.get('provider') or '-')}</span>"
                 f"<b>{e(cre.get('headline') or cre.get('hook') or cre.get('concept') or '(no headline yet)')}</b>"
                 f"<p>{e(cre.get('primary_text') or cre.get('description') or '(no primary text yet)')}</p>"
@@ -857,9 +857,40 @@ def s_launch(r, ctx) -> str:
                 + "</div>")
         out.append(card(f"{c.get('name')} ({pf['level']})",
                         lights + prev + btns, pf["message"][:160]))
+    # THE PUBLISH LOG, spec section 19: every step, every provider
+    # error, nothing hidden.
+    jobs = sorted(r.all("publish_jobs"),
+                  key=lambda j: str(j.get("updated_at") or ""),
+                  reverse=True)
+    logs = []
+    for j in jobs[:5]:
+        c2 = r.one("media_campaigns", j.get("campaign_id")) or {}
+        steps = "".join(
+            "<div class='mc-check mc-"
+            + {"OK": "ok", "SKIPPED": "ok", "PENDING": "warning",
+               "HELD": "warning"}.get(x.get("status"), "error") + "'>"
+            + {"OK": "✓", "SKIPPED": "✓", "PENDING": "⏳",
+               "HELD": "⚠"}.get(x.get("status"), "✕")
+            + f" <b>{e(x.get('step'))}</b>"
+            + f"<span>{e(x.get('status'))}: {e(x.get('detail'))[:100]}"
+            + (f" [{e(_D(x.get('error')).get('category'))}"
+               f"{', retryable' if _D(x.get('error')).get('retryable') else ''}]"
+               if x.get("error") else "") + "</span></div>"
+            for x in _L(j.get("steps")))
+        logs.append(card(
+            f"Publish: {c2.get('name', j.get('campaign_id'))} "
+            f"({j.get('state')})", steps,
+            f"attempt {int(j.get('attempt') or 1)}; idempotent: re-running "
+            f"cannot create a duplicate"))
+    pl = ("".join(logs)
+          or "<p class='mc-empty'>no publish job has run yet; the step "
+             "log appears here the first time a launch executes</p>")
     return ("<p class='mc-note'>A launch never talks to a platform from "
             "here. It queues ONE order in the media queue and waits behind "
-            "the same approval tier as every other spend.</p>" + "".join(out))
+            "the same approval tier as every other spend.</p>" + "".join(out)
+            + card("The publish log", pl,
+                   "spec section 19: provider errors are shown, not "
+                   "hidden"))
 
 
 def _plan_doc(r, p) -> str:
@@ -1305,9 +1336,57 @@ def s_plat(r, ctx, legacy_campaigns="", legacy_tracking="") -> str:
                         + [(e(row[o]) if row.get(o) else "cannot")
                            for o in M.OBJECTIVES])
                   for row in M.capability_table()])
+    # THE MANIFEST: API versions verified against official docs, drift
+    # named, unknowns counted instead of papered over.
+    import content_engine_media_manifest as MAN
+    drift = MAN.version_drift()
+    dtab = table(("platform", "coded", "current (verified)", "drift",
+                  "note"),
+                 [(x["provider"], x["coded"], x["current"],
+                   "YES" if x["drift"] else "no", x["note"][:100])
+                  for x in drift])
+    unk = {p: len(MAN.capabilities(p).get("unknowns") or [])
+           for p in ("google", "meta", "linkedin", "tiktok")}
+    dnote = ("<p class='mc-note'>capability fields still marked UNKNOWN - "
+             "REQUIRES VERIFICATION: "
+             + ", ".join(f"{p}: {n}" for p, n in unk.items())
+             + ". An unknown stays an unknown until it is verified against "
+               "official docs; nothing here is remembered from training "
+               "data and presented as current.</p>")
+    # AI action levels, spec section 33
+    ai = {}
+    try:
+        import content_engine_api as A
+        import content_engine_media_orders as MO
+        ai = MO.get_ai_levels(A.get_store())
+    except Exception:
+        pass
+    aitab = (table(("agent action", "level"),
+                   sorted(ai.items()))
+             + "<div class='mc-form'>"
+               "<label>Action<select id='mc-ailvl-act'>"
+             + "".join(f"<option>{e(a)}</option>" for a in sorted(ai))
+             + "</select></label>"
+               "<label>Level<select id='mc-ailvl-lvl'>"
+               "<option>OBSERVE_ONLY</option><option>RECOMMEND</option>"
+               "<option>REQUIRE_APPROVAL</option>"
+               "<option>AUTO_EXECUTE</option></select></label>"
+               "<button class='mc-btn' onclick=\"mcPost('/mediaos/ai-level',"
+               "{action:mcV('mc-ailvl-act'),level:mcV('mc-ailvl-lvl')},"
+               "this)\">Set level</button>"
+               "<p class='mc-note'>every default is REQUIRE_APPROVAL; "
+               "CREATE_CAMPAIGN is capped there permanently, and an "
+               "AUTO_EXECUTE budget change is still refused past 50 "
+               "percent</p></div>"
+             if ai else "<p class='mc-empty'>levels unavailable without "
+                        "the store</p>")
     out = (card("Connections", ptab)
            + card("What each platform can do", caps,
-                  "three answers exist: yes, no, and not connected"))
+                  "three answers exist: yes, no, and not connected")
+           + card("API versions: coded vs verified current", dtab + dnote,
+                  "verified against official docs on 2026-08-09")
+           + card("AI action permission levels", aitab,
+                  "spec section 33: per action, raised by you"))
     # THE GTM AUDIT BOARD, rehomed. gtmDraft existed as a handler with no
     # board calling it, which is a dead wire wearing a function name.
     g = _D(ctx.get("gtm_audit"))
@@ -2023,9 +2102,9 @@ landing_page_url:mcV(P+'-lp'),launch:!!go},btn);}
 function mcUpload(pid,btn){var P='mc-'+pid;
 var inp=document.getElementById(P+'-file');
 var f=inp&&inp.files&&inp.files[0];
-function save(url){mcPost('/mediaos/creative',{name:mcV(P+'-cname'),
+function save(url,ar){mcPost('/mediaos/creative',{name:mcV(P+'-cname'),
 type:f?(f.type.indexOf('video')===0?'VIDEO':'IMAGE'):'TEXT',
-asset_url:url||'',headline:mcV(P+'-chead'),
+asset_url:url||'',aspect_ratio:ar||'',headline:mcV(P+'-chead'),
 primary_text:mcV(P+'-ctext'),cta:mcV(P+'-ccta'),
 angle:mcV(P+'-cangle'),publish:true},btn);}
 if(!f){save('');return;}
@@ -2040,7 +2119,7 @@ var j=await r.json();
 if(!j||j.ok===false){toast((j&&j.message)||'upload refused',false);
 if(btn){btn.disabled=false;btn.textContent='Upload + save to library';}
 return;}
-toast(j.message||'uploaded',true);save(j.url);}
+toast(j.message||'uploaded',true);save(j.url,j.aspect_ratio);}
 catch(e){toast('could not reach the engine; nothing uploaded',false);
 if(btn){btn.disabled=false;btn.textContent='Upload + save to library';}}};
 rd.readAsDataURL(f);}

@@ -951,5 +951,115 @@ t("quicklaunch never queues a launch past a blocking error",
 t("the agent's drafts land UNPUBLISHED in the library",
   "publish=False" in asrc33 and "Nothing was published" in asrc33)
 
+print("\nG34 THE CONTROL PLANE: MANIFEST, VERSIONS, JOBS, ACTIONS")
+import content_engine_media_manifest as MAN
+t("the manifest is machine-readable and covers all four platforms",
+  set(MAN.MANIFEST) == {"google", "meta", "linkedin", "tiktok"})
+t("LinkedIn's hierarchy keeps campaign_group and a CREATIVE leaf, not a "
+  "renamed ad",
+  MAN.capabilities("linkedin")["hierarchy"]
+  == ["ad_account", "campaign_group", "campaign", "creative"])
+t("YouTube is Google's network, not a fifth API",
+  "youtube" in MAN.manifest("google")["networks"]
+  and "youtube" not in MAN.MANIFEST)
+t("what was not verified says UNKNOWN, never a guess",
+  all(len(MAN.capabilities(pp)["unknowns"]) > 0
+      for pp in ("meta", "linkedin", "tiktok")))
+t("an unknown platform is refused with the real list",
+  MAN.capabilities("snapchat")["ok"] is False)
+t("no coded API version trails the verified current one",
+  all(not x["drift"] for x in MAN.version_drift()))
+csrc34 = io.open("content_engine_connectors.py", encoding="utf-8").read()
+t("the sunset defaults are gone from the sockets",
+  '"v21") or "v21"' not in csrc34 and '"202409"' not in csrc34
+  and '"v21.0") or "v21.0"' not in csrc34)
+t("every adapter reports the version it would actually call",
+  M.Adapter("google").api_version() and
+  M.Adapter("linkedin").api_version())
+t("an unwired operation returns UNSUPPORTED_CAPABILITY, not fake success",
+  M.Adapter("linkedin").update_budget("x", 5).get("code")
+  == "UNSUPPORTED_CAPABILITY")
+t("the compatibility engine refuses to judge an unknown ratio",
+  MAN.compatibility({"type": "IMAGE"}, "meta")["verdict"] == "UNKNOWN")
+t("a wrong ratio needs a variant, it is not forced on",
+  MAN.compatibility({"type": "VIDEO", "aspect_ratio": "16:9"},
+                    "tiktok")["verdict"] == "REQUIRES_TRANSFORMATION")
+t("uploaded PNG dimensions are probed from the file's own header",
+  MC.probe_dimensions(
+      b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR"
+      + (1080).to_bytes(4, "big") + (1920).to_bytes(4, "big") + b"\x00" * 8,
+      ".png") == (1080, 1920))
+t("errors normalize into the one taxonomy",
+  M.normalize_error("google", "rate limit 429")["category"] == "RATE_LIMIT"
+  and M.normalize_error("google", "invalid budget")["retryable"] is False)
+t("only rate limits and server errors are retryable",
+  M.RETRYABLE == {"RATE_LIMIT", "SERVER"})
+t("SUBMITTED and IN_REVIEW live between launch and ACTIVE",
+  "SUBMITTED" in M.CAMPAIGN_STATES and "IN_REVIEW" in M.CAMPAIGN_STATES
+  and "IN_REVIEW" in M.CAMPAIGN_MOVES["SUBMITTED"])
+st7 = Store()
+r7 = CORE.Repo(st7)
+M.save_account(r7, "google", "a1", name="G")
+_au7 = MC.save_audience(r7, name="DE", type="PROSPECTING",
+                        definition={"countries": ["DE"]})
+_cr7 = MC.save_creative(r7, name="H", type="TEXT", headline="h",
+                        primary_text="x", cta="b", concept="c",
+                        angle="pain", persona="p", funnel_stage="COLD",
+                        publish=True)
+_c7 = M.save_campaign(r7, name="P", objective="LEADS", provider="google",
+                      budget_amount=20)
+_g7 = M.save_ad_group(r7, _c7["id"], name="Core",
+                      audience_id=_au7["id"])
+M.save_ad(r7, _g7["id"], name="Ad 1", creative_id=_cr7["id"],
+          landing_page_url="https://example.com/l")
+_mk = M.make_publish_job(r7, _c7["id"])
+t("publishing is a job with steps", _mk["ok"]
+  and len(r7.one("publish_jobs", _mk["id"])["steps"]) == 4)
+_res = M.run_publish_job(r7, st7, _mk["id"])
+t("an unconnected platform HOLDS the job instead of failing it",
+  _res["state"] == "HELD" and "holds" in _res["message"])
+t("the job's idempotency key derives from the campaign",
+  M.make_publish_job(r7, _c7["id"])["id"] == _mk["id"])
+t("every AI action defaults to REQUIRE_APPROVAL",
+  set(MO.get_ai_levels(st7).values()) == {"REQUIRE_APPROVAL"})
+t("an unknown AI action is refused with the list",
+  "is not an action" in MO.ai_action(st7, r7,
+                                     action="TELEPORT")["message"])
+t("OBSERVE_ONLY means look, not touch",
+  (MO.set_ai_level(st7, "PAUSE_CAMPAIGN", "OBSERVE_ONLY"),
+   "look, not touch" in MO.ai_action(
+       st7, r7, action="PAUSE_CAMPAIGN",
+       campaign_id=_c7["id"])["message"])[1])
+t("CREATE_CAMPAIGN can never be raised to AUTO_EXECUTE",
+  MO.set_ai_level(st7, "CREATE_CAMPAIGN", "AUTO_EXECUTE")["ok"] is False)
+MO.set_ai_level(st7, "INCREASE_BUDGET", "AUTO_EXECUTE")
+t("a 300 percent budget change is refused even under AUTO_EXECUTE",
+  "waits for you despite AUTO_EXECUTE" in MO.ai_action(
+      st7, r7, action="INCREASE_BUDGET", campaign_id=_c7["id"],
+      value=300)["message"])
+t("an action a platform cannot execute says UNSUPPORTED_CAPABILITY",
+  MO.ai_action(st7, r7, action="CHANGE_BID",
+               campaign_id=M.save_campaign(
+                   r7, name="L", objective="LEADS", provider="linkedin",
+                   budget_amount=5)["id"]).get("code")
+  == "UNSUPPORTED_CAPABILITY")
+import os as _os34
+t("the research artifacts exist before the integration code is trusted",
+  all(_os34.path.exists(f"docs/platforms/{n}.md") for n in
+      ("google-ads", "meta-ads", "linkedin-ads", "tiktok-ads",
+       "capability-matrix")))
+t("the architecture artifact exists, spec section 47",
+  _os34.path.exists("docs/media-os/architecture.md"))
+t("the preview is labelled approximate, spec section 20",
+  "Approximate preview" in io.open("content_engine_media_center.py",
+                                   encoding="utf-8").read())
+asrc34b = io.open("content_engine_api.py", encoding="utf-8").read()
+for route in ("/mediaos/capabilities/{platform}", "/mediaos/action",
+              "/mediaos/ai-level"):
+    t(f"route {route} exists", route in asrc34b)
+t("the pre-flight now checks creative compatibility",
+  "MAN.compatibility" in io.open("content_engine_media_plan.py",
+                                 encoding="utf-8").read())
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)

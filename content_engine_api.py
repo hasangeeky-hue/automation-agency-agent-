@@ -3914,6 +3914,8 @@ def build_app():
         return _MC.save_creative(
             _mrepo(), name=str(d.get("name") or ""),
             type=str(d.get("type") or "IMAGE"),
+            asset_url=str(d.get("asset_url") or ""),
+            aspect_ratio=str(d.get("aspect_ratio") or ""),
             concept=str(d.get("concept") or ""),
             angle=str(d.get("angle") or ""),
             hook=str(d.get("hook") or ""),
@@ -4062,6 +4064,42 @@ def build_app():
         d = await _body(request)
         return _MF.breakdown(_mrepo(), str(d.get("by") or "device"),
                              campaign_id=str(d.get("campaign_id") or ""))
+
+    @app.get("/mediaos/capabilities/{platform}")
+    def mediaos_capabilities(platform: str):
+        """The spec's capability endpoint: the frontend renders ONLY what
+        this returns, and an unknown is an unknown."""
+        import content_engine_media_manifest as _MAN
+        return _MAN.capabilities(platform)
+
+    @app.post("/mediaos/action")
+    async def mediaos_action(request: Request):
+        """The AI Action API, spec section 32. Agents say a verb; the
+        engine validates level, state, capability and limits, then routes
+        it into the one queue. Agents never touch a platform API."""
+        import content_engine_media_orders as _MO
+        d = await _body(request)
+        out = _MO.ai_action(
+            get_store(), _mrepo(), action=str(d.get("action") or ""),
+            campaign_id=str(d.get("campaign_id") or ""),
+            value=d.get("value"), unit=str(d.get("unit") or "PERCENT"),
+            reason=str(d.get("reason") or ""),
+            evidence=d.get("evidence"),
+            agent=str(d.get("agent") or "ai"))
+        _log_decision(get_store(), "mediaos_action",
+                      str(d.get("action"))[:40], out.get("message", "")[:120])
+        return out
+
+    @app.post("/mediaos/ai-level")
+    async def mediaos_ai_level(request: Request):
+        import content_engine_media_orders as _MO
+        d = await _body(request)
+        out = _MO.set_ai_level(get_store(), str(d.get("action") or ""),
+                               str(d.get("level") or ""))
+        if out.get("ok"):
+            _log_decision(get_store(), "mediaos_ai_level",
+                          f"{d.get('action')}={d.get('level')}", "")
+        return out
 
     @app.post("/mediaos/asset")
     async def mediaos_asset(request: Request):

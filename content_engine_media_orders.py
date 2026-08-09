@@ -248,6 +248,149 @@ def apply_policy(store, *, limit=20) -> dict:
                         "approves nothing).")}
 
 
+# ---------------------------------------------------------------------------
+# THE AI ACTION API, spec sections 32-33. Agents say a VERB; this engine
+# decides what that verb means on the platform, at what permission level.
+# ---------------------------------------------------------------------------
+AI_ACTIONS = {
+    "INCREASE_BUDGET": "budget_shift",
+    "DECREASE_BUDGET": "budget_shift",
+    "PAUSE_CAMPAIGN": "pause_campaign",
+    "RESUME_CAMPAIGN": "resume_campaign",
+    "CHANGE_BID": "bid_change",
+    "ADD_NEGATIVE_KEYWORD": "negative_keyword",
+    "EXCLUDE_AUDIENCE": "audience_exclude",
+    "REPLACE_CREATIVE": "creative_rotate",
+    "REALLOCATE_BUDGET": "budget_allocate",
+    "CREATE_CAMPAIGN": "launch_campaign",
+}
+
+AI_LEVELS = ("OBSERVE_ONLY", "RECOMMEND", "REQUIRE_APPROVAL",
+             "AUTO_EXECUTE")
+#: Per-action defaults. NOTHING is AUTO_EXECUTE out of the box, and
+#: CREATE_CAMPAIGN can never be raised past REQUIRE_APPROVAL.
+AI_LEVEL_KEY = "media_ai_levels"
+AI_LEVEL_CEILING = {"CREATE_CAMPAIGN": "REQUIRE_APPROVAL"}
+#: An AUTO_EXECUTE budget change larger than this fraction is refused
+#: whatever the level says: the spec's own example is the 300 percent
+#: increase nobody meant to allow.
+AI_AUTO_MAX_PCT = 50.0
+
+
+def get_ai_levels(store) -> dict:
+    try:
+        saved = store.get_setting(AI_LEVEL_KEY, {}) or {}
+    except Exception:
+        saved = {}
+    return {a: (saved.get(a) if saved.get(a) in AI_LEVELS
+                else "REQUIRE_APPROVAL") for a in AI_ACTIONS}
+
+
+def set_ai_level(store, action, level) -> dict:
+    if action not in AI_ACTIONS:
+        return {"ok": False,
+                "message": f"{action!r} is not an AI action. They are: "
+                           + ", ".join(sorted(AI_ACTIONS))}
+    if level not in AI_LEVELS:
+        return {"ok": False,
+                "message": f"{level!r} is not a level. They are: "
+                           + ", ".join(AI_LEVELS)}
+    ceil = AI_LEVEL_CEILING.get(action)
+    if ceil and AI_LEVELS.index(level) > AI_LEVELS.index(ceil):
+        return {"ok": False,
+                "message": f"{action} is capped at {ceil}; creating "
+                           f"campaigns automatically is not a setting, "
+                           f"it is an incident"}
+    cur = {}
+    try:
+        cur = store.get_setting(AI_LEVEL_KEY, {}) or {}
+    except Exception:
+        pass
+    cur[action] = level
+    store.set_setting(AI_LEVEL_KEY, cur)
+    return {"ok": True, "message": f"{action} is now {level}"}
+
+
+def ai_action(store, r, *, action, campaign_id="", value=None,
+              unit="PERCENT", reason="", evidence=None, agent="ai") -> dict:
+    """One agent verb, validated through permission level, campaign state,
+    platform capability and limits, then routed into the ONE queue."""
+    act = str(action or "").upper()
+    code = AI_ACTIONS.get(act)
+    if not code:
+        return {"ok": False,
+                "message": f"{act!r} is not an action this engine "
+                           f"executes. They are: "
+                           + ", ".join(sorted(AI_ACTIONS))}
+    level = get_ai_levels(store).get(act, "REQUIRE_APPROVAL")
+    if level == "OBSERVE_ONLY":
+        return {"ok": False, "level": level,
+                "message": f"{act} is OBSERVE_ONLY for this workspace; "
+                           f"the agent may look, not touch. Raise the "
+                           f"level on the policy card to change that."}
+    c = r.one("media_campaigns", campaign_id) if campaign_id else None
+    if campaign_id and not c:
+        return {"ok": False, "message": "no such campaign"}
+    if c and act in ("PAUSE_CAMPAIGN",) and c.get("state") not in (
+            "ACTIVE", "SYNC_FAILED"):
+        return {"ok": False,
+                "message": f"cannot pause a {c.get('state')} campaign"}
+    if c and act == "RESUME_CAMPAIGN" and c.get("state") != "PAUSED":
+        return {"ok": False,
+                "message": f"cannot resume a {c.get('state')} campaign"}
+    # capability: the platform must have an executor for this code
+    prov = (c or {}).get("provider") or ""
+    if prov and EXEC_VIA.get(code) == "google_ads" and prov != "google":
+        return {"ok": False, "code": "UNSUPPORTED_CAPABILITY",
+                "message": f"{act} executes through the Google socket "
+                           f"today; {prov} holds until its write exists"}
+    ev = dict(evidence or {})
+    ev.setdefault("metric", f"{act} requested by {agent}")
+    ev.setdefault("threshold", f"{value} {unit}" if value is not None
+                  else "n/a")
+    ev.setdefault("window", "now")
+    ev.setdefault("source", f"ai action api ({agent})")
+    if act in ("INCREASE_BUDGET", "DECREASE_BUDGET") and value is not None:
+        try:
+            ev["change_pct"] = (abs(float(value))
+                                * (1 if act == "INCREASE_BUDGET" else -1))
+        except Exception:
+            return {"ok": False, "message": "value must be a number"}
+    o = make_order(code, campaign_id or "portfolio", platform=prov,
+                   evidence=ev,
+                   say=(reason or f"{act} on "
+                        f"{(c or {}).get('name') or 'the portfolio'}"))
+    o["requested_by"] = agent
+    o["ai_level"] = level
+    added = upsert(store, [o])
+    if level in ("RECOMMEND", "REQUIRE_APPROVAL"):
+        return {"ok": True, "level": level, "order_id": o["id"],
+                "queued": added,
+                "message": f"{act} recorded as an order and waits for "
+                           f"your approval ({level})."}
+    # AUTO_EXECUTE: guard the magnitude, then run through the ONE dispatch
+    pct = abs(float(ev.get("change_pct") or 0))
+    if act in ("INCREASE_BUDGET", "DECREASE_BUDGET") \
+            and pct > AI_AUTO_MAX_PCT:
+        return {"ok": True, "level": level, "order_id": o["id"],
+                "message": (f"{act} of {pct:g}% exceeds the {AI_AUTO_MAX_PCT:g}% "
+                            f"auto ceiling, so it waits for you despite "
+                            f"AUTO_EXECUTE. A 300 percent surprise is not "
+                            f"autonomy, it is an incident.")}
+    orders = load(store)
+    for x in orders:
+        if x["id"] == o["id"]:
+            x["status"] = "approved"
+            x["approved_by"] = f"ai_level:{level}"
+    save(store, orders)
+    rep = run_media_batch(store, ids=[o["id"]])
+    det = (rep.get("details") or [{}])[0]
+    return {"ok": True, "level": level, "order_id": o["id"],
+            "result": det.get("status"),
+            "message": f"{act} executed at level {level}: "
+                       f"{det.get('result', '')[:140]}"}
+
+
 def verify_orders(store) -> dict:
     """The VERIFIED step: check executed orders against the next platform
     read. An executed pause whose campaign still shows ENABLED on the next
@@ -624,6 +767,13 @@ def _exec_launch(store, o) -> tuple:
     if c.get("state") == "SCHEDULED":
         M.move(r, c["id"], "LAUNCHING")
         c = r.one("media_campaigns", c["id"])
+    # PUBLISHING IS A JOB: idempotent steps, a log, normalized errors.
+    mk = M.make_publish_job(r, c["id"])
+    if mk.get("ok"):
+        res = M.run_publish_job(r, store, mk["id"])
+        st = res.get("state")
+        word = {"DONE": "done", "HELD": "held"}.get(st, "failed")
+        return (word, res.get("message", "")[:200])
     try:
         got = ad.create_campaign(r, c)
     except Exception as ex:

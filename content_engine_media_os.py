@@ -63,7 +63,11 @@ OBJECTIVES = ("AWARENESS", "TRAFFIC", "ENGAGEMENT", "LEADS", "SALES",
 LEVELS = ("campaign", "ad_group", "ad")
 
 CAMPAIGN_STATES = ("DRAFT", "VALIDATING", "READY", "SCHEDULED", "LAUNCHING",
-                   "ACTIVE", "PAUSED", "COMPLETED",
+                   # SUBMITTED and IN_REVIEW live between "we sent it" and
+                   # "the platform runs it", because every platform reviews
+                   # and pretending otherwise makes ACTIVE a lie for hours.
+                   "SUBMITTED", "IN_REVIEW",
+                   "ACTIVE", "PAUSED", "COMPLETED", "ARCHIVED",
                    "VALIDATION_FAILED", "LAUNCH_FAILED", "PROVIDER_REJECTED",
                    "SYNC_FAILED")
 
@@ -74,13 +78,18 @@ CAMPAIGN_MOVES = {
     "VALIDATION_FAILED": ("DRAFT",),
     "READY": ("SCHEDULED", "LAUNCHING", "DRAFT"),
     "SCHEDULED": ("LAUNCHING", "READY", "COMPLETED"),
-    "LAUNCHING": ("ACTIVE", "LAUNCH_FAILED", "PROVIDER_REJECTED"),
+    "LAUNCHING": ("SUBMITTED", "ACTIVE", "LAUNCH_FAILED",
+                  "PROVIDER_REJECTED"),
+    "SUBMITTED": ("IN_REVIEW", "ACTIVE", "PROVIDER_REJECTED",
+                  "LAUNCH_FAILED"),
+    "IN_REVIEW": ("ACTIVE", "PROVIDER_REJECTED"),
     "LAUNCH_FAILED": ("DRAFT", "LAUNCHING"),
     "PROVIDER_REJECTED": ("DRAFT",),
-    "ACTIVE": ("PAUSED", "COMPLETED", "SYNC_FAILED"),
-    "PAUSED": ("ACTIVE", "COMPLETED"),
+    "ACTIVE": ("PAUSED", "COMPLETED", "SYNC_FAILED", "ARCHIVED"),
+    "PAUSED": ("ACTIVE", "COMPLETED", "ARCHIVED"),
     "SYNC_FAILED": ("ACTIVE", "PAUSED"),
-    "COMPLETED": (),
+    "COMPLETED": ("ARCHIVED",),
+    "ARCHIVED": (),
 }
 
 BUDGET_TYPES = ("DAILY", "LIFETIME")
@@ -252,6 +261,64 @@ class Adapter:
                         + ("actions execute automatically"
                            if level == "execute" else
                            "actions are proposed and wait for you"))}
+
+    # -- the full adapter interface, spec section 7. What a platform
+    # -- cannot do returns UNSUPPORTED_CAPABILITY, never fake success.
+    def unsupported(self, op) -> dict:
+        return {"ok": False, "code": "UNSUPPORTED_CAPABILITY",
+                "operation": op,
+                "message": (f"{self.provider} has no {op} write wired in "
+                            f"this engine yet. This is stated, not "
+                            f"simulated; the operation holds until the "
+                            f"socket gains it.")}
+
+    def api_version(self) -> str:
+        """The version this adapter would actually call, env-overridable."""
+        import content_engine_media_manifest as MAN
+        import os as _os
+        m = MAN.manifest(self.provider) or {}
+        api = m.get("api", {})
+        return (_os.environ.get(api.get("version_env", "")) or
+                api.get("coded_default_version") or "unknown")
+
+    def update_campaign(self, r, campaign) -> dict:
+        return self.unsupported("update_campaign")
+
+    def delete_campaign(self, r, campaign_id) -> dict:
+        # deletion is human-only by policy anyway; no platform delete is
+        # wired, and none pretends to be
+        return self.unsupported("delete_campaign")
+
+    def pause_campaign(self, external_id) -> dict:
+        if self.provider == "google":
+            return self._socket().pause_campaign(external_id)
+        s = self._socket()
+        if hasattr(s, "pause_campaign"):
+            return s.pause_campaign(external_id)
+        return self.unsupported("pause_campaign")
+
+    def resume_campaign(self, external_id) -> dict:
+        if self.provider == "google":
+            return self._socket()._mutate("campaigns", [{
+                "update": {"resourceName": external_id,
+                           "status": "ENABLED"},
+                "updateMask": "status"}])
+        return self.unsupported("resume_campaign")
+
+    def update_budget(self, external_id, amount) -> dict:
+        if self.provider == "google":
+            return self._socket().set_campaign_budget(external_id,
+                                                      float(amount))
+        return self.unsupported("update_budget")
+
+    def upload_asset(self, data, filename) -> dict:
+        return self.unsupported("upload_asset (platform-side)")
+
+    def get_preview(self, creative) -> dict:
+        return self.unsupported("provider-side preview")
+
+    def get_targeting_options(self) -> dict:
+        return self.unsupported("get_targeting_options")
 
     def create_campaign(self, r, campaign) -> dict:
         """Create an APPROVED canonical campaign at the platform, through
@@ -605,6 +672,67 @@ def drift(r) -> list:
     return out
 
 
+# ---------------------------------------------------------------------------
+# PLATFORM ERROR NORMALIZATION, spec section 36, and the retry policy,
+# section 37. One taxonomy; the publish runner and every adapter caller
+# read the SAME table to decide what may be retried.
+# ---------------------------------------------------------------------------
+ERROR_CATEGORIES = ("AUTHENTICATION", "PERMISSION", "VALIDATION",
+                    "RATE_LIMIT", "ASSET", "TARGETING", "BUDGET",
+                    "CREATIVE", "POLICY", "NOT_FOUND", "CONFLICT",
+                    "SERVER", "UNKNOWN")
+
+#: Which categories a retry can ever help. Retrying a VALIDATION error is
+#: asking the same question louder.
+RETRYABLE = {"RATE_LIMIT", "SERVER"}
+
+_ERROR_HINTS = (
+    ("AUTHENTICATION", ("token", "auth", "credential", "unauthoriz",
+                        "unauthent", "expired", "not connected")),
+    ("PERMISSION", ("permission", "forbidden", "denied", "scope",
+                    "developer token")),
+    ("RATE_LIMIT", ("rate", "quota", "too many", "429")),
+    ("POLICY", ("policy", "disapprov", "prohibited")),
+    ("BUDGET", ("budget",)),
+    ("TARGETING", ("targeting", "audience", "criterion")),
+    ("ASSET", ("asset", "upload", "media file", "image", "video")),
+    ("CREATIVE", ("creative", "headline", "description", "ad copy")),
+    ("NOT_FOUND", ("not found", "404", "no such")),
+    ("CONFLICT", ("conflict", "duplicate", "already exists", "409")),
+    ("VALIDATION", ("invalid", "required", "must be", "validation")),
+    ("SERVER", ("500", "502", "503", "timeout", "timed out",
+                "internal error", "unavailable")),
+)
+
+
+def normalize_error(provider, message, *, operation="", field="",
+                    provider_code="", request_id="") -> dict:
+    """One PlatformError shape for every platform's complaint."""
+    msg = str(message or "")
+    low = msg.lower()
+    category = "UNKNOWN"
+    for cat, needles in _ERROR_HINTS:
+        if any(n in low for n in needles):
+            category = cat
+            break
+    return {"platform": provider, "provider_code": str(provider_code or ""),
+            "provider_message": msg[:400], "category": category,
+            "retryable": category in RETRYABLE,
+            "field": field, "operation": operation,
+            "request_id": request_id,
+            "recommended": {
+                "AUTHENTICATION": "reconnect the platform on the Connect "
+                                  "board",
+                "PERMISSION": "the credential lacks a scope; regrant it",
+                "RATE_LIMIT": "wait and retry; the runner backs off "
+                              "automatically",
+                "POLICY": "read the platform's policy reason; do not "
+                          "retry as-is",
+                "VALIDATION": "fix the named field and re-validate",
+                "SERVER": "the platform hiccuped; retry is safe",
+            }.get(category, "read the provider message")}
+
+
 #: Platform status words -> canonical states, for adopted campaigns.
 ADOPT_STATE = {"ENABLED": "ACTIVE", "ACTIVE": "ACTIVE", "PAUSED": "PAUSED",
                "REMOVED": "COMPLETED", "ENDED": "COMPLETED"}
@@ -695,6 +823,158 @@ def adopt(r, store) -> dict:
                         f"from the old Google Ads snapshot of {at}. Their "
                         f"30-day totals are in; daily history accrues from "
                         f"the next sync. No key was touched.")}
+
+
+# ---------------------------------------------------------------------------
+# PUBLISHING IS A JOB, spec sections 17-19. Idempotent steps, a log the
+# founder can read, provider errors normalized and never hidden.
+# ---------------------------------------------------------------------------
+PUBLISH_STATES = ("QUEUED", "RUNNING", "DONE", "HELD", "FAILED")
+PUBLISH_STEPS = ("validate", "create_campaign_tree", "verify", "record_ids")
+
+
+def make_publish_job(r, campaign_id) -> dict:
+    """One job per campaign publication. The idempotency key is derived
+    from the campaign, so retrying a timed-out publish reuses the SAME
+    job and cannot create a duplicate campaign."""
+    c = r.one("media_campaigns", campaign_id)
+    if not c:
+        return {"ok": False, "message": "no such campaign"}
+    key = rid("pubkey", r.ws, campaign_id, c.get("provider") or "")
+    jid = rid("pubjob", r.ws, campaign_id)
+    cur = r.one("publish_jobs", jid)
+    if cur and cur.get("state") in ("QUEUED", "RUNNING"):
+        return {"ok": True, "id": jid, "existing": True,
+                "message": "a publish job for this campaign is already "
+                           "queued; re-pressing does not duplicate it"}
+    rec = {"id": jid, "campaign_id": campaign_id,
+           "provider": c.get("provider"), "state": "QUEUED",
+           "idempotency_key": key, "attempt": (cur or {}).get("attempt", 0) + 1,
+           "steps": [{"step": s, "status": "PENDING", "detail": "",
+                      "at": ""} for s in PUBLISH_STEPS],
+           "finished_at": ""}
+    r.put("publish_jobs", rec)
+    return {"ok": True, "id": jid, "existing": False,
+            "message": f"publish job queued (attempt {rec['attempt']})"}
+
+
+def _job_step(job, name, status, detail="", error=None) -> None:
+    for s in job["steps"]:
+        if s["step"] == name:
+            s.update({"status": status, "detail": str(detail)[:300],
+                      "at": now()})
+            if error:
+                s["error"] = error
+
+
+def run_publish_job(r, store, job_id) -> dict:
+    """Execute one queued publish job through the one adapter.
+
+    The Google socket creates the whole tree (budget, campaign, ad group,
+    RSA, keywords) in one authenticated flow; the step log records what it
+    reported. Idempotency: a campaign that already carries an external id
+    SKIPS creation instead of creating a twin."""
+    job = r.one("publish_jobs", job_id)
+    if not job:
+        return {"ok": False, "message": "no such publish job"}
+    c = r.one("media_campaigns", job.get("campaign_id"))
+    if not c:
+        job["state"] = "FAILED"
+        _job_step(job, "validate", "FAILED", "campaign vanished")
+        r.put("publish_jobs", job)
+        return {"ok": False, "message": "the campaign behind this job no "
+                                        "longer exists"}
+    job["state"] = "RUNNING"
+    r.put("publish_jobs", job)
+    prov = c.get("provider") or ""
+    ad = Adapter(prov)
+    # step 1: validate
+    v = validate(r, c["id"]) if c.get("state") not in (
+        "READY", "SCHEDULED", "LAUNCHING", "SUBMITTED") else {"ok": True}
+    if not v.get("ok"):
+        _job_step(job, "validate", "FAILED", v.get("message", ""))
+        job["state"] = "FAILED"
+        r.put("publish_jobs", job)
+        return {"ok": False, "state": "FAILED",
+                "message": v.get("message", "validation failed")}
+    _job_step(job, "validate", "OK", "canonical validation passed")
+    # step 2: create the tree, idempotently
+    if c.get("external_campaign_id"):
+        _job_step(job, "create_campaign_tree", "SKIPPED",
+                  f"already created as {c['external_campaign_id']} "
+                  f"(idempotency)")
+        got = {"ok": True, "campaign": c["external_campaign_id"],
+               "detail": "already existed"}
+    else:
+        live, why = ad.available()
+        if not live:
+            _job_step(job, "create_campaign_tree", "HELD", why)
+            job["state"] = "HELD"
+            r.put("publish_jobs", job)
+            return {"ok": False, "state": "HELD", "message": why}
+        try:
+            got = ad.create_campaign(r, c)
+        except Exception as ex:
+            got = {"ok": False, "error": f"{type(ex).__name__}: "
+                                         f"{str(ex)[:160]}"}
+        if got.get("hold") or got.get("code") == "UNSUPPORTED_CAPABILITY":
+            _job_step(job, "create_campaign_tree", "HELD",
+                      got.get("error") or got.get("message", ""))
+            job["state"] = "HELD"
+            r.put("publish_jobs", job)
+            return {"ok": False, "state": "HELD",
+                    "message": got.get("error") or got.get("message", "")}
+        if not got.get("ok"):
+            err = normalize_error(prov, got.get("error"),
+                                  operation="create_campaign")
+            # An AUTHENTICATION error is "not connected yet", which is a
+            # wait, not a rejection: the job HOLDS and runs the day the
+            # key exists, exactly like every other order.
+            if err["category"] == "AUTHENTICATION":
+                _job_step(job, "create_campaign_tree", "HELD",
+                          got.get("error", ""), error=err)
+                job["state"] = "HELD"
+                r.put("publish_jobs", job)
+                return {"ok": False, "state": "HELD", "error": err,
+                        "message": (f"{err['provider_message'][:120]}; "
+                                    f"{err['recommended']}. The job holds "
+                                    f"and re-runs when the connection "
+                                    f"exists.")}
+            _job_step(job, "create_campaign_tree", "FAILED",
+                      got.get("error", ""), error=err)
+            job["state"] = "FAILED"
+            r.put("publish_jobs", job)
+            move(r, c["id"], "PROVIDER_REJECTED",
+                 why=str(got.get("error"))[:140])
+            return {"ok": False, "state": "FAILED", "error": err,
+                    "message": (f"{err['category']}: "
+                                f"{err['provider_message'][:120]}. "
+                                f"{err['recommended']}"
+                                + ("" if err["retryable"] else
+                                   " This class is NOT retried "
+                                   "automatically."))}
+        _job_step(job, "create_campaign_tree", "OK",
+                  got.get("detail", "created"))
+    # step 3: verify + step 4: record ids
+    ext = str(got.get("campaign") or c.get("external_campaign_id") or "")
+    _job_step(job, "verify", "OK" if ext else "FAILED",
+              (f"provider id {ext}" if ext else
+               "the platform returned no id; treat as failed"))
+    c["external_campaign_id"] = ext
+    c["published_api_version"] = ad.api_version()
+    r.put("media_campaigns", c)
+    if c.get("state") in ("LAUNCHING",):
+        move(r, c["id"], "SUBMITTED", why="publish job completed; the "
+                                          "platform reviews before it runs")
+    _job_step(job, "record_ids", "OK", f"external_campaign_id={ext}, "
+                                       f"api={ad.api_version()}")
+    job["state"] = "DONE" if ext else "FAILED"
+    job["finished_at"] = now()
+    r.put("publish_jobs", job)
+    return {"ok": bool(ext), "state": job["state"], "provider_id": ext,
+            "message": (f"published to {prov} as {ext} on API "
+                        f"{ad.api_version()}; the platform reviews before "
+                        f"it runs" if ext else "publish did not complete")}
 
 
 def summary(r) -> dict:

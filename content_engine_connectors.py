@@ -3581,7 +3581,7 @@ class MetaAds(_AdsSocket):
     keys = ("META_ACCESS_TOKEN", "META_AD_ACCOUNT_ID")
 
     def _base(self):
-        v = _env("META_API_VERSION", "v21.0") or "v21.0"
+        v = _env("META_API_VERSION", "v25.0") or "v25.0"
         acct = _env("META_AD_ACCOUNT_ID").replace("act_", "")
         return f"https://graph.facebook.com/{v}/act_{acct}"
 
@@ -3610,7 +3610,7 @@ class MetaAds(_AdsSocket):
         if not self.available():
             return {"ok": False, "error": self._reason()}
         r = _requests()
-        v = _env("META_API_VERSION", "v21.0") or "v21.0"
+        v = _env("META_API_VERSION", "v25.0") or "v25.0"
         resp = r.post(f"https://graph.facebook.com/{v}/{campaign_id}",
                       data={"status": "PAUSED",
                             "access_token": _env("META_ACCESS_TOKEN")},
@@ -3670,8 +3670,8 @@ class LinkedInAds(_AdsSocket):
                      headers={"Authorization": "Bearer "
                               + _env("LINKEDIN_ADS_ACCESS_TOKEN"),
                               "LinkedIn-Version":
-                              _env("LINKEDIN_ADS_API_VERSION", "202409")
-                              or "202409",
+                              _env("LINKEDIN_ADS_API_VERSION", "202601")
+                              or "202601",
                               "X-Restli-Protocol-Version": "2.0.0"},
                      timeout=30).json()
         return {"connected": True,
@@ -3699,7 +3699,9 @@ class GoogleAds:
         # Google retires API versions after ~a year; make it configurable so a
         # sunset version (404s) can be bumped without a code change. diag() probes
         # for a live one and tells you which to set.
-        self.ver = _env("GOOGLE_ADS_API_VERSION", "v21") or "v21"
+        # API_VERSION: v25 verified current on 2026-08-09 (official release notes).
+        # The old v21 default is past sunset; env GOOGLE_ADS_API_VERSION overrides.
+        self.ver = _env("GOOGLE_ADS_API_VERSION", "v25") or "v25"
 
     def _base(self) -> str:
         return f"https://googleads.googleapis.com/{self.ver}/customers/{self.cid}"

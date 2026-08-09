@@ -470,9 +470,45 @@ def store_asset(data: bytes, filename: str) -> dict:
     if not os.path.exists(path):
         with open(path, "wb") as f:
             f.write(data)
+    w, h = probe_dimensions(data, ext)
+    ar = ""
+    if w and h:
+        import content_engine_media_manifest as MAN
+        ar = MAN._ratio(w, h)
     return {"ok": True, "name": name, "url": f"/mediaos/asset/{name}",
             "bytes": len(data), "mime": ASSET_TYPES[ext],
-            "message": f"stored as {name} ({len(data) / 1024:.0f} KB)"}
+            "width": w, "height": h, "aspect_ratio": ar,
+            "message": (f"stored as {name} ({len(data) / 1024:.0f} KB"
+                        + (f", {w}x{h}, {ar}" if w else
+                           ", dimensions not probed for this format")
+                        + ")")}
+
+
+def probe_dimensions(data: bytes, ext: str):
+    """(width, height) read from the file's own header, or (None, None).
+
+    PNG and JPEG only; video dimensions need a real probe and are
+    honestly left None rather than guessed."""
+    try:
+        if ext == ".png" and data[:8] == b"\x89PNG\r\n\x1a\n" \
+                and len(data) >= 24:
+            return (int.from_bytes(data[16:20], "big"),
+                    int.from_bytes(data[20:24], "big"))
+        if ext in (".jpg", ".jpeg") and data[:2] == b"\xff\xd8":
+            i = 2
+            while i + 9 < len(data):
+                if data[i] != 0xFF:
+                    i += 1
+                    continue
+                marker = data[i + 1]
+                if marker in (0xC0, 0xC1, 0xC2, 0xC3):
+                    return (int.from_bytes(data[i + 7:i + 9], "big"),
+                            int.from_bytes(data[i + 5:i + 7], "big"))
+                seg = int.from_bytes(data[i + 2:i + 4], "big")
+                i += 2 + seg
+    except Exception:
+        pass
+    return None, None
 
 
 def read_asset(name: str):
