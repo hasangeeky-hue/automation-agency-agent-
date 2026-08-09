@@ -1193,5 +1193,39 @@ t("no em-dash reaches the rules module",
   "\u2014" not in open("content_engine_search_rules.py",
                        encoding="utf-8").read())
 
+print("")
+print("L23 NO OLD SCREEN SURVIVES ANYWHERE")
+# This is the gate that was missing for eleven phases. Every panel was
+# checked for HAVING content and none for having the RIGHT content, so
+# nine tabs kept drawing content_engine_seo_screens and the DEFAULT tab
+# was one of them. The section passed every gate and looked completely
+# unchanged when it was opened.
+_bsrc = open("content_engine_seo_boards.py", encoding="utf-8").read()
+_pi = _bsrc.index("panels = {")
+_pj = _bsrc.index("}", _bsrc.index(chr(34) + "seoloop" + chr(34), _pi))
+_pblock = _bsrc[_pi:_pj]
+t("NO PANEL IS DRAWN BY THE OLD SCREENS MODULE",
+  "SCR." not in _pblock,
+  str([x for x in _pblock.splitlines() if "SCR." in x]))
+_sec23 = SEO6.seo_section({})
+t("and no old screen's markup reaches the page",
+  "YOUR SEO AGENT" not in _sec23)
+t("THE DEFAULT TAB DRAWS THE NEW COMMAND CENTRE",
+  SEO6.TABS[0][0] == "seocmd" and "SEARCH COMMAND CENTER" in _sec23)
+t("every tab label is escaped once, not twice",
+  "&amp;amp;" not in _sec23,
+  str([x[2] for x in SEO6.TABS if "&amp;" in x[2]]))
+_used23 = set(_re17.findall(r"var\((--so-[a-z0-9-]+)\)", _sec23))
+_def23 = set(_re17.findall(r"(--so-[a-z0-9-]+)\s*:", _sec23))
+t("NO --so-* VARIABLE IS USED WITHOUT BEING DEFINED",
+  not (_used23 - _def23), str(sorted(_used23 - _def23)))
+t("the sticky tab bar is not transparent",
+  "background:transparent;padding:7px 0 9px" not in _bsrc)
+t("no board draws the same screen twice on one panel",
+  _sec23.count("SEARCH COMMAND CENTER") == 1)
+t("no tab label carries an em-dash",
+  not [x[2] for x in SEO6.TABS if "\u2014" in x[2]],
+  str([x[2] for x in SEO6.TABS if "\u2014" in x[2]]))
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

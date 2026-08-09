@@ -2344,6 +2344,72 @@ def _crawl_of(ctx):
     return c if isinstance(c, dict) else {}
 
 
+def _board_command(ctx) -> str:
+    """Spec 13. The new SEO Command centre, replacing SCR.command_screen.
+
+    command_center() was written in phase 4 and never mounted, so the
+    DEFAULT tab of this section kept drawing the old screen. That is what
+    made the whole page look unchanged: the first thing anyone saw was
+    the thing that was supposed to have been replaced.
+    """
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    c = ctx or {}
+    # command_center() ALREADY draws the opportunities board as its
+    # "what should we do next" section. Appending SS.opportunities()
+    # here put the same board on the panel twice, which looking at the
+    # rendered page caught immediately and reading the source did not.
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.command_center(r, totals=c.get("search_totals"),
+                                health=c.get("health"))
+            + "</div>")
+
+
+def _board_local(ctx) -> str:
+    """Replaces SCR.geo_local_screen."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.local_presence(r, (ctx or {}).get("local")) + "</div>")
+
+
+def _board_drafts(ctx) -> str:
+    """Replaces SCR.workorders_screen with the brief/diff/editor screens.
+
+    content_brief, content_editor and diff_viewer were all built and none
+    of them were mounted anywhere.
+    """
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    c = ctx or {}
+    brief = c.get("brief")
+    draft = c.get("draft") or ""
+    change = c.get("proposed_change") or {}
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.content_brief(brief)
+            + SS.content_editor(brief, draft)
+            + (SS.diff_viewer(
+                field=change.get("field") or "title",
+                before=change.get("before"),
+                proposed=change.get("proposed"),
+                evidence=change.get("evidence"),
+                risk=change.get("risk") or "MEDIUM",
+                initiative_id=change.get("initiative_id") or "")
+               if change.get("proposed") else
+               "<p class='ss-h'>PROPOSED CHANGE</p>"
+               + SS.empty("No change proposed",
+                          "A diff exists only when something has "
+                          "actually been drafted against something "
+                          "current. Nothing is queued.", "", ""))
+            + "</div>")
+
+
 def _board_loops(ctx) -> str:
     """Spec 56-59, mounted."""
     import content_engine_search_screens as SS
@@ -2688,20 +2754,14 @@ def seo_pages(ctx) -> dict:
 # already relied on can be hidden or displaced by this work.
 TABS = [
     ("seocmd", "🧭", "SEO Command"),
-    ("seotech", "🔧", "Technical & Indexing"),
-    ("seoonpage", "📄", "On-Page & Links"),
-    ("seokw", "🔑", "Keywords & Content"),
-    ("seoaeo", "🤖", "AEO — Answer Engines"),
-    ("seogen", "🌐", "GEO — Generative"),
-    ("seogeo", "📍", "GEO — Local & Markets"),
-    ("seooff", "🔗", "Off-Page & Links"),
-    ("seowork", "🛠", "Work Orders"),
+    ("seogeo", "📍", "Local & Markets"),
+    ("seowork", "🛠", "Drafts & Changes"),
     ("seoloops", "🔁", "The Loops"),
-    ("seofind", "🔎", "Search &amp; Commands"),
-    ("seodata", "🗄", "Data &amp; CMS"),
+    ("seofind", "🔎", "Search & Commands"),
+    ("seodata", "🗄", "Data & CMS"),
     ("seoreport", "📄", "Reports"),
-    ("seorules", "⚖", "Rules &amp; Self Audit"),
-    ("seosystem", "🧩", "System &amp; Components"),
+    ("seorules", "⚖", "Rules & Self Audit"),
+    ("seosystem", "🧩", "System & Components"),
     ("seodomain", "🌐", "Domain Research"),
     ("seokwx", "🔍", "Keyword Explorer"),
     ("seorank", "📍", "Position Tracking"),
@@ -2727,14 +2787,39 @@ GROUPS = [
      ["seocmd", "seofind", "seoopp", "seopage", "seoagents",
       "seowork", "seoloop", "seoloops", "seoreport"]),
     ("diagnose", "① DIAGNOSE", "What's wrong?",
-     ["seoaudit", "seoissues", "seopages", "seotech", "seoonpage"]),
+     ["seoaudit", "seoissues", "seopages"]),
     ("compete", "② COMPETE", "Where do I stand?",
-     ["seodomain", "seokwx", "seorank", "seokw", "seocontent",
-      "seolinks", "seoanswers", "seogeoai",
-      "seoaeo", "seogen", "seogeo", "seooff"]),
+     ["seodomain", "seokwx", "seorank", "seocontent",
+      "seolinks", "seoanswers", "seogeoai", "seogeo"]),
     ("sources", "④ SOURCES", "Where does the data come from?",
      ["seoanalytics", "seosrc", "seodata", "seosystem", "seorules"]),
 ]
+
+# THE TAB CHROME, in the section's own palette. _TAB_CSS below still
+# carries the old dashboard's teal and near-black; this block is appended
+# AFTER it so it wins the cascade without deleting rules other things may
+# depend on. Scoped to .seoscr so nothing outside the SEO section moves.
+_TAB_SKIN = """<style>
+/* The tab bar is position:sticky. Making it transparent let the page
+   scroll THROUGH it and the headings underneath showed against the
+   chips. It keeps the section's own ground, just not the old teal. */
+.seoscr .stabs{border-bottom:1px solid rgba(148,163,184,.22);
+background:var(--pap,#0c0f14);padding:7px 0 9px}
+.seoscr .stab{background:transparent;border:1px solid rgba(148,163,184,.22);
+color:var(--dm,#93a0b4);border-radius:8px;padding:7px 12px;font-size:12px;
+font-weight:500}
+.seoscr .stab:hover{color:var(--tx,#e6ebf2);border-color:var(--ac,#4C8DFF)}
+.seoscr .stab.on{background:transparent;color:var(--tx,#e6ebf2);
+border-color:var(--ac,#4C8DFF);box-shadow:inset 0 -2px 0 var(--ac,#4C8DFF)}
+.seoscr .stab .n{background:rgba(148,163,184,.18);color:var(--dm,#93a0b4);
+font-size:10px;padding:1px 6px;border-radius:9px;margin-left:6px}
+.seoscr .sgrp{background:transparent;border:1px solid rgba(148,163,184,.22);
+border-radius:9px}
+.seoscr .sgrp.on{border-color:var(--ac,#4C8DFF);background:transparent}
+.seoscr .sgrp b{color:var(--tx,#e6ebf2)}
+.seoscr .sgrp .gq{color:var(--dm,#93a0b4)}
+</style>"""
+
 
 _TAB_CSS = """<style>
 .shint{font-size:12px;color:#8FA0BF;margin:14px 0 6px;display:flex;align-items:center;gap:7px}
@@ -2828,16 +2913,15 @@ def seo_section(ctx, legacy_html: str = "") -> str:
     # boards these replaced still exist as functions (the SEO context and
     # engines are untouched); only what this section DRAWS has changed.
     import content_engine_seo_screens as SCR
+    # EVERY panel below is a NEW screen. The nine SCR.* calls that used
+    # to sit here drew content_engine_seo_screens, and because "seocmd"
+    # is the first tab, the old design was the first thing the section
+    # showed. Six of those tabs were duplicated one-for-one by a new tab
+    # and are gone; the other three now draw new screens.
     panels = {
-        "seocmd": SCR.command_screen(ctx, []),
-        "seotech": SCR.technical_screen(ctx, []),
-        "seoonpage": SCR.issue_screen("seoonpage", ctx, []),
-        "seokw": SCR.issue_screen("seokw", ctx, []),
-        "seoaeo": SCR.health_header(ctx) + SCR.aeo_screen(ctx),
-        "seogen": SCR.health_header(ctx) + SCR.geo_gen_screen(ctx),
-        "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
-        "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
-        "seowork": SCR.workorders_screen(ctx, []),
+        "seocmd": _board_command(ctx),
+        "seogeo": _board_local(ctx),
+        "seowork": _board_drafts(ctx),
         "seoloops": _board_loops(ctx),
         "seofind": _board_find(ctx),
         "seodata": _board_data(ctx),
@@ -2885,10 +2969,7 @@ def seo_section(ctx, legacy_html: str = "") -> str:
                    if o.get("code") in set(codes))
             for t, (_lbl, codes) in SCR.TAB_CODES.items()}
     counts = {"seocmd": len(_orders),
-              "seotech": _per.get("seotech", 0),
-              "seoonpage": _per.get("seoonpage", 0),
-              "seokw": _per.get("seokw", 0),
-              "seoaeo": None, "seogen": None, "seogeo": None, "seooff": None,
+              "seogeo": None,
               "seowork": sum(1 for o in _orders
                              if (o.get("extra") or {}).get("proposal")),
               "seosrc": None}
@@ -2908,16 +2989,22 @@ def seo_section(ctx, legacy_html: str = "") -> str:
     body = "".join(
         f"<div class='spanel{' on' if i == 0 else ''}' id='spanel-{tid}'>{panels.get(tid, '')}</div>"
         for i, (tid, _, _) in enumerate(TABS) if tid != "seosrc")
-    runbar = (
-        "<div class='ctrl' style='margin:10px 0 2px;flex-wrap:wrap'>"
-        "<button class='cbtn' onclick='runSeoAll()'>▶ Run every SEO engine</button>"
-        "<button class='cbtn' onclick='runCrawl()'>🕷 Crawl my site (free)</button>"
-        "<button class='cbtn' onclick='runInspect()'>📇 Ask Google what's indexed (free)</button>"
-        "<button class='cbtn' onclick='runFixes()'>🛠 Apply safe fixes</button>"
-        "<button class='cbtn' onclick='runRanks()'>📈 Check rankings</button>"
-        "<button class='cbtn' onclick='runAeo()'>🤖 Probe AI answers</button>"
-        "<button class='cbtn' onclick='runProspect()'>🌐 Find link prospects</button>"
-        "</div>")
+    # THE RUN BAR, in the new design. The seven actions are unchanged
+    # and call the same handlers; what changed is that they no longer
+    # look like the old dashboard's chrome sitting above new screens.
+    import content_engine_search_tokens as _TK
+    _ACTIONS = (("Run every SEO engine", "runSeoAll()", "primary"),
+                ("Crawl my site", "runCrawl()", "secondary"),
+                ("Ask Google what is indexed", "runInspect()", "secondary"),
+                ("Apply safe fixes", "runFixes()", "secondary"),
+                ("Check rankings", "runRanks()", "secondary"),
+                ("Probe AI answers", "runAeo()", "ai"),
+                ("Find link prospects", "runProspect()", "secondary"))
+    runbar = ("<div class='ss-runbar'>"
+              + "".join(_TK.button(_l, variant=_v, size="compact",
+                                   onclick=_o)
+                        for _l, _o, _v in _ACTIONS)
+              + "</div>")
     total = sum(v for v in counts.values() if isinstance(v, int))
     # ---- ① group rail  ->  ② tab chips  ->  ③ the audit screens ----
     grouprail = "".join(
@@ -2930,10 +3017,9 @@ def seo_section(ctx, legacy_html: str = "") -> str:
     # decorative toolbar the founder called out a month ago; the screens
     # sort problems first on their own.
     tools = ""
-    hint = (f"<div class='shint'>👇 <b>{total} open problem"
+    hint = (f"<div class='ss-runhint'><b>{total} open problem"
             f"{'s' if total != 1 else ''}</b> across the audit. Every row "
-            f"carries what it costs and the button that repairs it; the "
-            f"agent band at the top commands all of them at once.</div>")
+            f"carries what it costs and the button that repairs it.</div>")
     legacy_head = ("<div id='seo-google' class='card full' style='margin-top:14px;"
                    "border-color:#4C8DFF'><p class='ct'>📊 Search Console &amp; Analytics</p>"
                    "<p class='cc'>Your original Google boards — same data, same order, "
@@ -2965,7 +3051,7 @@ def seo_section(ctx, legacy_html: str = "") -> str:
                   "attention": ctx.get("attention"),
               }) + "</div>")
     return ("<div class='seoscr'>" + bridge + SCR.JS
-            + _TAB_CSS + _shell + runbar + hint
+            + _TAB_CSS + _TAB_SKIN + _shell + runbar + hint
             + f"<div class='sgroups'>{grouprail}</div>"
             + f"<div class='stabs'>{bar}</div>" + tools + body + sources_panel
             + "</div>")

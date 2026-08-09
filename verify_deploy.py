@@ -105,7 +105,7 @@ grouped = set()
 for g in SEO.GROUPS:
     grouped.update(g[3])
 
-check("thirty-one tabs are declared", len(SEO.TABS) >= 31,
+check("twenty-five tabs are declared", len(SEO.TABS) >= 25,
       "found " + str(len(SEO.TABS)))
 orphans = [t for t in tabs if t not in grouped]
 check("no tab belongs to no group", not orphans, orphans)
@@ -138,6 +138,16 @@ check("and there is exactly ONE Sources panel",
 
 # ---------------------------------------------------------------- shell
 head("4. THE SHELL IS ABOVE THE TABS, NOT BEHIND ONE")
+# The check whose absence is the whole reason this file exists
+# in its second version: every panel was proved to HAVE
+# content and none was proved to have the RIGHT content.
+check("NO OLD SCREEN IS DRAWN ANYWHERE",
+      "YOUR SEO AGENT" not in section)
+check("the default tab is the NEW command centre",
+      SEO.TABS[0][0] == "seocmd"
+      and "SEARCH COMMAND CENTER" in section)
+check("no tab label is double-escaped",
+      "&amp;amp;" not in section)
 check("the shell frame rendered", "ss-shell" in section)
 check("it sits above the first tab chip",
       "ss-shell" in section and "stab-" in section
@@ -147,6 +157,9 @@ check("the freshness bar rendered", "ss-bar" in section)
 # ------------------------------------------------------- the new screens
 head("5. THE NEW SCREENS ARE THE ONES BEING DRAWN")
 MARKERS = {
+    "seocmd": "SEARCH COMMAND CENTER",
+    "seogeo": "LOCAL &amp; MARKETS",
+    "seowork": "CONTENT BRIEF",
     "seorules": "WHAT THIS SYSTEM REFUSES TO DO",
     "seosystem": "COMPONENT LIBRARY",
     "seodata": "THE CANONICAL MODEL",

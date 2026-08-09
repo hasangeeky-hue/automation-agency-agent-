@@ -2235,3 +2235,131 @@ font-weight:600;margin:0 0 3px}
 .ss-ref i{font-style:normal;font-size:11px;color:var(--so-text2);
 line-height:1.6}
 </style>"""
+
+
+# ---------------------------------------------------------------------------
+# LOCAL PRESENCE (replaces the old GEO - Local & Markets screen)
+# ---------------------------------------------------------------------------
+def local_presence(r, data=None) -> str:
+    """Local and per-market visibility, refusing to model what it lacks."""
+    d = _D(data)
+    profiles = _L(d.get("profiles"))
+    markets = _L(d.get("markets"))
+    if not profiles and not markets:
+        return ("<p class='ss-h'>LOCAL &amp; MARKETS</p>"
+                + empty("No local profile or market tracked",
+                        "Local visibility is measured from a business "
+                        "profile and from rankings pulled in a named "
+                        "place. Without either, any 'local score' would "
+                        "be a national number wearing a pin.",
+                        "Connect a profile", "nav('map')"))
+    body = ""
+    for x in profiles:
+        pd = _D(x)
+        body += ("<tr><td>" + e(pd.get("name")) + "</td>"
+                 + "<td>" + e(pd.get("location") or "not recorded")
+                 + "</td>"
+                 + "<td>" + _n(pd.get("reviews")) + "</td>"
+                 + "<td>" + _n(pd.get("rating")) + "</td>"
+                 + "<td>" + e(pd.get("state") or "not verified")
+                 + "</td></tr>")
+    mk = ""
+    for x in markets:
+        md = _D(x)
+        mk += ("<tr><td>" + e(md.get("market")) + "</td>"
+               + "<td>" + _n(md.get("keywords")) + "</td>"
+               + "<td>" + _n(md.get("avg_position")) + "</td>"
+               + "<td>" + e(md.get("language") or "not recorded")
+               + "</td></tr>")
+    return ("<p class='ss-h'>LOCAL &amp; MARKETS</p>"
+            + (("<p class='ss-h2'>Business profiles</p>"
+                "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+                "<th>Profile</th><th>Location</th><th>Reviews</th>"
+                "<th>Rating</th><th>State</th></tr></thead><tbody>"
+                + body + "</tbody></table></div>") if body else "")
+            + (("<p class='ss-h2'>Markets</p>"
+                "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+                "<th>Market</th><th>Keywords</th><th>Avg position</th>"
+                "<th>Language</th></tr></thead><tbody>" + mk
+                + "</tbody></table></div>") if mk else "")
+            + "<p class='ss-note'>Each market is counted separately and "
+            + "never averaged into one number. A position of 3 in Germany "
+            + "and 40 in the United States is not 'about 21'; it is a "
+            + "strong market and a market you are not in.</p>")
+
+
+# The new components reference --so-line for every border. It was never
+# declared, so every card, table and chip on the new screens rendered
+# with no edge at all: the screens were there and looked like unstyled
+# text. Declared here, at the root the screens actually live in.
+CSS += """<style>
+.ss-root{--so-line:rgba(148,163,184,.22)}
+</style>"""
+
+
+# ---------------------------------------------------------------------------
+# LOCAL PRESENCE (replaces the old GEO - Local & Markets screen)
+# ---------------------------------------------------------------------------
+def local_presence(r, data=None) -> str:
+    """Local and per-market visibility, refusing to model what it lacks."""
+    d = _D(data)
+    profiles = _L(d.get("profiles"))
+    markets = _L(d.get("markets"))
+    if not profiles and not markets:
+        return ("<p class='ss-h'>LOCAL &amp; MARKETS</p>"
+                + empty("No local profile or market tracked",
+                        "Local visibility is measured from a business "
+                        "profile and from rankings pulled in a named "
+                        "place. Without either, any 'local score' would "
+                        "be a national number wearing a pin.",
+                        "Connect a profile", "nav('map')"))
+    body = ""
+    for x in profiles:
+        pd = _D(x)
+        body += ("<tr><td>" + e(pd.get("name")) + "</td>"
+                 + "<td>" + e(pd.get("location") or "not recorded")
+                 + "</td>"
+                 + "<td>" + _n(pd.get("reviews")) + "</td>"
+                 + "<td>" + _n(pd.get("rating")) + "</td>"
+                 + "<td>" + e(pd.get("state") or "not verified")
+                 + "</td></tr>")
+    mk = ""
+    for x in markets:
+        md = _D(x)
+        mk += ("<tr><td>" + e(md.get("market")) + "</td>"
+               + "<td>" + _n(md.get("keywords")) + "</td>"
+               + "<td>" + _n(md.get("avg_position")) + "</td>"
+               + "<td>" + e(md.get("language") or "not recorded")
+               + "</td></tr>")
+    return ("<p class='ss-h'>LOCAL &amp; MARKETS</p>"
+            + (("<p class='ss-h2'>Business profiles</p>"
+                "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+                "<th>Profile</th><th>Location</th><th>Reviews</th>"
+                "<th>Rating</th><th>State</th></tr></thead><tbody>"
+                + body + "</tbody></table></div>") if body else "")
+            + (("<p class='ss-h2'>Markets</p>"
+                "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+                "<th>Market</th><th>Keywords</th><th>Avg position</th>"
+                "<th>Language</th></tr></thead><tbody>" + mk
+                + "</tbody></table></div>") if mk else "")
+            + "<p class='ss-note'>Each market is counted separately and "
+            + "never averaged into one number. A position of 3 in Germany "
+            + "and 40 in the United States is not 'about 21'; it is a "
+            + "strong market and a market you are not in.</p>")
+
+
+# The new components reference --so-line for every border. It was never
+# declared, so every card, table and chip on the new screens rendered
+# with no edge at all: the screens were there and looked like unstyled
+# text. Declared here, at the root the screens actually live in.
+CSS += """<style>
+.ss-root{--so-line:rgba(148,163,184,.22)}
+</style>"""
+
+
+CSS += """<style>
+.ss-runbar{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 6px}
+.ss-runhint{font-size:11px;color:var(--so-text2);margin:0 0 10px;
+padding:0 2px}
+.ss-runhint b{color:var(--so-text)}
+</style>"""
