@@ -178,5 +178,63 @@ t("its collections are declared in the core",
       for c in ("search_initiatives", "search_agent_runs")))
 t("no em dash anywhere in the engine", "—" not in _src)
 
+print("\nL8  THE EXECUTION BOARD AND LOOP MONITOR (spec 61-63, 70)")
+import content_engine_search_board as SB
+
+_r4 = CORE.Repo(Store())
+_empty = SB.section(_r4)
+t("an empty board says so rather than showing an example",
+  "stays empty rather than showing an example" in _empty)
+t("the Kanban columns are declared once", len(SB.COLUMNS) == 8)
+_i4 = SL.open_initiative(_r4, kind="content", target="/guide",
+                         recommendation=REC)["id"]
+for _s in ("ANALYZED", "RECOMMENDED", "APPROVAL_REQUIRED", "APPROVED",
+           "EXECUTING"):
+    SL.advance(_r4, _i4, _s)
+SL.record_execution(_r4, _i4, before_state={"title": "Old"},
+                    after_state={"title": "New"})
+_h = SB.section(_r4)
+t("THE EXECUTED COLUMN IS LABELLED 'NOT a result yet'",
+  "NOT a result yet" in _h)
+t("an executed-but-unverified card warns on its face",
+  "not verified" in _h)
+t("green is never given to EXECUTED", SB.TONE["EXECUTED"] == "warn")
+t("green is reserved for verified success",
+  SB.TONE["SUCCESSFUL"] == "ok" and SB.TONE["TECHNICALLY_VERIFIED"] == "ok")
+t("the monitor keeps the three results apart on the row",
+  all(w in _h for w in ("implementation:", "search:", "business:")))
+t("an unmeasured signal reads 'not measured', never a zero",
+  "not measured" in _h)
+SL.verify(_r4, _i4, {"title": "New"})
+SL.set_baseline(_r4, _i4, {"position": 11.0, "impressions": 4000,
+                           "clicks": 120, "conversions": 4})
+SL.observe(_r4, _i4, window="compare",
+           metrics={"position": 6.5, "impressions": 5200, "clicks": 190,
+                    "conversions": 9})
+SL.judge(_r4, _i4)
+_h2 = SB.section(_r4)
+t("a judged initiative reaches the learning table",
+  "WHAT HAS ACTUALLY WORKED" in _h2 and "<tbody>" in _h2)
+t("the timeline is built from recorded history only",
+  SB.timeline(_r4, _i4).count("sl-step") >= 6)
+t("a score without components is refused (spec 70)",
+  "not evidence" in SB.health_breakdown({}))
+t("a score with components shows every one of them",
+  all(x in SB.health_breakdown({"Technical": 91, "Content": 74})
+      for x in ("Technical", "Content", "91", "74")))
+t("the board computes nothing itself; it reads the engine",
+  "import content_engine_search_loop" in
+  open("content_engine_search_board.py", encoding="utf-8").read())
+_asrc = open("content_engine_api.py", encoding="utf-8").read()
+for _route in ("/searchos/initiative", "/searchos/advance",
+               "/searchos/execute", "/searchos/verify",
+               "/searchos/baseline", "/searchos/observe",
+               "/searchos/judge", "/searchos/rollback",
+               "/searchos/board", "/searchos/learning"):
+    t(f"route {_route} exists", _route in _asrc)
+t("no em dash on the board",
+  "—" not in open("content_engine_search_board.py",
+                  encoding="utf-8").read())
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

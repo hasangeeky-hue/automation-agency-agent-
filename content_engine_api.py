@@ -4065,6 +4065,102 @@ def build_app():
         return _MF.breakdown(_mrepo(), str(d.get("by") or "device"),
                              campaign_id=str(d.get("campaign_id") or ""))
 
+    # ---- THE SEARCH INTELLIGENCE OS: the closed loop -------------------
+    def _srepo():
+        import content_engine_media_os as _M
+        return _M.repo(get_store())
+
+    @app.post("/searchos/initiative")
+    async def searchos_initiative(request: Request):
+        """Open one optimisation initiative. Refuses an incomplete
+        recommendation rather than storing a wish."""
+        import content_engine_search_loop as _SL
+        d = await _body(request)
+        out = _SL.open_initiative(
+            _srepo(), kind=str(d.get("kind") or "content"),
+            target=str(d.get("target") or ""),
+            recommendation=d.get("recommendation") or {},
+            project=str(d.get("project") or ""))
+        _log_decision(get_store(), "searchos_open",
+                      str(d.get("target"))[:60], out.get("message", "")[:120])
+        return out
+
+    @app.post("/searchos/advance")
+    async def searchos_advance(request: Request):
+        import content_engine_search_loop as _SL
+        d = await _body(request)
+        return _SL.advance(_srepo(), str(d.get("id") or ""),
+                           str(d.get("to") or ""),
+                           why=str(d.get("why") or ""))
+
+    @app.post("/searchos/execute")
+    async def searchos_execute(request: Request):
+        import content_engine_search_loop as _SL
+        d = await _body(request)
+        return _SL.record_execution(
+            _srepo(), str(d.get("id") or ""),
+            before_state=d.get("before_state") or {},
+            after_state=d.get("after_state") or {},
+            api_said_ok=bool(d.get("api_said_ok", True)),
+            detail=str(d.get("detail") or ""))
+
+    @app.post("/searchos/verify")
+    async def searchos_verify(request: Request):
+        """Spec 81: verification is a FETCH, never the API's own word."""
+        import content_engine_search_loop as _SL
+        d = await _body(request)
+        return _SL.verify(_srepo(), str(d.get("id") or ""),
+                          d.get("observed_state") or {})
+
+    @app.post("/searchos/baseline")
+    async def searchos_baseline(request: Request):
+        import content_engine_search_loop as _SL
+        d = await _body(request)
+        return _SL.set_baseline(_srepo(), str(d.get("id") or ""),
+                                d.get("metrics") or {})
+
+    @app.post("/searchos/observe")
+    async def searchos_observe(request: Request):
+        import content_engine_search_loop as _SL
+        d = await _body(request)
+        return _SL.observe(_srepo(), str(d.get("id") or ""),
+                           window=str(d.get("window") or "early"),
+                           metrics=d.get("metrics") or {})
+
+    @app.post("/searchos/judge")
+    async def searchos_judge(request: Request):
+        """Classify the outcome. Keeps implementation, search and business
+        results apart, and returns INSUFFICIENT_DATA below the floor."""
+        import content_engine_search_loop as _SL
+        d = await _body(request)
+        out = _SL.judge(_srepo(), str(d.get("id") or ""),
+                        primary=str(d.get("primary") or "position"))
+        _log_decision(get_store(), "searchos_judge",
+                      str(d.get("id"))[:40], out.get("message", "")[:140])
+        return out
+
+    @app.post("/searchos/rollback")
+    async def searchos_rollback(request: Request):
+        import content_engine_search_loop as _SL
+        d = await _body(request)
+        return _SL.rollback(_srepo(), str(d.get("id") or ""),
+                            why=str(d.get("why") or ""))
+
+    @app.get("/searchos/board")
+    def searchos_board():
+        import content_engine_search_loop as _SL
+        return _SL.board(_srepo())
+
+    @app.get("/searchos/learning")
+    def searchos_learning():
+        import content_engine_search_loop as _SL
+        return _SL.learning(_srepo())
+
+    @app.get("/searchos/timeline/{iid}", response_class=HTMLResponse)
+    def searchos_timeline(iid: str):
+        import content_engine_search_board as _SB
+        return HTMLResponse(_SB.timeline(_srepo(), iid))
+
     @app.post("/mediaos/analytics")
     async def mediaos_analytics(request: Request):
         """THE one canonical analytics query. Every dashboard, chart,
