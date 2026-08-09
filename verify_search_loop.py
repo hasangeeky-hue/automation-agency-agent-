@@ -405,5 +405,54 @@ t("no em dash in the screens module",
   "\u2014" not in open("content_engine_search_screens.py",
                        encoding="utf-8").read())
 
+print("\nL12 PHASE 6: THE SCREENS ARE MOUNTED AND RENDER")
+import content_engine_seo_boards as SEO6
+from html.parser import HTMLParser as _HP
+
+_sec6 = SEO6.seo_section({})
+
+
+class _Panels(_HP):
+    def __init__(self):
+        super().__init__()
+        self.panels = {}
+        self.cur = None
+        self.ids = []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if a.get("id"):
+            self.ids.append(a["id"])
+        if a.get("id", "").startswith("spanel-"):
+            self.cur = a["id"]
+            self.panels[self.cur] = 0
+
+    def handle_data(self, d):
+        if self.cur:
+            self.panels[self.cur] += len(d.strip())
+
+
+_pp = _Panels()
+_pp.feed(_sec6)
+for _tab in ("seoopp", "seopage", "seoloop"):
+    t("tab " + _tab + " is declared in TABS",
+      any(x[0] == _tab for x in SEO6.TABS))
+    t("AND its panel carries real content, not an empty box: " + _tab,
+      _pp.panels.get("spanel-" + _tab, 0) > 500,
+      "text length " + str(_pp.panels.get("spanel-" + _tab)))
+_act = dict((g[0], g[3]) for g in SEO6.GROUPS)["act"]
+t("the three screens sit under ACT, where decisions live",
+  all(x in _act for x in ("seoopp", "seopage", "seoloop")))
+t("mounting them created no duplicate element id",
+  not [i2 for i2 in set(_pp.ids) if _pp.ids.count(i2) > 1])
+t("the page screen refuses to guess which URL you meant",
+  "guess which one" in _sec6)
+_src6 = open("content_engine_seo_boards.py", encoding="utf-8").read()
+t("panels are registered in the dict seo_section ACTUALLY reads",
+  '"seoopp": _board_opportunities(ctx)' in _src6)
+t("and in the _TAB_BOARDS registry, so the two lists cannot drift",
+  '"seoopp":    [(' in _src6)
+t("the legacy Google boards survived the mount", "seo-google" in _sec6)
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

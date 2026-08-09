@@ -2328,6 +2328,59 @@ def board_work(ctx) -> str:
 # ======================================================================
 #  ASSEMBLY
 # ======================================================================
+def _repo_or_none():
+    """The Search OS screens read the Repo, not the SEO ctx."""
+    try:
+        import content_engine_api as A
+        import content_engine_media_os as M
+        return M.repo(A.get_store())
+    except Exception:
+        return None
+
+
+def _board_opportunities(ctx) -> str:
+    """Spec 48-49, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return ("<p class='cc'>The store is not reachable, so no "
+                "opportunity can be shown. Nothing is invented to fill "
+                "this tab.</p>")
+    return SS.CSS + "<div class='ss-root'>" + SS.opportunities(r) + "</div>"
+
+
+def _board_page(ctx) -> str:
+    """Spec 26-29, mounted. The URL comes from the context bar; with no
+    page selected it says so instead of picking one."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    url = str((ctx or {}).get("selected_page") or "")
+    if not url:
+        pages = []
+        try:
+            crawl = (ctx or {}).get("crawl") or {}
+            pages = [p.get("url") for p in (crawl.get("pages") or [])[:12]
+                     if p.get("url")]
+        except Exception:
+            pages = []
+        picker = ("".join(
+            f"<li><span class='ss-link' onclick=\"ssPage('{u}')\">"
+            f"{u}</span></li>" for u in pages)
+            if pages else "<li>no crawled pages on record yet</li>")
+        return (SS.CSS + "<div class='ss-root'>"
+                "<p class='ss-h'>PAGE INTELLIGENCE</p>"
+                "<p class='ss-note'>No page is selected. This screen "
+                "answers one question about one URL, so it will not "
+                "guess which one you mean.</p>"
+                f"<ul class='ss-hist'>{picker}</ul></div>")
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.page_intelligence(r, url,
+                                   metrics=(ctx or {}).get("page_metrics"))
+            + "</div>")
+
+
 def _board_loop(ctx) -> str:
     """The Execution board and Loop Monitor, rendered from the loop engine.
 
@@ -2357,6 +2410,8 @@ _TAB_BOARDS = {
     # THE CLOSED LOOP. Its own tab, because the question it answers -
     # "did any of this actually work" - is not the same question as any
     # other board on this page.
+    "seoopp":    [("Opportunities", _board_opportunities)],
+    "seopage":   [("Page Intelligence", _board_page)],
     "seoloop":   [("Execution & Loops", _board_loop)],
 }
 
@@ -2401,6 +2456,8 @@ TABS = [
     ("seogeo", "📍", "GEO — Local & Markets"),
     ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
+    ("seoopp", "🎯", "Opportunities"),
+    ("seopage", "📄", "Page Intelligence"),
     ("seoloop", "🔁", "Execution & Loops"),
     ("seosrc", "📊", "Sources"),
 ]
@@ -2409,7 +2466,7 @@ TABS = [
 # answering one question, with the tabs as their second level.
 GROUPS = [
     ("act", "③ ACT", "What should I do?",
-     ["seocmd", "seowork", "seoloop"]),
+     ["seocmd", "seoopp", "seopage", "seowork", "seoloop"]),
     ("diagnose", "① DIAGNOSE", "What's wrong?", ["seotech", "seoonpage"]),
     ("compete", "② COMPETE", "Where do I stand?",
      ["seokw", "seoaeo", "seogen", "seogeo", "seooff"]),
@@ -2518,6 +2575,8 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
         "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
         "seowork": SCR.workorders_screen(ctx, []),
+        "seoopp": _board_opportunities(ctx),
+        "seopage": _board_page(ctx),
         "seoloop": _board_loop(ctx),
     }
     # ONE VOCABULARY. This dict and TABS are two hand-written lists, and a
