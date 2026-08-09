@@ -27,7 +27,12 @@ log = logging.getLogger("content_engine.media_boards")
 
 def media_section(ctx, legacy_campaigns: str = "",
                   legacy_tracking: str = "") -> str:
-    """The Media Buying OS section. Everything is in the centre now."""
+    """The Media Buying OS section. Everything is in the centre now.
+
+    The legacy_* arguments are ACCEPTED and IGNORED on purpose: the old
+    campaign page and the old GA4/GSC boards were injected raw and brought
+    their old cards and buttons with them. Both are now drawn natively in
+    the new design, so the old markup is gone completely, which is what
+    "remove the media buying UI completely" actually means."""
     import content_engine_media_center as MCTR
-    return MCTR.section(ctx or {}, legacy_campaigns=legacy_campaigns,
-                        legacy_tracking=legacy_tracking)
+    return MCTR.section(ctx or {})

@@ -352,13 +352,21 @@ def _g21():
 @gate(22, "the AI media buyer survived the replacement, inside the tabs")
 def _g22():
     panel = _media_panel(_full_page())
-    for need in ("draftCampaign(", "mediaSectionSend(",
-                 "Drafts from the media agent", "Website tracking"):
+    # THE OLD MARKUP IS GONE. The founder said "remove the media buying UI
+    # completely" and kept seeing old cards and buttons because the legacy
+    # campaign page and GA4/GSC boards were injected raw. They are now
+    # drawn natively, so the FUNCTION survives and the old markup does not.
+    for gone in ("draftCampaign(", "mediaSectionSend(", "class='card ",
+                 "class='cbtn", "class='ct'"):
+        assert gone not in panel, (
+            f"old media markup is back on the page: {gone}")
+    for need in ("The media buyer", "/media/draft", "mcChatSend",
+                 "Website tracking"):
         assert need in panel, (
-            f"the media buyer's {need} was destroyed by the replacement - "
-            f"drafting, chat and the Google boards are function, not "
-            f"decoration")
-    return "draft flow, chat and the Google boards all rehomed"
+            f"the media buyer's {need} was lost - drafting, chat and the "
+            f"Google boards are function, not decoration, and had to be "
+            f"REBUILT natively rather than dropped")
+    return "old markup gone; draft, chat and tracking rebuilt natively"
 
 
 @gate(23, "switching the agent level updates EVERY band on the page")
@@ -416,13 +424,16 @@ def _g23():
 
 @gate(24, "the campaign-draft flow and the real GA4 panel survived")
 def _g24():
-    sec = _section({}, legacy_campaigns="<b>DRAFTFLOW</b>",
-                   legacy_tracking="<b>GA4REAL</b>")
-    assert "DRAFTFLOW" in sec, (
-        "the AI media buyer's drafting flow was dropped")
-    assert "GA4REAL" in sec, (
-        "the real GA4/Search Console panel was dropped")
-    return "both legacy flows still injected"
+    import content_engine_media_boards as MB2
+    # the shim still ACCEPTS the legacy arguments so no caller breaks, and
+    # deliberately ignores them so no old markup can sneak back in
+    sec = MB2.media_section({}, legacy_campaigns="<b>DRAFTFLOW</b>",
+                            legacy_tracking="<b>GA4REAL</b>")
+    assert "DRAFTFLOW" not in sec and "GA4REAL" not in sec, (
+        "injected legacy HTML reached the page again")
+    assert "The media buyer" in sec and "Website tracking" in sec, (
+        "the native replacements are missing")
+    return "legacy injection ignored; native panels present"
 
 
 @gate(25, "no duplicate element ids anywhere in the section")

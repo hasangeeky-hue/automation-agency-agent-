@@ -4339,20 +4339,15 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _seo_all = (p_seo + "<div class='card full'><p class='ct'>SEO boards unavailable</p>"
                     f"<p class='cc'>{_esc(str(_e))}</p></div>")
 
-    # ---- Media buying boards (16 boards / 296 cards), same card kit ----
+    # ---- The Media Buying OS section. NOTHING of the old media UI is
+    # ---- injected any more: the legacy campaign page and the legacy
+    # ---- GA4/GSC boards brought their old cards and buttons with them,
+    # ---- and both are now drawn natively inside the new design.
     try:
         import content_engine_media_boards as _MB
-        _media_all = _MB.media_section(
-            media_ctx or {},
-            # web_tracking=None: the tracking panel has its own tab now,
-            # and rendering it in the Google Ads tab too was the same number
-            # answered twice - the duplication this rebuild exists to end.
-            legacy_campaigns=_media_page(jobs, st, None, with_master=False),
-            legacy_tracking=(_ga4_board(google_insights,
-                             "Website tracking (GA4)")
-                             + _gsc_board(google_insights)))
+        _media_all = _MB.media_section(media_ctx or {})
     except Exception as _e2:
-        _media_all = (p_media + "<div class='card full'><p class='ct'>Media boards unavailable</p>"
+        _media_all = ("<div class='card full'><p class='ct'>Media OS unavailable</p>"
                       f"<p class='cc'>{_esc(str(_e2))}</p></div>")
 
     # ---- System & Wiring: ONE section replacing Agents & Health, System Map

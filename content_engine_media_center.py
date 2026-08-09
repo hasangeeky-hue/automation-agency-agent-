@@ -1328,7 +1328,106 @@ def s_alx(r, ctx) -> str:
     return WB.build(r, store, ctx)
 
 
-def s_plat(r, ctx, legacy_campaigns="", legacy_tracking="") -> str:
+def _native_tracking(ctx) -> str:
+    """GA4 and Search Console, drawn in THIS design. Replaces the old
+    injected boards; same numbers, no old markup."""
+    gi = _D(ctx.get("insights"))
+    ga4, gsc = _D(gi.get("ga4")), _D(gi.get("gsc"))
+    out = ""
+    if ga4:
+        t = _D(ga4.get("totals"))
+        daily = _L(ga4.get("daily"))
+        out += ("<div class='mc-bigrow'>"
+                + "".join(f"<div class='mc-big'><span class='mc-bigk'>"
+                          f"{e(k)}</span><b>{_n(v)}</b>"
+                          f"<span class='mc-bigs'></span></div>"
+                          for k, v in (
+                    ("Sessions", t.get("sessions")),
+                    ("Users", t.get("totalUsers")),
+                    ("New users", t.get("newUsers")),
+                    ("Engagement %",
+                     round(float(t.get("engagementRate") or 0) * 100, 1)
+                     if t.get("engagementRate") is not None else None)))
+                + "</div>"
+                + chart([(str(x.get("date") or i),
+                          float(x.get("sessions") or 0))
+                         for i, x in enumerate(daily)],
+                        title="Sessions per day", color="#3FD98B")
+                + table(("channel", "sessions"),
+                        [(x.get("sessionDefaultChannelGroup"),
+                          _n(x.get("sessions")))
+                         for x in _L(ga4.get("channels"))[:8]],
+                        "no channel split in the cached pull"))
+    else:
+        out += ("<p class='mc-empty'>No GA4 pull cached yet. Press "
+                "'Pull platforms now' or refresh Google data; nothing is "
+                "estimated to fill this in.</p>")
+    if gsc:
+        q = _L(gsc.get("queries"))
+        imp = sum(float(x.get("impressions") or 0) for x in q)
+        clk = sum(float(x.get("clicks") or 0) for x in q)
+        pos = ([float(x.get("position") or 0) for x in q] or [0])
+        out += ("<div class='mc-bigrow'>"
+                + "".join(f"<div class='mc-big'><span class='mc-bigk'>"
+                          f"{e(k)}</span><b>{v}</b>"
+                          f"<span class='mc-bigs'>{e(sub)}</span></div>"
+                          for k, v, sub in (
+                    ("Impressions", _n(imp), ""),
+                    ("Clicks", _n(clk), ""),
+                    ("CTR", (f"{clk / imp * 100:.1f}" if imp else "--"),
+                     f"{int(clk):,} of {int(imp):,}" if imp
+                     else "nothing to measure yet"),
+                    ("Avg position",
+                     f"{sum(pos) / len(pos):.1f}" if q else "--",
+                     f"over {len(q)} queries")))
+                + "</div>"
+                + table(("query", "clicks", "impressions", "position"),
+                        [(x.get("query"), _n(x.get("clicks")),
+                          _n(x.get("impressions")), _n(x.get("position")))
+                         for x in sorted(
+                             q, key=lambda y: -float(y.get("clicks") or 0)
+                         )[:12]],
+                        "no queries in the cached pull"))
+    else:
+        out += ("<p class='mc-empty'>No Search Console pull cached "
+                "yet.</p>")
+    return out
+
+
+def _native_buyer(r, ctx) -> str:
+    """The media buyer: draft a campaign, then talk to it. Native controls
+    over the SAME endpoints the old page used, so no wire changed."""
+    drafts = []
+    for j in _L(ctx.get("jobs")):
+        if str(_D(j).get("type")) == "media_campaign":
+            p2 = _D(_D(j).get("payload")).get("media_buyer") or {}
+            drafts.append((j.get("job_id"), p2.get("campaign_name"),
+                           j.get("status")))
+    rows = [(e(name or jid), e(st or ""),
+             f"<button class='mc-btn' onclick=\"mcChatOpen('{e(jid)}')\">"
+             f"Discuss</button> "
+             f"<button class='mc-btn mc-go' onclick=\"mcPost("
+             f"'/media/activate',{{job_id:'{e(jid)}'}},this)\">"
+             f"Activate</button>")
+            for jid, name, st in drafts[:10]]
+    return ("<div class='mc-form'>"
+            "<button class='mc-btn mc-go' onclick=\"mcPost("
+            "'/media/draft',{},this)\">Draft a campaign with the agent"
+            "</button>"
+            "<p class='mc-note'>runs the existing media buyer once; the "
+            "draft lands below and waits for your approval</p></div>"
+            + table(("draft", "status", "actions"), rows,
+                    "no agent draft on record yet")
+            + "<div class='mc-form'>"
+              "<input id='mc-chatjob' placeholder='job id (optional)'>"
+              "<input id='mc-chatmsg' placeholder='ask the media buyer "
+              "something' style='min-width:260px'>"
+              "<button class='mc-btn' onclick='mcChatSend(this)'>Send"
+              "</button></div>"
+              "<div id='mc-chatout'></div>")
+
+
+def s_plat(r, ctx) -> str:
     rows = []
     for p in M.PROVIDERS:
         live, why = M.Adapter(p).available()
@@ -1431,12 +1530,13 @@ def s_plat(r, ctx, legacy_campaigns="", legacy_tracking="") -> str:
     out += card("Tag Manager audit", gtm,
                 "missing, paused and silent tags, each with its one-click "
                 "draft")
-    if legacy_campaigns:
-        out += card("Drafts from the media agent", legacy_campaigns,
-                    "the AI buyer's draft flow, unchanged wires")
-    if legacy_tracking:
-        out += card("Website tracking (GA4 / Search Console)",
-                    legacy_tracking)
+    out += card("The media buyer", _native_buyer(r, ctx),
+                "draft with the agent, then discuss it; same endpoints, "
+                "drawn in this design")
+    out += card("Website tracking (GA4 / Search Console)",
+                _native_tracking(ctx),
+                "your own analytics, redrawn here rather than injected "
+                "as the old boards")
     return out
 
 
@@ -1746,7 +1846,7 @@ def s_comp(r, ctx) -> str:
 # ---------------------------------------------------------------------------
 # ASSEMBLY
 # ---------------------------------------------------------------------------
-def build_panels(r, ctx, legacy_campaigns="", legacy_tracking="") -> dict:
+def build_panels(r, ctx) -> dict:
     makers = {"cmd": lambda: s_cmd(r, ctx),
               "camps": lambda: s_camps(r, ctx),
               "wiz": lambda: s_wiz(r, ctx),
@@ -1760,8 +1860,7 @@ def build_panels(r, ctx, legacy_campaigns="", legacy_tracking="") -> dict:
               "anom": lambda: s_anom(r, ctx),
               "cross": lambda: s_cross(r, ctx),
               "comp": lambda: s_comp(r, ctx),
-              "plat": lambda: s_plat(r, ctx, legacy_campaigns,
-                                     legacy_tracking)}
+              "plat": lambda: s_plat(r, ctx)}
     out = {}
     for tid, _i, label, _q in SCREENS:
         try:
@@ -1775,7 +1874,7 @@ def build_panels(r, ctx, legacy_campaigns="", legacy_tracking="") -> dict:
     return out
 
 
-def section(ctx, legacy_campaigns="", legacy_tracking="") -> str:
+def section(ctx) -> str:
     """The whole Media Buying OS section for the assembled dashboard."""
     ctx = dict(ctx or {})
     r = None
@@ -1790,9 +1889,10 @@ def section(ctx, legacy_campaigns="", legacy_tracking="") -> str:
                         "not reachable, so this screen has nothing true to "
                         "show</p></div>")
                   for tid, _i, label, _q in SCREENS}
-        panels["plat"] = s_plat_safe(ctx, legacy_campaigns, legacy_tracking)
+        panels["plat"] = ("<p class='mc-empty'>the store is not "
+                          "reachable, so nothing true can be shown</p>")
     else:
-        panels = build_panels(r, ctx, legacy_campaigns, legacy_tracking)
+        panels = build_panels(r, ctx)
     nav = "".join(
         f"<button class='mc-tab{' mc-on' if i == 0 else ''}' "
         f"id='mc-tab-{tid}' onclick=\"mcTab('{tid}')\">"
@@ -1804,15 +1904,6 @@ def section(ctx, legacy_campaigns="", legacy_tracking="") -> str:
         for i, (tid, _i2, _l, _q) in enumerate(SCREENS))
     return ("<div class='mc-root'>" + CSS + JS
             + f"<div class='mc-tabs'>{nav}</div>" + body + "</div>")
-
-
-def s_plat_safe(ctx, legacy_campaigns="", legacy_tracking="") -> str:
-    out = ""
-    if legacy_campaigns:
-        out += card("Drafts from the media agent", legacy_campaigns)
-    if legacy_tracking:
-        out += card("Website tracking", legacy_tracking)
-    return out or "<p class='mc-empty'>nothing to show without the store</p>"
 
 
 CSS = """<style>
@@ -2106,6 +2197,25 @@ try{def=JSON.parse(mcV(p+'def')||'{}');}catch(e){
 toast('the definition is not valid JSON; nothing was saved',false);return;}
 mcPost('/mediaos/audience',{name:mcV(p+'name'),type:mcV(p+'type'),
 definition:def},btn);}
+window.mcChatOpen=function(jid){
+var el=document.getElementById('mc-chatjob');if(el)el.value=jid;
+toast('discussing draft '+jid,true);};
+window.mcChatSend=async function(btn){
+var job=mcV('mc-chatjob'),msg=mcV('mc-chatmsg');
+if(!msg){toast('type a question first',false);return;}
+var lab=btn?btn.textContent:'';
+if(btn){btn.disabled=true;btn.textContent='Asking\u2026';}
+try{var r=await fetch('/media/chat',{method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({job_id:job,message:msg})});var j=await r.json();
+var out=document.getElementById('mc-chatout');
+if(out)out.innerHTML="<p class='mc-note'><b>You:</b> "+mcEsc(msg)
++"</p><p class='mc-note'><b>Media buyer:</b> "
++mcEsc((j&&(j.reply||j.message))||'no reply')+"</p>";}
+catch(e){toast('could not reach the engine',false);}
+if(btn){btn.disabled=false;btn.textContent=lab;}};
+function mcEsc(x){var d=document.createElement('div');
+d.textContent=String(x==null?'':x);return d.innerHTML;}
 var MC_ROOM_PROV={google:'google',facebook:'meta',instagram:'meta',
 linkedin:'linkedin',tiktok:'tiktok'};
 function mcQuick(pid,go,btn){var P='mc-'+pid;
