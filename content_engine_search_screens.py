@@ -767,3 +767,178 @@ border-bottom:1px solid var(--so-border);padding:5px 0;font-size:12px}
 .ss-docrow span{color:var(--so-text2)}
 .ss-docrow b{color:var(--so-text);text-align:right}
 </style>"""
+
+
+# ---------------------------------------------------------------------------
+# BACKLINKS (spec 36-37)
+# ---------------------------------------------------------------------------
+def backlinks_overview(r, data=None) -> str:
+    """Spec 36. The link profile and its direction of travel."""
+    d = _D(data)
+    refs = _L(d.get("referring_domains"))
+    if not refs and d.get("backlinks") is None:
+        return ("<p class='ss-h'>BACKLINKS</p>"
+                + empty("No backlink data on record",
+                        "No backlink provider is connected. Link counts "
+                        "are the easiest number in SEO to invent, so this "
+                        "screen shows none until a provider supplies "
+                        "them.",
+                        "Connect a provider", "nav('map')"))
+    src = d.get("source") or "backlink provider"
+    new, lost = _L(d.get("new")), _L(d.get("lost"))
+    return ("<p class='ss-h'>BACKLINKS</p><div class='ss-kpis'>"
+            + metric("Backlinks", d.get("backlinks"), source=src)
+            + metric("Referring domains", len(refs) or
+                     d.get("referring_domain_count"), source=src)
+            + metric("New", len(new) or None, source=src)
+            + metric("Lost", len(lost) or None, source=src,
+                     polarity="negative")
+            + "</div>"
+            + ("<p class='ss-note'>Net movement: "
+               + str(len(new) - len(lost)) + " domain(s) this window. A "
+               + "profile that only ever grows usually means lost links "
+               + "are not being tracked, not that none were lost.</p>"
+               if (new or lost) else
+               "<p class='ss-note'>No new or lost domains are recorded "
+               "for this window, which may mean nothing changed or may "
+               "mean the provider does not supply the delta.</p>"))
+
+
+def backlink_gap(r, gaps=None) -> str:
+    """Spec 37. Domains linking to competitors and not to us."""
+    items = _L(gaps)
+    if not items:
+        return ("<p class='ss-h'>BACKLINK GAP</p>"
+                + empty("No gap on record",
+                        "A gap needs both our profile and at least one "
+                        "competitor's, from the same provider. Comparing "
+                        "two different providers' link counts produces a "
+                        "difference that is about the providers, not the "
+                        "websites.",
+                        "Connect a provider", "nav('map')"))
+    body = ""
+    for g in items[:40]:
+        d = _D(g)
+        body += ("<tr><td>" + e(d.get("domain")) + "</td>"
+                 + "<td>" + ("yes" if d.get("we_have") else "no") + "</td>"
+                 + "<td>" + _n(d.get("competitor_links")) + "</td>"
+                 + "<td>" + _n(d.get("authority")) + "</td>"
+                 + "<td>" + e(d.get("relevance") or "not scored") + "</td>"
+                 + "<td>" + e(d.get("link_type") or "unknown") + "</td>"
+                 + "<td>" + TK.button("Research", variant="secondary",
+                                      size="compact",
+                                      onclick="ssResearch()") + "</td>"
+                 + "</tr>")
+    heads = ("Referring domain", "We have it", "Competitor links",
+             "Authority", "Relevance", "Link type", "Action")
+    return ("<p class='ss-h'>BACKLINK GAP</p>"
+            + "<p class='ss-note'>" + str(len(items)) + " domain(s) link "
+            + "to a competitor and not to us. This screen researches; it "
+            + "never sends outreach, because automated link outreach is "
+            + "how a domain earns a reputation nobody wants.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+# ---------------------------------------------------------------------------
+# AEO (spec 38-39)
+# ---------------------------------------------------------------------------
+#: Spec 38. How well a question is answered. Four states, not two.
+COVERAGE = ("STRONG", "WEAK", "MISSING", "NOT ASSESSED")
+
+
+def answer_coverage(row) -> dict:
+    """Judged from what is on the page, or NOT ASSESSED. Never guessed."""
+    d = _D(row)
+    if d.get("answer_words") is None:
+        return {"state": "NOT ASSESSED",
+                "why": ("no page has been checked against this question "
+                        "yet")}
+    try:
+        words = float(d.get("answer_words") or 0)
+    except Exception:
+        return {"state": "NOT ASSESSED", "why": "answer length unreadable"}
+    if words <= 0:
+        return {"state": "MISSING", "why": "no answer found on any page"}
+    if words < 40:
+        return {"state": "WEAK",
+                "why": f"{int(words)} words, too short to answer it fully"}
+    return {"state": "STRONG", "why": f"{int(words)} words on the page"}
+
+
+def aeo_questions(r, rows=None) -> str:
+    """Spec 38. Questions with demand, and whether we answer them."""
+    items = _L(rows)
+    if not items:
+        return ("<p class='ss-h'>AEO QUESTIONS</p>"
+                + empty("No tracked questions",
+                        "Nothing is being tracked yet. Questions come "
+                        "from Search Console queries, People Also Ask "
+                        "observations and your own list; none are "
+                        "invented here.",
+                        "Pull Search Console", "act('/seo/inspect')"))
+    counts, body = {}, ""
+    for x in items[:50]:
+        d = _D(x)
+        c = answer_coverage(d)
+        counts[c["state"]] = counts.get(c["state"], 0) + 1
+        tone = {"STRONG": "success", "WEAK": "warning",
+                "MISSING": "danger"}.get(c["state"], "neutral")
+        body += ("<tr><td>" + e(str(d.get("question"))[:64]) + "</td>"
+                 + "<td>" + _n(d.get("demand")) + "</td>"
+                 + "<td>" + e(d.get("page") or "none") + "</td>"
+                 + "<td class='so-" + tone + "'>" + c["state"]
+                 + "<br><span class='ss-meta'>" + e(c["why"])[:52]
+                 + "</span></td>"
+                 + "<td>" + _n(d.get("position")) + "</td>"
+                 + "<td>" + TK.button("Improve answer", variant="ai",
+                                      size="compact",
+                                      onclick="ssAnswer()") + "</td>"
+                 + "</tr>")
+    heads = ("Question", "Demand", "Answering page", "Coverage",
+             "Position", "Action")
+    return ("<p class='ss-h'>AEO QUESTIONS</p>"
+            + "<p class='ss-note'>" + str(len(items)) + " tracked: "
+            + e(", ".join(f"{v} {k.lower()}"
+                          for k, v in sorted(counts.items())))
+            + ". A question nobody has checked a page against reads NOT "
+            + "ASSESSED rather than missing, because those are different "
+            + "facts.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+def answer_detail(r, row=None) -> str:
+    """Spec 39. One question, and exactly what our answer is missing."""
+    d = _D(row)
+    if not d.get("question"):
+        return ("<p class='ss-h'>ANSWER DETAIL</p>"
+                + empty("No question selected",
+                        "This screen answers one question about one "
+                        "question, so it will not pick one for you.",
+                        "Open questions", "seoTab('seoaeo2')"))
+    c = answer_coverage(d)
+    missing = _L(d.get("missing_points"))
+    return ("<p class='ss-h'>ANSWER DETAIL</p>"
+            + "<div class='ss-doc'>"
+            + "<div class='ss-docrow'><span>Question</span><b>"
+            + e(d.get("question")) + "</b></div>"
+            + "<div class='ss-docrow'><span>Demand</span><b>"
+            + _n(d.get("demand")) + "</b></div>"
+            + "<div class='ss-docrow'><span>Answering page</span><b>"
+            + e(d.get("page") or "none") + "</b></div>"
+            + "<div class='ss-docrow'><span>Coverage</span><b>"
+            + c["state"] + " &middot; " + e(c["why"]) + "</b></div>"
+            + "</div>"
+            + ("<p class='ss-h'>WHAT THE ANSWER IS MISSING</p><ul "
+               "class='ss-hist'>"
+               + "".join("<li>" + e(m) + "</li>" for m in missing)
+               + "</ul>"
+               if missing else
+               "<p class='ss-note'>Nothing is recorded as missing. That "
+               "is either a complete answer or an unexamined one; the "
+               "coverage state above says which.</p>")
+            + TK.button("Improve answer", variant="ai", size="compact",
+                        onclick="ssAnswer()"))

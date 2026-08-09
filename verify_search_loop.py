@@ -568,5 +568,66 @@ t("it sits under COMPETE, beside keywords",
 t("mounting content created no duplicate id",
   not [x for x in set(_pp9.ids) if _pp9.ids.count(x) > 1])
 
+print("\nL15 PHASE 10: BACKLINKS AND AEO (spec 36-39)")
+_r10 = CORE.Repo(Store())
+t("with no provider the backlink screen shows NO counts",
+  "easiest number in SEO to invent" in SS8.backlinks_overview(_r10))
+_bl = SS8.backlinks_overview(_r10, {"backlinks": 4200,
+                                    "referring_domains": ["a", "b"],
+                                    "new": ["c"], "lost": ["d", "e"],
+                                    "source": "provider X"})
+t("every backlink number names its provider", "Source: provider X" in _bl)
+t("net movement is stated, and a never-losing profile is called out",
+  "lost links are not being tracked" in _bl)
+t("the gap warns that two providers cannot be compared",
+  "about the providers, not the websites" in SS8.backlink_gap(_r10))
+t("and it researches rather than sending outreach",
+  "never sends outreach" in SS8.backlink_gap(_r10, [{"domain": "x.test"}]))
+_qs = [{"question": "how long do cartridges last", "demand": 900,
+        "page": "/g", "answer_words": 120, "position": 4.1},
+       {"question": "are they safe", "demand": 400, "page": "/s",
+        "answer_words": 12},
+       {"question": "what size", "demand": 200, "answer_words": 0},
+       {"question": "unchecked one", "demand": 100}]
+t("a long answer is STRONG",
+  SS8.answer_coverage(_qs[0])["state"] == "STRONG")
+t("a short answer is WEAK, with its length named",
+  SS8.answer_coverage(_qs[1])["state"] == "WEAK"
+  and "12 words" in SS8.answer_coverage(_qs[1])["why"])
+t("no answer at all is MISSING",
+  SS8.answer_coverage(_qs[2])["state"] == "MISSING")
+t("A QUESTION NOBODY CHECKED IS 'NOT ASSESSED', NOT 'MISSING'",
+  SS8.answer_coverage(_qs[3])["state"] == "NOT ASSESSED")
+_aeo = SS8.aeo_questions(_r10, _qs)
+t("and the board says those are different facts",
+  "those are different facts" in _aeo)
+t("coverage has four states, not two", len(SS8.COVERAGE) == 4)
+t("with nothing tracked it says none are invented",
+  "none are\ninvented here" in SS8.aeo_questions(_r10)
+  or "invented here" in SS8.aeo_questions(_r10))
+t("the answer detail refuses to pick a question for you",
+  "will not pick one for you" in SS8.answer_detail(_r10))
+_ad = SS8.answer_detail(_r10, {"question": "q", "answer_words": 200,
+                               "missing_points": ["safety detail"]})
+t("and lists what the answer is missing when that is recorded",
+  "safety detail" in _ad)
+t("an empty missing-list distinguishes complete from unexamined",
+  "complete answer or an unexamined one" in
+  SS8.answer_detail(_r10, {"question": "q", "answer_words": 200}))
+_sec10 = SEO6.seo_section({"questions": _qs})
+_pp10 = _Panels()
+_pp10.feed(_sec10)
+for _tab10 in ("seolinks", "seoanswers"):
+    t("tab " + _tab10 + " is declared",
+      any(x[0] == _tab10 for x in SEO6.TABS))
+    t("AND its panel renders real content: " + _tab10,
+      _pp10.panels.get("spanel-" + _tab10, 0) > 500,
+      "text " + str(_pp10.panels.get("spanel-" + _tab10)))
+t("both sit under COMPETE",
+  all(x in dict((g[0], g[3]) for g in SEO6.GROUPS)["compete"]
+      for x in ("seolinks", "seoanswers")))
+t("mounting them created no duplicate id",
+  not [x for x in set(_pp10.ids) if _pp10.ids.count(x) > 1])
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)
