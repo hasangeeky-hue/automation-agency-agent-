@@ -133,7 +133,7 @@ COLLECTIONS = (
     # email and an ad campaign share one truth rather than three.
     "ad_accounts", "media_campaigns", "ad_groups", "ads", "audiences",
     "creatives", "creative_versions", "media_plans", "ad_metrics",
-    "sync_runs", "media_anomalies",
+    "sync_runs", "media_anomalies", "ad_rollups", "creative_experiments",
 )
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")

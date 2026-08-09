@@ -168,13 +168,19 @@ def rollup(r, *, grain="DAILY", level="campaign", provider="",
                  "ad": "ad_id"}[level]
     cutoff = _ago(days)
     buckets, seen_days = {}, set()
+    adopted = 0
     for m in r.all("ad_metrics"):
         if provider and m.get("provider") != provider:
             continue
         if campaign_id and m.get("campaign_id") != campaign_id:
             continue
         day = str(m.get("day") or "")[:10]
-        if cutoff and day and day < cutoff:
+        if not day:
+            # An adopted aggregate: a 30-day total with no daily series.
+            # Drawing it as one day would show a spike nobody spent.
+            adopted += 1
+            continue
+        if cutoff and day < cutoff:
             continue
         if not m.get(key_field):
             continue
@@ -201,12 +207,16 @@ def rollup(r, *, grain="DAILY", level="campaign", provider="",
     tot = {x: sum(float(row[x] or 0) for row in rows) for x in BASE_METRICS}
     return {"ok": True, "grain": grain, "level": level, "rows": rows,
             "totals": {**tot, **derive(tot)},
-            "days_with_data": len(seen_days),
-            "message": (f"{len(rows)} {grain.lower()} row(s) over "
-                        f"{len(seen_days)} day(s) with data"
-                        if rows else
-                        "nothing has been measured in this window yet. That "
-                        "is an absence, not a zero.")}
+            "days_with_data": len(seen_days), "adopted_rows": adopted,
+            "message": ((f"{len(rows)} {grain.lower()} row(s) over "
+                         f"{len(seen_days)} day(s) with data"
+                         if rows else
+                         "nothing has been measured in this window yet. That "
+                         "is an absence, not a zero.")
+                        + (f" {adopted} adopted aggregate(s) sit outside the "
+                           f"buckets: they are 30-day totals with no daily "
+                           f"series, so daily history accrues from the next "
+                           f"sync." if adopted else ""))}
 
 
 def _names(r, level) -> dict:
@@ -221,6 +231,128 @@ def _ago(days) -> str:
         return d.isoformat()
     except Exception:
         return ""
+
+
+#: The dimensional breakdowns the spec names. One tuple: the schema, the
+#: breakdown function and the screen all read it.
+DIMENSIONS = ("country", "device", "placement", "age", "gender")
+
+
+def breakdown(r, by="device", *, campaign_id="", days=90) -> dict:
+    """The same arithmetic grouped by one dimension.
+
+    Account-level pulls carry no dimensions, and this says so instead of
+    showing one anonymous row pretending to be a breakdown."""
+    if by not in DIMENSIONS:
+        return {"ok": False, "rows": [],
+                "message": f"{by!r} is not a dimension. They are: "
+                           + ", ".join(DIMENSIONS)}
+    cutoff = _ago(days)
+    groups, blank = {}, {x: 0.0 for x in BASE_METRICS}
+    for m in r.all("ad_metrics"):
+        if campaign_id and m.get("campaign_id") != campaign_id:
+            continue
+        day = str(m.get("day") or "")[:10]
+        if cutoff and day and day < cutoff:
+            continue
+        val = str(m.get(by) or "").strip()
+        tgt = groups.setdefault(val, {x: 0.0 for x in BASE_METRICS}) \
+            if val else blank
+        for x in BASE_METRICS:
+            try:
+                tgt[x] += float(m.get(x) or 0)
+            except Exception:
+                pass
+    rows = [{"value": v, **t, **derive(t)} for v, t in groups.items()]
+    rows.sort(key=lambda x: -x["spend"])
+    undimmed = sum(blank.values())
+    return {"ok": True, "dimension": by, "rows": rows,
+            "message": (f"{len(rows)} {by} value(s) measured"
+                        + (f"; some rows carry no {by} (an account-level "
+                           f"pull has none) and are left out rather than "
+                           f"drawn as an anonymous bar" if undimmed else "")
+                        if rows else
+                        f"no row carries a {by} yet. Dimension data arrives "
+                        f"when the platform pull is segmented; until then "
+                        f"this screen refuses to invent a split.")}
+
+
+def store_rollups(r) -> dict:
+    """Persist the aggregation levels, per the spec: dashboards elsewhere
+    read the stored tables instead of re-walking raw rows on every render.
+
+    Recomputed in full on every call and keyed by (grain, bucket,
+    campaign), so re-running replaces rather than duplicates."""
+    written = 0
+    stamp = now()
+    for grain in ("DAILY", "WEEKLY", "MONTHLY"):
+        ro = rollup(r, grain=grain, days=3650)
+        for row in ro["rows"]:
+            r.put("ad_rollups", {
+                "id": rid("adroll", r.ws, grain, row["bucket"], row["key"]),
+                "grain": grain, "bucket": row["bucket"],
+                "campaign_id": row["key"], "provider": row.get("provider"),
+                **{x: row[x] for x in BASE_METRICS},
+                "computed_at": stamp})
+            written += 1
+    return {"ok": True, "written": written,
+            "message": f"{written} rollup row(s) stored across 3 grains"}
+
+
+def business(r, store=None, days=30) -> dict:
+    """Translate ad performance into money the business keeps.
+
+    Uses the unit economics the founder set on the Economics form. With
+    margins unset it refuses and says which number to set, because profit
+    computed on an invented margin is a lie with a currency sign."""
+    econ = {}
+    try:
+        import content_engine_ads as ADS
+        econ = ADS.get_economics(store) if store is not None else {}
+    except Exception:
+        pass
+    margin = float(econ.get("gross_margin_pct") or 0) / 100.0
+    ro = rollup(r, grain="DAILY", days=days)
+    tot = ro["totals"]
+    spend = float(tot.get("spend") or 0)
+    value = float(tot.get("conversion_value") or 0)
+    if not margin:
+        return {"ok": False, "spend": spend, "revenue": value,
+                "message": ("gross margin is not set in unit economics, so "
+                            "profit cannot be computed honestly. Set it via "
+                            "'Set unit economics' and this becomes a real "
+                            "number instead of an invented one.")}
+    rows = []
+    per = {}
+    for row in ro["rows"]:
+        p = per.setdefault(row["key"], {"name": row["name"],
+                                        "spend": 0.0, "value": 0.0})
+        p["spend"] += float(row["spend"] or 0)
+        p["value"] += float(row["conversion_value"] or 0)
+    for cid, p in per.items():
+        gp = p["value"] * margin - p["spend"]
+        roas = (p["value"] / p["spend"]) if p["spend"] else None
+        rows.append({"campaign_id": cid, "name": p["name"],
+                     "spend": round(p["spend"], 2),
+                     "revenue": round(p["value"], 2),
+                     "gross_profit": round(gp, 2),
+                     "roas": round(roas, 2) if roas else None,
+                     "flag": ("high ROAS, still losing money after margin"
+                              if roas and roas > 1 and gp < 0 else "")})
+    rows.sort(key=lambda x: x["gross_profit"])
+    losers = [x for x in rows if x["flag"]]
+    return {"ok": True, "margin_pct": round(margin * 100, 1),
+            "spend": round(spend, 2), "revenue": round(value, 2),
+            "gross_profit": round(value * margin - spend, 2),
+            "rows": rows,
+            "message": (f"at {margin * 100:.0f} percent gross margin, "
+                        f"{value:,.0f} of tracked revenue on {spend:,.0f} of "
+                        f"spend is {value * margin - spend:,.0f} gross "
+                        f"profit."
+                        + (f" {len(losers)} campaign(s) have a healthy ROAS "
+                           f"and still lose money after margin, which is "
+                           f"exactly the trap ROAS-only optimisation hides."
+                           if losers else ""))}
 
 
 def compare(r, *, campaign_id="", provider="", window=7) -> dict:
@@ -625,6 +757,8 @@ def propose(r, store=None, *, window=3, queue=True) -> dict:
         if not code:
             skipped.append(a["type"])
             continue
+        conf, basis = MO.confidence_from_sample(a["baseline_days"],
+                                                MIN_BASELINE_DAYS)
         orders.append(MO.make_order(
             code, a["campaign_id"], platform=a.get("provider") or "",
             evidence={"metric": f"{a['type']} at {a['current']}",
@@ -633,6 +767,13 @@ def propose(r, store=None, *, window=3, queue=True) -> dict:
                       "window": f"{a['window_days']}d against "
                                 f"{a['baseline_days']}d",
                       "source": "ad_metrics rollup"},
+            confidence=conf, confidence_basis=basis,
+            expected_effect=(f"stops the drift back toward the "
+                             f"{a['baseline']} baseline"
+                             if code in ("pause_campaign",
+                                         "budget_shift") else
+                             f"addresses {a['type'].lower()} at the source"),
+            risk="MEDIUM" if MO.CODES[code][0] == "spend" else "LOW",
             say=f"{a['name']}: {a['evidence']}"))
     # Allocation is its own verdict, and it only fires when the allocator
     # actually has history to allocate on.
@@ -640,12 +781,18 @@ def propose(r, store=None, *, window=3, queue=True) -> dict:
     if alloc.get("ok") and alloc.get("basis") == "marginal return" \
             and len(alloc["rows"]) > 1:
         top = alloc["rows"][0]
+        aconf, abasis = MO.confidence_from_sample(
+            top.get("conversions"), MC.MIN_CONVERSIONS)
         orders.append(MO.make_order(
             "budget_allocate", "portfolio", platform=top["provider"],
             evidence={"metric": f"marginal ROAS {top['marginal_roas']}",
                       "threshold": f"average {top['average_roas']}",
                       "window": "90d",
                       "source": "marginal allocation over ad_metrics"},
+            confidence=aconf, confidence_basis=abasis,
+            expected_effect="moves the next euro to the platform whose "
+                            "MARGINAL return is highest",
+            risk="MEDIUM",
             say=(f"move budget toward {top['provider']} "
                  f"({top['amount']:,.0f}); {alloc['message']}")))
     added = 0

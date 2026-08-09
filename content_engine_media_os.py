@@ -253,6 +253,44 @@ class Adapter:
                            if level == "execute" else
                            "actions are proposed and wait for you"))}
 
+    def create_campaign(self, r, campaign) -> dict:
+        """Create an APPROVED canonical campaign at the platform, through
+        the socket that already exists. Only Google carries a create write
+        today; the others HOLD in words instead of failing, because 'not
+        wired yet' and 'the platform said no' are different facts."""
+        c = _D(campaign)
+        if self.provider != "google":
+            return {"ok": False, "hold": True,
+                    "error": (f"{self.provider} has no campaign-create "
+                              f"write wired yet; the order holds and "
+                              f"executes when that socket gains one")}
+        # canonical -> the socket's draft shape
+        groups = r.find("ad_groups", campaign_id=c.get("id"))
+        ads = {a.get("ad_group_id"): a
+               for a in r.find("ads", campaign_id=c.get("id"))}
+        draft_groups, landing = [], ""
+        for g in groups[:5]:
+            a = ads.get(g.get("id")) or {}
+            cre = r.one("creatives", a.get("creative_id")) or {}
+            landing = landing or a.get("landing_page_url") or ""
+            draft_groups.append({
+                "theme": g.get("name") or "Ad group",
+                "headlines": [x for x in (cre.get("headline"),
+                                          cre.get("hook"),
+                                          cre.get("concept"),
+                                          c.get("name")) if x],
+                "descriptions": [x for x in (cre.get("primary_text"),
+                                             cre.get("description"),
+                                             cre.get("cta")) if x],
+                "keywords": _L(_D(g.get("provider_config")).get("keywords"))
+                or _L(_D(c.get("provider_config")).get("keywords"))})
+        sock = self._socket()
+        return sock.create_campaign(
+            {"campaign_name": c.get("name"),
+             "daily_budget": c.get("budget_amount"),
+             "ad_groups": draft_groups},
+            landing_url=landing)
+
 
 # ---------------------------------------------------------------------------
 # NORMALIZATION. Provider shape in, canonical shape out.
@@ -565,6 +603,98 @@ def drift(r) -> list:
                             "engine_says": internal, "platform_says": theirs,
                             "since": c.get("synced_at", "")})
     return out
+
+
+#: Platform status words -> canonical states, for adopted campaigns.
+ADOPT_STATE = {"ENABLED": "ACTIVE", "ACTIVE": "ACTIVE", "PAUSED": "PAUSED",
+               "REMOVED": "COMPLETED", "ENDED": "COMPLETED"}
+
+
+def adopt(r, store) -> dict:
+    """THE TRANSFORMATION. Pull the OLD system's Google Ads snapshot into
+    the canonical model, so the new screens show the campaigns that were
+    already running instead of an empty room.
+
+    Reads the ads_snapshot the old boards read; touches no key and makes
+    no API call. Idempotent: campaign ids are derived from Google's own
+    ids, so running it twice updates rather than duplicates.
+
+    HONESTY ABOUT GRANULARITY: the snapshot is a 30-day aggregate, not a
+    daily series. The metrics land with day="" and a window_days marker,
+    so the totals, the allocator and the forecaster can use them while
+    the daily chart says "adopted aggregate, daily history starts from
+    the next sync" instead of drawing a 30-day lump as one day."""
+    snap = {}
+    try:
+        snap = store.get_setting("ads_snapshot", {}) or {}
+    except Exception as ex:
+        return {"ok": False, "adopted": 0,
+                "message": f"could not read the old snapshot: "
+                           f"{type(ex).__name__}"}
+    ads = _D(snap.get("ads"))
+    camps = _L(ads.get("campaigns"))
+    if not camps:
+        return {"ok": True, "adopted": 0, "updated": 0,
+                "message": ("the old system holds no Google Ads snapshot to "
+                            "adopt. Press 'Pull platforms now' first (needs "
+                            "the Google connection), then adopt again.")}
+    at = str(snap.get("at") or now())[:10]
+    # one adopted account record, so the campaigns have a parent
+    acct_id = rid("madacct", r.ws, "google", "adopted")
+    if not r.one("ad_accounts", acct_id):
+        r.put("ad_accounts", {"id": acct_id, "provider": "google",
+                              "external_account_id": "adopted-from-snapshot",
+                              "name": "Google Ads (adopted)",
+                              "currency": "EUR", "status": "CONNECTED",
+                              "credentials_reference":
+                                  "settings:GOOGLE_ADS (Connect board)"})
+    made = updated = 0
+    for c in camps:
+        ext = str(c.get("id") or c.get("name") or "")
+        if not ext:
+            continue
+        cid = rid("gadopt", r.ws, ext)
+        cur = r.one("media_campaigns", cid)
+        state = ADOPT_STATE.get(str(c.get("status") or "").upper(),
+                                "SYNC_FAILED")
+        rec = {"id": cid, "name": c.get("name") or ext,
+               "provider": "google", "external_campaign_id": ext,
+               "ad_account_id": acct_id,
+               # the platform does not say WHY the campaign exists; the
+               # objective is marked adopted rather than invented.
+               "objective": (cur or {}).get("objective") or "CONVERSIONS",
+               "buying_type": "AUCTION", "budget_type": "DAILY",
+               "budget_amount": float(c.get("budget") or 0),
+               "currency": "EUR", "state": state,
+               "provider_status": str(c.get("status") or ""),
+               "synced_at": now(),
+               "provider_config": {"adopted": True, "adopted_at": at,
+                                   "type": c.get("type"),
+                                   "bid_strategy": c.get("bid_strategy"),
+                                   "is_share": c.get("is_share"),
+                                   "is_lost_budget": c.get("is_lost_budget"),
+                                   "is_lost_rank": c.get("is_lost_rank")}}
+        if cur:
+            cur.update(rec)
+            r.put("media_campaigns", cur)
+            updated += 1
+        else:
+            r.put("media_campaigns", rec)
+            made += 1
+        r.put("ad_metrics", {
+            "id": rid("gadoptm", r.ws, ext, at),
+            "day": "", "provider": "google", "campaign_id": cid,
+            "window_days": 30, "adopted_at": at,
+            "impressions": float(c.get("impressions") or 0),
+            "clicks": float(c.get("clicks") or 0),
+            "spend": float(c.get("cost") or 0),
+            "conversions": float(c.get("conversions") or 0),
+            "conversion_value": float(c.get("conv_value") or 0)})
+    return {"ok": True, "adopted": made, "updated": updated,
+            "message": (f"{made} campaign(s) adopted and {updated} updated "
+                        f"from the old Google Ads snapshot of {at}. Their "
+                        f"30-day totals are in; daily history accrues from "
+                        f"the next sync. No key was touched.")}
 
 
 def summary(r) -> dict:

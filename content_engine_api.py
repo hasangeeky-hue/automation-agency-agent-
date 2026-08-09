@@ -3970,8 +3970,16 @@ def build_app():
 
     @app.post("/mediaos/propose")
     def mediaos_propose():
+        import content_engine_media_orders as _MO
         import content_engine_media_perf as _MF
         out = _MF.propose(_mrepo(), get_store())
+        # the policy pass runs after every propose; with the default policy
+        # it approves nothing, and says so
+        pol = _MO.apply_policy(get_store())
+        out["auto_approved"] = pol.get("auto_approved", 0)
+        if pol.get("auto_approved"):
+            out["message"] = (out.get("message", "") + " "
+                              + pol.get("message", ""))
         _log_decision(get_store(), "mediaos_propose",
                       f"{out.get('proposed')} verdict(s)",
                       out.get("message", "")[:120])
@@ -3980,10 +3988,80 @@ def build_app():
     @app.post("/mediaos/sync")
     def mediaos_sync():
         import content_engine_media_os as _M
-        out = _M.sync(_mrepo())
+        import content_engine_media_perf as _MF
+        r = _mrepo()
+        out = _M.sync(r)
+        # the aggregation tables refresh with every sync, per the spec
+        try:
+            rolled = _MF.store_rollups(r)
+            out["rollups"] = rolled.get("written")
+        except Exception as ex:
+            out["rollups"] = f"rollup store failed: {type(ex).__name__}"
         _log_decision(get_store(), "mediaos_sync", "",
                       out.get("message", "")[:120])
         return out
+
+    @app.post("/mediaos/adopt")
+    def mediaos_adopt():
+        """THE TRANSFORMATION: old Google Ads snapshot -> canonical model.
+        Reads settings only; no key, no API call."""
+        import content_engine_media_os as _M
+        out = _M.adopt(_mrepo(), get_store())
+        _log_decision(get_store(), "mediaos_adopt",
+                      f"{out.get('adopted')} adopted",
+                      out.get("message", "")[:120])
+        return out
+
+    @app.post("/mediaos/policy")
+    async def mediaos_policy(request: Request):
+        import content_engine_media_orders as _MO
+        d = await _body(request)
+        if not d:
+            return {"ok": True, "policy": _MO.get_policy(get_store()),
+                    "message": "the current policy; every default is "
+                               "approval, nothing is automatic until you "
+                               "raise it"}
+        out = _MO.set_policy(get_store(), **d)
+        if out.get("ok"):
+            _log_decision(get_store(), "media_policy",
+                          ", ".join(sorted(set(d) & set(_MO.DEFAULT_POLICY))),
+                          out.get("message", ""))
+        return out
+
+    @app.post("/mediaos/verify")
+    def mediaos_verify():
+        import content_engine_media_orders as _MO
+        return _MO.verify_orders(get_store())
+
+    @app.post("/mediaos/briefs")
+    async def mediaos_briefs(request: Request):
+        import content_engine_media_creative as _MC
+        d = await _body(request)
+        return _MC.briefs(_mrepo(), count=int(d.get("count") or 3))
+
+    @app.post("/mediaos/experiment")
+    async def mediaos_experiment(request: Request):
+        import content_engine_media_creative as _MC
+        d = await _body(request)
+        return _MC.start_experiment(
+            _mrepo(), name=str(d.get("name") or ""),
+            creative_ids=d.get("creative_ids") or [],
+            metric=str(d.get("metric") or "cpa"),
+            hypothesis=str(d.get("hypothesis") or ""))
+
+    @app.post("/mediaos/experiment-judge")
+    async def mediaos_experiment_judge(request: Request):
+        import content_engine_media_creative as _MC
+        d = await _body(request)
+        return _MC.judge_experiment(_mrepo(),
+                                    str(d.get("experiment_id") or ""))
+
+    @app.post("/mediaos/breakdown")
+    async def mediaos_breakdown(request: Request):
+        import content_engine_media_perf as _MF
+        d = await _body(request)
+        return _MF.breakdown(_mrepo(), str(d.get("by") or "device"),
+                             campaign_id=str(d.get("campaign_id") or ""))
 
     @app.post("/mediaos/matrix")
     async def mediaos_matrix(request: Request):

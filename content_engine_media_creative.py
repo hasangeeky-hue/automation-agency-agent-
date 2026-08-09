@@ -427,6 +427,127 @@ def _coverage_sentence(cov) -> str:
                         + ", ".join(c["dropped"]) for c in bad) + ".")
 
 
+# ---------------------------------------------------------------------------
+# CREATIVE EXPERIMENTS. A winner is declared by arithmetic over a floor,
+# or it is not declared at all.
+# ---------------------------------------------------------------------------
+EXPERIMENT_STATES = ("DRAFT", "RUNNING", "DONE", "ABANDONED")
+
+
+def start_experiment(r, *, name="", creative_ids=None, metric="cpa",
+                     hypothesis="") -> dict:
+    ids = [x for x in _L(creative_ids) if r.one("creatives", x)]
+    if len(ids) < 2:
+        return {"ok": False,
+                "message": "an experiment needs at least two creatives that "
+                           "exist; a test with one arm is an anecdote"}
+    if metric not in ("cpa", "roas", "ctr", "cvr"):
+        return {"ok": False,
+                "message": f"{metric!r} is not a judgeable metric. They "
+                           f"are: cpa, roas, ctr, cvr"}
+    xid = rid("cexp", r.ws, name or now())
+    r.put("creative_experiments", {
+        "id": xid, "name": name or "Untitled experiment",
+        "hypothesis": hypothesis, "metric": metric,
+        "variants": ids, "status": "RUNNING", "winner": "",
+        "started_at": now(), "ended_at": ""})
+    return {"ok": True, "id": xid,
+            "message": (f"experiment running over {len(ids)} creative(s) on "
+                        f"{metric}. It will refuse a winner below "
+                        f"{MIN_IMPRESSIONS:,} impressions and "
+                        f"{MIN_CONVERSIONS} conversions per arm.")}
+
+
+def judge_experiment(r, experiment_id) -> dict:
+    """Declare a winner only when every arm has earned an opinion."""
+    x = r.one("creative_experiments", experiment_id)
+    if not x:
+        return {"ok": False, "message": "no such experiment"}
+    perf = {p["id"]: p for p in creative_performance(r)}
+    arms = []
+    for cid in _L(x.get("variants")):
+        p = perf.get(cid) or {}
+        arms.append({"creative_id": cid, "name": p.get("name") or cid,
+                     "impressions": p.get("impressions") or 0,
+                     "conversions": p.get("conversions") or 0,
+                     "value": p.get(x.get("metric")),
+                     "enough": ((p.get("impressions") or 0) >= MIN_IMPRESSIONS
+                                and (p.get("conversions") or 0)
+                                >= MIN_CONVERSIONS)})
+    thin = [a for a in arms if not a["enough"]]
+    if thin:
+        return {"ok": True, "status": "RUNNING", "arms": arms,
+                "message": (f"{len(thin)} arm(s) are below the sample floor "
+                            f"({MIN_IMPRESSIONS:,} impressions, "
+                            f"{MIN_CONVERSIONS} conversions). No winner is "
+                            f"declared from insufficient data; keep it "
+                            f"running.")}
+    lower_is_better = x.get("metric") == "cpa"
+    scored = [a for a in arms if a["value"] is not None]
+    scored.sort(key=lambda a: a["value"], reverse=not lower_is_better)
+    best, worst = scored[0], scored[-1]
+    edge = ((worst["value"] / max(best["value"], 0.01))
+            if lower_is_better else
+            (best["value"] / max(worst["value"], 0.01)))
+    if edge < 1.3:
+        return {"ok": True, "status": "RUNNING", "arms": arms,
+                "message": (f"no arm leads by 30 percent on "
+                            f"{x['metric']}; the difference so far is "
+                            f"{edge:.2f}x, which is noise wearing a "
+                            f"ranking. Keep it running.")}
+    x.update({"status": "DONE", "winner": best["creative_id"],
+              "ended_at": now()})
+    r.put("creative_experiments", x)
+    return {"ok": True, "status": "DONE", "arms": arms,
+            "winner": best["name"],
+            "message": (f"{best['name']!r} wins on {x['metric']} by "
+                        f"{edge:.1f}x over {worst['name']!r}, every arm "
+                        f"past the floor. Recorded.")}
+
+
+def briefs(r, count=3) -> dict:
+    """Turn what the matrix has PROVEN into the next creatives to make.
+
+    Deterministic: briefs come from measured winners, not from a model's
+    imagination. With no verdicts it refuses, because a brief invented
+    from nothing sends real production money in a random direction. The
+    drafts land unpublished in the library for a human or the content
+    pipeline to fill in."""
+    learned = learn(r)
+    winners = {f["attribute"]: f for f in _L(learned.get("findings"))
+               if f.get("state") == "winner"}
+    if not winners:
+        return {"ok": False, "made": 0,
+                "message": ("nothing has earned a verdict yet, so there is "
+                            "nothing honest to brief. Run creatives past "
+                            "the sample floor first; the matrix will name "
+                            "the winning attributes and the briefs write "
+                            "themselves.")}
+    base = {a: w.get("leader") for a, w in winners.items()}
+    made = []
+    for i in range(max(1, min(int(count or 1), 10))):
+        nm = ("Brief " + str(i + 1) + ": "
+              + ", ".join(f"{a}={v}" for a, v in list(base.items())[:3]))
+        got = save_creative(
+            r, name=nm, type=str(base.get("type") or "UGC"),
+            concept=str(base.get("concept") or ""),
+            angle=str(base.get("angle") or ""),
+            hook=str(base.get("hook") or ""),
+            persona=str(base.get("persona") or ""),
+            cta=str(base.get("cta") or ""),
+            funnel_stage=str(base.get("funnel_stage") or "COLD"),
+            publish=False)
+        if got.get("ok"):
+            made.append(got["id"])
+    return {"ok": True, "made": len(made), "ids": made,
+            "attributes": base,
+            "message": (f"{len(made)} brief(s) drafted from the measured "
+                        f"winners ({', '.join(f'{a}: {v}' for a, v in base.items() if v)}). "
+                        f"They are unpublished drafts: fill in the copy "
+                        f"(or route creative_rotate through the content "
+                        f"pipeline) and publish v1.")}
+
+
 def audience_rows(r) -> list:
     out = []
     for a in r.all("audiences"):

@@ -37,6 +37,7 @@ import content_engine_media_creative as MC
 import content_engine_media_os as M
 import content_engine_media_perf as MF
 import content_engine_media_plan as MP
+from content_engine_os_core import _D
 
 log = logging.getLogger("content_engine.media_center")
 
@@ -145,6 +146,7 @@ def _band(ctx) -> str:
 
 
 def _orders_board(ctx, limit=12) -> str:
+    import content_engine_media_orders as MO
     orders = list(ctx.get("media_orders") or ())
     if not orders:
         return ("<p class='mc-empty'>No orders in the queue. The agent "
@@ -153,19 +155,30 @@ def _orders_board(ctx, limit=12) -> str:
     rows = []
     for o in [x for x in orders if x.get("status") == "open"][:limit]:
         ev = o.get("evidence") or {}
+        conf = o.get("confidence")
         rows.append((
-            e(o.get("code")), e(o.get("say"))[:110],
+            e(o.get("code")), e(MO.lifecycle_of(o)), e(o.get("say"))[:100],
             e(f"{ev.get('metric', '')} vs {ev.get('threshold', '')}"),
-            e(o.get("platform") or "-"),
+            (f"{conf:.0%}" if isinstance(conf, (int, float))
+             else "not stated"),
+            e(o.get("risk") or "-"),
             f"<button class='mc-btn' onclick=\"mediaApprove('{e(o.get('id'))}'"
             f",this)\">Approve</button> "
             f"<button class='mc-btn mc-go' onclick=\"mediaRun('{e(o.get('id'))}'"
             f",this)\">Execute</button>"))
-    done = sum(1 for x in orders if x.get("status") != "open")
-    return (table(("code", "what", "evidence", "platform", "decision"), rows,
-                  "no open orders")
-            + f"<p class='mc-note'>{done} order(s) already decided are on "
-              f"the record.</p>")
+    decided = [x for x in orders if x.get("status") != "open"]
+    lc = {}
+    for x in decided:
+        w = MO.lifecycle_of(x)
+        lc[w] = lc.get(w, 0) + 1
+    return (table(("code", "lifecycle", "what", "evidence", "confidence",
+                   "risk", "decision"), rows, "no open orders")
+            + "<p class='mc-note'>"
+            + (", ".join(f"{n} {w}" for w, n in sorted(lc.items()))
+               if lc else "nothing decided yet")
+            + ". <button class='mc-btn' onclick=\"mcPost('/mediaos/verify',"
+              "{},this)\">Verify executed orders against the last platform "
+              "read</button></p>")
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +215,35 @@ def s_cmd(r, ctx) -> str:
                  [(d["name"], d["spread"], d["why"][:110])
                   for d in disputed],
                  "no conversion has an attributable touch yet")
+    biz = {}
+    try:
+        import content_engine_api as A
+        biz = MF.business(r, A.get_store())
+    except Exception:
+        biz = {}
+    if biz.get("ok"):
+        bhtml = ("<div class='mc-kpis'>"
+                 + kpi("Revenue tracked", _n(biz.get("revenue")))
+                 + kpi("Spend", _n(biz.get("spend")))
+                 + kpi("Gross profit", _n(biz.get("gross_profit")),
+                       f"at {biz.get('margin_pct')}% margin")
+                 + "</div>"
+                 + table(("campaign", "spend", "revenue", "gross profit",
+                          "ROAS", "flag"),
+                         [(x["name"], _n(x["spend"]), _n(x["revenue"]),
+                           _n(x["gross_profit"]), _n(x["roas"]),
+                           x["flag"] or "-") for x in
+                          (biz.get("rows") or [])[:10]])
+                 + f"<p class='mc-note'>{e(biz.get('message', ''))}</p>")
+    else:
+        bhtml = ("<p class='mc-empty'>" + e(biz.get("message")
+                 or "the business view could not be computed") + "</p>"
+                 "<button class='mc-btn' onclick='openEcon()'>Set unit "
+                 "economics</button>")
     return (_band(ctx)
             + card("The numbers", kpis, "30 days, denominators attached")
+            + card("What the business keeps", bhtml,
+                   "ROAS is a platform number; profit is yours")
             + card("Needs you today", acts)
             + card("Your approval queue", _orders_board(ctx))
             + card("Where the attribution models disagree most", disp,
@@ -238,8 +278,20 @@ def s_camps(r, ctx) -> str:
             "says PAUSED is the lie sync exists to catch."
             + (f" Last run: {e(str(st[0].get('completed_at'))[:16])}"
                if st else " No sync has run yet.") + "</p>")
-    return card("Every campaign, with its real state", body) \
-        + card("Synchronisation", sync)
+    adopted = sum(1 for c in camps
+                  if _D(c.get("provider_config")).get("adopted"))
+    adopt = ("<button class='mc-btn mc-go' "
+             "onclick=\"mcPost('/mediaos/adopt',{},this)\">"
+             "Adopt the old Google Ads data</button>"
+             "<p class='mc-note'>Pulls the campaigns the OLD system already "
+             "recorded into this model: names, states, budgets and their "
+             "30-day totals. No key is touched and running it twice updates "
+             "rather than duplicates."
+             + (f" {adopted} campaign(s) here are adopted already."
+                if adopted else " Nothing has been adopted yet.") + "</p>")
+    return (card("Every campaign, with its real state", body)
+            + card("Transform: bring the old system's data in", adopt)
+            + card("Synchronisation", sync))
 
 
 def s_wiz(r, ctx) -> str:
@@ -472,10 +524,44 @@ def s_creat(r, ctx) -> str:
             "Save + publish v1</button>"
             "<p class='mc-note'>Versions are immutable: publishing again "
             "appends v2 and v1 stays measurable.</p></div>")
+    exps = r.all("creative_experiments")
+    erows = []
+    for x in exps[:15]:
+        erows.append((e(x.get("name")), e(x.get("metric")),
+                      e(x.get("status")),
+                      e((r.one("creatives", x.get("winner")) or {})
+                        .get("name") or "none yet"),
+                      f"<button class='mc-btn' onclick=\"mcPost("
+                      f"'/mediaos/experiment-judge',{{experiment_id:"
+                      f"'{e(x.get('id'))}'}},this)\">Judge</button>"))
+    exform = ("<div class='mc-form'>"
+              "<label>Name<input id='mc-xname'></label>"
+              "<label>Creative ids (comma)<input id='mc-xids' "
+              "placeholder='cre_a, cre_b'></label>"
+              "<label>Metric<select id='mc-xmetric'>"
+              "<option>cpa</option><option>roas</option>"
+              "<option>ctr</option><option>cvr</option></select></label>"
+              "<button class='mc-btn mc-go' onclick='mcNewExperiment(this)'>"
+              "Start experiment</button>"
+              "<p class='mc-note'>A winner is declared only past the sample "
+              "floor and a 30 percent lead; below that the ranking is "
+              "noise.</p></div>")
+    briefbtn = ("<div class='mc-form'>"
+                "<button class='mc-btn mc-go' onclick=\"mcPost("
+                "'/mediaos/briefs',{count:3},this)\">Draft 3 briefs from "
+                "the measured winners</button>"
+                "<p class='mc-note'>Deterministic: briefs come from the "
+                "matrix's proven attributes, never from imagination. With "
+                "no verdicts it refuses.</p></div>")
     return (card("The library", lib)
             + card("The matrix: attributes, not just creatives", mtab,
                    "verdicts refuse to speak below the sample floor")
-            + card("What the engine has learned", lrn)
+            + card("What the engine has learned", lrn + briefbtn)
+            + card("Experiments",
+                   table(("experiment", "metric", "status", "winner",
+                          "judge"), erows,
+                         "no experiment yet; start one over two or more "
+                         "creatives") + exform)
             + card("New creative", form))
 
 
@@ -548,10 +634,27 @@ def s_perf(r, ctx) -> str:
                     x["gap"], x["why"][:110]) for x in rec["rows"][:15]],
                   rec["message"])
             + f"<p class='mc-note'>{e(rec['message'])}</p>")
+    dims = []
+    for by in MF.DIMENSIONS:
+        bd = MF.breakdown(r, by)
+        if bd["rows"]:
+            dims.append(card(
+                f"By {by}",
+                table(("value", "spend", "conv", "CPA", "ROAS"),
+                      [(x["value"], _n(x["spend"]), _n(x["conversions"]),
+                        _n((x.get("cpa") or {}).get("value")),
+                        _n((x.get("roas") or {}).get("value")))
+                       for x in bd["rows"][:12]])))
+        else:
+            dims.append(f"<p class='mc-note'>{e(by)}: "
+                        f"{e(bd['message'])}</p>")
     return (card("Rollups", f"<div class='mc-form'>{switch}</div>"
                  + "".join(blocks),
                  "the same numbers at whichever grain the question needs")
             + card("This week against last week", ctab)
+            + card("Breakdowns", "".join(dims),
+                   "country, device, placement, age, gender - only what "
+                   "the rows actually carry")
             + card("Platform claims vs what this engine observed", rtab,
                    "neither number is corrected into the other"))
 
@@ -588,10 +691,37 @@ def s_anom(r, ctx) -> str:
            "<p class='mc-note'>Each verdict lands in the order queue below "
            "with metric, threshold, window and source, and waits for your "
            "click. There is no auto-spend level at all.</p></div>")
+    pol = {}
+    try:
+        import content_engine_api as A
+        import content_engine_media_orders as MO
+        pol = MO.get_policy(A.get_store())
+    except Exception:
+        pol = {}
+    polform = (
+        "<div class='mc-form'>"
+        "<label>Budget change auto up to (%)"
+        f"<input id='mc-pol-bud' type='number' min='0' max='25' "
+        f"value='{e(pol.get('budget_change_auto_pct', 0))}'></label>"
+        "<label>Auto-pause if daily spend under"
+        f"<input id='mc-pol-pause' type='number' min='0' "
+        f"value='{e(pol.get('pause_auto_if_daily_spend_under', 0))}'>"
+        "</label>"
+        "<label>Negative keywords<select id='mc-pol-neg'>"
+        + "".join(f"<option{' selected' if pol.get('negative_keyword') == v else ''}>{v}</option>"
+                  for v in ("approval", "auto")) + "</select></label>"
+        "<button class='mc-btn mc-go' onclick='mcSavePolicy(this)'>"
+        "Save policy</button>"
+        "<p class='mc-note'>Every default is approval and 0. Autonomy is "
+        "something YOU raise here, never something the engine assumes; a "
+        "new campaign is never automatic and delete stays human-only."
+        "</p></div>")
     return (card("What broke its own baseline", atab)
             + card("Refused for lack of history", nj,
                    "a red badge on 3 days of data is a coin toss")
             + btn
+            + card("The autonomy policy", polform,
+                   "what the agent may do without waking you")
             + card("The order queue", _orders_board(ctx)))
 
 
@@ -861,6 +991,14 @@ name:mcV('mc-crname'),type:mcV('mc-crtype'),concept:mcV('mc-crconcept'),
 angle:mcV('mc-crangle'),hook:mcV('mc-crhook'),persona:mcV('mc-crpersona'),
 cta:mcV('mc-crcta'),funnel_stage:mcV('mc-crstage'),
 headline:mcV('mc-crhead'),primary_text:mcV('mc-crtext'),publish:true},btn);}
+function mcNewExperiment(btn){var ids=(mcV('mc-xids')||'').split(',')
+.map(function(x){return x.trim();}).filter(Boolean);
+mcPost('/mediaos/experiment',{name:mcV('mc-xname'),creative_ids:ids,
+metric:mcV('mc-xmetric')},btn);}
+function mcSavePolicy(btn){mcPost('/mediaos/policy',{
+budget_change_auto_pct:mcV('mc-pol-bud'),
+pause_auto_if_daily_spend_under:mcV('mc-pol-pause'),
+negative_keyword:mcV('mc-pol-neg')},btn);}
 function mcNewAudience(btn){var def={};
 try{def=JSON.parse(mcV('mc-adef')||'{}');}catch(e){
 toast('the definition is not valid JSON; nothing was saved',false);return;}

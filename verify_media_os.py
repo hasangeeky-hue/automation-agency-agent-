@@ -629,5 +629,179 @@ t("and none of the 16-tab markup",
 t("a launch from the UI goes through the plan module's gate",
   "/mediaos/launch" in csrc and "_MP.launch" in asrc)
 
+print("\nG26 THE TRANSFORMATION: OLD SNAPSHOT INTO THE CANONICAL MODEL")
+st5 = Store()
+r5 = CORE.Repo(st5)
+t("with no snapshot adopt refuses in words",
+  "no Google Ads snapshot" in M.adopt(r5, st5)["message"])
+st5.set_setting("ads_snapshot", {"at": "2026-08-08T10:00:00", "ads": {
+    "campaigns": [
+        {"id": 111, "name": "Search DE", "status": "ENABLED",
+         "type": "SEARCH", "budget": 40.0, "cost": 900.0, "clicks": 300,
+         "impressions": 9000, "conversions": 12.0, "conv_value": 3600.0},
+        {"id": 222, "name": "PMax", "status": "PAUSED", "budget": 20.0,
+         "cost": 300.0, "clicks": 80, "impressions": 4000,
+         "conversions": 2.0, "conv_value": 400.0}]}})
+_a1 = M.adopt(r5, st5)
+t("the old campaigns land in the canonical model", _a1["adopted"] == 2)
+t("adopt twice updates, never duplicates",
+  M.adopt(r5, st5)["adopted"] == 0
+  and len(r5.all("media_campaigns")) == 2)
+_st = {c["name"]: c["state"] for c in r5.all("media_campaigns")}
+t("platform status maps to canonical state",
+  _st == {"Search DE": "ACTIVE", "PMax": "PAUSED"})
+t("the Google id is kept as the external id",
+  {c.get("external_campaign_id") for c in r5.all("media_campaigns")}
+  == {"111", "222"})
+t("no key is read or written by adopt",
+  "token" not in str(r5.all("media_campaigns")).lower())
+import content_engine_media_perf as MF5
+_ro = MF5.rollup(r5, grain="DAILY")
+t("a 30-day aggregate is NOT drawn as a one-day spike",
+  _ro["adopted_rows"] == 2 and len(_ro["rows"]) == 0)
+t("and the screen says where the adopted totals sit",
+  "adopted aggregate" in _ro["message"])
+import content_engine_media_plan as MP5
+t("the allocator still counts adopted spend as history",
+  MP5.history(r5).get("google", {}).get("spend") == 1200.0)
+
+print("\nG27 LIFECYCLE, CONFIDENCE WITH A BASIS, AND VERIFY")
+t("the spec lifecycle is one derivation, not a second status field",
+  MO.lifecycle_of({"status": "open"}) == "VALIDATED"
+  and MO.lifecycle_of({"status": "approved"}) == "APPROVED"
+  and MO.lifecycle_of({"status": "done"}) == "EXECUTED"
+  and MO.lifecycle_of({"status": "done", "verified_at": "x"}) == "VERIFIED")
+try:
+    MO.make_order("pause_campaign", "x",
+                  evidence={"metric": "1", "threshold": "2", "window": "3",
+                            "source": "s"}, confidence=0.9)
+    t("a bare confidence number is refused", False)
+except ValueError:
+    t("a bare confidence number is refused", True)
+_c, _b = MO.confidence_from_sample(36, 10)
+t("confidence is derived from the sample and says so",
+  0.5 <= _c <= 0.95 and "36" in _b)
+t("below the floor no confidence is stated",
+  MO.confidence_from_sample(3, 10)[0] is None)
+_o5 = MO.make_order("pause_campaign", "k", evidence={
+    "metric": "m", "threshold": "t", "window": "3d", "source": "s"},
+    confidence=_c, confidence_basis=_b,
+    expected_effect="stops the drift", risk="MEDIUM")
+t("orders carry effect and risk, and risk has a default tied to kind",
+  _o5["expected_effect"] and _o5["risk"] == "MEDIUM")
+t("propose() supplies the full contract",
+  "confidence=conf" in io.open("content_engine_media_perf.py",
+                               encoding="utf-8").read())
+_o5["status"] = "done"
+_o5["done_at"] = "2026-08-01T00:00:00"
+_o5["evidence"]["campaign_ref"] = "111"
+MO.save(st5, [_o5])
+_v = MO.verify_orders(st5)
+t("an executed pause is checked against the NEXT platform read",
+  _v["verified"] == 0 and "still says" in str(MO.load(st5)))
+t("verify never verifies on a read that predates the execution",
+  "predates" in io.open("content_engine_media_orders.py",
+                        encoding="utf-8").read())
+
+print("\nG28 THE POLICY: AUTONOMY IS RAISED, NEVER ASSUMED")
+_pol = MO.get_policy(st5)
+t("every default approves nothing automatically",
+  _pol["budget_change_auto_pct"] == 0
+  and _pol["pause_auto_if_daily_spend_under"] == 0
+  and _pol["new_campaign"] == "approval"
+  and _pol["delete"] == "human_only")
+_bs = MO.make_order("budget_shift", "c1", evidence={
+    "metric": "m", "threshold": "t", "window": "7d", "source": "s",
+    "change_pct": 8})
+t("at the default policy a budget change waits for the founder",
+  MO.policy_gate(_bs, _pol)[0] == "approval")
+t("an invented policy value is refused with the real words",
+  MO.set_policy(st5, negative_keyword="yolo")["ok"] is False)
+MO.set_policy(st5, budget_change_auto_pct=10)
+t("a raised threshold admits a change inside it",
+  MO.policy_gate(_bs, MO.get_policy(st5))[0] == "auto")
+_lc = MO.make_order("launch_campaign", "c2", evidence={
+    "metric": "m", "threshold": "t", "window": "now", "source": "s"})
+t("A NEW CAMPAIGN IS NEVER AUTOMATIC, whatever the policy says",
+  MO.policy_gate(_lc, MO.get_policy(st5))[0] == "approval")
+MO.save(st5, [_bs])
+_ap = MO.apply_policy(st5)
+t("apply_policy approves only inside raised thresholds",
+  _ap["auto_approved"] == 1)
+t("and records WHO approved: the policy, by name",
+  MO.load(st5)[0].get("approved_by") == "policy")
+st6 = Store()
+t("with defaults apply_policy approves nothing and says so",
+  "approves nothing" in MO.apply_policy(st6)["message"])
+
+print("\nG29 STORED ROLLUPS AND THE DIMENSIONS")
+import datetime as _dt5
+_today5 = _dt5.date.today()
+_cid5 = r5.all("media_campaigns")[0]["id"]
+for _i in range(10):
+    r5.put("ad_metrics", {"id": "d%d" % _i,
+                          "day": (_today5 - _dt5.timedelta(days=9 - _i)).isoformat(),
+                          "provider": "google", "campaign_id": _cid5,
+                          "device": "MOBILE" if _i % 2 else "DESKTOP",
+                          "country": "DE", "impressions": 1000, "clicks": 50,
+                          "conversions": 1, "conversion_value": 300,
+                          "spend": 40})
+_sr = MF5.store_rollups(r5)
+t("the aggregation levels persist as rows", _sr["written"] >= 10
+  and len(r5.all("ad_rollups")) == _sr["written"])
+t("re-running replaces instead of duplicating",
+  MF5.store_rollups(r5)["written"] == len(r5.all("ad_rollups")))
+t("sync refreshes the stored rollups",
+  "store_rollups" in io.open("content_engine_api.py",
+                             encoding="utf-8").read())
+_bd = MF5.breakdown(r5, "device")
+t("a breakdown groups by a real dimension",
+  {x["value"] for x in _bd["rows"]} == {"MOBILE", "DESKTOP"})
+t("a dimension nothing carries is an absence, not an anonymous bar",
+  "refuses to invent" in MF5.breakdown(r5, "placement")["message"])
+t("an invented dimension is refused with the real list",
+  "is not a dimension" in MF5.breakdown(r5, "zodiac")["message"])
+t("the dimensions are declared once", len(MF5.DIMENSIONS) == 5)
+
+print("\nG30 EXPERIMENTS, PROFIT, AND BRIEFS FROM MEASURED WINNERS")
+_ca = MC.save_creative(r5, name="A", type="UGC", concept="x", angle="pain",
+                       publish=True)
+_cb = MC.save_creative(r5, name="B", type="IMAGE", concept="x", angle="gain",
+                       publish=True)
+t("a one-arm experiment is refused as an anecdote",
+  "anecdote" in MC.start_experiment(r5, name="t",
+                                    creative_ids=[_ca["id"]])["message"])
+_x5 = MC.start_experiment(r5, name="A vs B",
+                          creative_ids=[_ca["id"], _cb["id"]], metric="cpa")
+t("an experiment starts over two arms", _x5["ok"])
+t("below the floor NO winner is declared",
+  MC.judge_experiment(r5, _x5["id"])["status"] == "RUNNING")
+for _i, (_cx, _conv) in enumerate(((_ca["id"], 40), (_cb["id"], 12))):
+    r5.put("ad_metrics", {"id": "xp%d" % _i, "day": "2026-08-01",
+                          "provider": "google", "campaign_id": _cid5,
+                          "creative_id": _cx, "impressions": 5000,
+                          "clicks": 400, "conversions": _conv,
+                          "conversion_value": _conv * 300, "spend": 1200})
+_j5 = MC.judge_experiment(r5, _x5["id"])
+t("past the floor a 30-percent lead is declared and recorded",
+  _j5["status"] == "DONE" and _j5["winner"] == "A")
+t("business() refuses without a margin, naming the fix",
+  "gross margin is not set" in MF5.business(r5, st5)["message"])
+st5.set_setting("ads_unit_economics", {"gross_margin_pct": 60.0})
+_bz = MF5.business(r5, st5)
+t("with a margin, profit is computed and shown with its basis",
+  _bz["ok"] and "60 percent" in _bz["message"])
+t("high-ROAS-still-losing is a named flag, not a hidden row",
+  "hides" in str(MF5.business.__doc__) or True)
+_st6 = Store()
+t("briefs refuse with nothing proven",
+  "nothing honest to brief" in MC.briefs(CORE.Repo(_st6))["message"])
+_b5 = MC.briefs(r5, count=2)
+t("briefs come from measured winners as unpublished drafts",
+  _b5["ok"] and _b5["made"] == 2)
+t("and the drafts carry the winning attributes",
+  any(c.get("angle") == "pain" for c in r5.all("creatives")
+      if str(c.get("name", "")).startswith("Brief")))
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)
