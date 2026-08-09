@@ -585,3 +585,229 @@ def learning(r) -> dict:
                         "nothing has completed a full loop yet, so there "
                         "is nothing learned. This stays empty rather than "
                         "showing invented confidence.")}
+
+
+# ---------------------------------------------------------------------------
+# THE FOUR DOMAIN LOOPS (spec 56-59)
+# ---------------------------------------------------------------------------
+# Each of these is a closed loop in the sense of section 103: it does not
+# end at "we did the thing", it ends when the thing has been verified,
+# observed and classified. The stages below are written so the LAST stage
+# always feeds the FIRST, because a sequence that stops at the end is a
+# pipeline, and a pipeline is what produces a backlog nobody closes.
+
+LOOPS = (
+    ("technical", "TECHNICAL LOOP",
+     "Is the site mechanically able to be found?",
+     ("crawl the site",
+      "classify what is broken",
+      "propose a fix with its before and after",
+      "apply it, or raise a work order if the CMS cannot",
+      "re-crawl the same URL to prove the fix",
+      "watch indexation and impressions for that URL",
+      "classify the outcome, and feed what was learned into the next crawl"),
+     "a crawl finishing, or an issue count crossing its threshold",
+     ("A technical fix is the only kind whose success can be proved "
+      "mechanically: the same crawler asks the same question again. That "
+      "makes verification cheap here and expensive everywhere else, "
+      "which is why this loop verifies before it celebrates.")),
+    ("content", "CONTENT LOOP",
+     "Does the page answer the question better than what ranks?",
+     ("find decay or a gap",
+      "brief the change against what currently ranks",
+      "draft it",
+      "review it against the brief, not against taste",
+      "publish, behind approval",
+      "wait out the measurement window before reading anything",
+      "compare against the pre-change baseline",
+      "classify, and feed the result into the next brief"),
+     "a page losing position or impressions over a full window",
+     ("The waiting stage is a stage. Reading a content change three days "
+      "after publishing measures the weather, not the work, and every "
+      "conclusion drawn there is noise wearing a number.")),
+    ("authority", "AUTHORITY LOOP",
+     "Does anyone credible point at us?",
+     ("research prospects from observed citations and rankings",
+      "qualify each one against relevance, not domain rating alone",
+      "draft an approach",
+      "send it, behind approval, one at a time",
+      "record the reply, including silence",
+      "verify any placement actually exists and is followable",
+      "classify, and feed what worked into the next research pass"),
+     "a citation gap, or a competitor gaining links we do not have",
+     ("Every send in this loop stops at a person. Outreach is the one "
+      "search activity that reaches a stranger's inbox with your name on "
+      "it, and an agent that can do that unsupervised is a liability, "
+      "not a feature.")),
+    ("visibility", "AI VISIBILITY LOOP",
+     "Do AI answers name us, and cite us?",
+     ("ask the tracked prompts",
+      "record what each provider actually answered",
+      "find which sources it cited instead of us",
+      "decide what content or citation would change that",
+      "make the change through the content loop",
+      "re-ask the SAME prompts enough times to beat run-to-run variance",
+      "classify, knowing one run proves nothing"),
+     "a scheduled observation window, or a prompt losing citation",
+     ("This loop re-asks rather than assumes. AI answers vary between "
+      "runs, so the re-observation stage has a floor of "
+      + str(3) + " runs; below that a change looks effective or "
+      "ineffective purely by chance.")),
+)
+
+
+def loop_spec(loop_id):
+    """One loop, or None. Unknown ids do not fall back to a default."""
+    for lid, label, question, stages, trigger, note in LOOPS:
+        if lid == loop_id:
+            return {"id": lid, "label": label, "question": question,
+                    "stages": list(stages), "trigger": trigger,
+                    "note": note, "closes": True}
+    return None
+
+
+def loop_state(loop_id, counts=None):
+    """Where work is piled up in one loop, and whether it closes.
+
+    A loop with items in every stage but none ever reaching the last one
+    is not a loop. It is a queue with ambitions, and this function says
+    so rather than drawing a satisfying circle over a backlog.
+    """
+    spec = loop_spec(loop_id)
+    if spec is None:
+        return {"state": "UNKNOWN LOOP",
+                "why": "'" + str(loop_id) + "' is not a loop this OS has"}
+    c = dict(counts or {})
+    at = [(s, int(c.get(s, 0) or 0)) for s in spec["stages"]]
+    total = sum(n for _s, n in at)
+    completed = int(c.get("completed_cycles", 0) or 0)
+    if total == 0 and completed == 0:
+        return {"state": "NEVER RUN", "stages": at, "completed": 0,
+                "why": ("nothing has entered this loop. That is not the "
+                        "same as nothing being wrong.")}
+    worst = max(at, key=lambda z: z[1])
+    if completed == 0:
+        return {"state": "NOT YET CLOSED", "stages": at, "completed": 0,
+                "bottleneck": worst[0],
+                "why": (str(total) + " item(s) are moving but NOT ONE has "
+                        "completed a full cycle. Until one does, this is "
+                        "a queue rather than a loop, and the most piled "
+                        "up stage is: " + worst[0])}
+    return {"state": "CLOSING", "stages": at, "completed": completed,
+            "bottleneck": worst[0] if worst[1] else None,
+            "why": (str(completed) + " cycle(s) have closed. "
+                    + (("The stage holding the most work is "
+                        + worst[0] + ".") if worst[1] else
+                       "No stage is holding work."))}
+
+
+# ---------------------------------------------------------------------------
+# 93. GLOBAL SEARCH
+# ---------------------------------------------------------------------------
+#: Which entities carry text a person would actually search for, and the
+#: field to match. An entity absent from here is NOT searchable, and the
+#: results say so rather than letting an empty result imply "nothing
+#: matched" when the truth is "nobody looked there".
+SEARCHABLE = {"page": "url", "keyword": "keyword", "issue": "title",
+              "initiative": "title", "prompt": "prompt",
+              "report": "title", "backlink": "source_url"}
+
+
+def search_all(repo, query, limit=8):
+    """Search every entity that has text, and name the ones that do not."""
+    q = str(query or "").strip().lower()
+    if len(q) < 2:
+        return {"state": "TOO SHORT", "hits": [], "searched": [],
+                "not_searched": [],
+                "why": ("a one-character query matches most of the "
+                        "store, which is the same as matching nothing")}
+    hits, searched, failed = [], [], []
+    for name, _key, _what in _entity_names():
+        field = SEARCHABLE.get(name)
+        if not field:
+            continue
+        try:
+            rows = repo.all("search_" + name) or []
+        except Exception as exc:                      # noqa: BLE001
+            failed.append({"entity": name, "why": str(exc)[:70]})
+            continue
+        searched.append(name)
+        for row in rows:
+            val = str((row or {}).get(field) or "")
+            if q in val.lower():
+                hits.append({"entity": name, "field": field,
+                             "value": val[:110], "row": row})
+    unsearchable = [n for n, _k, _w in _entity_names()
+                    if n not in SEARCHABLE]
+    return {
+        "state": "HITS" if hits else "NO MATCH",
+        "query": q,
+        "hits": hits[:limit],
+        "total": len(hits),
+        "searched": searched,
+        "failed": failed,
+        "not_searched": unsearchable,
+        "why": (("matched " + str(len(hits)) + " record(s)") if hits else
+                ("nothing matched in the " + str(len(searched))
+                 + " entity(ies) that hold text. "
+                 + str(len(unsearchable)) + " entity(ies) hold no "
+                 "searchable text at all and were not looked in, which "
+                 "is different from finding nothing there.")),
+    }
+
+
+def _entity_names():
+    """The canonical entity list, read from the one place it is defined."""
+    try:
+        import content_engine_search_data as _D
+        return _D.ENTITIES
+    except Exception:                                 # noqa: BLE001
+        return ()
+
+
+# ---------------------------------------------------------------------------
+# 94. THE COMMAND PALETTE
+# ---------------------------------------------------------------------------
+#: Every command the palette can run. `gate` is the important column: a
+#: command that spends money, writes to a live site or reaches a stranger
+#: is marked, and the palette renders that mark. A palette that makes a
+#: destructive action as fast to reach as a navigation is a trap, because
+#: the whole point of a palette is speed.
+COMMANDS = (
+    ("goto", "Jump to a screen", "navigate", "none"),
+    ("crawl", "Crawl my site", "run", "none"),
+    ("inspect", "Ask Google what is indexed", "run", "none"),
+    ("ranks", "Check rankings", "run", "none"),
+    ("observe", "Ask the AI prompts again", "run", "cost"),
+    ("brief", "Write a content brief", "create", "cost"),
+    ("fix", "Apply safe technical fixes", "write", "live site"),
+    ("publish", "Publish a drafted change", "write", "live site"),
+    ("outreach", "Send a link approach", "send", "reaches a person"),
+    ("schedule", "Schedule a recurring report", "send",
+     "standing outbound rule"),
+    ("report", "Build a report", "create", "none"),
+    ("rollback", "Roll an initiative back", "write", "live site"),
+)
+
+#: The gates that mean a human must confirm before it runs.
+GATED = ("live site", "reaches a person", "standing outbound rule")
+
+
+def palette(query=None):
+    """The palette, filtered, with every consequence marked."""
+    q = str(query or "").strip().lower()
+    out = []
+    for cid, label, kind, gate in COMMANDS:
+        if q and q not in cid and q not in label.lower():
+            continue
+        out.append({"id": cid, "label": label, "kind": kind,
+                    "gate": gate, "confirms": gate in GATED,
+                    "why": ("runs immediately" if gate == "none" else
+                            "spends money on a provider" if gate == "cost"
+                            else "stops for confirmation: " + gate)})
+    return {"commands": out, "query": q or None,
+            "gated": sum(1 for x in out if x["confirms"]),
+            "why": ("A palette is fast, and fast is exactly why anything "
+                    "that writes, sends or spends is marked here rather "
+                    "than sitting next to a navigation command looking "
+                    "identical.")}

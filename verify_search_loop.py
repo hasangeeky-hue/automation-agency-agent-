@@ -1001,5 +1001,101 @@ t("no em-dash reaches the data module",
   "\u2014" not in open("content_engine_search_data.py",
                        encoding="utf-8").read())
 
+print("\nL21 BATCH C: THE LOOPS, SEARCH, PALETTE (spec 56-59, 93-94)")
+
+
+class _SR(object):
+    """A store stub for the search gates."""
+
+    def __init__(self, d=None, boom=None):
+        self.d, self.boom = d or {}, boom
+
+    def all(self, k):
+        if self.boom and k == self.boom:
+            raise RuntimeError("table missing")
+        return self.d.get(k, [])
+
+
+_r16 = CORE.Repo(Store())
+t("there are four domain loops", len(SL.LOOPS) == 4)
+t("an unknown loop id does NOT fall back to a default",
+  SL.loop_spec("nope") is None)
+t("every loop's last stage feeds its first",
+  all(SL.loop_spec(l[0])["closes"] for l in SL.LOOPS))
+t("THE CONTENT LOOP TREATS WAITING AS A STAGE",
+  any("wait" in x for x in SL.loop_spec("content")["stages"]))
+t("and says why: three days after publishing measures the weather",
+  "measures the weather" in SL.loop_spec("content")["note"])
+t("EVERY OUTREACH SEND STOPS AT A PERSON",
+  any("behind approval" in x
+      for x in SL.loop_spec("authority")["stages"])
+  and "liability" in SL.loop_spec("authority")["note"])
+t("the AI loop re-asks the same prompts rather than assuming",
+  any("SAME prompts" in x
+      for x in SL.loop_spec("visibility")["stages"]))
+t("a loop nobody has run says so, and that is not 'nothing is wrong'",
+  SL.loop_state("technical")["state"] == "NEVER RUN")
+_ls = SL.loop_state("technical", {"crawl the site": 40,
+                                    "classify what is broken": 12})
+t("A LOOP THAT NEVER CLOSES IS CALLED A QUEUE, NOT DRAWN AS A CIRCLE",
+  _ls["state"] == "NOT YET CLOSED"
+  and "queue rather than a loop" in _ls["why"])
+t("and the most piled-up stage is named",
+  _ls["bottleneck"] == "crawl the site")
+t("once a cycle closes the loop reports CLOSING",
+  SL.loop_state("technical", {"completed_cycles": 5})["state"]
+  == "CLOSING")
+t("an unknown loop refuses to report a state",
+  SL.loop_state("nope")["state"] == "UNKNOWN LOOP")
+t("a one-character query is refused as matching everything",
+  SL.search_all(_SR(), "a")["state"] == "TOO SHORT")
+_sr = _SR({"search_page": [{"url": "https://x.test/guide"},
+                           {"url": "https://x.test/other"}],
+           "search_keyword": [{"keyword": "guide to needles"}]})
+t("global search crosses entity types", SL.search_all(_sr, "guide")
+  ["total"] == 2)
+t("IT NAMES THE ENTITIES IT DID NOT SEARCH",
+  "fact" in SL.search_all(_sr, "guide")["not_searched"])
+t("and a no-match says nobody looked there, which is not the same thing",
+  "different from finding nothing"
+  in SL.search_all(_sr, "zzzz")["why"])
+t("a broken entity is REPORTED, never swallowed into an empty result",
+  SL.search_all(_SR(boom="search_issue"), "guide")["failed"][0]
+  ["entity"] == "issue")
+_pal = SL.palette()
+t("every palette command declares what it will do",
+  all(c["gate"] for c in _pal["commands"]))
+t("PUBLISH AND OUTREACH STOP FOR CONFIRMATION",
+  all([c for c in _pal["commands"] if c["id"] == x][0]["confirms"]
+      for x in ("publish", "outreach")))
+t("and navigation does not, so the gates mean something",
+  not [c for c in _pal["commands"] if c["id"] == "goto"][0]["confirms"])
+t("a command that spends money is marked even though it is not gated",
+  [c for c in _pal["commands"] if c["id"] == "observe"][0]["gate"]
+  == "cost")
+t("the palette says why speed is the risk",
+  "fast is exactly why" in _pal["why"])
+t("the loops board explains pipeline versus loop",
+  "backlog nobody closes" in SS8.loops_board(_r16))
+t("and renders all four", all(l[1] in SS8.loops_board(_r16)
+                              for l in SL.LOOPS))
+t("the search screen explains where it does not look",
+  "nobody looked" in SS8.global_search(_r16))
+t("a short query renders an error with the fix",
+  "at least two characters" in SS8.global_search(_sr, "a"))
+t("the palette screen renders the confirmation label",
+  "Confirm first" in SS8.command_palette(_r16))
+_sec16 = SEO6.seo_section({})
+_pp16 = _Panels()
+_pp16.feed(_sec16)
+for _tab16 in ("seoloops", "seofind"):
+    t("tab " + _tab16 + " is declared",
+      any(x[0] == _tab16 for x in SEO6.TABS))
+    t("AND its panel renders real content: " + _tab16,
+      _pp16.panels.get("spanel-" + _tab16, 0) > 500,
+      "text " + str(_pp16.panels.get("spanel-" + _tab16)))
+t("mounting them created no duplicate id",
+  not [x for x in set(_pp16.ids) if _pp16.ids.count(x) > 1])
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

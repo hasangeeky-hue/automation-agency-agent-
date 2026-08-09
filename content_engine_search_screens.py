@@ -2002,3 +2002,144 @@ border:1px solid var(--so-line);color:var(--so-text2)}
 .ss-cap-n{border-color:var(--so-danger-main);color:var(--so-danger-main);
 text-decoration:line-through}
 </style>"""
+
+
+# ---------------------------------------------------------------------------
+# THE LOOPS, GLOBAL SEARCH AND THE PALETTE (spec 56-59, 93-94)
+# ---------------------------------------------------------------------------
+import content_engine_search_loop as LP  # noqa: E402
+
+
+def loops_board(r, counts=None) -> str:
+    """Spec 56-59. The four domain loops, and whether they close."""
+    c = _D(counts)
+    body = ""
+    for lid, label, question, _st, _tr, _n in LP.LOOPS:
+        spec = LP.loop_spec(lid)
+        st = LP.loop_state(lid, c.get(lid))
+        tone = {"CLOSING": "success", "NOT YET CLOSED": "warning",
+                "NEVER RUN": "neutral"}.get(st["state"], "neutral")
+        stages = "".join(
+            "<div class='ss-stg'><span>" + str(i + 1) + "</span>"
+            + "<b>" + e(name) + "</b>"
+            + "<i>" + (str(n) + " here" if n else "empty") + "</i></div>"
+            for i, (name, n) in enumerate(st.get("stages") or
+                                          [(s, 0) for s in
+                                           spec["stages"]]))
+        body += ("<div class='ss-loop'><p class='ss-loop-h'><b>"
+                 + e(label) + "</b><span class='so-" + tone + "'>"
+                 + e(st["state"]) + "</span></p>"
+                 + "<p class='ss-meta'>" + e(question) + "</p>"
+                 + "<div class='ss-stgs'>" + stages + "</div>"
+                 + "<p class='ss-meta'>Starts on: " + e(spec["trigger"])
+                 + "</p>"
+                 + "<p class='ss-note'>" + e(st["why"]) + "</p>"
+                 + "<p class='ss-note'>" + e(spec["note"]) + "</p>"
+                 + "</div>")
+    return ("<p class='ss-h'>THE LOOPS</p>"
+            + "<p class='ss-note'>Four loops, each ending where it "
+            + "began. A sequence that stops at 'we did the thing' is a "
+            + "pipeline, and a pipeline is what produces a backlog "
+            + "nobody closes. Every one of these is only complete when "
+            + "the change has been verified, observed and "
+            + "classified.</p>" + body)
+
+
+def global_search(r, query=None) -> str:
+    """Spec 93. Search the whole store, and say where you did not look."""
+    if not str(query or "").strip():
+        return ("<p class='ss-h'>SEARCH EVERYTHING</p>"
+                + "<div class='ss-srch'>"
+                + "<input class='ss-in' id='ss-q' placeholder='URL, "
+                + "keyword, issue, prompt, initiative...' "
+                + "onkeyup=\"if(event.key==='Enter')ssSearch()\">"
+                + TK.button("Search", variant="primary", size="compact",
+                            onclick="ssSearch()") + "</div>"
+                + "<p class='ss-note'>Searches the "
+                + str(len(LP.SEARCHABLE)) + " entity(ies) that hold "
+                + "text. The rest hold numbers and dates, and are not "
+                + "searched; an empty result from a place nobody looked "
+                + "is the most misleading answer a search box can "
+                + "give.</p>")
+    res = LP.search_all(r, query)
+    if res["state"] == "TOO SHORT":
+        return ("<p class='ss-h'>SEARCH EVERYTHING</p>"
+                + error("Query too short", e(res["why"]),
+                        "type at least two characters"))
+    rows = "".join(
+        "<tr><td>" + e(_D(h).get("entity")) + "</td>"
+        + "<td>" + e(_D(h).get("field")) + "</td>"
+        + "<td>" + e(_D(h).get("value")) + "</td></tr>"
+        for h in _L(res.get("hits")))
+    fails = "".join(
+        "<li>" + e(_D(f).get("entity")) + ": " + e(_D(f).get("why"))
+        + "</li>" for f in _L(res.get("failed")))
+    return ("<p class='ss-h'>SEARCH EVERYTHING</p>"
+            + "<p class='ss-note'>" + e(res["why"]) + "</p>"
+            + (("<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+                "<th>Entity</th><th>Matched on</th><th>Value</th>"
+                "</tr></thead><tbody>" + rows + "</tbody></table></div>"
+                + ("<p class='ss-note'>Showing "
+                   + str(len(_L(res.get("hits")))) + " of "
+                   + str(res.get("total")) + ".</p>"
+                   if res.get("total", 0) > len(_L(res.get("hits")))
+                   else ""))
+               if rows else "")
+            + "<p class='ss-note'>Looked in: "
+            + e(", ".join(_L(res.get("searched"))) or "nothing")
+            + ". Not searched, because they hold no text: "
+            + e(", ".join(_L(res.get("not_searched"))) or "none")
+            + ".</p>"
+            + (("<p class='ss-h2'>Could not be searched</p>"
+                + "<ul class='ss-ul ss-ul-warn'>" + fails + "</ul>")
+               if fails else ""))
+
+
+def command_palette(r, query=None) -> str:
+    """Spec 94. Every command, with what it will actually do."""
+    pal = LP.palette(query)
+    rows = ""
+    for cmd in pal["commands"]:
+        tone = ("danger" if cmd["confirms"]
+                else "warning" if cmd["gate"] == "cost" else "neutral")
+        rows += ("<div class='ss-cmd'><b>" + e(cmd["label"]) + "</b>"
+                 + "<span class='ss-meta'>" + e(cmd["kind"]) + "</span>"
+                 + "<i class='so-" + tone + "'>" + e(cmd["why"]) + "</i>"
+                 + TK.button("Confirm first" if cmd["confirms"] else "Run",
+                             variant=("danger" if cmd["confirms"]
+                                      else "secondary"),
+                             size="compact",
+                             onclick="ssCmd('" + cmd["id"] + "')")
+                 + "</div>")
+    return ("<p class='ss-h'>COMMAND PALETTE</p>"
+            + "<p class='ss-note'>" + str(len(pal["commands"]))
+            + " command(s), " + str(pal["gated"]) + " of which stop for "
+            + "confirmation. " + e(pal["why"]) + "</p>"
+            + (rows or "<p class='ss-note'>No command matches that.</p>"))
+
+
+CSS += """<style>
+.ss-loop{padding:12px 13px;border-radius:10px;border:1px solid var(--so-line);
+margin:0 0 9px}
+.ss-loop-h{display:flex;justify-content:space-between;align-items:baseline;
+gap:10px;margin:0 0 3px}
+.ss-loop-h b{font-size:12px;letter-spacing:.06em;color:var(--so-text)}
+.ss-loop-h span{font-size:10px;letter-spacing:.07em}
+.ss-stgs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.ss-stg{display:flex;gap:6px;align-items:center;font-size:10px;
+padding:4px 9px;border-radius:7px;border:1px solid var(--so-line);
+color:var(--so-text2)}
+.ss-stg span{width:15px;height:15px;border-radius:50%;display:grid;
+place-items:center;font-size:8px;background:rgba(148,163,184,.2)}
+.ss-stg b{font-weight:500;color:var(--so-text)}
+.ss-stg i{font-style:normal;opacity:.7}
+.ss-srch{display:flex;gap:7px;margin:0 0 8px}
+.ss-in{flex:1;padding:7px 11px;border-radius:8px;font-size:12px;
+border:1px solid var(--so-line);background:var(--so-surface);
+color:var(--so-text)}
+.ss-cmd{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+padding:7px 11px;border-radius:8px;border:1px solid var(--so-line);
+margin:0 0 5px}
+.ss-cmd b{font-size:12px;color:var(--so-text);min-width:170px}
+.ss-cmd i{flex:1;min-width:170px;font-style:normal;font-size:10px}
+</style>"""
