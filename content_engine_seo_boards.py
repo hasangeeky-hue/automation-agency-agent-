@@ -2344,6 +2344,28 @@ def _crawl_of(ctx):
     return c if isinstance(c, dict) else {}
 
 
+def _board_analytics(ctx) -> str:
+    """Spec 44-47, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    c = ctx or {}
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.search_analytics(r, c.get("search_totals"))
+            + SS.search_funnel(r, c.get("funnel_stages"))
+            + SS.business_first(r, c.get("page_conversions")) + "</div>")
+
+
+def _board_agents(ctx) -> str:
+    """Spec 50-51, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    return SS.CSS + "<div class='ss-root'>" + SS.agent_centre(r) + "</div>"
+
+
 def _board_geoai(ctx) -> str:
     """Spec 40-43, mounted."""
     import content_engine_search_screens as SS
@@ -2503,6 +2525,8 @@ _TAB_BOARDS = {
     # THE CLOSED LOOP. Its own tab, because the question it answers -
     # "did any of this actually work" - is not the same question as any
     # other board on this page.
+    "seoanalytics": [("Search Analytics", _board_analytics)],
+    "seoagents": [("Agent Centre", _board_agents)],
     "seogeoai":  [("AI Visibility (GEO)", _board_geoai)],
     "seolinks":  [("Backlinks", _board_links)],
     "seoanswers": [("Answers (AEO)", _board_answers)],
@@ -2556,6 +2580,8 @@ TABS = [
     ("seogeo", "📍", "GEO — Local & Markets"),
     ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
+    ("seoanalytics", "📈", "Search Analytics"),
+    ("seoagents", "🧠", "Agent Centre"),
     ("seogeoai", "🤖", "AI Visibility (GEO)"),
     ("seolinks", "🔗", "Backlinks"),
     ("seoanswers", "❓", "Answers (AEO)"),
@@ -2573,13 +2599,15 @@ TABS = [
 # answering one question, with the tabs as their second level.
 GROUPS = [
     ("act", "③ ACT", "What should I do?",
-     ["seocmd", "seoopp", "seopage", "seowork", "seoloop"]),
+     ["seocmd", "seoopp", "seopage", "seoagents", "seowork",
+      "seoloop"]),
     ("diagnose", "① DIAGNOSE", "What's wrong?",
      ["seoaudit", "seoissues", "seopages", "seotech", "seoonpage"]),
     ("compete", "② COMPETE", "Where do I stand?",
      ["seokw", "seocontent", "seolinks", "seoanswers", "seogeoai",
       "seoaeo", "seogen", "seogeo", "seooff"]),
-    ("sources", "④ SOURCES", "Where does the data come from?", ["seosrc"]),
+    ("sources", "④ SOURCES", "Where does the data come from?",
+     ["seoanalytics", "seosrc"]),
 ]
 
 _TAB_CSS = """<style>
@@ -2684,6 +2712,8 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
         "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
         "seowork": SCR.workorders_screen(ctx, []),
+        "seoanalytics": _board_analytics(ctx),
+        "seoagents": _board_agents(ctx),
         "seogeoai": _board_geoai(ctx),
         "seolinks": _board_links(ctx),
         "seoanswers": _board_answers(ctx),

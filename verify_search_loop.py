@@ -683,5 +683,60 @@ t("it sits under COMPETE",
 t("mounting GEO created no duplicate id",
   not [x for x in set(_pp11.ids) if _pp11.ids.count(x) > 1])
 
+print("\nL17 PHASE 12: ANALYTICS, FUNNEL, AGENT CENTRE (spec 44-47, 50-51)")
+_r12 = CORE.Repo(Store())
+t("analytics refuses to exist until clicks and money are both joined",
+  "put clicks next to money" in SS8.search_analytics(_r12))
+_an = SS8.search_analytics(_r12, {"clicks": 900, "sessions": 740,
+                                  "conversions": 12, "revenue": 4200})
+t("it names Search Console AND GA4 separately",
+  "Search Console" in _an and "GA4" in _an)
+t("AND SAYS THE TWO WILL NOT MATCH, rather than picking one",
+  "will not match" in _an and "neither is" in _an)
+t("one measured stage is not a funnel",
+  "at least two measured" in SS8.search_funnel(_r12, {"impressions": 100}))
+_fn = SS8.search_funnel(_r12, {"impressions": 40000, "clicks": 1600,
+                               "organic_sessions": 1400,
+                               "conversions": 21})
+t("each rate is stated against the stage above it",
+  "% of impressions" in _fn)
+t("UNMEASURED STAGES ARE LEFT OUT, NOT ESTIMATED",
+  "LEFT OUT rather than" in _fn and "Revenue" in _fn)
+t("every funnel stage names the system that measured it",
+  "source: GA4" in _fn and "source: Google Search Console" in _fn)
+t("business-first refuses to be a traffic list",
+  "traffic list wearing a business label" in SS8.business_first(_r12))
+_bf = SS8.business_first(_r12, [{"url": "/big", "clicks": 10000,
+                                 "conversions": 8},
+                                {"url": "/small", "clicks": 2000,
+                                 "conversions": 94},
+                                {"url": "/unknown", "clicks": 500}])
+t("A PAGE WITH FEWER CLICKS AND MORE CONVERSIONS RANKS HIGHER",
+  _bf.index("/small") < _bf.index("/big"))
+t("and a page with no conversion data says so instead of showing zero",
+  "no conversions joined" in _bf)
+t("the agent centre lists agents that are declared but not wired",
+  "declared, not wired" in SS8.agent_centre(_r12))
+t("and the wired count is stated honestly",
+  str(len(SS8.AGENTS_WIRED)) + " of " + str(len(SS8.AGENTS))
+  in SS8.agent_centre(_r12))
+t("fewer agents are wired than declared, and the screen admits it",
+  len(SS8.AGENTS_WIRED) < len(SS8.AGENTS))
+_sec12 = SEO6.seo_section({"search_totals": {"clicks": 900}})
+_pp12 = _Panels()
+_pp12.feed(_sec12)
+for _tab12 in ("seoanalytics", "seoagents"):
+    t("tab " + _tab12 + " is declared",
+      any(x[0] == _tab12 for x in SEO6.TABS))
+    t("AND its panel renders real content: " + _tab12,
+      _pp12.panels.get("spanel-" + _tab12, 0) > 500,
+      "text " + str(_pp12.panels.get("spanel-" + _tab12)))
+t("the agent centre sits under ACT",
+  "seoagents" in dict((g[0], g[3]) for g in SEO6.GROUPS)["act"])
+t("analytics sits under SOURCES, beside where the data comes from",
+  "seoanalytics" in dict((g[0], g[3]) for g in SEO6.GROUPS)["sources"])
+t("mounting them created no duplicate id",
+  not [x for x in set(_pp12.ids) if _pp12.ids.count(x) > 1])
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

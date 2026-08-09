@@ -1131,3 +1131,198 @@ def ai_visibility_detail(r, row=None) -> str:
                if runs else
                "<p class='ss-note'>No observation is recorded for this "
                "prompt yet.</p>"))
+
+
+# ---------------------------------------------------------------------------
+# ANALYTICS AND THE FUNNEL (spec 44-47)
+# ---------------------------------------------------------------------------
+#: Spec 46. The funnel, in order, with the source each stage comes from.
+#: Two different systems measure these, and the screen says which.
+FUNNEL = (("Impressions", "Google Search Console"),
+          ("Clicks", "Google Search Console"),
+          ("Organic sessions", "GA4"),
+          ("Engaged sessions", "GA4"),
+          ("Conversions", "GA4"),
+          ("Revenue", "GA4 / CRM"))
+
+
+def search_analytics(r, totals=None) -> str:
+    """Spec 44-45. Search performance joined to business outcome."""
+    t = _D(totals)
+    if not t:
+        return ("<p class='ss-h'>SEARCH ANALYTICS</p>"
+                + empty("No search analytics",
+                        "Search Console and GA4 are not both joined yet. "
+                        "This screen exists to put clicks next to money, "
+                        "so it shows nothing until both sides are real.",
+                        "Connect Google", "nav('map')"))
+    return ("<p class='ss-h'>SEARCH ANALYTICS</p><div class='ss-kpis'>"
+            + metric("Organic clicks", t.get("clicks"),
+                     source="Google Search Console")
+            + metric("Organic sessions", t.get("sessions"), source="GA4")
+            + metric("Conversions", t.get("conversions"), source="GA4")
+            + metric("Revenue", t.get("revenue"), source="GA4 / CRM")
+            + metric("Avg position", t.get("position"),
+                     source="Rank tracker", polarity="negative")
+            + "</div>"
+            + "<p class='ss-note'>Clicks come from Search Console and "
+            + "sessions from GA4. They will not match, and neither is "
+            + "wrong: they count different things at different moments. "
+            + "This screen shows both rather than picking one and calling "
+            + "it traffic.</p>")
+
+
+def search_funnel(r, stages=None) -> str:
+    """Spec 46. Where search traffic is lost, with each rate named."""
+    d = _D(stages)
+    have = [(label, src, d.get(label.lower().replace(" ", "_")))
+            for label, src in FUNNEL]
+    real = [x for x in have if x[2] not in (None, "")]
+    if len(real) < 2:
+        return ("<p class='ss-h'>SEARCH FUNNEL</p>"
+                + empty("Not enough stages measured",
+                        "A funnel needs at least two measured stages. "
+                        "Filling the gaps with estimates would produce a "
+                        "shape that looks like insight and is arithmetic "
+                        "on invented numbers.",
+                        "Connect Google", "nav('map')"))
+    top = float(real[0][2]) or 1.0
+    body, prev = "", None
+    for label, src, val in real:
+        v = float(val)
+        rate = ""
+        if prev is not None and prev > 0:
+            rate = f"{v / prev * 100:.2f}% of {prev_label.lower()}"
+        body += ("<div class='ss-fun'><span>" + e(label) + "</span>"
+                 + "<span class='ss-funbar'><span style='width:"
+                 + str(max(2, int(v / top * 100))) + "%'></span></span>"
+                 + "<i>" + _n(v) + "</i>"
+                 + "<p>" + e(rate) + " &middot; source: " + e(src)
+                 + "</p></div>")
+        prev, prev_label = v, label
+    missing = [x[0] for x in have if x[2] in (None, "")]
+    return ("<p class='ss-h'>SEARCH FUNNEL</p>" + body
+            + (("<p class='ss-note'>" + str(len(missing)) + " stage(s) "
+                + "are not measured and are LEFT OUT rather than "
+                + "estimated: " + e(", ".join(missing)) + ". A funnel "
+                + "with an invented middle is worse than a short "
+                + "one.</p>") if missing else ""))
+
+
+def business_first(r, pages=None) -> str:
+    """Spec 47. Traffic is not the ranking; conversion value is."""
+    items = _L(pages)
+    if not items:
+        return ("<p class='ss-h'>BUSINESS-FIRST PRIORITY</p>"
+                + empty("No conversion data joined",
+                        "Without conversions per page, every priority "
+                        "list is a traffic list wearing a business label. "
+                        "Join GA4 conversions to see this.",
+                        "Connect GA4", "nav('map')"))
+    rows = []
+    for x in items:
+        d = _D(x)
+        clicks = float(d.get("clicks") or 0)
+        conv = d.get("conversions")
+        if conv is None:
+            rows.append((None, d, "no conversions joined to this page"))
+            continue
+        conv = float(conv)
+        cvr = (conv / clicks * 100) if clicks else None
+        rows.append((conv, d,
+                     (f"{int(conv)} conversion(s) from {int(clicks)} "
+                      f"clicks" + (f", {cvr:.2f}%" if cvr else ""))))
+    rows.sort(key=lambda z: -(z[0] if z[0] is not None else -1))
+    body = "".join(
+        "<tr><td>" + e(str(_D(d).get("url"))[:52]) + "</td>"
+        + "<td>" + _n(_D(d).get("clicks")) + "</td>"
+        + "<td>" + (_n(c) if c is not None else "not measured") + "</td>"
+        + "<td>" + e(why) + "</td></tr>" for c, d, why in rows[:30])
+    return ("<p class='ss-h'>BUSINESS-FIRST PRIORITY</p>"
+            + "<p class='ss-note'>Ranked by conversions, not clicks. A "
+            + "page with ten thousand clicks and eight conversions sits "
+            + "below one with two thousand clicks and ninety-four, which "
+            + "is the whole point.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "<th>URL</th><th>Clicks</th><th>Conversions</th>"
+            + "<th>Basis</th></tr></thead><tbody>" + body
+            + "</tbody></table></div>")
+
+
+# ---------------------------------------------------------------------------
+# AGENT CENTRE (spec 50-51)
+# ---------------------------------------------------------------------------
+#: Spec 50. The agents this OS actually has. Naming an agent that does
+#: not exist is how an org chart becomes a lie.
+AGENTS = ("SearchOrchestrator", "TechnicalAgent", "IndexabilityAgent",
+          "KeywordAgent", "RankAgent", "SERPAgent", "CompetitorAgent",
+          "ContentAgent", "InternalLinkAgent", "SchemaAgent",
+          "BacklinkAgent", "AEOAgent", "GEOAgent", "EntityAgent",
+          "AnalyticsAgent", "ExecutionAgent", "VerificationAgent")
+
+#: Which of those are wired to real code today. The gap is the honest
+#: work-remaining list, and the screen prints it rather than hiding it.
+AGENTS_WIRED = ("RankAgent", "ContentAgent", "ExecutionAgent",
+                "VerificationAgent")
+
+
+def agent_centre(r) -> str:
+    """Spec 50-51. Every run, its budget, and what it cost."""
+    runs = r.all("search_agent_runs")
+    wired = ("<div class='ss-doc'>"
+             + "".join(
+                 "<div class='ss-docrow'><span>" + e(a) + "</span><b>"
+                 + ("wired" if a in AGENTS_WIRED else "declared, not wired")
+                 + "</b></div>" for a in AGENTS)
+             + "</div>"
+             + "<p class='ss-note'>" + str(len(AGENTS_WIRED)) + " of "
+             + str(len(AGENTS)) + " agents are wired to real code. The "
+             + "rest are named because the spec names them, and they say "
+             + "so rather than appearing to work.</p>")
+    if not runs:
+        return ("<p class='ss-h'>AGENT CENTRE</p>"
+                + empty("No agent has run",
+                        "Nothing has been dispatched yet. Runs appear "
+                        "here with their budget and their cost the "
+                        "moment one starts.",
+                        "", "")
+                + "<p class='ss-h'>AGENTS</p>" + wired)
+    body = ""
+    for x in sorted(runs, key=lambda y: str(y.get("started_at") or ""),
+                    reverse=True)[:25]:
+        d = _D(x)
+        u, b = _D(d.get("used")), _D(d.get("budget"))
+        tone = {"ESCALATED": "danger", "RUNNING": "info"}.get(
+            d.get("state"), "neutral")
+        body += ("<tr><td>" + e(d.get("agent")) + "</td>"
+                 + "<td>" + e(str(d.get("objective"))[:44]) + "</td>"
+                 + "<td class='so-" + tone + "'>" + e(d.get("state"))
+                 + "</td>"
+                 + "<td>" + str(u.get("max_steps", 0)) + " / "
+                 + str(b.get("max_steps", 0)) + "</td>"
+                 + "<td>" + str(round(u.get("max_cost_usd", 0), 3)) + " / "
+                 + str(b.get("max_cost_usd", 0)) + "</td>"
+                 + "<td>" + e(", ".join(_L(d.get("escalation")))
+                              or "none") + "</td></tr>")
+    return ("<p class='ss-h'>AGENT CENTRE</p>"
+            + "<p class='ss-note'>" + str(len(runs)) + " run(s). Every "
+            + "one carries a hard budget; exhausting it escalates to you "
+            + "rather than looping.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "<th>Agent</th><th>Objective</th><th>State</th>"
+            + "<th>Steps</th><th>Cost USD</th><th>Escalated on</th>"
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>"
+            + "<p class='ss-h'>AGENTS</p>" + wired)
+
+
+CSS += """<style>
+.ss-fun{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:0 0 7px}
+.ss-fun>span:first-child{width:130px;font-size:12px;color:var(--so-text)}
+.ss-fun i{font-style:normal;font-size:12px;color:var(--so-text);
+font-variant-numeric:tabular-nums}
+.ss-fun p{width:100%;margin:0 0 0 139px;font-size:10px;
+color:var(--so-text2)}
+.ss-funbar{flex:1;min-width:120px;height:10px;border-radius:5px;
+background:rgba(148,163,184,.18);overflow:hidden}
+.ss-funbar span{display:block;height:100%;background:var(--so-primary-main)}
+</style>"""
