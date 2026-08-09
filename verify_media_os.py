@@ -803,5 +803,55 @@ t("and the drafts carry the winning attributes",
   any(c.get("angle") == "pain" for c in r5.all("creatives")
       if str(c.get("name", "")).startswith("Brief")))
 
+print("\nG31 THE SCREENS DRAW WHAT THE SPEC DRAWS")
+sec2 = MCTR.section({"media_auto_level": "observe"})
+t("the command centre opens with the BIG FIGURES, not a table",
+  "MEDIA COMMAND CENTER" in sec2 and "mc-bigrow" in sec2
+  and sec2.count("mc-big") >= 5)
+t("the AI STATUS strip is there",
+  "campaigns monitored" in sec2 and "require attention" in sec2
+  and "scaling opportunities" in sec2 and "tracking anomalies" in sec2)
+t("TODAY'S ACTIONS render as glyph cards, with an honest empty state",
+  "TODAY&#x27;S ACTIONS" in sec2
+  and ("mc-act " in sec2 or "quiet is a finding" in sec2))
+t("the action glyph map covers every order code",
+  set(MCTR.GLYPH) == set(MO.CODES))
+t("the wizard is a STEPPER: eight panes, one visible at a time",
+  sec2.count("id='mc-wstep-") == 8 and "mc-wstep mc-on" in sec2
+  and "function mcStep" in sec2)
+t("step one asks the spec's question with radio choices",
+  "What are you trying to achieve?" in sec2
+  and sec2.count("name='mc-cobj'") == len(M.OBJECTIVES))
+t("step two shows each platform's connection and capability",
+  sec2.count("name='mc-cprov'") == len(M.PROVIDERS)
+  and "not connected" in sec2)
+t("step three shows the AI allocation with bars and the why",
+  "mc-allocbar" in sec2)
+t("the campaign detail screen exists per campaign, spec section 33",
+  "function mcDetail" in sec2)
+t("the launch centre carries a Preview, spec section 36",
+  "mc-preview" in sec2 and "function mcToggle" in sec2)
+t("the WHAT IF panel is drawn as its own document",
+  "WHAT IF?" in sec2)
+t("the audit renders AI ACTION cards, spec section 48",
+  "AI ACTION" in sec2 or "before, after, reason" in sec2)
+r6 = CORE.Repo(Store())
+M.save_account(r6, "google", "z1", name="G")
+_cz = M.save_campaign(r6, name="Z", objective="LEADS", provider="google",
+                      budget_amount=5)
+import content_engine_media_plan as MPz
+MPz.save_plan(r6, objective="LEADS", budget=500, period_start="2026-09-01",
+              period_end="2026-09-30")
+_pd = MCTR._plan_doc(r6, r6.all("media_plans")[0])
+t("a saved plan renders as the MEDIA PLAN document, spec section 34",
+  "MEDIA PLAN" in _pd and "Expected" in _pd
+  and ("Assumptions" in _pd or "no history to range on" in _pd))
+_dt = MCTR._detail(r6, r6.one("media_campaigns", _cz["id"]),
+                   {"media_orders": []})
+t("the detail carries trend, audiences, creatives, placements, "
+  "diagnosis and history",
+  all(w in _dt for w in ("Trend", "Audiences", "Creatives", "Placements",
+                         "AI diagnosis", "Execution history")))
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)

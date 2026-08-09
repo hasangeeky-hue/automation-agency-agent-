@@ -37,7 +37,7 @@ import content_engine_media_creative as MC
 import content_engine_media_os as M
 import content_engine_media_perf as MF
 import content_engine_media_plan as MP
-from content_engine_os_core import _D
+from content_engine_os_core import _D, _L
 
 log = logging.getLogger("content_engine.media_center")
 
@@ -184,6 +184,42 @@ def _orders_board(ctx, limit=12) -> str:
 # ---------------------------------------------------------------------------
 # THE SCREENS
 # ---------------------------------------------------------------------------
+#: Which glyph an action wears in TODAY'S ACTIONS. Spec section 32:
+#: scale up, reduce, tracking warning, create creative.
+GLYPH = {"budget_shift": "↑", "resume_campaign": "↑", "budget_allocate": "↑",
+         "pause_campaign": "↓", "bid_change": "↓", "audience_exclude": "↓",
+         "negative_keyword": "↓",
+         "utm_fix": "⚠", "tag_missing": "⚠", "tag_paused": "⚠",
+         "pixel_missing": "⚠", "event_silent": "⚠", "landing_fix": "⚠",
+         "creative_rotate": "＋", "launch_campaign": "＋"}
+
+
+def _action_card(o) -> str:
+    """One of TODAY'S ACTIONS: glyph, sentence, confidence, decision."""
+    ev = o.get("evidence") or {}
+    conf = o.get("confidence")
+    g = GLYPH.get(o.get("code"), "•")
+    cls = {"↑": "up", "↓": "down", "⚠": "warn", "＋": "make"}.get(g, "flat")
+    return (
+        f"<div class='mc-act mc-act-{cls}'>"
+        f"<span class='mc-glyph'>{g}</span>"
+        f"<div class='mc-actbody'>"
+        f"<b>{e(o.get('say'))[:120]}</b>"
+        f"<span>{e(ev.get('metric', ''))} against "
+        f"{e(ev.get('threshold', ''))} over {e(ev.get('window', ''))}"
+        f"</span>"
+        f"<span>Confidence "
+        + (f"{conf:.0%} ({e(o.get('confidence_basis', ''))})"
+           if isinstance(conf, (int, float)) else "not stated")
+        + f" &middot; risk {e(o.get('risk') or '-')}"
+          f" &middot; {e(o.get('expected_effect') or '')}</span></div>"
+        f"<div class='mc-actbtns'>"
+        f"<button class='mc-btn' onclick=\"mediaApprove('{e(o.get('id'))}'"
+        f",this)\">Approve</button>"
+        f"<button class='mc-btn mc-go' onclick=\"mediaRun('{e(o.get('id'))}'"
+        f",this)\">Execute</button></div></div>")
+
+
 def s_cmd(r, ctx) -> str:
     try:
         sm = MF.summary(r)
@@ -192,60 +228,98 @@ def s_cmd(r, ctx) -> str:
                     f"<p class='mc-empty'>the summary could not be computed: "
                     f"{e(type(ex).__name__)}</p>")
     cpa, roas = sm.get("cpa") or {}, sm.get("roas") or {}
-    kpis = ("<div class='mc-kpis'>"
-            + kpi("Spend, 30d", _n(sm.get("spend")))
-            + kpi("Conversions", _n(sm.get("conversions")))
-            + kpi("CPA", _n(cpa.get("value")), cpa.get("of") or "")
-            + kpi("ROAS", _n(roas.get("value")), roas.get("of") or "")
-            + kpi("Days with data", _n(sm.get("days_with_data")))
-            + "</div>")
-    act = sm.get("needs_action") or []
-    watch = sm.get("watching") or []
-    nj = sm.get("not_judged") or []
-    acts = (table(("severity", "campaign", "what", "evidence"),
-                  [(a["severity"].upper(), a["name"], a["means"],
-                    a["evidence"][:120]) for a in (act + watch)[:10]],
-            "No campaign has broken its own baseline. Quiet is a finding.")
-            if (act or watch) else
-            "<p class='mc-empty'>No campaign has broken its own baseline"
-            + (f"; {len(nj)} cannot be judged yet for lack of history"
-               if nj else "") + ". Quiet is a finding.</p>")
-    disputed = sm.get("most_disputed") or []
-    disp = table(("campaign", "spread", "why"),
-                 [(d["name"], d["spread"], d["why"][:110])
-                  for d in disputed],
-                 "no conversion has an attributable touch yet")
     biz = {}
     try:
         import content_engine_api as A
         biz = MF.business(r, A.get_store())
     except Exception:
         biz = {}
-    if biz.get("ok"):
-        bhtml = ("<div class='mc-kpis'>"
-                 + kpi("Revenue tracked", _n(biz.get("revenue")))
-                 + kpi("Spend", _n(biz.get("spend")))
-                 + kpi("Gross profit", _n(biz.get("gross_profit")),
-                       f"at {biz.get('margin_pct')}% margin")
-                 + "</div>"
-                 + table(("campaign", "spend", "revenue", "gross profit",
-                          "ROAS", "flag"),
-                         [(x["name"], _n(x["spend"]), _n(x["revenue"]),
-                           _n(x["gross_profit"]), _n(x["roas"]),
-                           x["flag"] or "-") for x in
-                          (biz.get("rows") or [])[:10]])
-                 + f"<p class='mc-note'>{e(biz.get('message', ''))}</p>")
-    else:
-        bhtml = ("<p class='mc-empty'>" + e(biz.get("message")
-                 or "the business view could not be computed") + "</p>"
-                 "<button class='mc-btn' onclick='openEcon()'>Set unit "
-                 "economics</button>")
-    return (_band(ctx)
-            + card("The numbers", kpis, "30 days, denominators attached")
-            + card("What the business keeps", bhtml,
+    # THE BIG FIGURES, spec section 32: revenue, spend, blended ROAS,
+    # blended CPA, conversions. Denominator under each, absence as absence.
+    ro30 = {}
+    try:
+        ro30 = MF.rollup(r, days=30)["totals"]
+    except Exception:
+        pass
+
+    def big(label, v, sub=""):
+        return ("<div class='mc-big'><span class='mc-bigk'>" + e(label)
+                + "</span><b>" + (_n(v) if not isinstance(v, str) else e(v))
+                + "</b><span class='mc-bigs'>" + e(sub) + "</span></div>")
+
+    figures = ("<div class='mc-bigs30'>MEDIA COMMAND CENTER &middot; last "
+               "30 days</div><div class='mc-bigrow'>"
+               + big("Revenue", ro30.get("conversion_value"),
+                     "tracked conversion value")
+               + big("Spend", sm.get("spend"), "")
+               + big("Blended ROAS", roas.get("value"),
+                     roas.get("of") or "nothing to measure yet")
+               + big("Blended CPA", cpa.get("value"),
+                     cpa.get("of") or "nothing to measure yet")
+               + big("Conversions", sm.get("conversions"), "")
+               + (big("Gross profit", biz.get("gross_profit"),
+                      f"at {biz.get('margin_pct')}% margin")
+                  if biz.get("ok") else
+                  big("Gross profit", None, "set your margin in unit "
+                                            "economics"))
+               + "</div>")
+    # AI STATUS, spec section 32.
+    camps = r.all("media_campaigns")
+    monitored = sum(1 for c in camps
+                    if c.get("state") in ("ACTIVE", "PAUSED", "SCHEDULED"))
+    act = sm.get("needs_action") or []
+    watch = sm.get("watching") or []
+    nj = sm.get("not_judged") or []
+    orders_open = [o for o in (ctx.get("media_orders") or ())
+                   if o.get("status") == "open"]
+    scale_ops = sum(1 for o in orders_open
+                    if GLYPH.get(o.get("code")) == "↑")
+    track = sum(1 for o in orders_open if GLYPH.get(o.get("code")) == "⚠")
+    status = ("<div class='mc-statrow'>"
+              + "".join(f"<div class='mc-stat'><b>{n}</b><span>{e(lab)}"
+                        f"</span></div>" for n, lab in (
+                            (monitored, "campaigns monitored"),
+                            (len(act), "require attention"),
+                            (scale_ops, "scaling opportunities"),
+                            (track, "tracking anomalies"),
+                            (len(watch), "on watch"),
+                            (len(nj), "too new to judge")))
+              + "</div>")
+    # TODAY'S ACTIONS, spec section 32: cards with glyphs, not a table.
+    todays = ("".join(_action_card(o) for o in orders_open[:8])
+              or "<p class='mc-empty'>Nothing needs a decision right now. "
+                 "The agent writes an action card here when a rule fires "
+                 "with full evidence; quiet is a finding.</p>")
+    if act and not orders_open:
+        todays += ("<p class='mc-note'>anomalies stand without verdicts; "
+                   "press 'Judge baselines now' above to turn them into "
+                   "action cards</p>")
+    disputed = sm.get("most_disputed") or []
+    disp = table(("campaign", "spread", "why"),
+                 [(d["name"], d["spread"], d["why"][:110])
+                  for d in disputed],
+                 "no conversion has an attributable touch yet")
+    losers = [x for x in (biz.get("rows") or []) if x.get("flag")]
+    biznote = (f"<p class='mc-note'>{e(biz.get('message', ''))}</p>"
+               + (table(("campaign", "spend", "revenue", "gross profit",
+                         "ROAS"),
+                        [(x["name"], _n(x["spend"]), _n(x["revenue"]),
+                          _n(x["gross_profit"]), _n(x["roas"]))
+                         for x in losers[:5]])
+                  if losers else "")
+               if biz.get("ok") else
+               "<p class='mc-empty'>" + e(biz.get("message")
+               or "profit needs your margin") + "</p>"
+               "<button class='mc-btn' onclick='openEcon()'>Set unit "
+               "economics</button>")
+    return (figures
+            + card("AI STATUS", status)
+            + _band(ctx)
+            + card("TODAY'S ACTIONS", todays,
+                   "each card carries its evidence, confidence and risk; "
+                   "nothing runs without your click")
+            + card("What the business keeps", biznote,
                    "ROAS is a platform number; profit is yours")
-            + card("Needs you today", acts)
-            + card("Your approval queue", _orders_board(ctx))
             + card("Where the attribution models disagree most", disp,
                    "any single number you quote for these is a choice"))
 
@@ -257,7 +331,9 @@ def s_camps(r, ctx) -> str:
     for c in camps[:60]:
         w = MP.wizard_state(r, c.get("id"))
         rows.append((
-            e(c.get("name")), e(c.get("provider") or "-"),
+            f"<a class='mc-link' onclick=\"mcDetail('{e(c.get('id'))}')\">"
+            f"{e(c.get('name'))}</a>",
+            e(c.get("provider") or "-"),
             e(c.get("objective")), e(c.get("state")),
             _money(c.get("budget_amount"), c.get("currency") or "EUR")
             + " " + e(str(c.get("budget_type") or "").lower()),
@@ -266,11 +342,15 @@ def s_camps(r, ctx) -> str:
             f"{{campaign_id:'{e(c.get('id'))}'}},this)\">Validate</button> "
             f"<button class='mc-btn mc-go' onclick=\"mcTab('launch')\">"
             f"Pre-flight</button>"))
-    body = table(("campaign", "platform", "objective", "state", "budget",
-                  "wizard", "actions"), rows,
-                 "No campaigns in the canonical model yet. Start one under "
-                 "New Campaign; a sync will also pull what already runs on "
-                 "a connected platform.")
+    body = (table(("campaign", "platform", "objective", "state", "budget",
+                   "wizard", "actions"), rows,
+                  "No campaigns in the canonical model yet. Start one under "
+                  "New Campaign; a sync will also pull what already runs on "
+                  "a connected platform.")
+            + "<p class='mc-note'>click a campaign name for the deep "
+              "view: trend, audiences, creatives, placements, diagnosis "
+              "and execution history</p>"
+            + "".join(_detail(r, c, ctx) for c in camps[:8]))
     st = [s for s in (ctx.get("sync_runs") or ())][:1]
     sync = ("<button class='mc-btn' onclick=\"mcPost('/mediaos/sync',{},this)\">"
             "Sync with the platforms now</button>"
@@ -294,79 +374,326 @@ def s_camps(r, ctx) -> str:
             + card("Synchronisation", sync))
 
 
+def _wpane(i, key, label, why, body, *, last=False) -> str:
+    nav = ("<div class='mc-wnav'>"
+           + (f"<button class='mc-btn' onclick='mcStep({i - 1})'>&larr; "
+              f"Back</button>" if i > 0 else "")
+           + (f"<button class='mc-btn mc-go' onclick='mcStep({i + 1})'>"
+              f"Next &rarr;</button>" if not last else "")
+           + "</div>")
+    return (f"<div class='mc-wstep{' mc-on' if i == 0 else ''}' "
+            f"id='mc-wstep-{i}'>"
+            f"<p class='mc-wtitle'>STEP {i + 1} &middot; {e(label)}</p>"
+            f"<p class='mc-cs'>{e(why)}</p>{body}{nav}</div>")
+
+
 def s_wiz(r, ctx) -> str:
-    steps = "".join(
-        f"<div class='mc-step'><b>{i + 1}</b><div><p>{e(lab)}</p>"
-        f"<span>{e(why)}</span></div></div>"
-        for i, (_k, lab, why) in enumerate(MP.WIZARD_STEPS))
-    plats = []
+    """The 8-step wizard, ONE STEP AT A TIME. The spec's exact words:
+    do not put the entire campaign configuration into one giant form."""
+    drafts = [c for c in r.all("media_campaigns")
+              if c.get("state") in ("DRAFT", "VALIDATION_FAILED")]
+    drafts.sort(key=lambda c: str(c.get("updated_at") or ""), reverse=True)
+    draft = drafts[0] if drafts else None
+    w = MP.wizard_state(r, draft.get("id")) if draft else None
+    rail = "".join(
+        f"<button class='mc-dot{' mc-don' if w and w['steps'][i]['done'] else ''}' "
+        f"onclick='mcStep({i})' title='{e(lab)}'>{i + 1}</button>"
+        for i, (_k, lab, _why) in enumerate(MP.WIZARD_STEPS))
+    header = ("<div class='mc-wrail'>" + rail + "</div>"
+              + (f"<p class='mc-note'>Building: <b>{e(draft.get('name'))}"
+                 f"</b> &middot; {w['complete']} of {w['total']} steps done. "
+                 f"{e((w.get('next') or {}).get('why') or 'ready')}</p>"
+                 if draft else
+                 "<p class='mc-note'>No draft yet. Steps 1 to 3 create "
+                 "one; everything is read from the record, so closing the "
+                 "tab loses nothing.</p>"))
+    S = MP.WIZARD_STEPS
+    panes = []
+    # STEP 1 - Objective: radio choices, then the KPI, per spec section 9.
+    objs = "".join(
+        f"<label class='mc-radio'><input type='radio' name='mc-cobj' "
+        f"value='{e(o)}'{' checked' if o == 'LEADS' else ''}>"
+        f"<b>{e(o.title().replace('_', ' '))}</b></label>"
+        for o in M.OBJECTIVES)
+    kpis = "".join(f"<option value='{e(k)}'>{e(k)}</option>" for k in MP.KPIS)
+    panes.append(_wpane(
+        0, S[0][0], S[0][1], S[0][2],
+        "<p class='mc-wq'>What are you trying to achieve?</p>"
+        f"<div class='mc-radios'>{objs}</div>"
+        f"<div class='mc-form'><label>Primary KPI"
+        f"<select id='mc-ckpi'>{kpis}</select></label>"
+        "<label>Campaign name<input id='mc-cname' "
+        "placeholder='Autumn leads DE'></label></div>"))
+    # STEP 2 - Platforms: connection status + what each can do.
+    prows = []
     for p in M.PROVIDERS:
         live, why = M.Adapter(p).available()
         cannot = [o for o in M.OBJECTIVES if not M.supports(p, o)["ok"]]
-        plats.append((e(p), "✓ connected" if live else "not connected",
-                      e(M.LEVEL_WORDS.get(p, "ad group")),
-                      e(", ".join(cannot) or "all objectives"), e(why)[:80]))
-    cap = table(("platform", "status", "middle level is called",
-                 "cannot do", "detail"), plats)
-    objs = "".join(f"<option value='{e(o)}'>{e(o)}</option>"
-                   for o in M.OBJECTIVES)
-    kpis = "".join(f"<option value='{e(k)}'>{e(k)}</option>" for k in MP.KPIS)
-    provs = "".join(f"<option value='{e(p)}'>{e(p)}</option>"
-                    for p in M.PROVIDERS)
-    form = (
-        "<div class='mc-form'>"
-        "<label>Name<input id='mc-cname' placeholder='Autumn leads DE'>"
-        "</label>"
-        f"<label>Objective<select id='mc-cobj'>{objs}</select></label>"
-        f"<label>Primary KPI<select id='mc-ckpi'>{kpis}</select></label>"
-        f"<label>Platform<select id='mc-cprov'>{provs}</select></label>"
-        "<label>Budget type<select id='mc-cbt'>"
-        "<option value='DAILY'>DAILY</option>"
-        "<option value='LIFETIME'>LIFETIME</option></select></label>"
-        "<label>Budget amount<input id='mc-cbud' type='number' min='0' "
-        "placeholder='50'></label>"
-        "<label>Start (optional)<input id='mc-cstart' type='date'></label>"
-        "<label>End (optional)<input id='mc-cend' type='date'></label>"
-        "<button class='mc-btn mc-go' onclick='mcNewCampaign(this)'>"
-        "Save draft (steps 1-3)</button>"
-        "<p class='mc-note'>Saving costs nothing. The draft appears under "
-        "Campaigns; audience, creative and tracking attach below; launch "
-        "happens in the Launch Centre behind the pre-flight.</p></div>")
-    drafts = [c for c in r.all("media_campaigns")
-              if c.get("state") in ("DRAFT", "VALIDATION_FAILED")]
-    cont = []
-    for c in drafts[:20]:
-        w = MP.wizard_state(r, c.get("id"))
-        nxt = w.get("next") or {}
-        cont.append((e(c.get("name")), f"{w['complete']}/{w['total']}",
-                     e(nxt.get("label") or "Review"),
-                     e(nxt.get("why") or "everything is attached"),
-                     _attach_controls(r, c)))
-    contin = table(("draft", "done", "next step", "why", "attach"), cont,
-                   "no drafts in progress")
-    return (card("The eight steps",
-                 f"<div class='mc-steps'>{steps}</div>",
-                 "read from the record, so closing the tab loses nothing")
-            + card("Step 2 first: what each platform can actually do", cap)
-            + card("Start a draft", form)
-            + card("Continue a draft", contin))
+        prows.append(
+            f"<label class='mc-radio'><input type='radio' name='mc-cprov' "
+            f"value='{e(p)}'{' checked' if p == 'google' else ''}>"
+            f"<b>{e(p.title())}</b>"
+            f"<i>{'✓ Connected' if live else 'not connected'}</i>"
+            f"<span>{e('cannot do: ' + ', '.join(cannot) if cannot else 'all objectives')}"
+            f" &middot; calls the middle level a "
+            f"{e(M.LEVEL_WORDS.get(p, 'ad group'))}</span></label>")
+    panes.append(_wpane(1, S[1][0], S[1][1], S[1][2],
+                        "<div class='mc-radios'>" + "".join(prows)
+                        + "</div><p class='mc-note'>a platform that is not "
+                          "connected can still be planned; the launch order "
+                          "holds until its key exists</p>"))
+    # STEP 3 - Budget, with the AI allocation and its WHY.
+    alloc = MP.allocate(r, 3000)
+    ahtml = ("".join(
+        f"<div class='mc-alloc'><b>{e(x['provider'])}</b>"
+        f"<span class='mc-allocbar'><span style='width:"
+        f"{min(100, int((x.get('share') or 0) * 100))}%'></span></span>"
+        f"<i>{int((x.get('share') or 0) * 100)}% &middot; "
+        f"{_n(x.get('amount'))}</i>"
+        f"<p>{e(x.get('why', ''))[:140]}</p></div>"
+        for x in (alloc.get("rows") or []))
+        + f"<p class='mc-note'>{e(alloc.get('message', ''))}</p>")
+    panes.append(_wpane(2, S[2][0], S[2][1], S[2][2],
+                        "<div class='mc-form'>"
+                        "<label>Budget type<select id='mc-cbt'>"
+                        "<option value='DAILY'>DAILY</option>"
+                        "<option value='LIFETIME'>LIFETIME</option>"
+                        "</select></label>"
+                        "<label>Amount<input id='mc-cbud' type='number' "
+                        "min='0' placeholder='50'></label>"
+                        "<label>Start<input id='mc-cstart' type='date'>"
+                        "</label>"
+                        "<label>End<input id='mc-cend' type='date'></label>"
+                        "<button class='mc-btn mc-go' "
+                        "onclick='mcNewCampaign(this)'>Save draft</button>"
+                        "</div>"
+                        "<p class='mc-wq'>AI allocation of a 3,000 example "
+                        "budget, and why:</p>" + ahtml))
+    # STEP 4 - Audience, against the draft.
+    aud_body = (_attach_audience(r, draft) if draft else
+                "<p class='mc-empty'>save the draft in step 3 first</p>")
+    panes.append(_wpane(3, S[3][0], S[3][1], S[3][2], aud_body))
+    # STEP 5 - Creative.
+    cre_body = (_attach_creative(r, draft) if draft else
+                "<p class='mc-empty'>save the draft in step 3 first</p>")
+    panes.append(_wpane(4, S[4][0], S[4][1], S[4][2], cre_body))
+    # STEP 6 - Tracking.
+    trk = ("✓ conversion tracking is configured" if MP._tracking_live()
+           else "⚠ " + MP._tracking_why())
+    panes.append(_wpane(5, S[5][0], S[5][1], S[5][2],
+                        f"<p class='mc-check mc-"
+                        f"{'ok' if MP._tracking_live() else 'warning'}'>"
+                        f"{e(trk)}</p>"
+                        "<p class='mc-note'>tags are managed on the "
+                        "Tracking screen; the pre-flight warns rather than "
+                        "blocks on this</p>"))
+    # STEP 7 - Review: the real pre-flight of the draft.
+    if draft:
+        pf = MP.pre_flight(r, draft["id"])
+        rev = "".join(
+            "<div class='mc-check mc-" + x["state"].lower() + "'>"
+            + {"OK": "✓", "WARNING": "⚠", "ERROR": "✗"}[x["state"]]
+            + f" <b>{e(x['name'])}</b><span>{e(x['detail'])[:90]}</span>"
+              "</div>" for x in pf["checks"]) \
+            + f"<p class='mc-note'>{e(pf['message'])}</p>"
+    else:
+        rev = "<p class='mc-empty'>nothing to review yet</p>"
+    panes.append(_wpane(6, S[6][0], S[6][1], S[6][2], rev))
+    # STEP 8 - Launch / Schedule.
+    if draft:
+        cid = e(draft["id"])
+        lch = (f"<button class='mc-btn mc-go' onclick=\"mcPost("
+               f"'/mediaos/launch',{{campaign_id:'{cid}'}},this)\">"
+               f"Launch campaign</button> "
+               f"<input id='mc-when-{cid}' type='datetime-local'> "
+               f"<button class='mc-btn' onclick=\"mcLaunchAt('{cid}',this)\">"
+               f"Schedule</button>"
+               "<p class='mc-note'>launching queues ONE order behind the "
+               "approval tier; a blocking error in step 7 refuses it with "
+               "the list</p>")
+    else:
+        lch = "<p class='mc-empty'>nothing to launch yet</p>"
+    panes.append(_wpane(7, S[7][0], S[7][1], S[7][2], lch, last=True))
+    other = ("<p class='mc-note'>Other drafts: "
+             + ", ".join(e(c.get("name")) for c in drafts[1:6])
+             + "</p>" if len(drafts) > 1 else "")
+    return card("New Campaign", header + "".join(panes) + other,
+                "one step at a time; the record remembers where you were")
 
 
-def _attach_controls(r, c) -> str:
-    cid = e(c.get("id"))
+def _attach_audience(r, draft) -> str:
+    cid = e(draft.get("id"))
+    groups = r.find("ad_groups", campaign_id=draft.get("id"))
+    have = [r.one("audiences", g.get("audience_id"))
+            for g in groups if g.get("audience_id")]
+    have = [a for a in have if a]
+    cur = ("<p class='mc-note'>attached: "
+           + ", ".join(e(a.get("name")) for a in have) + "</p>"
+           if have else "<p class='mc-empty'>no audience attached yet; the "
+                        "platform would choose one for you</p>")
     auds = "".join(f"<option value='{e(a.get('id'))}'>{e(a.get('name'))}"
-                   f"</option>" for a in r.all("audiences")[:50])
+                   f"</option>" for a in r.all("audiences")[:50]) \
+        or "<option value=''>none yet - create one below</option>"
+    types = "".join(f"<option value='{e(t)}'>{e(t)}</option>"
+                    for t in MC.AUDIENCE_TYPES)
+    fields = ", ".join(sorted(MC.TARGET_FIELDS)[:10])
+    return (cur
+            + f"<div class='mc-form'><label>Attach an audience"
+              f"<select id='mc-aud-{cid}'>{auds}</select></label>"
+              f"<button class='mc-btn mc-go' onclick=\"mcAttach('{cid}',"
+              f"this)\">Attach (with the creative from step 5)</button>"
+              f"</div>"
+              "<p class='mc-wq'>or define a new one, provider-neutrally:"
+              "</p>"
+              "<div class='mc-form'>"
+              "<label>Name<input id='mc-aname'></label>"
+              f"<label>Type<select id='mc-atype'>{types}</select></label>"
+              "<label>Definition (JSON)<textarea id='mc-adef' rows='3' "
+              "placeholder='{\"countries\": [\"DE\"]}'></textarea></label>"
+              "<button class='mc-btn' onclick='mcNewAudience(this)'>Save "
+              "audience</button>"
+              f"<p class='mc-note'>targetable fields include {e(fields)}; "
+              f"what a platform cannot express is DROPPED and named, "
+              f"never silently widened</p></div>")
+
+
+def _attach_creative(r, draft) -> str:
+    cid = e(draft.get("id"))
+    ads = r.find("ads", campaign_id=draft.get("id"))
+    have = [r.one("creatives", a.get("creative_id"))
+            for a in ads if a.get("creative_id")]
+    have = [c for c in have if c]
+    cur = ("<p class='mc-note'>attached: "
+           + ", ".join(e(c.get("name")) for c in have) + "</p>"
+           if have else "<p class='mc-empty'>no creative attached; there "
+                        "is nothing to show anyone yet</p>")
     cres = "".join(f"<option value='{e(x.get('id'))}'>{e(x.get('name'))}"
-                   f"</option>" for x in r.all("creatives")[:50])
-    if not auds:
-        auds = "<option value=''>no audiences yet - make one first</option>"
-    if not cres:
-        cres = "<option value=''>no creatives yet - make one first</option>"
-    return (f"<select id='mc-aud-{cid}'>{auds}</select>"
-            f"<select id='mc-cre-{cid}'>{cres}</select>"
-            f"<input id='mc-lp-{cid}' placeholder='https://landing.page'>"
-            f"<button class='mc-btn' onclick=\"mcAttach('{cid}',this)\">"
-            f"Attach group + ad</button>")
+                   f"</option>" for x in r.all("creatives")[:50]) \
+        or "<option value=''>none yet - create one below</option>"
+    types = "".join(f"<option value='{e(t)}'>{e(t)}</option>"
+                    for t in MC.CREATIVE_TYPES)
+    stages = "".join(f"<option value='{e(s)}'>{e(s)}</option>"
+                     for s in MC.FUNNEL_STAGES)
+    return (cur
+            + f"<div class='mc-form'><label>Attach a creative"
+              f"<select id='mc-cre-{cid}'>{cres}</select></label>"
+              f"<label>Landing page<input id='mc-lp-{cid}' "
+              f"placeholder='https://landing.page'></label>"
+              f"<button class='mc-btn mc-go' onclick=\"mcAttach('{cid}',"
+              f"this)\">Attach group + ad</button></div>"
+              "<p class='mc-wq'>or add to the library, with the attributes "
+              "the engine learns from:</p>"
+              "<div class='mc-form'>"
+              "<label>Name<input id='mc-crname'></label>"
+              f"<label>Format<select id='mc-crtype'>{types}</select></label>"
+              "<label>Concept<input id='mc-crconcept' "
+              "placeholder='Save 30%'></label>"
+              "<label>Angle<input id='mc-crangle' "
+              "placeholder='pain-point'></label>"
+              "<label>Hook<input id='mc-crhook' "
+              "placeholder='Still booking by phone?'></label>"
+              "<label>Persona<input id='mc-crpersona'></label>"
+              "<label>CTA<input id='mc-crcta'></label>"
+              f"<label>Funnel stage<select id='mc-crstage'>{stages}"
+              f"</select></label>"
+              "<label>Headline<input id='mc-crhead'></label>"
+              "<label>Primary text<input id='mc-crtext'></label>"
+              "<button class='mc-btn' onclick='mcNewCreative(this)'>Save + "
+              "publish v1</button></div>")
+
+
+def _detail(r, c, ctx) -> str:
+    """The deep campaign screen, spec section 33: status, KPIs, trend,
+    audiences, creatives, placements, diagnosis, execution history."""
+    cid = c.get("id")
+    ro = MF.rollup(r, campaign_id=cid, days=30)
+    tot = ro["totals"]
+    head = ("<div class='mc-bigrow'>"
+            + "".join(f"<div class='mc-big'><span class='mc-bigk'>{e(k)}"
+                      f"</span><b>{v}</b><span class='mc-bigs'>{e(s)}"
+                      f"</span></div>" for k, v, s in (
+                ("Status", e(c.get("state")), c.get("state_why") or ""),
+                ("Platform", e(c.get("provider") or "-"), ""),
+                ("Objective", e(c.get("objective")), ""),
+                ("Budget", _money(c.get("budget_amount"),
+                                  c.get("currency") or "EUR"),
+                 str(c.get("budget_type") or "").lower()),
+                ("ROAS", _n((tot.get("roas") or {}).get("value")),
+                 (tot.get("roas") or {}).get("of") or ""),
+                ("CPA", _n((tot.get("cpa") or {}).get("value")),
+                 (tot.get("cpa") or {}).get("of") or ""),
+                ("CTR", _n((tot.get("ctr") or {}).get("value")),
+                 "percent"),
+            )) + "</div>")
+    trend = table(("day", "spend", "clicks", "conv", "CPA", "ROAS"),
+                  [(x["bucket"], _n(x["spend"]), _n(x["clicks"]),
+                    _n(x["conversions"]),
+                    _n((x.get("cpa") or {}).get("value")),
+                    _n((x.get("roas") or {}).get("value")))
+                   for x in ro["rows"][-14:]],
+                  ro["message"])
+    groups = r.find("ad_groups", campaign_id=cid)
+    auds = [r.one("audiences", g.get("audience_id"))
+            for g in groups if g.get("audience_id")]
+    audtab = table(("audience", "type", "platform can express"),
+                   [(a.get("name"), a.get("type"),
+                     MC.map_to_provider(a.get("definition"),
+                                        c.get("provider"))
+                     .get("message", "")[:90] if c.get("provider") else "-")
+                    for a in auds if a],
+                   "no audience attached; the platform chooses one")
+    ads = r.find("ads", campaign_id=cid)
+    perf = {x["id"]: x for x in MC.creative_performance(r)}
+    cres = []
+    for a in ads:
+        cr = r.one("creatives", a.get("creative_id")) or {}
+        px = perf.get(cr.get("id")) or {}
+        cres.append((cr.get("name") or "(no creative)",
+                     cr.get("angle") or "-", _n(px.get("spend") or None),
+                     _n(px.get("cpa")), _n(px.get("roas"))))
+    cretab = table(("creative", "angle", "spend", "CPA", "ROAS"), cres,
+                   "no ad on this campaign yet")
+    plc = MF.breakdown(r, "placement", campaign_id=cid)
+    plctab = (table(("placement", "spend", "conv", "ROAS"),
+                    [(x["value"], _n(x["spend"]), _n(x["conversions"]),
+                      _n((x.get("roas") or {}).get("value")))
+                     for x in plc["rows"][:8]])
+              if plc["rows"] else
+              f"<p class='mc-empty'>{e(plc['message'])}</p>")
+    # AI DIAGNOSIS: this campaign's anomalies and its open orders.
+    sc = [a for a in MF.scan(r, save=False)["anomalies"]
+          if a["campaign_id"] == cid]
+    mine = [o for o in (ctx.get("media_orders") or ())
+            if str(o.get("key")) == str(cid) and o.get("status") == "open"]
+    diag = (("".join(f"<p class='mc-note'>⚠ {e(a['evidence'])}</p>"
+                     for a in sc[:3])
+             + "".join(_action_card(o) for o in mine[:3]))
+            or "<p class='mc-empty'>nothing is broken against this "
+               "campaign's own baseline, and no action is waiting. Quiet "
+               "is a finding.</p>")
+    hist = [o for o in (ctx.get("media_orders") or ())
+            if str(o.get("key")) == str(cid) and o.get("status") != "open"]
+    histtab = table(("action", "lifecycle", "result"),
+                    [(o.get("say", "")[:80], _lifecycle_word(o),
+                      o.get("result", "")[:60]) for o in hist[:8]],
+                    "nothing has been executed against this campaign")
+    return ("<div class='mc-detail' id='mc-det-" + e(cid) + "'>"
+            + head
+            + card("Trend, 14 days", trend)
+            + card("Audiences", audtab)
+            + card("Creatives", cretab)
+            + card("Placements", plctab)
+            + card("AI diagnosis", diag)
+            + card("Execution history", histtab)
+            + "</div>")
+
+
+def _lifecycle_word(o) -> str:
+    try:
+        import content_engine_media_orders as MO
+        return MO.lifecycle_of(o)
+    except Exception:
+        return str(o.get("status") or "")
 
 
 def s_launch(r, ctx) -> str:
@@ -386,40 +713,106 @@ def s_launch(r, ctx) -> str:
             + f" <b>{e(x['name'])}</b><span>{e(x['detail'])[:100]}</span></div>"
             for x in pf["checks"])
         cid = e(c.get("id"))
-        btns = (
-            f"<button class='mc-btn mc-go' onclick=\"mcPost('/mediaos/launch',"
-            f"{{campaign_id:'{cid}'}},this)\">Launch (queues an order)"
-            f"</button> "
-            f"<input id='mc-when-{cid}' type='datetime-local'> "
-            f"<button class='mc-btn' onclick=\"mcLaunchAt('{cid}',this)\">"
-            f"Schedule</button>"
-            if pf["ok"] else
-            f"<p class='mc-note'>blocked: {e(', '.join(pf['errors']))}. "
-            f"Launch stays off until every blocking error clears.</p>")
+        # [Preview]: what the person will actually see, from the attached
+        # creative, before a cent moves. Spec section 22 / 36.
+        ads = r.find("ads", campaign_id=c.get("id"))
+        cre = (r.one("creatives", ads[0].get("creative_id"))
+               if ads and ads[0].get("creative_id") else None) or {}
+        prev = (f"<div class='mc-preview' id='mc-prev-{cid}'>"
+                f"<span class='mc-prevtag'>Ad preview &middot; "
+                f"{e(c.get('provider') or '-')}</span>"
+                f"<b>{e(cre.get('headline') or cre.get('hook') or cre.get('concept') or '(no headline yet)')}</b>"
+                f"<p>{e(cre.get('primary_text') or cre.get('description') or '(no primary text yet)')}</p>"
+                f"<i>{e((ads[0].get('landing_page_url') if ads else '') or 'no landing page')}</i>"
+                f"<button class='mc-btn'>{e(cre.get('cta') or 'Learn more')}"
+                f"</button></div>") if cre or ads else \
+            (f"<div class='mc-preview' id='mc-prev-{cid}'>"
+             f"<p class='mc-empty'>no creative attached, so there is "
+             f"nothing to preview</p></div>")
+        btns = ("<div class='mc-wnav'>"
+                f"<button class='mc-btn' onclick=\"mcToggle('mc-prev-{cid}')"
+                f"\">Preview</button>"
+                + (f"<button class='mc-btn mc-go' onclick=\"mcPost("
+                   f"'/mediaos/launch',{{campaign_id:'{cid}'}},this)\">"
+                   f"Launch Campaign</button> "
+                   f"<input id='mc-when-{cid}' type='datetime-local'> "
+                   f"<button class='mc-btn' onclick=\"mcLaunchAt('{cid}',"
+                   f"this)\">Schedule</button>"
+                   if pf["ok"] else
+                   f"<span class='mc-note'>blocked: "
+                   f"{e(', '.join(pf['errors']))}. Launch stays off until "
+                   f"every blocking error clears.</span>")
+                + "</div>")
         out.append(card(f"{c.get('name')} ({pf['level']})",
-                        lights + btns, pf["message"][:160]))
+                        lights + prev + btns, pf["message"][:160]))
     return ("<p class='mc-note'>A launch never talks to a platform from "
             "here. It queues ONE order in the media queue and waits behind "
             "the same approval tier as every other spend.</p>" + "".join(out))
 
 
+def _plan_doc(r, p) -> str:
+    """One saved plan, rendered as the MEDIA PLAN document of spec
+    section 34, ranges and assumptions on the page."""
+    fc = _D(p.get("forecast"))
+    conv = _D(fc.get("conversions"))
+    cpa = _D(fc.get("cpa"))
+    alloc = _L(p.get("allocation"))
+    bars = "".join(
+        f"<div class='mc-alloc'><b>{e(x.get('provider'))}</b>"
+        f"<span class='mc-allocbar'><span style='width:"
+        f"{min(100, int((x.get('share') or 0) * 100))}%'></span></span>"
+        f"<i>{int((x.get('share') or 0) * 100)}% &middot; "
+        f"{_n(x.get('amount'))}</i></div>"
+        for x in alloc) or "<p class='mc-empty'>no allocation: nothing had "\
+                           "enough history when this plan was saved</p>"
+    assumps = "".join(f"<li>{e(a)}</li>" for a in _L(p.get("assumptions")))
+    return ("<div class='mc-doc'>"
+            "<p class='mc-doctitle'>MEDIA PLAN</p>"
+            "<div class='mc-docrow'><span>Objective</span><b>"
+            + e(p.get("objective")) + " on " + e(p.get("kpi") or "CPA")
+            + "</b></div>"
+            "<div class='mc-docrow'><span>Budget</span><b>"
+            + _money(p.get("budget"), p.get("currency") or "EUR")
+            + "</b></div>"
+            "<div class='mc-docrow'><span>Period</span><b>"
+            + e(p.get("period_start") or "?") + " to "
+            + e(p.get("period_end") or "?") + "</b></div>"
+            "<div class='mc-docrow'><span>Expected CPA</span><b>"
+            + (f"{_n(cpa.get('low'))} to {_n(cpa.get('high'))}"
+               if cpa.get("low") is not None else "no history to range on")
+            + "</b></div>"
+            "<div class='mc-docrow'><span>Expected conversions</span><b>"
+            + (f"{_n(conv.get('low'))} to {_n(conv.get('high'))}"
+               if conv.get("low") is not None else "no history to range on")
+            + "</b></div>"
+            "<div class='mc-docrow'><span>Targets</span><b>CPA "
+            + _n(p.get("target_cpa")) + " &middot; ROAS "
+            + _n(p.get("target_roas")) + " &middot; leads "
+            + _n(p.get("target_leads")) + "</b></div>"
+            "<p class='mc-wq'>Allocation</p>" + bars
+            + ("<p class='mc-wq'>Assumptions</p><ul class='mc-assume'>"
+               + assumps + "</ul>" if assumps else "")
+            + "</div>")
+
+
 def s_plan(r, ctx) -> str:
+    plans = sorted(r.all("media_plans"),
+                   key=lambda p: str(p.get("created_at") or ""),
+                   reverse=True)
+    docs = ("".join(_plan_doc(r, p) for p in plans[:3])
+            or "<p class='mc-empty'>no media plan yet. A plan is the "
+               "professional step before ads exist: objective, budget, "
+               "period, an expected RANGE and the assumptions under it."
+               "</p>")
     alloc = MP.allocate(r, MF._live_budget(r) or 3000)
-    arows = [(x["provider"], _n(x.get("amount")),
-              f"{x.get('share', 0) * 100:.0f}%",
-              _n(x.get("average_roas")), _n(x.get("marginal_roas")),
-              x["why"][:120]) for x in (alloc.get("rows") or [])]
-    atab = (table(("platform", "amount", "share", "avg ROAS",
-                   "marginal ROAS", "why"), arows, alloc.get("message", ""))
-            + f"<p class='mc-note'>{e(alloc.get('message', ''))}</p>")
-    plans = [(p.get("objective"), _money(p.get("budget"), p.get("currency")),
-              f"{p.get('period_start') or '?'} to {p.get('period_end') or '?'}",
-              _n(p.get("target_cpa")), _n(p.get("target_roas")),
-              e(p.get("kpi") or "-"))
-             for p in r.all("media_plans")[:20]]
-    ptab = table(("objective", "budget", "period", "target CPA",
-                  "target ROAS", "KPI"), plans,
-                 "no media plan saved yet")
+    ahtml = ("".join(
+        f"<div class='mc-alloc'><b>{e(x['provider'])}</b>"
+        f"<span class='mc-allocbar'><span style='width:"
+        f"{min(100, int((x.get('share') or 0) * 100))}%'></span></span>"
+        f"<i>{int((x.get('share') or 0) * 100)}% &middot; "
+        f"{_n(x.get('amount'))}</i><p>{e(x.get('why', ''))[:140]}</p></div>"
+        for x in (alloc.get("rows") or []))
+        + f"<p class='mc-note'>{e(alloc.get('message', ''))}</p>")
     objs = "".join(f"<option value='{e(o)}'>{e(o)}</option>"
                    for o in M.OBJECTIVES)
     kpis = "".join(f"<option value='{e(k)}'>{e(k)}</option>" for k in MP.KPIS)
@@ -434,20 +827,22 @@ def s_plan(r, ctx) -> str:
             "</label>"
             "<button class='mc-btn mc-go' onclick='mcSavePlan(this)'>"
             "Save the plan</button></div>")
-    sim = ("<div class='mc-form'>"
+    sim = ("<div class='mc-doc'><p class='mc-doctitle'>WHAT IF?</p>"
+           "<div class='mc-form'>"
            "<label>Budget now<input id='mc-snow' type='number' "
            "placeholder='3000'></label>"
            "<label>What if<input id='mc-swhat' type='number' "
            "placeholder='6000'></label>"
-           "<button class='mc-btn' onclick='mcSimulate(this)'>Simulate"
-           "</button></div><div id='mc-simout'><p class='mc-empty'>"
-           "Ranges come back, never one number. With no history it says "
-           "so instead of inventing a benchmark.</p></div>")
-    return (card("Allocation on marginal return", atab,
-                 "the next euro, not the average euro")
-            + card("Saved plans", ptab)
+           "<button class='mc-btn mc-go' onclick='mcSimulate(this)'>"
+           "Simulate</button></div><div id='mc-simout'><p class='mc-empty'>"
+           "Conservative, base and optimistic come back, never one number. "
+           "With no history it says so instead of inventing a benchmark."
+           "</p></div></div>")
+    return (docs
+            + card("AI allocation on marginal return", ahtml,
+                   "the next euro, not the average euro")
             + card("New plan", form)
-            + card("What if", sim))
+            + sim)
 
 
 def s_creat(r, ctx) -> str:
@@ -716,13 +1111,56 @@ def s_anom(r, ctx) -> str:
         "something YOU raise here, never something the engine assumes; a "
         "new campaign is never automatic and delete stays human-only."
         "</p></div>")
+    # THE AUDIT, spec section 48: every decided action as a card that
+    # shows before, after, reason, confidence, policy and result.
+    decided = [o for o in (ctx.get("media_orders") or ())
+               if o.get("status") != "open"]
+    audits = []
+    for o in decided[:6]:
+        ev = o.get("evidence") or {}
+        bef, aft = _D(o.get("before_state")), _D(o.get("after_state"))
+        conf = o.get("confidence")
+        audits.append(
+            "<div class='mc-doc mc-audit'>"
+            "<p class='mc-doctitle'>AI ACTION</p>"
+            + "".join(f"<div class='mc-docrow'><span>{e(k)}</span>"
+                      f"<b>{v}</b></div>" for k, v in (
+                ("Action", e(o.get("say", ""))[:100]),
+                ("Campaign", e(o.get("key", ""))[:60]),
+                ("Before", e(bef.get("status") or bef.get("note")
+                             or "not recorded")
+                 + (f" &middot; budget {_n(bef.get('budget'))}"
+                    if bef.get("budget") is not None else "")),
+                ("After", e(aft.get("status") or "awaiting the next "
+                                                 "platform read")),
+                ("Reason", e(f"{ev.get('metric', '')} against "
+                             f"{ev.get('threshold', '')} over "
+                             f"{ev.get('window', '')}")),
+                ("Confidence", (f"{conf:.0%} "
+                                f"({e(o.get('confidence_basis', ''))})"
+                                if isinstance(conf, (int, float))
+                                else "not stated")),
+                ("Policy", e("auto-approved by policy: "
+                             + o.get("policy_why", "")
+                             if o.get("approved_by") == "policy"
+                             else "approved by you")),
+                ("Result", e(_lifecycle_word(o)) + " &middot; "
+                 + e(o.get("result", ""))[:80]),
+            )) + "</div>")
+    audit_html = ("".join(audits)
+                  or "<p class='mc-empty'>no decided action yet; every "
+                     "card will show before, after, reason, confidence, "
+                     "policy and result</p>")
     return (card("What broke its own baseline", atab)
             + card("Refused for lack of history", nj,
                    "a red badge on 3 days of data is a coin toss")
             + btn
             + card("The autonomy policy", polform,
                    "what the agent may do without waking you")
-            + card("The order queue", _orders_board(ctx)))
+            + card("The order queue", _orders_board(ctx))
+            + card("The audit", audit_html,
+                   "spec section 48: everything, with its before and "
+                   "after"))
 
 
 def s_plat(r, ctx, legacy_campaigns="", legacy_tracking="") -> str:
@@ -888,6 +1326,87 @@ padding:3px 0;color:var(--mc-ink)}
 .mc-check.mc-error{color:#FF6B93}.mc-check.mc-warning{color:#F5B14C}
 .mc-check.mc-ok{color:#3FD98B}
 .mc-grain{display:none}.mc-grain.mc-on{display:block}
+.mc-bigs30{color:var(--mc-mut);font-size:10px;letter-spacing:1.2px;
+text-transform:uppercase;margin:4px 0 8px}
+.mc-bigrow{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px}
+.mc-big{display:flex;flex-direction:column;background:var(--mc-card);
+border:1px solid var(--mc-ln);border-radius:11px;padding:12px 16px;
+min-width:150px;flex:1}
+.mc-big b{font-size:26px;font-weight:700;color:var(--mc-ink);
+font-variant-numeric:tabular-nums;line-height:1.15}
+.mc-bigk{font-size:10px;color:var(--mc-mut);text-transform:uppercase;
+letter-spacing:.6px}
+.mc-bigs{font-size:10px;color:var(--mc-mut);min-height:12px}
+.mc-statrow{display:flex;flex-wrap:wrap;gap:10px}
+.mc-stat{display:flex;align-items:baseline;gap:7px;
+border:1px solid var(--mc-ln);border-radius:9px;padding:7px 12px}
+.mc-stat b{font-size:19px;color:var(--mc-ink);
+font-variant-numeric:tabular-nums}
+.mc-stat span{font-size:11px;color:var(--mc-mut)}
+.mc-act{display:flex;gap:12px;align-items:flex-start;
+border:1px solid var(--mc-ln);border-left-width:3px;border-radius:9px;
+padding:10px 13px;margin:0 0 8px}
+.mc-act-up{border-left-color:#3FD98B}.mc-act-down{border-left-color:#F5B14C}
+.mc-act-warn{border-left-color:#FF6B93}.mc-act-make{border-left-color:var(--mc-go)}
+.mc-glyph{font-size:21px;line-height:1;margin-top:2px}
+.mc-act-up .mc-glyph{color:#3FD98B}.mc-act-down .mc-glyph{color:#F5B14C}
+.mc-act-warn .mc-glyph{color:#FF6B93}.mc-act-make .mc-glyph{color:var(--mc-go)}
+.mc-actbody{display:flex;flex-direction:column;gap:2px;flex:1}
+.mc-actbody b{color:var(--mc-ink);font-size:13px}
+.mc-actbody span{color:var(--mc-mut);font-size:11px}
+.mc-actbtns{display:flex;flex-direction:column;gap:4px}
+.mc-wrail{display:flex;gap:6px;margin:2px 0 8px}
+.mc-dot{width:28px;height:28px;border-radius:50%;
+border:1px solid var(--mc-ln);background:none;color:var(--mc-mut);
+cursor:pointer;font-size:12px}
+.mc-dot.mc-don{border-color:#3FD98B;color:#3FD98B}
+.mc-wstep{display:none;border:1px solid var(--mc-ln);border-radius:11px;
+padding:13px 16px;margin:6px 0}
+.mc-wstep.mc-on{display:block}
+.mc-wtitle{font-size:11px;letter-spacing:1px;color:var(--mc-go);
+text-transform:uppercase;margin:0 0 2px;font-weight:700}
+.mc-wq{color:var(--mc-ink);font-size:12px;font-weight:600;margin:10px 0 6px}
+.mc-wnav{display:flex;gap:8px;margin-top:12px;align-items:center;
+flex-wrap:wrap}
+.mc-radios{display:flex;flex-direction:column;gap:6px;margin:4px 0}
+.mc-radio{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;
+border:1px solid var(--mc-ln);border-radius:9px;padding:8px 12px;
+cursor:pointer;color:var(--mc-ink);font-size:13px}
+.mc-radio i{font-style:normal;font-size:11px;color:#3FD98B}
+.mc-radio span{font-size:11px;color:var(--mc-mut);width:100%}
+.mc-alloc{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+margin:0 0 7px}
+.mc-alloc b{width:70px;color:var(--mc-ink);font-size:12px}
+.mc-alloc i{font-style:normal;font-size:12px;color:var(--mc-ink);
+font-variant-numeric:tabular-nums}
+.mc-alloc p{width:100%;margin:0;color:var(--mc-mut);font-size:11px}
+.mc-allocbar{flex:1;min-width:120px;height:8px;border-radius:5px;
+background:rgba(255,255,255,.06);overflow:hidden}
+.mc-allocbar span{display:block;height:100%;background:var(--mc-go)}
+.mc-doc{border:1px solid var(--mc-ln);border-radius:11px;
+padding:14px 17px;margin:0 0 12px;background:var(--mc-card)}
+.mc-doctitle{font-size:11px;letter-spacing:1.4px;color:var(--mc-mut);
+margin:0 0 9px;font-weight:700}
+.mc-docrow{display:flex;justify-content:space-between;gap:14px;
+border-bottom:1px solid var(--mc-ln);padding:5px 0;font-size:13px}
+.mc-docrow span{color:var(--mc-mut)}
+.mc-docrow b{color:var(--mc-ink);text-align:right;
+font-variant-numeric:tabular-nums}
+.mc-assume{margin:2px 0 0 16px;padding:0;color:var(--mc-mut);
+font-size:11px}
+.mc-detail{display:none;border:1px solid var(--mc-go);border-radius:11px;
+padding:12px;margin:8px 0}
+.mc-detail.mc-on{display:block}
+.mc-link{color:var(--mc-go);cursor:pointer;text-decoration:underline}
+.mc-preview{display:none;border:1px dashed var(--mc-ln);border-radius:9px;
+padding:12px 14px;margin:9px 0;max-width:420px}
+.mc-preview.mc-on{display:block}
+.mc-prevtag{display:block;font-size:9px;letter-spacing:1px;
+color:var(--mc-mut);text-transform:uppercase;margin-bottom:5px}
+.mc-preview b{display:block;color:var(--mc-ink);font-size:14px}
+.mc-preview p{color:var(--mc-mut);font-size:12px;margin:3px 0}
+.mc-preview i{display:block;font-style:normal;color:var(--mc-go);
+font-size:10px;margin:0 0 6px}
 </style>"""
 
 
@@ -940,6 +1459,19 @@ document.querySelectorAll('.mc-tab').forEach(function(x){
 x.classList.remove('mc-on');});
 var p=document.getElementById('mc-panel-'+t);if(p)p.classList.add('mc-on');
 var b=document.getElementById('mc-tab-'+t);if(b)b.classList.add('mc-on');}
+function mcStep(n){var steps=document.querySelectorAll('.mc-wstep');
+if(n<0||n>=steps.length)return;
+steps.forEach(function(x){x.classList.remove('mc-on');});
+var el=document.getElementById('mc-wstep-'+n);if(el)el.classList.add('mc-on');}
+function mcDetail(cid){var el=document.getElementById('mc-det-'+cid);
+if(!el)return;var on=el.classList.contains('mc-on');
+document.querySelectorAll('.mc-detail').forEach(function(x){
+x.classList.remove('mc-on');});
+if(!on){el.classList.add('mc-on');el.scrollIntoView({block:'nearest'});}}
+function mcToggle(id){var el=document.getElementById(id);
+if(el)el.classList.toggle('mc-on');}
+function mcRadio(name){var el=document.querySelector(
+'input[name="'+name+'"]:checked');return el?el.value:'';}
 function mcGrain(g,btn){document.querySelectorAll('.mc-grain').forEach(
 function(x){x.classList.remove('mc-on');});
 var el=document.getElementById('mc-grain-'+g);if(el)el.classList.add('mc-on');
@@ -957,8 +1489,8 @@ if(btn){btn.disabled=false;btn.textContent=lab;}}
 function mcV(id){var el=document.getElementById(id);
 return el?el.value:'';}
 function mcNewCampaign(btn){mcPost('/mediaos/campaign',{
-name:mcV('mc-cname'),objective:mcV('mc-cobj'),kpi:mcV('mc-ckpi'),
-provider:mcV('mc-cprov'),budget_type:mcV('mc-cbt'),
+name:mcV('mc-cname'),objective:mcRadio('mc-cobj'),kpi:mcV('mc-ckpi'),
+provider:mcRadio('mc-cprov'),budget_type:mcV('mc-cbt'),
 budget_amount:mcV('mc-cbud'),start_at:mcV('mc-cstart'),
 end_at:mcV('mc-cend')},btn);}
 function mcAttach(cid,btn){mcPost('/mediaos/attach',{campaign_id:cid,
