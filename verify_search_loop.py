@@ -1265,8 +1265,14 @@ _GCTX = {
                "at": "2026-08-09T06:00:00"}],
     "offpage": {"connected": True, "referring_domains": 84,
                 "domain_rank": 31},
-    "aeo_history": [{"prompt": "p", "provider": "chatgpt", "cited": True,
-                     "at": "2026-08-08"}],
+    # The REAL shape probe() writes: one block per engine, under
+    # results. aeo_history holds daily summaries and cannot answer a
+    # per-prompt question, which is why the bridge no longer reads it.
+    "aeo": {"at": "2026-08-08", "results": [
+        {"prompt": "p",
+         "claude": {"connected": True, "mentioned": True,
+                    "citations": ["https://x.test/a"],
+                    "rivals_mentioned": [], "excerpt": "..."}}]},
 }
 _E8 = BR8.enrich(_GCTX)
 _ST8 = _E8["search_totals"]
@@ -1301,7 +1307,8 @@ t("referring domains come from the backlink provider",
 t("tracked positions keep their device and location",
   _E8["tracked_keywords"][0]["location"] == "Munich")
 t("one AI observation becomes ONE run, so GEO marks it provisional",
-  len(_E8["prompts"][0]["runs"]) == 1)
+  len(_E8["prompts"][0]["runs"]) == 1
+  and _E8["prompts"][0]["runs"][0]["provider"] == "claude")
 t("A KEY THE CALLER ALREADY SET IS NEVER CLOBBERED",
   BR8.enrich({"insights": _GCTX["insights"],
               "search_totals": {"clicks": 999}})["search_totals"]
@@ -1322,7 +1329,7 @@ _secB = SEO6.seo_section(_GCTX)
 for _tabB, _markB in (("seocmd", "111"), ("seoanalytics", "410"),
                       ("seorank", "Munich"),
                       ("seokwx", "not market search"),
-                      ("seodomain", "84"), ("seogeoai", "chatgpt")):
+                      ("seodomain", "84"), ("seogeoai", "claude")):
     _mB = _re17.search("id=['\"]spanel-" + _tabB + "['\"](.*?)"
                        "(?=id=['\"]spanel-|$)", _secB, _re17.S)
     t("live data reaches " + _tabB,
@@ -1365,6 +1372,85 @@ t("THE SCREEN PRINTS WHICH ABSENCE IT IS",
 t("and stays quiet when organic was found",
   "was not among them" not in
   SS8.search_analytics(_r15, BR8.search_totals(_ch25(["Organic Search"]))))
+
+print("")
+print("L26 THE AI ENGINES REACH THE GEO BOARD")
+# probe() asks Claude, OpenAI, Perplexity and Gemini and stores one block
+# PER ENGINE under aeo["results"]. The bridge was reading aeo_history,
+# whose rows are DAILY SUMMARIES with no prompt text and no provider, so
+# the board showed seven aggregates as though they were observations.
+import content_engine_aeo as AEO8
+_AEOD = {
+    "at": "2026-08-09T22:07:38",
+    "results": [
+        {"prompt": "best ai automation agency in germany",
+         "claude": {"connected": True, "mentioned": True,
+                    "citations": ["https://x.test/services"],
+                    "rivals_mentioned": ["zapier.com"],
+                    "excerpt": "Anthropos Automation is a Munich based"},
+         "openai": {"connected": True, "mentioned": True,
+                    "citations": [], "rivals_mentioned": [],
+                    "excerpt": "Several agencies work in this space"},
+         "perplexity": {"connected": False, "citations": [],
+                        "reason": "PERPLEXITY_API_KEY is not set"}},
+        {"prompt": "n8n consultant munich",
+         "claude": {"connected": True, "mentioned": False,
+                    "citations": [], "rivals_mentioned": ["make.com"],
+                    "excerpt": "You could look at"}}],
+    "citations": {"total": 4, "unique_pages": 2,
+                  "by_engine": {"claude": 3, "openai": 1},
+                  "top_pages": [("https://x.test/services", 3),
+                                ("https://x.test/blog", 1)]}}
+_PR8 = BR8.prompts({"aeo": _AEOD})
+t("the GEO board reads the real prompts, not the daily summaries",
+  len(_PR8) == 2
+  and _PR8[0]["prompt"] == "best ai automation agency in germany")
+t("ONE RUN PER ENGINE THAT ACTUALLY ANSWERED",
+  [r["provider"] for r in _PR8[0]["runs"]] == ["claude", "openai"])
+t("CITED means it linked us; MENTIONED means it only named us",
+  _PR8[0]["runs"][0]["cited"] is True
+  and _PR8[0]["runs"][1]["cited"] is False
+  and _PR8[0]["runs"][1]["mentioned"] is True)
+t("AN ENGINE THAT DID NOT ANSWER IS NOT RECORDED AS AN ABSENCE",
+  all(r["provider"] in ("claude", "openai") for r in _PR8[0]["runs"])
+  and "perplexity" in str(_PR8[0].get("not_run")))
+t("rivals seen in the answers are carried through",
+  _PR8[0]["competitors"] == ["zapier.com"])
+t("HISTORY ALONE PRODUCES NOTHING, because it cannot answer this",
+  BR8.prompts({"aeo_history": [{"at": "x", "score": 4,
+                                "mention_rate": 10}]}) is None)
+_CG8 = BR8.citation_gaps({"aeo": _AEOD})
+t("citation gaps come from citations the engines really made",
+  len(_CG8) == 2 and _CG8[0]["our_citations"] == 3)
+t("and the competitor column stays empty rather than invented",
+  _CG8[0]["competitor_citations"] is None)
+t("every declared engine has a probe function that exists",
+  all(callable(getattr(AEO8, _fn, None))
+      for _n, _fn, _k in AEO8._ENGINES),
+  str([_fn for _n, _fn, _k in AEO8._ENGINES
+       if not callable(getattr(AEO8, _fn, None))]))
+_os8 = __import__("os")
+_had = _os8.environ.pop("OPENAI_API_KEY", None)
+_pr8 = AEO8.probe("q", brand="X", domain="x.test")
+if _had is not None:
+    _os8.environ["OPENAI_API_KEY"] = _had
+t("A MISSING KEY SAYS THE ENGINE WAS NEVER ASKED",
+  "never asked" in _pr8["openai"]["reason"]
+  and _pr8["openai"]["key_present"] is False)
+t("and 'not set OR call failed' is no longer one sentence for both",
+  "not set or call failed" not in _pr8["openai"]["reason"])
+t("no API KEY VALUE ever appears in a probe result",
+  not [x for x in ("sk-", "AIza") if x in str(_pr8)],
+  "a key-shaped string reached the board")
+_secA = SEO6.seo_section({"aeo": _AEOD})
+_mA = _re17.search("id=['\"]spanel-seogeoai['\"](.*?)"
+                   "(?=id=['\"]spanel-|$)", _secA, _re17.S)
+t("the GEO panel draws the real prompt text",
+  bool(_mA) and "best ai automation agency" in _mA.group(1))
+t("and names the engines that answered it",
+  bool(_mA) and "claude" in _mA.group(1) and "openai" in _mA.group(1))
+t("two runs is still below the floor, so it reads provisional",
+  bool(_mA) and "anecdote" in _mA.group(1))
 
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

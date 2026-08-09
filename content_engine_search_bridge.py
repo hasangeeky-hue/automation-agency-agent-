@@ -355,29 +355,102 @@ def questions(ctx) -> Optional[list]:
     return out
 
 
+#: The engines content_engine_aeo.probe() actually asks. Read from that
+#: module at import so this list cannot drift from the one that runs.
+def _engines():
+    try:
+        import content_engine_aeo as AEO
+        return tuple(n for n, _fn, _key in AEO._ENGINES)
+    except Exception:                                 # noqa: BLE001
+        return ("claude", "openai", "perplexity", "gemini")
+
+
 def prompts(ctx) -> Optional[list]:
-    """AI prompt observations, from the AEO history."""
-    hist = _l(_d(ctx).get("aeo_history"))
+    """One row per prompt, one run per AI engine that actually answered.
+
+    Reads aeo["results"], which is where probe() puts the real answers.
+    The previous version read aeo_history, whose rows are DAILY
+    SUMMARIES ({at, score, mention_rate, ...}) with no prompt text and no
+    provider, so the board rendered seven aggregates as though they were
+    seven observations.
+
+    An engine that did not answer is left OUT of the runs rather than
+    recorded as an absence. It was not asked, and NOT RUN and ABSENT are
+    different findings: one is our failure to look, the other is the
+    answer.
+    """
     aeo = _d(_d(ctx).get("aeo"))
-    rows = _l(aeo.get("prompts")) or hist
-    if not rows:
+    results = _l(aeo.get("results"))
+    if not results:
+        # No fallback to aeo_history. It cannot answer this question, and
+        # a screen fed summaries would look populated while showing
+        # nothing anyone can act on.
+        return None
+    at = str(aeo.get("at") or "")[:16]
+    engines = _engines()
+    out = []
+    for r in results:
+        d = _d(r)
+        runs, not_run, rivals = [], [], []
+        for eng in engines:
+            e = _d(d.get(eng))
+            if not e:
+                not_run.append(eng)
+                continue
+            if not e.get("connected"):
+                not_run.append(eng + " (" + str(e.get("reason") or
+                                                "did not answer") + ")")
+                continue
+            cites = _l(e.get("citations"))
+            runs.append({
+                "at": at,
+                "provider": eng,
+                # CITED means the answer linked us. MENTIONED means it
+                # named us without a link. probe() records those
+                # separately and the GEO board keeps them apart.
+                "cited": bool(cites),
+                "mentioned": bool(e.get("mentioned")),
+                "answer": e.get("excerpt"),
+                "citations": cites,
+            })
+            for x in _l(e.get("rivals_mentioned")):
+                if x not in rivals:
+                    rivals.append(x)
+        row = {"prompt": d.get("prompt"),
+               "provider": ", ".join(x["provider"] for x in runs) or None,
+               "runs": runs,
+               "competitors": rivals,
+               "competitor": ", ".join(str(x) for x in rivals) or None}
+        if not_run:
+            row["not_run"] = not_run
+        out.append(row)
+    return out
+
+
+def citation_gaps(ctx) -> Optional[list]:
+    """Sources the AI engines cited, from the probe's own citation roll-up.
+
+    This is not the full competitor gap the screen can show: it needs
+    observed citations for a rival on the SAME prompts, and probe()
+    records rival MENTIONS but not rival citations. So our side is filled
+    from real data and the competitor column stays honestly empty rather
+    than being invented, and the screen prints both.
+    """
+    cites = _d(_d(_d(ctx).get("aeo")).get("citations"))
+    top = _l(cites.get("top_pages"))
+    if not top:
         return None
     out = []
-    for r in rows:
-        d = _d(r)
-        runs = _l(d.get("runs"))
-        if not runs and (d.get("cited") is not None
-                         or d.get("mentioned") is not None):
-            # One recorded observation is ONE run, and the GEO screen
-            # will mark it provisional for exactly that reason.
-            runs = [{"at": d.get("at"), "provider": d.get("provider"),
-                     "cited": d.get("cited"),
-                     "mentioned": d.get("mentioned"),
-                     "answer": d.get("answer")}]
-        out.append({"prompt": d.get("prompt") or d.get("question"),
-                    "provider": d.get("provider"),
-                    "runs": runs,
-                    "competitor": d.get("competitor")})
+    for row in top:
+        pair = list(row) if isinstance(row, (list, tuple)) else []
+        if len(pair) != 2:
+            continue
+        src, n = pair
+        out.append({"source": src, "our_citations": n,
+                    "competitor_citations": None,
+                    "topic": None,
+                    "relevance": None,
+                    "strategy": None})
     return out
 
 
@@ -461,6 +534,7 @@ MAPPING = {
     "content_rows": content_rows,
     "questions": questions,
     "prompts": prompts,
+    "citation_gaps": citation_gaps,
     "local": local,
     "competitors": competitors,
     "cms": cms,

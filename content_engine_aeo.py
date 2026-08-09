@@ -124,6 +124,7 @@ def _claude_answer(prompt: str, store=None) -> str:
         return text.strip()
     except Exception as e:
         log.warning("claude probe failed: %s", e)
+        _LAST_ERROR["claude"] = str(e)[:160]
         return ""
 
 
@@ -142,6 +143,7 @@ def _google_ai(prompt: str, domain: str) -> dict:
                 "paa": r.get("paa", [])}
     except Exception as e:
         log.warning("google_ai probe failed: %s", e)
+        _LAST_ERROR["google_ai"] = str(e)[:160]
         return {"connected": False}
 
 
@@ -162,6 +164,7 @@ def _openai_answer(prompt: str) -> str:
         return ((j or {}).get("choices") or [{}])[0].get("message", {}).get("content", "")
     except Exception as e:
         log.warning("openai probe failed: %s", e)
+        _LAST_ERROR["openai"] = str(e)[:160]
         return ""
 
 
@@ -188,6 +191,7 @@ def _perplexity_answer(prompt: str) -> str:
         return txt
     except Exception as e:
         log.warning("perplexity probe failed: %s", e)
+        _LAST_ERROR["perplexity"] = str(e)[:160]
         return ""
 
 
@@ -208,7 +212,14 @@ def _gemini_answer(prompt: str) -> str:
         return parts[0].get("text", "")
     except Exception as e:
         log.warning("gemini probe failed: %s", e)
+        _LAST_ERROR["gemini"] = str(e)[:160]
         return ""
+
+
+# Where a probe leaves WHY it failed. probe() reads this to tell an auth
+# error apart from a model that answered with nothing; without it an
+# empty return means both, and the board picks the wrong sentence.
+_LAST_ERROR: dict = {}
 
 
 # Resolved by NAME at call time, not captured as function objects — otherwise
@@ -222,17 +233,42 @@ _ENGINES = [("claude", "_claude_answer", "ANTHROPIC_API_KEY"),
 def probe(prompt: str, *, brand: str, domain: str, rivals=None, store=None) -> dict:
     """One buyer question, asked of every connected AI engine."""
     out = {"prompt": prompt, "google_ai": _google_ai(prompt, domain)}
+    import os as _os
     for name, fname, keyname in _ENGINES:
         fn = globals().get(fname)
-        try:
-            answer = fn(prompt, store) if name == "claude" else fn(prompt)
-        except Exception as e:
-            log.warning("%s probe failed: %s", name, e)
-            answer = ""
-        if not answer:
+        # Whether the variable is non-empty. The value is never read,
+        # logged or stored: presence is all this distinction needs.
+        has_key = bool((_os.getenv(keyname) or "").strip())
+        err = ""
+        if fn is None:
+            err = f"no probe function {fname} exists in this build"
+        else:
+            try:
+                answer = fn(prompt, store) if name == "claude" else fn(prompt)
+            except Exception as e:
+                log.warning("%s probe failed: %s", name, e)
+                answer, err = "", str(e)[:160]
+            if not answer and not err:
+                # The probe caught its own exception and returned "".
+                # Without this the board would say "answered with
+                # nothing" over an authentication failure.
+                err = _LAST_ERROR.pop(name, "")
+        if fn is None or not answer:
+            # THREE different situations, three different sentences. The
+            # old message said "not set or call failed" for all of them,
+            # which sent anyone reading it to check a key that was fine.
+            if not has_key:
+                reason = (f"{keyname} is not set, so this engine was "
+                          f"never asked")
+            elif err:
+                reason = (f"{keyname} IS set and the call failed: {err}")
+            else:
+                reason = (f"{keyname} is set and the engine answered "
+                          f"with nothing")
             out[name] = {"connected": False, "mentioned": False,
                          "rivals_mentioned": [], "citations": [],
-                         "reason": f"{keyname} not set or call failed"}
+                         "key_present": has_key,
+                         "reason": reason}
             continue
         m = find_mentions(answer, brand, domain, rivals)
         out[name] = {"connected": True, **m,

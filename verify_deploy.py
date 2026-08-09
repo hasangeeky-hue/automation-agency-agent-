@@ -272,6 +272,47 @@ except Exception as exc:                              # noqa: BLE001
     print("       could not read the live store: " + repr(exc)[:100])
     print("       (this is not a deploy failure; the code still shipped)")
 
+# ----------------------------------------------------------- ai engines
+head("9. WHICH AI ENGINES ARE WIRED FOR AI-VISIBILITY PROBES?")
+# Presence only. The VALUE of a key is never read, printed or stored:
+# whether the variable is non-empty answers the whole question, and
+# printing a key into a terminal would put it in shell history.
+try:
+    import os as _os9
+    import content_engine_aeo as AEO
+    for _name, _fn, _key in AEO._ENGINES:
+        _has = bool((_os9.getenv(_key) or "").strip())
+        _impl = callable(getattr(AEO, _fn, None))
+        print("       " + _name.ljust(12)
+              + ("key SET  " if _has else "key ABSENT")
+              + ("  probe implemented" if _impl
+                 else "  *** NO PROBE FUNCTION ***"))
+    _aeo = (live.get("aeo") or {}) if "live" in dir() else {}
+    _res = _aeo.get("results") or []
+    print("")
+    print("       last AI probe run: " + str(_aeo.get("at") or "never"))
+    print("       prompts observed: " + str(len(_res)))
+    if _res:
+        _by = {}
+        for _r in _res:
+            for _n, _f2, _k2 in AEO._ENGINES:
+                _e = (_r or {}).get(_n) or {}
+                if _e.get("connected"):
+                    _by[_n] = _by.get(_n, 0) + 1
+        print("       answers recorded per engine: "
+              + (", ".join(k + "=" + str(n) for k, n in _by.items())
+                 or "none"))
+        for _r in _res[:1]:
+            for _n, _f2, _k2 in AEO._ENGINES:
+                _e = (_r or {}).get(_n) or {}
+                if not _e.get("connected") and _e.get("reason"):
+                    print("       " + _n + ": " + str(_e.get("reason"))[:96])
+    else:
+        print("       nothing probed yet. Use 'Probe AI answers' on the "
+              "SEO section, or run the AEO engine.")
+except Exception as exc:                              # noqa: BLE001
+    print("       could not read the AI engines: " + repr(exc)[:100])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:
