@@ -15,6 +15,7 @@ Exit code is 0 only if every check passes.
 """
 from __future__ import annotations
 
+import ast
 import re
 import sys
 import traceback
@@ -36,7 +37,7 @@ def head(t):
 
 
 print("=" * 74)
-print("SEARCH INTELLIGENCE OS - DEPLOY VERIFICATION")
+print("SEARCH INTELLIGENCE OS + CONTENT FACTORY OS - DEPLOY VERIFICATION")
 print("=" * 74)
 
 # ---------------------------------------------------------------- modules
@@ -314,6 +315,110 @@ try:
               "SEO section, or run the AEO engine.")
 except Exception as exc:                              # noqa: BLE001
     print("       could not read the AI engines: " + repr(exc)[:100])
+
+# ------------------------------------------------------ content factory
+head("10. THE CONTENT FACTORY OS")
+try:
+    import content_engine_factory_agents as FA
+    import content_engine_factory_os as FOS
+    import content_engine_factory_screens as CFS
+    import content_engine_factory_ui as CFU
+    import content_engine_factory_boards as CFB
+
+    check("the four factory modules are in this image", True)
+    _cs = CFU.check_screens()
+    check("nine screens, each with a renderer and a contract",
+          _cs["ok"], str(_cs["problems"]))
+    check("the old boards module is a shim over the new OS",
+          "content_engine_factory_ui" in
+          open("content_engine_factory_boards.py",
+               encoding="utf-8").read())
+    check("the dashboard's entry point still resolves",
+          callable(CFB.factory_section))
+
+    _fsec = CFB.factory_section({})
+    check("the factory section renders", len(_fsec) > 5000,
+          str(len(_fsec)) + " chars")
+    print("       " + str(len(_fsec)) + " characters")
+
+    _fids = re.findall(r"id=['\"]([^'\"]+)", _fsec)
+    check("no duplicate element id in the factory",
+          not [x for x in set(_fids) if _fids.count(x) > 1],
+          str(sorted({x for x in _fids if _fids.count(x) > 1})))
+
+    _fempty = []
+    for _sid, _n, _lab, _fn, _q in CFU.SCREENS:
+        _m = re.search(r"id=['\"]cfpanel-" + _sid + r"['\"](.*?)"
+                       r"(?=id=['\"]cfpanel-|$)", _fsec, re.S)
+        _txt = re.sub(r"<[^>]+>", " ", _m.group(1)) if _m else ""
+        if len(" ".join(_txt.split())) < 100:
+            _fempty.append(_sid)
+    check("every one of the nine panels renders real content",
+          not _fempty, str(_fempty))
+    check("no factory screen raised into its panel",
+          "could not render" not in _fsec)
+
+    # The boundary, checked against the running code.
+    check("paid creative is addressed to the MEDIA BUYING OS",
+          FOS.DESTINATIONS["META_PAID"][0] == "MEDIA_BUYING_OS")
+    check("blog goes to the SEO OS, email to the Email OS",
+          FOS.DESTINATIONS["BLOG"][0] == "SEO_OS"
+          and FOS.DESTINATIONS["EMAIL"][0] == "EMAIL_OS")
+    check("there are exactly four agents", len(FA.AGENTS) == 4,
+          str(len(FA.AGENTS)))
+    check("no agent may approve, distribute or publish",
+          all(not FA.guard(a, act)["ok"] for a in FA.AGENTS
+              for act in ("approve_content", "distribute_content",
+                          "publish_content")))
+    check("an agent cannot edit a locked block",
+          FOS.apply_block_edit(
+              [FOS.block("HEADLINE", "x", id="b", locked=True)],
+              "b", "y", actor="AGENT")["state"] == "LOCKED")
+    check("approval needs a human AND a named approver",
+          FOS.transition("REVIEW", "APPROVED", actor="AGENT",
+                         approver="x")["ok"] is False
+          and FOS.transition("REVIEW", "APPROVED",
+                             actor="HUMAN")["ok"] is False
+          and FOS.transition("REVIEW", "APPROVED", actor="HUMAN",
+                             approver="Murtuja")["ok"] is True)
+    check("AI_GENERATED is not a content state",
+          "AI_GENERATED" not in FOS.CONTENT_STATUS)
+    check("unapproved content cannot be handed off",
+          FOS.build_package({"id": "v", "channel": "META_PAID",
+                             "status": "REVIEW"},
+                            approval={"approved_by": "x"})["ok"] is False)
+    check("ACCEPTED is reported as SENT, never PUBLISHED",
+          FOS.receive_handoff_result({}, {"state": "ACCEPTED"})["state"]
+          == "SENT")
+    check("WINNER needs a baseline and enough sample",
+          FOS.classify_result({"ctr": 0.9, "impressions": 40},
+                              metric="ctr",
+                              baseline=0.02)["result"]
+          == "INSUFFICIENT_DATA")
+    check("a rate over a zero denominator is None, not 0.0",
+          FOS.rate(5, 0) is None)
+    check("exhausting an agent budget escalates and does NOT retry",
+          FA.spend(FA.new_run("CREATOR", "x"),
+                   steps=99)["state"] == "NEEDS_HUMAN")
+    check("no while loop exists in the agent module",
+          not [n for n in ast.walk(ast.parse(open(
+              "content_engine_factory_agents.py",
+              encoding="utf-8").read())) if isinstance(n, ast.While)])
+
+    # What the factory is holding right now, if a store is reachable.
+    print("")
+    try:
+        _fl = FOS.loop_state({})
+        print("       factory loop: " + _fl["state"])
+        print("       " + _fl["why"][:150])
+    except Exception:                                 # noqa: BLE001
+        pass
+    _caps = [c for c in FOS.tool_matrix() if c.get("mvp")]
+    for _c in _caps:
+        print("       " + _c["capability"].ljust(18)
+              + _c["state"].ljust(18) + _c["why"][:60])
+except Exception as exc:                              # noqa: BLE001
+    check("the Content Factory OS loaded", False, repr(exc)[:110])
 
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
