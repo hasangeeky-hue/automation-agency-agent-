@@ -1329,5 +1329,42 @@ for _tabB, _markB in (("seocmd", "111"), ("seoanalytics", "410"),
       bool(_mB) and _markB in _mB.group(1),
       "missing " + _markB)
 
+print("")
+print("L25 GA4: WHICH ABSENCE IS THIS?")
+# From the box: "GA4: connected, 2 channels" and "Organic sessions:
+# None". A bare None there reads exactly like "GA4 is not connected",
+# and the two call for completely different actions.
+def _ch25(names):
+    return {"insights": {"ga4": {"channels": [
+        {"sessionDefaultChannelGroup": n, "sessions": "10"}
+        for n in names], "totals": {"sessions": "50"}},
+        "gsc": {"daily": [{"clicks": 1, "impressions": 73,
+                           "position": 40.9}]}}}
+
+
+_no25 = BR8.search_totals(_ch25(["Direct", "Referral"]))
+t("GA4 answering without an organic channel yields no sessions",
+  _no25["sessions"] is None)
+t("AND IT NAMES THE CHANNELS GA4 ACTUALLY RETURNED",
+  "Direct, Referral" in _no25["sessions_note"])
+t("and separates that from GA4 being disconnected",
+  "not the same as GA4 being disconnected" in _no25["sessions_note"])
+t("GA4 returning nothing at all says THAT instead",
+  "no channel breakdown" in BR8.search_totals(_ch25([]))["sessions_note"])
+t("an organic channel is found and credited",
+  BR8.search_totals(_ch25(["Organic Search"]))["sessions"] == 10.0)
+t("ORGANIC SOCIAL IS NOT COUNTED AS ORGANIC SEARCH",
+  BR8.search_totals(_ch25(["Organic Social"]))["sessions"] is None)
+t("nor is Organic Video or Organic Shopping",
+  BR8.search_totals(_ch25(["Organic Video",
+                           "Organic Shopping"]))["sessions"] is None)
+t("paid search is never counted as organic",
+  BR8.search_totals(_ch25(["Paid Search"]))["sessions"] is None)
+t("THE SCREEN PRINTS WHICH ABSENCE IT IS",
+  "was not among them" in SS8.search_analytics(_r15, _no25))
+t("and stays quiet when organic was found",
+  "was not among them" not in
+  SS8.search_analytics(_r15, BR8.search_totals(_ch25(["Organic Search"]))))
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

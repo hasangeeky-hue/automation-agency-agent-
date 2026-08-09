@@ -1169,7 +1169,15 @@ def search_analytics(r, totals=None) -> str:
             + "sessions from GA4. They will not match, and neither is "
             + "wrong: they count different things at different moments. "
             + "This screen shows both rather than picking one and calling "
-            + "it traffic.</p>")
+            + "it traffic.</p>"
+            # When organic sessions are absent, say WHICH absence it is.
+            # "GA4 is not connected" and "GA4 answered and had no organic
+            # channel" look identical as a blank and call for completely
+            # different actions.
+            + (("<p class='ss-note'>Organic sessions: "
+                + e(t.get("sessions_note")) + "</p>")
+               if t.get("sessions") is None and t.get("sessions_note")
+               else ""))
 
 
 def search_funnel(r, stages=None) -> str:

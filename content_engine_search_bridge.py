@@ -97,18 +97,48 @@ def _ga4_totals(ctx) -> dict:
             "engagement_rate": _f(t.get("engagementRate"))}
 
 
-def _organic_sessions(ctx) -> Optional[float]:
-    """Sessions from the Organic Search channel only.
+#: GA4's default channel group names that mean "someone found us in a
+#: search engine without us paying". Deliberately explicit. Matching a
+#: bare "organic" would swallow Organic Social, Organic Video and
+#: Organic Shopping, which are three other things entirely and would
+#: inflate the one number this whole section is about.
+ORGANIC_CHANNELS = ("organic search",)
 
-    Total sessions include paid, direct and referral. Reporting them as
-    organic on a search screen would credit search with traffic it did
-    not earn.
+
+def _organic(ctx) -> dict:
+    """Organic sessions, and an account of the lookup either way.
+
+    A bare None here is the worst possible answer, because it reads
+    exactly like "GA4 is not connected" when the truth may be "GA4
+    answered and organic search was not in what it returned". The two
+    call for completely different actions, so this reports which.
     """
-    for row in _l(_ga4(ctx).get("channels")):
-        name = str(_d(row).get("sessionDefaultChannelGroup") or "").lower()
-        if "organic search" in name:
-            return _f(_d(row).get("sessions"))
-    return None
+    rows = _l(_ga4(ctx).get("channels"))
+    if not rows:
+        return {"sessions": None, "seen": [],
+                "why": "GA4 returned no channel breakdown for this window"}
+    seen = []
+    for row in rows:
+        d = _d(row)
+        name = str(d.get("sessionDefaultChannelGroup") or "").strip()
+        seen.append(name)
+        if name.lower() in ORGANIC_CHANNELS:
+            return {"sessions": _f(d.get("sessions")), "seen": seen,
+                    "why": "GA4 channel '" + name + "'"}
+    return {
+        "sessions": None,
+        "seen": seen,
+        "why": ("GA4 answered with " + str(len(seen)) + " channel(s) and "
+                "Organic Search was not among them: "
+                + (", ".join(x for x in seen if x) or "unnamed")
+                + ". That is not the same as GA4 being disconnected, and "
+                "it usually means no organic session was recorded in this "
+                "window."),
+    }
+
+
+def _organic_sessions(ctx) -> Optional[float]:
+    return _organic(ctx).get("sessions")
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +149,10 @@ def search_totals(ctx) -> Optional[dict]:
     if not g and not a:
         return None
     out = dict(g)
-    out["sessions"] = _organic_sessions(ctx)
+    org = _organic(ctx)
+    out["sessions"] = org.get("sessions")
+    out["sessions_note"] = org.get("why")
+    out["channels_seen"] = org.get("seen")
     # Conversions and revenue are NOT pulled by ga4_full(), so they stay
     # absent. Showing 0 here would read as "search earned nothing",
     # which is a different and much worse claim than "not measured".

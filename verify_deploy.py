@@ -235,9 +235,10 @@ try:
           + (str(len(gsc.get("queries") or [])) + " queries, "
              + str(len(gsc.get("daily") or [])) + " days"
              if gsc else "NO DATA IN THE STORE"))
-    print("       GA4: " + ("connected, "
-                            + str(len(ga4.get("channels") or []))
-                            + " channels"
+    _chan = [str((c or {}).get("sessionDefaultChannelGroup") or "?")
+             for c in (ga4.get("channels") or [])]
+    print("       GA4: " + ("connected, channels: "
+                            + (", ".join(_chan) or "none")
                             if ga4 else "NO DATA IN THE STORE"))
     print("       rank tracker rows: " + str(len(live.get("ranks") or [])))
     print("")
@@ -261,8 +262,12 @@ try:
               + str(tot.get("impressions")) + " impressions, CTR "
               + str(tot.get("ctr")) + "%, avg position "
               + str(tot.get("position")) + " (impression-weighted)")
-        print("       Organic sessions from GA4: "
-              + str(tot.get("sessions")))
+        if tot.get("sessions") is not None:
+            print("       Organic sessions from GA4: "
+                  + str(tot.get("sessions")))
+        else:
+            print("       Organic sessions: NOT AVAILABLE")
+            print("       reason: " + str(tot.get("sessions_note")))
 except Exception as exc:                              # noqa: BLE001
     print("       could not read the live store: " + repr(exc)[:100])
     print("       (this is not a deploy failure; the code still shipped)")
