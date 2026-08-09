@@ -510,5 +510,63 @@ t("the audit reads the crawl already on the context, not a second fetch",
   "_crawl_of(ctx)" in open("content_engine_seo_boards.py",
                            encoding="utf-8").read())
 
+print("\nL14 PHASE 9: CONTENT (spec 30-34)")
+_rows9 = [
+    {"url": "/decayer", "clicks": 60, "previous_clicks": 160,
+     "position": 9.1, "conversions": 2, "topic": "guides"},
+    {"url": "/grower", "clicks": 400, "previous_clicks": 200,
+     "conversions": 18, "topic": "guides"},
+    {"url": "/thin", "clicks": 4, "previous_clicks": 6, "topic": "misc"},
+    {"url": "/nodata", "topic": "misc"}]
+_r9 = CORE.Repo(Store())
+t("a real decline is DECAYING",
+  SS8.content_health(_rows9[0])["state"] == "DECAYING")
+t("a real rise is GROWING",
+  SS8.content_health(_rows9[1])["state"] == "GROWING")
+t("A THIN PAGE IS NOT MEASURED, never quietly called stable",
+  SS8.content_health(_rows9[2])["state"] == "NOT MEASURED")
+t("and the refusal names the floor it fell under",
+  str(SS8.DECAY_MIN_CLICKS) in SS8.content_health(_rows9[2])["why"])
+t("a page with no before-and-after is NOT MEASURED too",
+  SS8.content_health(_rows9[3])["state"] == "NOT MEASURED")
+_inv9 = SS8.content_inventory(_r9, _rows9)
+t("the inventory prints the verdict WITH its numbers",
+  "clicks 160 to 60" in _inv9)
+t("and states the policy in the note",
+  "rather than being called stable" in _inv9)
+_dec9 = SS8.content_decay(_r9, _rows9)
+t("the decay board excludes thin pages", "/thin" not in _dec9)
+t("and includes the real decline", "/decayer" in _dec9)
+t("with nothing decaying it says quiet is a finding",
+  "Quiet is a finding" in SS8.content_decay(_r9, [_rows9[1]]))
+t("an empty gap board refuses to invent topics",
+  "random direction" in SS8.content_gap(_r9, []))
+t("an incomplete brief is refused with the missing fields",
+  SS8.check_brief({"topic": "x"})["code"] == "BRIEF_INCOMPLETE")
+t("the brief fields are declared once", len(SS8.BRIEF_FIELDS) == 14)
+_ed9 = SS8.content_editor({"questions": ["how long do they last"],
+                           "entities": ["cartridge"]},
+                          "Cartridge guide: how long do they last, here.")
+t("the editor counts coverage against what is actually written",
+  "1 of 1" in _ed9)
+t("and disclaims that coverage is not a quality score",
+  "not a judgement of" in _ed9)
+t("an empty draft scores nothing rather than zero",
+  "stays empty until there" in SS8.content_editor({}, ""))
+t("the content health words are declared once",
+  len(SS8.CONTENT_HEALTH) == 5)
+_sec9 = SEO6.seo_section({"content_rows": _rows9})
+_pp9 = _Panels()
+_pp9.feed(_sec9)
+t("the Content tab is declared",
+  any(x[0] == "seocontent" for x in SEO6.TABS))
+t("AND its panel renders real content",
+  _pp9.panels.get("spanel-seocontent", 0) > 500,
+  "text " + str(_pp9.panels.get("spanel-seocontent")))
+t("it sits under COMPETE, beside keywords",
+  "seocontent" in dict((g[0], g[3]) for g in SEO6.GROUPS)["compete"])
+t("mounting content created no duplicate id",
+  not [x for x in set(_pp9.ids) if _pp9.ids.count(x) > 1])
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

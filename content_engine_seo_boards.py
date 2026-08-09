@@ -2344,6 +2344,22 @@ def _crawl_of(ctx):
     return c if isinstance(c, dict) else {}
 
 
+def _board_content(ctx) -> str:
+    """Spec 30-34, mounted. Inventory, decay and gap from whatever the
+    context actually carries; each says so when it carries nothing."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    c = ctx or {}
+    rows = c.get("content_rows") or []
+    gaps = c.get("content_gaps") or []
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.content_inventory(r, rows)
+            + SS.content_decay(r, rows)
+            + SS.content_gap(r, gaps) + "</div>")
+
+
 def _board_audit(ctx) -> str:
     """Spec 22, mounted."""
     import content_engine_search_screens as SS
@@ -2446,6 +2462,7 @@ _TAB_BOARDS = {
     # THE CLOSED LOOP. Its own tab, because the question it answers -
     # "did any of this actually work" - is not the same question as any
     # other board on this page.
+    "seocontent": [("Content", _board_content)],
     "seoaudit":  [("Site Audit", _board_audit)],
     "seoissues": [("Issues", _board_issues)],
     "seopages":  [("Crawled Pages", _board_pages)],
@@ -2495,6 +2512,7 @@ TABS = [
     ("seogeo", "📍", "GEO — Local & Markets"),
     ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
+    ("seocontent", "📝", "Content"),
     ("seoaudit", "🔎", "Site Audit"),
     ("seoissues", "⚠️", "Issues"),
     ("seopages", "🗂️", "Crawled Pages"),
@@ -2512,7 +2530,8 @@ GROUPS = [
     ("diagnose", "① DIAGNOSE", "What's wrong?",
      ["seoaudit", "seoissues", "seopages", "seotech", "seoonpage"]),
     ("compete", "② COMPETE", "Where do I stand?",
-     ["seokw", "seoaeo", "seogen", "seogeo", "seooff"]),
+     ["seokw", "seocontent", "seoaeo", "seogen", "seogeo",
+      "seooff"]),
     ("sources", "④ SOURCES", "Where does the data come from?", ["seosrc"]),
 ]
 
@@ -2618,6 +2637,7 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
         "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
         "seowork": SCR.workorders_screen(ctx, []),
+        "seocontent": _board_content(ctx),
         "seoaudit": _board_audit(ctx),
         "seoissues": _board_issues(ctx),
         "seopages": _board_pages(ctx),

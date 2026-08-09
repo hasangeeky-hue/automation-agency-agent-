@@ -514,3 +514,256 @@ border-bottom:1px solid var(--so-border)}
 .ss-tbl td{padding:6px 8px;border-bottom:1px solid var(--so-border);
 color:var(--so-text);font-variant-numeric:tabular-nums;vertical-align:top}
 </style>"""
+
+
+# ---------------------------------------------------------------------------
+# CONTENT (spec 30-34)
+# ---------------------------------------------------------------------------
+#: Spec 30. The health words a content row may carry. Declared once so the
+#: inventory, the decay board and the filters cannot name different sets.
+CONTENT_HEALTH = ("GROWING", "STABLE", "DECAYING", "DEAD", "NOT MEASURED")
+
+#: Spec 32. A decline this size over the window is decay rather than noise.
+DECAY_CLICK_DROP = 20.0
+DECAY_MIN_CLICKS = 30
+
+
+def content_health(row) -> dict:
+    """One row's verdict, with the numbers it rests on. Never a bare word."""
+    d = _D(row)
+    now_c, was_c = d.get("clicks"), d.get("previous_clicks")
+    if now_c is None or was_c is None:
+        return {"state": "NOT MEASURED",
+                "why": "no before-and-after clicks are joined to this URL"}
+    try:
+        now_c, was_c = float(now_c), float(was_c)
+    except Exception:
+        return {"state": "NOT MEASURED", "why": "clicks are not numeric"}
+    if (now_c + was_c) < DECAY_MIN_CLICKS:
+        return {"state": "NOT MEASURED",
+                "why": (f"{int(now_c + was_c)} clicks across both windows, "
+                        f"under the {DECAY_MIN_CLICKS} floor. A verdict "
+                        f"here would be noise wearing a label.")}
+    if was_c == 0:
+        return {"state": "GROWING" if now_c > 0 else "DEAD",
+                "why": "no clicks in the previous window"}
+    pct = (now_c - was_c) / was_c * 100
+    if pct <= -DECAY_CLICK_DROP:
+        st = "DECAYING"
+    elif pct >= DECAY_CLICK_DROP:
+        st = "GROWING"
+    elif now_c == 0:
+        st = "DEAD"
+    else:
+        st = "STABLE"
+    return {"state": st, "pct": round(pct, 1),
+            "why": f"clicks {int(was_c)} to {int(now_c)}, {pct:+.1f}%"}
+
+
+def content_inventory(r, rows=None) -> str:
+    """Spec 30. Every content page with its performance and its verdict."""
+    items = _L(rows)
+    if not items:
+        return ("<p class='ss-h'>CONTENT INVENTORY</p>"
+                + empty("No content rows",
+                        "No pages are joined to search data yet. Connect "
+                        "Search Console and run a crawl; an inventory "
+                        "without performance is just a sitemap.",
+                        "Connect Search Console", "nav('map')"))
+    body = ""
+    counts = {}
+    for x in items[:60]:
+        d = _D(x)
+        h = content_health(d)
+        counts[h["state"]] = counts.get(h["state"], 0) + 1
+        tone = {"GROWING": "success", "DECAYING": "danger",
+                "DEAD": "danger", "STABLE": "neutral"}.get(h["state"],
+                                                           "neutral")
+        body += ("<tr>"
+                 + "<td>" + e(str(d.get("url"))[:52]) + "</td>"
+                 + "<td>" + e(d.get("topic") or "uncategorised") + "</td>"
+                 + "<td>" + _n(d.get("clicks")) + "</td>"
+                 + "<td>" + _n(d.get("conversions")) + "</td>"
+                 + "<td class='so-" + tone + "'>" + h["state"]
+                 + "<br><span class='ss-meta'>" + e(h["why"])[:60]
+                 + "</span></td>"
+                 + "<td>" + e(d.get("updated") or "not recorded") + "</td>"
+                 + "</tr>")
+    summary = ", ".join(f"{v} {k.lower()}" for k, v in sorted(counts.items()))
+    heads = ("URL", "Topic", "Clicks", "Conversions", "Health", "Updated")
+    return ("<p class='ss-h'>CONTENT INVENTORY</p>"
+            + "<p class='ss-note'>" + str(len(items)) + " pages: "
+            + e(summary) + ". A page without before-and-after clicks reads "
+            + "NOT MEASURED rather than being called stable.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+def content_decay(r, rows=None) -> str:
+    """Spec 32. Only pages that measurably declined, worst first."""
+    items = []
+    for x in _L(rows):
+        h = content_health(x)
+        if h["state"] == "DECAYING":
+            items.append((h.get("pct", 0), x, h))
+    if not items:
+        return ("<p class='ss-h'>CONTENT DECAY</p>"
+                + empty("Nothing is measurably decaying",
+                        "Either no page dropped more than "
+                        + str(int(DECAY_CLICK_DROP)) + " percent, or too "
+                        "few pages carry before-and-after clicks to judge. "
+                        "Quiet is a finding, but check the inventory for "
+                        "how many read NOT MEASURED.",
+                        "Open inventory", "seoTab('seocontent')"))
+    items.sort(key=lambda z: z[0])
+    body = ""
+    for pct, x, h in items[:30]:
+        d = _D(x)
+        body += ("<tr><td>" + e(str(d.get("url"))[:52]) + "</td>"
+                 + "<td class='so-danger'>" + f"{pct:+.1f}%" + "</td>"
+                 + "<td>" + _n(d.get("previous_clicks")) + "</td>"
+                 + "<td>" + _n(d.get("clicks")) + "</td>"
+                 + "<td>" + _n(d.get("position")) + "</td>"
+                 + "<td>" + e(d.get("updated") or "not recorded") + "</td>"
+                 + "<td>" + TK.button("Analyze decay", variant="ai",
+                                      size="compact",
+                                      onclick="ssDecay()") + "</td></tr>")
+    heads = ("URL", "Change", "Was", "Now", "Position", "Last updated",
+             "Action")
+    return ("<p class='ss-h'>CONTENT DECAY</p>"
+            + "<p class='ss-note'>" + str(len(items)) + " page(s) declined "
+            + "by " + str(int(DECAY_CLICK_DROP)) + " percent or more on at "
+            + "least " + str(DECAY_MIN_CLICKS) + " clicks. Anything thinner "
+            + "is left out rather than reported as decay.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+def content_gap(r, gaps=None) -> str:
+    """Spec 31. Topics with demand that we do not cover."""
+    items = _L(gaps)
+    if not items:
+        return ("<p class='ss-h'>CONTENT GAP</p>"
+                + empty("No gap analysis on record",
+                        "A gap needs competitor coverage and search demand "
+                        "joined together. Neither is on record yet, and a "
+                        "gap list invented without them would send real "
+                        "writing budget in a random direction.",
+                        "Run competitor research", "act('/seo/competitors')"))
+    body = ""
+    for g in items[:40]:
+        d = _D(g)
+        body += ("<tr><td>" + e(d.get("topic")) + "</td>"
+                 + "<td>" + _n(d.get("demand")) + "</td>"
+                 + "<td>" + e(d.get("intent") or "unclassified") + "</td>"
+                 + "<td>" + _n(d.get("competitor_coverage")) + "</td>"
+                 + "<td>" + _n(d.get("our_coverage"), "none") + "</td>"
+                 + "<td>" + e(d.get("business_value") or "UNKNOWN") + "</td>"
+                 + "<td>" + e(d.get("page_type") or "not recommended yet")
+                 + "</td><td>"
+                 + TK.button("Create brief", variant="primary",
+                             size="compact", onclick="ssBrief()")
+                 + "</td></tr>")
+    heads = ("Topic", "Demand", "Intent", "Competitor coverage",
+             "Our coverage", "Business value", "Recommended page type",
+             "Action")
+    return ("<p class='ss-h'>CONTENT GAP</p>"
+            + "<p class='ss-note'>" + str(len(items)) + " topic(s) where "
+            + "demand exists and our coverage does not.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+#: Spec 33. What a brief must carry before anything is written against it.
+BRIEF_FIELDS = ("topic", "primary_keyword", "secondary", "intent",
+                "business_goal", "audience", "page_type", "competitors",
+                "outline", "questions", "entities", "internal_links",
+                "cta", "schema")
+
+
+def check_brief(brief) -> dict:
+    d = _D(brief)
+    missing = [f for f in BRIEF_FIELDS if not d.get(f)]
+    if missing:
+        return {"ok": False, "code": "BRIEF_INCOMPLETE", "missing": missing,
+                "message": ("a brief is what a writer or an agent works "
+                            "from, so it is refused until it carries: "
+                            + ", ".join(missing))}
+    return {"ok": True, "message": "brief complete"}
+
+
+def content_brief(brief=None) -> str:
+    """Spec 33. The brief, or an honest account of what it still needs."""
+    chk = check_brief(brief)
+    if not chk["ok"]:
+        return ("<p class='ss-h'>CONTENT BRIEF</p>"
+                + empty("Brief incomplete",
+                        chk["message"],
+                        "Generate the missing parts", "ssBriefFill()"))
+    d = _D(brief)
+    rows = "".join(
+        "<div class='ss-docrow'><span>" + e(f.replace("_", " ").title())
+        + "</span><b>" + e(str(d.get(f))[:160]) + "</b></div>"
+        for f in BRIEF_FIELDS)
+    return ("<p class='ss-h'>CONTENT BRIEF</p><div class='ss-doc'>" + rows
+            + "</div><div class='ss-diffcta'>"
+            + TK.button("Save brief", variant="secondary", size="compact",
+                        onclick="ssBriefSave()")
+            + TK.button("Generate draft", variant="ai", size="compact",
+                        onclick="ssDraft()") + "</div>")
+
+
+def content_editor(brief=None, draft="") -> str:
+    """Spec 34. Three panes: the brief, the draft, and what is missing."""
+    d = _D(brief)
+    text = str(draft or "")
+    if not text.strip():
+        return ("<p class='ss-h'>CONTENT EDITOR</p>"
+                + empty("No draft yet",
+                        "Generate a draft from an approved brief, or paste "
+                        "one. The optimisation panel scores what is "
+                        "actually written, so it stays empty until there "
+                        "is text.",
+                        "Generate draft", "ssDraft()"))
+    low = text.lower()
+    qs = _L(d.get("questions"))
+    ents = _L(d.get("entities"))
+    q_hit = [q for q in qs if str(q).lower()[:40] in low]
+    e_hit = [x for x in ents if str(x).lower() in low]
+    def cov(hit, total, label):
+        if not total:
+            return ("<div class='ss-docrow'><span>" + label
+                    + "</span><b>not measured: the brief lists none</b>"
+                    + "</div>")
+        return ("<div class='ss-docrow'><span>" + label + "</span><b>"
+                + str(len(hit)) + " of " + str(len(total)) + "</b></div>")
+    return ("<p class='ss-h'>CONTENT EDITOR</p>"
+            + "<div class='ss-doc'>"
+            + "<div class='ss-docrow'><span>Words</span><b>"
+            + str(len(text.split())) + "</b></div>"
+            + cov(q_hit, qs, "Question coverage")
+            + cov(e_hit, ents, "Entity coverage")
+            + "</div>"
+            + "<p class='ss-note'>Coverage counts a question or entity as "
+            + "covered only when its words actually appear in the draft. "
+            + "It is a check on what was written, not a judgement of "
+            + "quality, and it says so rather than implying a score.</p>"
+            + "<div class='ss-diffcta'>"
+            + TK.button("Save draft", variant="secondary", size="compact",
+                        onclick="ssSave()")
+            + TK.button("Publish", variant="primary", size="compact",
+                        onclick="ssPublish()") + "</div>")
+
+
+CSS += """<style>
+.ss-doc{border:1px solid var(--so-border);border-radius:
+var(--so-radius-card);padding:12px 15px;background:var(--so-surface);
+margin:6px 0}
+.ss-docrow{display:flex;justify-content:space-between;gap:14px;
+border-bottom:1px solid var(--so-border);padding:5px 0;font-size:12px}
+.ss-docrow span{color:var(--so-text2)}
+.ss-docrow b{color:var(--so-text);text-align:right}
+</style>"""
