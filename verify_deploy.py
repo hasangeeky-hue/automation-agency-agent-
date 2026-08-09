@@ -1,148 +1,233 @@
-"""
-verify_deploy.py
-============================================================================
-What is ACTUALLY running in this container. Run it inside the API container:
+# -*- coding: utf-8 -*-
+"""Prove the Search Intelligence OS actually landed, on the box.
 
-    docker compose -f deploy/docker-compose.yml exec api python verify_deploy.py
+Run this INSIDE the running container:
 
-Answers, with no guessing:
-  - which build is loaded
-  - whether every engine module imports at all
-  - which sections the dashboard renders, and how many cards each has
-  - whether a section fell back to its old modules, and the reason if so
+    docker compose -f deploy/docker-compose.yml exec -T api \\
+        python verify_deploy.py
 
-Reads only. Makes no network call, spends nothing, changes nothing.
-============================================================================
+It renders the SEO section server-side, the same way the dashboard does,
+and reports what is really there. It does not curl the site, because
+curling / returns the auth wall and grepping that proves nothing: an
+empty result there looks identical whether the feature shipped or not.
+
+Exit code is 0 only if every check passes.
 """
 from __future__ import annotations
 
-import importlib
 import re
 import sys
 import traceback
 
-CARD = re.compile(r"<div class='card (?:overflowcard )?sev-")
-SEC = re.compile(r"id='sec-([a-z0-9_]+)'")
-
-EXPECTED_SECTIONS = [
-    "cockpit", "bi", "riskinfra", "content", "outreach", "sga",
-    "seo", "media", "system",
-]
-BIG_SECTIONS = {"seo": 235, "media": 296, "riskinfra": 208,
-                "bi": 268, "outreach": 240, "sga": 250, "content": 278, "cockpit": 269, "system": 240}
-FELL_BACK = "boards failed to render"
+FAILED = []
+PASSED = []
 
 
-def main() -> int:
-    bad = []
+def check(label, ok, detail=""):
+    (PASSED if ok else FAILED).append(label)
+    print(("  OK   " if ok else "  FAIL ") + label
+          + (("   " + str(detail)) if detail and not ok else ""))
+    return ok
 
-    print("=" * 68)
-    print("1. MODULES")
-    print("=" * 68)
-    for mod in ("content_engine_dashboard", "content_engine_risk",
-                "content_engine_risk_boards", "content_engine_system_boards",
-                "content_engine_bi", "content_engine_bi_boards",
-                "content_engine_outreach", "content_engine_outreach_boards",
-                "content_engine_sga", "content_engine_sga_boards",
-                "content_engine_factory", "content_engine_factory_boards",
-                "content_engine_cockpit", "content_engine_cockpit_boards",
-                "content_engine_collect",
-                "content_engine_seo_boards", "content_engine_media_boards",
-                "content_engine_seo_ops", "content_engine_connectors",
-                "content_engine_charts"):
-        try:
-            importlib.import_module(mod)
-            print(f"   ok    {mod}")
-        except Exception as e:
-            bad.append(f"{mod} will not import: {type(e).__name__}: {e}")
-            print(f"   FAIL  {mod}: {type(e).__name__}: {e}")
 
-    import content_engine_dashboard as D
-    print()
-    print("=" * 68)
-    print("2. BUILD LOADED IN THIS CONTAINER")
-    print("=" * 68)
-    tag = str(getattr(D, "BUILD_TAG", "(no BUILD_TAG)"))
-    for line in tag.split(". "):
-        if line.strip():
-            print("   " + line.strip()[:96])
+def head(t):
+    print("\n" + t)
+    print("-" * 74)
 
-    print()
-    print("=" * 68)
-    print("3. THE PAGE THE BROWSER ACTUALLY GETS")
-    print("=" * 68)
+
+print("=" * 74)
+print("SEARCH INTELLIGENCE OS - DEPLOY VERIFICATION")
+print("=" * 74)
+
+# ---------------------------------------------------------------- modules
+head("1. THE MODULES ARE IN THIS IMAGE")
+MODULES = {
+    "content_engine_search_loop": "the closed loop and the four domain loops",
+    "content_engine_search_board": "the execution board",
+    "content_engine_search_tokens": "the design tokens and the contract",
+    "content_engine_search_screens": "every screen",
+    "content_engine_search_data": "entities, identity, retention, CMS, reports",
+    "content_engine_search_rules": "the rules and the self audit",
+    "content_engine_seo_boards": "the section that assembles them",
+}
+mods = {}
+for name, what in MODULES.items():
     try:
-        import content_engine_api as A
-        html = A.api_dashboard_html()
-        source = "content_engine_api.api_dashboard_html()  (the real route)"
-    except Exception as e:
-        print(f"   the API render failed ({type(e).__name__}: {e});"
-              " falling back to a direct render")
-        traceback.print_exc()
-        html = D.dashboard_html(jobs=[], st={}, health={"healthy": True},
-                                month_spent=0, month_cap=200, day_spent=0,
-                                day_cap=50, taste_skills=[])
-        source = "content_engine_dashboard.dashboard_html()  (direct)"
-    print(f"   rendered by: {source}")
-    print(f"   page size:   {len(html):,} characters")
+        mods[name] = __import__(name)
+        check(name + " (" + what + ")", True)
+    except Exception as exc:                          # noqa: BLE001
+        check(name + " (" + what + ")", False, repr(exc)[:90])
 
-    ids = SEC.findall(html)
-    print(f"   sections:    {len(ids)}")
-    missing = [s for s in EXPECTED_SECTIONS if s not in ids]
-    extra = [s for s in ids if s not in EXPECTED_SECTIONS]
-    if missing:
-        bad.append(f"sections missing from the page: {missing}")
-    if extra:
-        print(f"   unexpected:  {extra}")
+if len(mods) < len(MODULES):
+    print("\nSTOPPING: the image does not contain the new code.")
+    print("The build did not pick up the new files. Rebuild with:")
+    print("  docker compose -f deploy/docker-compose.yml up -d --build")
+    sys.exit(1)
 
-    print()
-    print("   section        cards   state")
-    print("   " + "-" * 56)
-    for sid in ids:
-        m = re.search(r"id='sec-%s'(.*?)(?=id='sec-|\Z)" % sid, html, re.S)
-        body = m.group(1) if m else ""
-        n = len(CARD.findall(body))
-        state = ""
-        if FELL_BACK in body:
-            reason = re.search(r"Reason: ([^<]{0,160})", body)
-            state = "FELL BACK -> " + (reason.group(1) if reason else "reason not stated")
-            bad.append(f"section '{sid}' fell back: {state}")
-        elif sid in BIG_SECTIONS and n < BIG_SECTIONS[sid] * 0.5:
-            state = f"thin (expected around {BIG_SECTIONS[sid]})"
-            bad.append(f"section '{sid}' rendered {n} cards, expected ~{BIG_SECTIONS[sid]}")
-        print(f"   {sid:<14} {n:>5}   {state}")
+SEO = mods["content_engine_seo_boards"]
+SS = mods["content_engine_search_screens"]
+RU = mods["content_engine_search_rules"]
+SL = mods["content_engine_search_loop"]
+DAT = mods["content_engine_search_data"]
 
-    print()
-    print("=" * 68)
-    print("4. THE MERGED-AWAY SECTIONS")
-    print("=" * 68)
-    for old in ("risk", "workforce", "infra", "agents", "map", "overview",
-                "business", "marketing", "sales", "customer", "finance", "budget",
-                "exec", "leads", "email", "social", "google", "ads",
-                "mission", "ops", "appr", "learn"):
-        gone = f"id='sec-{old}'" not in html
-        aliased = f"{old}:'" in html
-        print(f"   {old:<10} removed: {'yes' if gone else 'NO - still a page'}"
-              f"   nav alias: {'yes' if aliased else 'no'}")
-        if not gone:
-            bad.append(f"'{old}' is still a separate page")
-
-    print()
-    print("=" * 68)
-    if bad:
-        print(f"NOT HEALTHY - {len(bad)} problem(s):")
-        for b in bad:
-            print("   * " + b)
-        print()
-        print("Paste this whole output back and it says exactly what to fix.")
-        return 1
-    print("HEALTHY - 9 sections. Business Intelligence 268, Leads & Outreach "
-          "240, Risk & Infrastructure 208 - all merged and full, nothing fell "
-          "back.")
-    print("If the browser still shows the old layout, it is a cached page: "
-          "hard-reload with Ctrl+Shift+R.")
-    return 0
+# ---------------------------------------------------------------- render
+head("2. THE SECTION RENDERS")
+section = ""
+try:
+    section = SEO.seo_section({}, "<div id='legacy-probe'>legacy</div>")
+    check("seo_section built", True)
+    print("       " + str(len(section)) + " characters")
+except Exception:                                     # noqa: BLE001
+    check("seo_section built", False, "raised")
+    traceback.print_exc()
+    sys.exit(1)
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+class Panels:
+    """Split the assembled HTML into panels by id, count the text."""
+
+    def __init__(self, html):
+        self.ids = re.findall(r"id=['\"]([^'\"]+)", html)
+        self.panels = {}
+        for m in re.finditer(
+                r"id=['\"](spanel-[^'\"]+)['\"](.*?)"
+                r"(?=id=['\"]spanel-|$)", html, re.S):
+            body = re.sub(r"<[^>]+>", " ", m.group(2))
+            self.panels[m.group(1)] = len(" ".join(body.split()))
+
+
+P = Panels(section)
+
+# ---------------------------------------------------------------- tabs
+head("3. EVERY TAB IS DECLARED, GROUPED AND FILLED")
+tabs = [t[0] for t in SEO.TABS]
+grouped = set()
+for g in SEO.GROUPS:
+    grouped.update(g[3])
+
+check("thirty-one tabs are declared", len(SEO.TABS) >= 31,
+      "found " + str(len(SEO.TABS)))
+orphans = [t for t in tabs if t not in grouped]
+check("no tab belongs to no group", not orphans, orphans)
+dupes = sorted(set(x for x in P.ids if P.ids.count(x) > 1))
+check("no duplicate element id on the page", not dupes, dupes)
+
+# seosrc is the one tab NOT built from the panels dict: it carries the
+# legacy Google boards, which arrive from the caller. On the live
+# dashboard that is a very large block; here it is whatever probe we
+# passed in. So it is checked against its own contract rather than
+# against a size that would only measure our probe string.
+empty = []
+for t in tabs:
+    if t == "seosrc":
+        continue
+    n = P.panels.get("spanel-" + t, 0)
+    if n < 200:
+        empty.append(t + "=" + str(n))
+check("every engine tab renders a panel with real content", not empty,
+      empty)
+
+_src = re.search(r"id=['\"]spanel-seosrc['\"](.*?)"
+                 r"(?=id=['\"]spanel-|$)", section, re.S)
+check("the legacy Google boards land inside the Sources panel",
+      bool(_src) and "legacy-probe" in _src.group(1),
+      "panel missing" if not _src else "probe not inside it")
+check("and there is exactly ONE Sources panel",
+      P.ids.count("spanel-seosrc") == 1,
+      str(P.ids.count("spanel-seosrc")))
+
+# ---------------------------------------------------------------- shell
+head("4. THE SHELL IS ABOVE THE TABS, NOT BEHIND ONE")
+check("the shell frame rendered", "ss-shell" in section)
+check("it sits above the first tab chip",
+      "ss-shell" in section and "stab-" in section
+      and section.index("ss-shell") < section.index("stab-"))
+check("the freshness bar rendered", "ss-bar" in section)
+
+# ------------------------------------------------------- the new screens
+head("5. THE NEW SCREENS ARE THE ONES BEING DRAWN")
+MARKERS = {
+    "seorules": "WHAT THIS SYSTEM REFUSES TO DO",
+    "seosystem": "COMPONENT LIBRARY",
+    "seodata": "THE CANONICAL MODEL",
+    "seoreport": "REPORTS",
+    "seoloops": "THE LOOPS",
+    "seofind": "COMMAND PALETTE",
+    "seoanalytics": "SEARCH ANALYTICS",
+    "seoagents": "AGENT CENTRE",
+    "seogeoai": "AI SEARCH VISIBILITY",
+    "seodomain": "DOMAIN OVERVIEW",
+    "seokwx": "KEYWORD EXPLORER",
+    "seorank": "POSITION TRACKING",
+}
+for tab, marker in MARKERS.items():
+    m = re.search(r"id=['\"]spanel-" + tab + r"['\"](.*?)"
+                  r"(?=id=['\"]spanel-|$)", section, re.S)
+    check(tab + " draws '" + marker + "'",
+          bool(m) and marker in m.group(1),
+          "panel missing" if not m else "marker not in panel")
+
+# ---------------------------------------------------------------- rules
+head("6. THE OS PASSES ITS OWN AUDIT, ON THIS BOX")
+try:
+    aud = RU.audit()
+    for x in aud["results"]:
+        check(x["id"] + ": " + x["rule"], x["state"] == "HOLDS",
+              x["evidence"][:80])
+    check("every rule holds", aud["state"] == "ALL HOLD",
+          str(aud["broken"]) + " broken")
+except Exception as exc:                              # noqa: BLE001
+    check("the self audit ran", False, repr(exc)[:90])
+
+# ------------------------------------------------------------- behaviour
+head("7. THE RULES BEHAVE, NOT JUST DECLARE")
+try:
+    check("a rate over zero impressions is None, not 0.0",
+          RU.ratio([0], [0])["value"] is None)
+    check("two observations is INSUFFICIENT_DATA, not NEUTRAL",
+          RU.verdict(10, 10, n=2)["verdict"] == "INSUFFICIENT_DATA")
+    check("EXECUTED cannot jump to SUCCESSFUL",
+          "SUCCESSFUL" not in SL.MOVES.get("EXECUTED", ()))
+    check("a live CMS write defaults to a dry run",
+          DAT.apply_change("wordpress", "update_title", "/x", "a", "b")
+          ["state"] == "DRY RUN")
+    check("and needs a named approver to go live",
+          DAT.apply_change("wordpress", "update_title", "/x", "a", "b",
+                           dry_run=False)["state"] == "NEEDS APPROVAL")
+    check("http and https are not merged into one page",
+          DAT.url_identity("http://a.test/x")
+          != DAT.url_identity("https://a.test/x"))
+    try:
+        SS.metric("x", 1)
+        check("a metric with no source is refused", False, "it rendered")
+    except TypeError:
+        check("a metric with no source is refused", True)
+except Exception as exc:                              # noqa: BLE001
+    check("the behaviour checks ran", False, repr(exc)[:90])
+
+# ---------------------------------------------------------------- verdict
+print("\n" + "=" * 74)
+if FAILED:
+    print("DEPLOY NOT VERIFIED: " + str(len(FAILED)) + " check(s) failed, "
+          + str(len(PASSED)) + " passed.")
+    print("")
+    for f in FAILED:
+        print("  FAILED: " + f)
+    print("")
+    print("If the modules imported but panels are empty, the image is")
+    print("older than the code. Rebuild, do not just restart:")
+    print("  docker compose -f deploy/docker-compose.yml up -d --build")
+    print("=" * 74)
+    sys.exit(1)
+
+print("DEPLOY VERIFIED on this box.")
+print("  " + str(len(PASSED)) + " checks passed, 0 failed.")
+print("  " + str(len(SEO.TABS)) + " tabs, "
+      + str(len(SEO.GROUPS)) + " groups, "
+      + str(len(section)) + " characters of section.")
+print("  " + str(len(RU.RULES)) + " rules hold against the running code.")
+print("")
+print("Open the dashboard, go to the SEO section, and use the")
+print("'Rules & Self Audit' tab. It runs these same checks in the browser.")
+print("=" * 74)
+sys.exit(0)
