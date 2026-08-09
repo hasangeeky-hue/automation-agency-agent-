@@ -428,6 +428,69 @@ def _coverage_sentence(cov) -> str:
 
 
 # ---------------------------------------------------------------------------
+# ASSETS. Real files, uploaded from the platform rooms, stored on disk
+# with a content hash for a name so the same upload twice is one file.
+# ---------------------------------------------------------------------------
+#: What an ad platform will actually take. Anything else is refused with
+#: the list, not stored and discovered broken at launch.
+ASSET_TYPES = {".png": "image/png", ".jpg": "image/jpeg",
+               ".jpeg": "image/jpeg", ".gif": "image/gif",
+               ".webp": "image/webp", ".mp4": "video/mp4",
+               ".mov": "video/quicktime", ".webm": "video/webm"}
+ASSET_MAX_MB = 25
+
+
+def asset_dir() -> str:
+    import os
+    d = os.environ.get("ASSET_DIR") or os.path.join(
+        os.environ.get("DATA_DIR") or "data", "assets")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def store_asset(data: bytes, filename: str) -> dict:
+    """Save one uploaded creative asset. Hash-named, type-checked,
+    size-capped, idempotent: the same bytes land on the same name."""
+    import hashlib
+    import os
+    ext = os.path.splitext(str(filename or ""))[1].lower()
+    if ext not in ASSET_TYPES:
+        return {"ok": False,
+                "message": f"{ext or 'that file'} is not a format an ad "
+                           f"platform takes. They are: "
+                           + ", ".join(sorted(ASSET_TYPES))}
+    if not data:
+        return {"ok": False, "message": "the file arrived empty"}
+    if len(data) > ASSET_MAX_MB * 1024 * 1024:
+        return {"ok": False,
+                "message": f"{len(data) / 1048576:.1f} MB is over the "
+                           f"{ASSET_MAX_MB} MB cap"}
+    name = hashlib.sha256(data).hexdigest()[:20] + ext
+    path = os.path.join(asset_dir(), name)
+    if not os.path.exists(path):
+        with open(path, "wb") as f:
+            f.write(data)
+    return {"ok": True, "name": name, "url": f"/mediaos/asset/{name}",
+            "bytes": len(data), "mime": ASSET_TYPES[ext],
+            "message": f"stored as {name} ({len(data) / 1024:.0f} KB)"}
+
+
+def read_asset(name: str):
+    """(bytes, mime) or (None, why). The name is a hash we minted, so
+    anything with a path separator in it is someone probing."""
+    import os
+    nm = str(name or "")
+    ext = os.path.splitext(nm)[1].lower()
+    if ("/" in nm or "\\" in nm or ".." in nm or ext not in ASSET_TYPES):
+        return None, "that is not an asset name this engine minted"
+    path = os.path.join(asset_dir(), nm)
+    if not os.path.exists(path):
+        return None, "no such asset"
+    with open(path, "rb") as f:
+        return f.read(), ASSET_TYPES[ext]
+
+
+# ---------------------------------------------------------------------------
 # CREATIVE EXPERIMENTS. A winner is declared by arithmetic over a floor,
 # or it is not declared at all.
 # ---------------------------------------------------------------------------

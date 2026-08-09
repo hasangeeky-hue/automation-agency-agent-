@@ -4063,6 +4063,120 @@ def build_app():
         return _MF.breakdown(_mrepo(), str(d.get("by") or "device"),
                              campaign_id=str(d.get("campaign_id") or ""))
 
+    @app.post("/mediaos/asset")
+    async def mediaos_asset(request: Request):
+        """Upload one creative asset (JSON base64, no multipart needed)."""
+        import base64
+        import content_engine_media_creative as _MC
+        d = await _body(request)
+        try:
+            data = base64.b64decode(str(d.get("data_b64") or ""),
+                                    validate=True)
+        except Exception:
+            return {"ok": False, "message": "the file data did not decode; "
+                                            "nothing was stored"}
+        out = _MC.store_asset(data, str(d.get("filename") or ""))
+        if out.get("ok"):
+            _log_decision(get_store(), "mediaos_asset",
+                          out.get("name", ""), out.get("message", ""))
+        return out
+
+    @app.get("/mediaos/asset/{name}")
+    def mediaos_asset_get(name: str):
+        import content_engine_media_creative as _MC
+        data, mime = _MC.read_asset(name)
+        if data is None:
+            return JSONResponse({"ok": False, "message": mime},
+                                status_code=404)
+        return Response(content=data, media_type=mime,
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+    @app.post("/mediaos/quicklaunch")
+    async def mediaos_quicklaunch(request: Request):
+        """The platform room's one flow: campaign + group + ad, validated,
+        pre-flighted, and (only if asked AND clean) queued as a launch
+        order behind the approval tier. Nothing here spends."""
+        import content_engine_media_os as _M
+        import content_engine_media_plan as _MP
+        d = await _body(request)
+        r = _mrepo()
+        c = _M.save_campaign(
+            r, name=str(d.get("name") or ""),
+            objective=str(d.get("objective") or "LEADS"),
+            provider=str(d.get("provider") or ""),
+            budget_type=str(d.get("budget_type") or "DAILY"),
+            budget_amount=d.get("budget_amount") or 0,
+            currency=str(d.get("currency") or "EUR"))
+        if not c.get("ok"):
+            return c
+        g = _M.save_ad_group(r, c["id"], name="Core",
+                             audience_id=str(d.get("audience_id") or ""))
+        a = _M.save_ad(r, g["id"], name="Ad 1",
+                       creative_id=str(d.get("creative_id") or ""),
+                       landing_page_url=str(d.get("landing_page_url")
+                                            or ""))
+        pf = _MP.pre_flight(r, c["id"])
+        out = {"ok": True, "campaign_id": c["id"], "level": pf["level"],
+               "errors": pf.get("errors"), "warnings": pf.get("warnings"),
+               "message": (f"draft saved on {d.get('provider')}: "
+                           f"{pf['message']}")}
+        if d.get("launch"):
+            if pf["ok"]:
+                lr = _MP.launch(r, c["id"])
+                out["message"] += " " + lr.get("message", "")
+                out["ok"] = lr.get("ok", False)
+            else:
+                out["message"] += (" Launch was NOT queued: clear the "
+                                   "blocking errors first.")
+        _log_decision(get_store(), "mediaos_quicklaunch",
+                      str(d.get("name"))[:60], out["message"][:120])
+        return out
+
+    @app.post("/mediaos/agent-content")
+    async def mediaos_agent_content(request: Request):
+        """The media agent drafts content for ONE platform, and what it
+        writes lands in the creative library as unpublished drafts plus
+        the usual approval card. Reuses the existing media_buyer agent;
+        no new agent exists."""
+        import content_engine_media_creative as _MC
+        d = await _body(request)
+        prov = str(d.get("provider") or "")
+        got = api_media_draft()
+        if not got.get("ok"):
+            return got
+        # pull the drafted ad copy out of the saved job and into the
+        # library, attributed, so the room can attach it
+        made = 0
+        try:
+            store = get_store()
+            job = next((j for j in store.list_jobs()
+                        if j.get("job_id") == got.get("job_id")), None)
+            draft = ((job or {}).get("payload") or {}).get("media_buyer") \
+                or {}
+            r = _mrepo()
+            for i, gd in enumerate((draft.get("ad_groups") or [])[:5]):
+                heads = [h for h in (gd.get("headlines") or []) if h]
+                descs = [x for x in (gd.get("descriptions") or []) if x]
+                if not heads:
+                    continue
+                res = _MC.save_creative(
+                    r, name=f"{draft.get('campaign_name', 'Agent draft')} "
+                            f"/ {gd.get('theme') or ('group ' + str(i + 1))}"
+                            + (f" ({prov})" if prov else ""),
+                    type="TEXT", headline=heads[0][:120],
+                    primary_text=(descs[0] if descs else "")[:400],
+                    concept=str(draft.get("campaign_name") or "")[:80],
+                    angle=str(gd.get("theme") or "")[:60],
+                    publish=False)
+                made += 1 if res.get("ok") else 0
+        except Exception as ex:
+            log.warning("agent content import failed: %s", ex)
+        return {"ok": True, "job_id": got.get("job_id"), "drafted": made,
+                "message": (f"the agent drafted {got.get('campaign')!r}; "
+                            f"{made} creative draft(s) landed in the "
+                            f"library and the campaign card waits for your "
+                            f"approval. Nothing was published.")}
+
     @app.post("/mediaos/matrix")
     async def mediaos_matrix(request: Request):
         import content_engine_media_creative as _MC

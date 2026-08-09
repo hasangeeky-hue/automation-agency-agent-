@@ -1345,12 +1345,105 @@ def s_plat(r, ctx, legacy_campaigns="", legacy_tracking="") -> str:
     return out
 
 
+#: Ad Manager room -> canonical provider. Facebook and Instagram are both
+#: rooms of Meta; one table so the launch form cannot disagree with the
+#: adapter about who it is talking to.
+ROOM_PROVIDER = {"google": "google", "facebook": "meta",
+                 "instagram": "meta", "linkedin": "linkedin",
+                 "tiktok": "tiktok"}
+
+
+def _room_ops(r, ctx, pid) -> str:
+    """The controls that make a platform room a ROOM and not a museum:
+    launch from here, upload content here, send the agent from here,
+    monitor here."""
+    prov = ROOM_PROVIDER[pid]
+    live, why = M.Adapter(prov).available()
+    objs = "".join(f"<option value='{e(o)}'>{e(o)}</option>"
+                   for o in M.OBJECTIVES if M.supports(prov, o)["ok"])
+    auds = "".join(f"<option value='{e(a.get('id'))}'>{e(a.get('name'))}"
+                   f"</option>" for a in r.all("audiences")[:50]) \
+        or "<option value=''>no audience yet (platform chooses)</option>"
+    cres = "".join(f"<option value='{e(x.get('id'))}'>{e(x.get('name'))}"
+                   f"</option>" for x in r.all("creatives")[:50]) \
+        or "<option value=''>no creative yet - upload below</option>"
+    P = f"mc-{pid}"
+    launch = (
+        f"<p class='mc-wq'>Launch on {e(pid.title())}</p>"
+        f"<div class='mc-form'>"
+        f"<label>Name<input id='{P}-name' "
+        f"placeholder='{e(pid.title())} leads DE'></label>"
+        f"<label>Objective<select id='{P}-obj'>{objs}</select></label>"
+        f"<label>Budget<input id='{P}-bud' type='number' min='0' "
+        f"placeholder='30'></label>"
+        f"<label>Type<select id='{P}-bt'><option>DAILY</option>"
+        f"<option>LIFETIME</option></select></label>"
+        f"<label>Audience<select id='{P}-aud'>{auds}</select></label>"
+        f"<label>Creative<select id='{P}-cre'>{cres}</select></label>"
+        f"<label>Landing<input id='{P}-lp' "
+        f"placeholder='https://landing.page'></label>"
+        f"<button class='mc-btn' onclick=\"mcQuick('{pid}',false,this)\">"
+        f"Create + pre-flight</button>"
+        f"<button class='mc-btn mc-go' onclick=\"mcQuick('{pid}',true,this)"
+        f"\">Create + queue launch</button></div>"
+        f"<p class='mc-note'>"
+        + e(("launch queues an order behind your approval tier"
+             if live else
+             f"{why}; the draft saves now and the launch order holds "
+             f"until the key exists")) + "</p>")
+    upload = (
+        f"<p class='mc-wq'>Upload content</p>"
+        f"<div class='mc-form'>"
+        f"<label>File (image/video)<input id='{P}-file' type='file' "
+        f"accept='.png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.webm'></label>"
+        f"<label>Name<input id='{P}-cname'></label>"
+        f"<label>Headline<input id='{P}-chead'></label>"
+        f"<label>Primary text<input id='{P}-ctext'></label>"
+        f"<label>CTA<input id='{P}-ccta' placeholder='Book a call'>"
+        f"</label>"
+        f"<label>Angle<input id='{P}-cangle' placeholder='pain-point'>"
+        f"</label>"
+        f"<button class='mc-btn mc-go' onclick=\"mcUpload('{pid}',this)\">"
+        f"Upload + save to library</button></div>"
+        f"<p class='mc-note'>the file lands in the asset store "
+        f"(hash-named, {MC.ASSET_MAX_MB} MB cap), the creative in the one "
+        f"library, publishable as v1 and attachable from any room</p>")
+    agent = (
+        f"<p class='mc-wq'>Or send the agent</p>"
+        f"<div class='mc-form'>"
+        f"<button class='mc-btn' onclick=\"mcAgentContent('{prov}',this)\">"
+        f"Agent: draft campaign + content for {e(pid.title())}</button>"
+        f"</div>"
+        f"<p class='mc-note'>runs the EXISTING media buyer once; its copy "
+        f"lands as unpublished drafts in the library and the campaign "
+        f"card waits for your approval. It cannot publish.</p>")
+    mine = [c for c in r.all("media_campaigns")
+            if c.get("provider") == prov]
+    spend_by_day = {}
+    for m in MF.rollup(r, provider=prov)["rows"]:
+        spend_by_day[m["bucket"]] = (spend_by_day.get(m["bucket"], 0.0)
+                                     + float(m["spend"] or 0))
+    monitor = (
+        f"<p class='mc-wq'>Monitor {e(pid.title())}</p>"
+        + table(("campaign", "state", "budget"),
+                [(c.get("name"), c.get("state"),
+                  _money(c.get("budget_amount"), c.get("currency") or "EUR"))
+                 for c in mine[:8]],
+                f"no campaign in the canonical model for {prov} yet")
+        + (chart(sorted(spend_by_day.items()),
+                 title=f"{pid.title()} spend per day")
+           if len(spend_by_day) >= 2 else
+           f"<p class='mc-empty'>the {e(pid)} spend chart draws after two "
+           f"days of measured data (pull or sync)</p>"))
+    return ("<div class='mc-roomops'>" + launch + upload + agent + monitor
+            + "</div>")
+
+
 def s_adman(r, ctx) -> str:
-    """The five-platform Ad Manager, MOUNTED, not rebuilt. Google, Meta
-    (Facebook + Instagram), LinkedIn, TikTok, YouTube inside Google - each
-    with its own preview chrome, hierarchy and per-platform tabs. This
-    module already existed in content_engine_media_platforms and losing it
-    in the UI replacement was a mistake this screen corrects."""
+    """The five-platform Ad Manager: Google, Meta (Facebook + Instagram),
+    LinkedIn, TikTok, YouTube inside Google. The VIEW is the existing
+    module, mounted; the OPS STRIP under each room is new: launch from
+    here, upload content here, send the agent from here, monitor here."""
     import content_engine_media_platforms as MPL
     ads = ctx.get("ads") or {}
     bridge = ("<style>.mc-a3{--pap:var(--s2,#0A0F1E);--card:var(--s1,#0E1526);"
@@ -1360,8 +1453,17 @@ def s_adman(r, ctx) -> str:
               "--okc:var(--good,#3FD98B);--badbg:rgba(255,107,147,.09);"
               "--warnbg:rgba(245,177,76,.09);--okbg:rgba(63,217,139,.09);"
               "--hov:rgba(76,141,255,.07)}" + MPL.CSS + "</style>")
+    # the module's own pane loop, with the ops strip INSIDE each room so
+    # switching platform switches the controls with it
+    panes = "".join(
+        "<div class='a3plat' id='a3plat-" + pid + "'"
+        + ("" if pid == "google" else " style='display:none'") + ">"
+        + MPL.platform_screen(pid, ads) + _room_ops(r, ctx, pid)
+        + "</div>"
+        for pid in MPL.ORDER)
     return (bridge + MPL.JS
-            + "<div class='mc-a3'>" + MPL.ads_screen(ads) + "</div>"
+            + "<div class='mc-a3'>" + MPL.switcher("google") + panes
+            + "</div>"
             + "<p class='mc-note'>a platform without its key shows its "
               "SAMPLE and says so; adding the key on the Connect board "
               "flips it live with no rebuild</p>")
@@ -1776,6 +1878,10 @@ font-variant-numeric:tabular-nums}
 .mc-hbtrack{flex:1;min-width:110px;height:9px;border-radius:5px;
 background:rgba(255,255,255,.06);overflow:hidden}
 .mc-hbtrack span{display:block;height:100%;background:var(--mc-go)}
+.mc-roomops{border:1px solid var(--mc-ln);border-top:2px solid var(--mc-go);
+border-radius:11px;padding:12px 15px;margin:12px 0;
+background:var(--mc-card)}
+.mc-roomops input[type=file]{border:none;background:none;padding:4px 0}
 </style>"""
 
 
@@ -1906,6 +2012,47 @@ try{def=JSON.parse(mcV(p+'def')||'{}');}catch(e){
 toast('the definition is not valid JSON; nothing was saved',false);return;}
 mcPost('/mediaos/audience',{name:mcV(p+'name'),type:mcV(p+'type'),
 definition:def},btn);}
+var MC_ROOM_PROV={google:'google',facebook:'meta',instagram:'meta',
+linkedin:'linkedin',tiktok:'tiktok'};
+function mcQuick(pid,go,btn){var P='mc-'+pid;
+mcPost('/mediaos/quicklaunch',{provider:MC_ROOM_PROV[pid]||pid,
+name:mcV(P+'-name'),objective:mcV(P+'-obj'),
+budget_amount:mcV(P+'-bud'),budget_type:mcV(P+'-bt'),
+audience_id:mcV(P+'-aud'),creative_id:mcV(P+'-cre'),
+landing_page_url:mcV(P+'-lp'),launch:!!go},btn);}
+function mcUpload(pid,btn){var P='mc-'+pid;
+var inp=document.getElementById(P+'-file');
+var f=inp&&inp.files&&inp.files[0];
+function save(url){mcPost('/mediaos/creative',{name:mcV(P+'-cname'),
+type:f?(f.type.indexOf('video')===0?'VIDEO':'IMAGE'):'TEXT',
+asset_url:url||'',headline:mcV(P+'-chead'),
+primary_text:mcV(P+'-ctext'),cta:mcV(P+'-ccta'),
+angle:mcV(P+'-cangle'),publish:true},btn);}
+if(!f){save('');return;}
+if(btn){btn.disabled=true;btn.textContent='Uploading\\u2026';}
+var rd=new FileReader();
+rd.onload=async function(){try{
+var b64=String(rd.result).split(',')[1]||'';
+var r=await fetch('/mediaos/asset',{method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({filename:f.name,data_b64:b64})});
+var j=await r.json();
+if(!j||j.ok===false){toast((j&&j.message)||'upload refused',false);
+if(btn){btn.disabled=false;btn.textContent='Upload + save to library';}
+return;}
+toast(j.message||'uploaded',true);save(j.url);}
+catch(e){toast('could not reach the engine; nothing uploaded',false);
+if(btn){btn.disabled=false;btn.textContent='Upload + save to library';}}};
+rd.readAsDataURL(f);}
+async function mcAgentContent(prov,btn){var lab=btn?btn.textContent:'';
+if(btn){btn.disabled=true;btn.textContent='Agent drafting\\u2026';}
+try{var r=await fetch('/mediaos/agent-content',{method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({provider:prov})});var j=await r.json();
+toast((j&&(j.message||j.error))||'done',j&&j.ok!==false);
+if(j&&j.ok!==false)setTimeout(function(){location.reload();},1400);}
+catch(e){toast('could not reach the engine',false);}
+if(btn){btn.disabled=false;btn.textContent=lab;}}
 async function mcMatrix(sel){try{var r=await fetch('/mediaos/matrix',{
 method:'POST',headers:{'Content-Type':'application/json'},
 body:JSON.stringify({dimension:sel.value})});var j=await r.json();

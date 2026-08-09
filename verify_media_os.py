@@ -604,7 +604,7 @@ for route in ("/mediaos/campaign", "/mediaos/attach", "/mediaos/audience",
               "/mediaos/propose", "/mediaos/sync", "/mediaos/matrix"):
     t(f"route {route} exists", f'"{route}"' in asrc)
 csrc = io.open("content_engine_media_center.py", encoding="utf-8").read()
-_posts = set(_re.findall(r"/mediaos/[a-z]+", csrc))
+_posts = set(_re.findall(r"/mediaos/[a-z-]+", csrc))
 t("every endpoint the screens call actually exists",
   all(f'"{u}"' in asrc for u in _posts), str(sorted(_posts)))
 t("the centre holds no key, token or password",
@@ -905,6 +905,51 @@ t("the campaign detail draws its trend, spec section 33",
 _ids3 = _re2.findall(r"\sid='([^']+)'", sec3)
 t("no duplicate element ids across all fifteen screens",
   not [i for i in set(_ids3) if _ids3.count(i) > 1])
+
+print("\nG33 EACH PLATFORM ROOM IS A CONTROL ROOM, NOT A MUSEUM")
+import os as _os33
+import tempfile as _tf33
+_os33.environ["ASSET_DIR"] = _tf33.mkdtemp(prefix="mc_assets_")
+sec4 = MCTR.section({"media_auto_level": "observe"})
+for pid in ("google", "facebook", "instagram", "linkedin", "tiktok"):
+    t(f"the {pid} room can launch, upload, send the agent and monitor",
+      all(x in sec4 for x in (f"mc-{pid}-name", f"mc-{pid}-file",
+                              f"mcQuick('{pid}'", f"mcUpload('{pid}'"))
+      and f"a3plat-{pid}" in sec4)
+t("facebook and instagram both map to the ONE meta adapter",
+  MCTR.ROOM_PROVIDER["facebook"] == "meta"
+  and MCTR.ROOM_PROVIDER["instagram"] == "meta")
+t("each room offers only the objectives its platform supports",
+  "APP_INSTALL" not in sec4.split("mc-linkedin-obj")[1].split("</select>")[0]
+  and "APP_INSTALL" in sec4.split("mc-google-obj")[1].split("</select>")[0])
+t("the agent button reuses the EXISTING media buyer, no new agent",
+  "mcAgentContent" in sec4
+  and "api_media_draft()" in io.open("content_engine_api.py",
+                                     encoding="utf-8").read())
+_png = b"\x89PNG\r\n\x1a\n" + b"z" * 400
+_as = MC.store_asset(_png, "hero.png")
+t("an uploaded asset stores hash-named", _as["ok"]
+  and _as["url"].startswith("/mediaos/asset/"))
+t("the same bytes twice land on the same name",
+  MC.store_asset(_png, "hero2.png")["name"] == _as["name"])
+t("a format no platform takes is refused with the list",
+  "is not a format an ad platform takes"
+  in MC.store_asset(b"x", "v.exe")["message"])
+t("an oversized file is refused with the cap named",
+  str(MC.ASSET_MAX_MB) in MC.store_asset(
+      b"x" * (MC.ASSET_MAX_MB * 1024 * 1024 + 1), "big.png")["message"])
+t("the asset reads back with its mime",
+  MC.read_asset(_as["name"])[1] == "image/png")
+t("a path-traversal name is refused, not opened",
+  MC.read_asset("../x.png")[0] is None)
+asrc33 = io.open("content_engine_api.py", encoding="utf-8").read()
+for route in ("/mediaos/asset", "/mediaos/quicklaunch",
+              "/mediaos/agent-content"):
+    t(f"route {route} exists", f'"{route}"' in asrc33)
+t("quicklaunch never queues a launch past a blocking error",
+  "Launch was NOT queued" in asrc33)
+t("the agent's drafts land UNPUBLISHED in the library",
+  "publish=False" in asrc33 and "Nothing was published" in asrc33)
 
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)
