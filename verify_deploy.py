@@ -278,13 +278,15 @@ head("9. WHICH AI ENGINES ARE WIRED FOR AI-VISIBILITY PROBES?")
 # whether the variable is non-empty answers the whole question, and
 # printing a key into a terminal would put it in shell history.
 try:
-    import os as _os9
     import content_engine_aeo as AEO
     for _name, _fn, _key in AEO._ENGINES:
-        _has = bool((_os9.getenv(_key) or "").strip())
+        # Same resolver the call uses: settings-first, then environment.
+        # os.getenv alone printed "ABSENT" beside eighteen recorded
+        # answers, because the key was on the Connect board.
+        _has = AEO._key_present(_key)
         _impl = callable(getattr(AEO, _fn, None))
         print("       " + _name.ljust(12)
-              + ("key SET  " if _has else "key ABSENT")
+              + ("key SET   " if _has else "key ABSENT")
               + ("  probe implemented" if _impl
                  else "  *** NO PROBE FUNCTION ***"))
     _aeo = (live.get("aeo") or {}) if "live" in dir() else {}

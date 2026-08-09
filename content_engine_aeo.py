@@ -160,6 +160,14 @@ def _openai_answer(prompt: str) -> str:
                           "max_tokens": 500},
                          headers={"Authorization": f"Bearer {key}",
                                   "Content-Type": "application/json"})
+        if j is None:
+            # _post_json swallows the HTTP status and returns None, so
+            # without this the board reports "answered with nothing"
+            # over a 401 and no spend line is worth recording either.
+            _LAST_ERROR["openai"] = ("the OpenAI call returned no body "
+                                     "(an HTTP error; the connector log "
+                                     "has the status)")
+            return ""
         C.record_api_spend("openai", 0.0004)
         return ((j or {}).get("choices") or [{}])[0].get("message", {}).get("content", "")
     except Exception as e:
@@ -182,6 +190,11 @@ def _perplexity_answer(prompt: str) -> str:
                           "max_tokens": 500},
                          headers={"Authorization": f"Bearer {key}",
                                   "Content-Type": "application/json"})
+        if j is None:
+            _LAST_ERROR["perplexity"] = (
+                "the perplexity call returned no body (an HTTP error; the "
+                "connector log has the status)")
+            return ""
         C.record_api_spend("perplexity", 0.001)
         txt = ((j or {}).get("choices") or [{}])[0].get("message", {}).get("content", "")
         # Perplexity returns its sources separately — fold them in so the
@@ -207,7 +220,15 @@ def _gemini_answer(prompt: str) -> str:
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
             {"contents": [{"parts": [{"text": prompt}]}]},
             headers={"Content-Type": "application/json"})
-        parts = (((j or {}).get("candidates") or [{}])[0]
+        if j is None:
+            # _post_json swallows the HTTP status and returns None, so
+            # without this a 401 or a quota error reads as "the engine
+            # answered with nothing".
+            _LAST_ERROR["gemini"] = ("the Gemini call returned no body "
+                                     "(an HTTP error; the connector log "
+                                     "has the status)")
+            return ""
+        parts = ((j.get("candidates") or [{}])[0]
                  .get("content", {}).get("parts") or [{}])
         return parts[0].get("text", "")
     except Exception as e:
@@ -222,6 +243,27 @@ def _gemini_answer(prompt: str) -> str:
 _LAST_ERROR: dict = {}
 
 
+def _key_present(name: str) -> bool:
+    """Is this credential configured, by the SAME rule the call uses?
+
+    connectors._env() is settings-first then environment, so a key set
+    through the dashboard Connect board lives in Postgres and os.getenv
+    cannot see it. Asking os.getenv reported ABSENT for keys that were
+    configured and answering, which is worse than not asking at all.
+
+    Returns presence only. The value is never returned, logged or
+    stored.
+    """
+    try:
+        import content_engine_connectors as _C
+        if (str(_C._env(name) or "").strip()):
+            return True
+    except Exception:                                 # noqa: BLE001
+        pass
+    import os as _o
+    return bool((_o.getenv(name) or "").strip())
+
+
 # Resolved by NAME at call time, not captured as function objects — otherwise
 # a test (or a hot-patch) that replaces one of these is silently ignored.
 _ENGINES = [("claude", "_claude_answer", "ANTHROPIC_API_KEY"),
@@ -233,12 +275,11 @@ _ENGINES = [("claude", "_claude_answer", "ANTHROPIC_API_KEY"),
 def probe(prompt: str, *, brand: str, domain: str, rivals=None, store=None) -> dict:
     """One buyer question, asked of every connected AI engine."""
     out = {"prompt": prompt, "google_ai": _google_ai(prompt, domain)}
-    import os as _os
     for name, fname, keyname in _ENGINES:
         fn = globals().get(fname)
-        # Whether the variable is non-empty. The value is never read,
-        # logged or stored: presence is all this distinction needs.
-        has_key = bool((_os.getenv(keyname) or "").strip())
+        # Asked through the same resolver the real call uses, so a key
+        # set on the Connect board counts. Presence only.
+        has_key = _key_present(keyname)
         err = ""
         if fn is None:
             err = f"no probe function {fname} exists in this build"
