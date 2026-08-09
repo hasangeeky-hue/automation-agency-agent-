@@ -39,6 +39,7 @@ WHAT THIS ENGINE REFUSES TO PRETEND
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import logging
 
 import content_engine_media_perf as MF
@@ -147,7 +148,7 @@ def _add(acc, row) -> None:
             pass
 
 
-def metric_value(key, sums) -> dict:
+def metric_value(key, sums, quality=None) -> dict:
     """One metric over one aggregated slice: value + the denominator it
     stands on, or INSUFFICIENT_DATA with the reason."""
     m = REGISTRY.get(key)
@@ -160,20 +161,26 @@ def metric_value(key, sums) -> dict:
                 "status": "INSUFFICIENT_DATA",
                 "why": f"{m['display']} is registered but no provider "
                        f"pull collects it yet; nothing is invented"}
+    q = _D(quality)
+    meta = {"unit": m["unit"], "polarity": m["polarity"],
+            "estimated": bool(q.get("estimated")),
+            "complete": bool(q.get("complete", True)),
+            "source": q.get("source") or "canonical facts",
+            "freshness": q.get("freshness")}
     if m["agg"] == "sum":
         return {"metric": key,
                 "value": round(float(sums.get(m["column"]) or 0),
                                m["decimals"]),
-                "status": "OK"}
+                "status": "OK", **meta}
     n = float(sums.get(m["num"]) or 0)
     d = float(sums.get(m["den"]) or 0)
     if d <= 0:
         return {"metric": key, "value": None,
                 "status": "INSUFFICIENT_DATA",
                 "why": f"no {m['den']} in this slice; a {m['display']} "
-                       f"over nothing is a rumour, not a zero"}
+                       f"over nothing is a rumour, not a zero", **meta}
     return {"metric": key, "value": round(n / d * m["mult"], m["decimals"]),
-            "of": f"{n:,.0f} / {d:,.0f}", "status": "OK"}
+            "of": f"{n:,.0f} / {d:,.0f}", "status": "OK", **meta}
 
 
 # ---------------------------------------------------------------------------
@@ -219,12 +226,52 @@ def _row_dim(row, dim, joins) -> str:
     return str(row.get(dim) or "")
 
 
-def analytics_query(r, store, query) -> dict:
+#: §61 the query cache. Keyed by workspace + every input that changes the
+#: answer, and invalidated by the newest fact write, so a stale query can
+#: never survive new data or a changed filter.
+_CACHE = {}
+_CACHE_MAX = 64
+
+
+def cache_key(ws, query, stamp) -> str:
+    import hashlib as _h
+    body = json.dumps({"ws": ws, "q": query, "stamp": stamp},
+                      sort_keys=True, default=str)
+    return _h.sha256(body.encode()).hexdigest()[:24]
+
+
+def _data_stamp(r) -> str:
+    """The newest write across the fact tables. Any new row changes it, so
+    the cache invalidates itself without anybody remembering to."""
+    newest, count = "", 0
+    for coll in ("ad_metrics", "sync_jobs"):
+        for x in r.all(coll):
+            count += 1
+            u = str(x.get("updated_at") or x.get("data_freshness") or "")
+            if u > newest:
+                newest = u
+    # THE COUNT IS PART OF THE STAMP. Timestamps here have one-second
+    # granularity, so two writes in the same second would otherwise look
+    # identical and a new fact would be served a stale answer.
+    return f"{newest}|{count}"
+
+
+def cache_stats() -> dict:
+    return {"entries": len(_CACHE), "max": _CACHE_MAX}
+
+
+def analytics_query(r, store, query, use_cache=True) -> dict:
     """THE one canonical analytics call, spec sections 11-12.
 
     Everything (totals, comparison, timeseries, breakdowns, quality) is
     computed from one filtered row set in one pass per period."""
     q = _D(query)
+    ck = ""
+    if use_cache:
+        ck = cache_key(getattr(r, "ws", ""), q, _data_stamp(r))
+        hit = _CACHE.get(ck)
+        if hit is not None:
+            return {**hit, "cached": True}
     dr = _D(q.get("date_range"))
     to_d = _parse_day(dr.get("to")) or _dt.date.today()
     from_d = _parse_day(dr.get("from")) or (to_d - _dt.timedelta(days=29))
@@ -327,7 +374,7 @@ def analytics_query(r, store, query) -> dict:
         a, b = prev.get(k, {}).get("value"), totals.get(k, {}).get("value")
         deltas[k] = (round((b - a) / a * 100, 1)
                      if a not in (None, 0) and b is not None else None)
-    return {
+    out = {
         "ok": True,
         "query": {"from": from_d.isoformat(), "to": to_d.isoformat(),
                   "granularity": gran, "metrics": metrics,
@@ -350,6 +397,11 @@ def analytics_query(r, store, query) -> dict:
                                      currencies=currencies),
         "generated_at": now(),
     }
+    if use_cache and ck:
+        if len(_CACHE) >= _CACHE_MAX:
+            _CACHE.pop(next(iter(_CACHE)), None)
+        _CACHE[ck] = out
+    return out
 
 
 def data_quality(r, store, *, adopted=0, currencies=None) -> dict:
@@ -501,6 +553,24 @@ def ai_dataset(r, store, context=None) -> dict:
             "generated_at": res["generated_at"]}
 
 
+def partial_state(quality) -> dict:
+    """§56. When one platform is stale or missing, the dashboard says which
+    and what the totals therefore exclude, instead of quietly mixing."""
+    per = _D(_D(quality).get("providers"))
+    ok = [p for p, v in per.items() if v.get("status") in ("LIVE", "RECENT")]
+    bad = {p: v.get("status") for p, v in per.items()
+           if v.get("status") not in ("LIVE", "RECENT")}
+    return {"partial": bool(bad), "healthy": sorted(ok),
+            "degraded": bad,
+            "message": ("every connected platform is current"
+                        if not bad else
+                        "PARTIAL DATA: "
+                        + ", ".join(f"{p} {st.lower()}"
+                                    for p, st in sorted(bad.items()))
+                        + ". Totals include only what was actually read; "
+                          "nothing is estimated to fill the gap.")}
+
+
 def ai_insights(dataset) -> dict:
     """Deterministic interpretation of the HANDED dataset. Facts are
     computed numbers; hypotheses are labelled hypotheses; a missing
@@ -511,11 +581,24 @@ def ai_insights(dataset) -> dict:
     insights = []
 
     def fact(kind, severity, metric, sentence, **kw):
-        insights.append({"type": kind, "severity": severity,
-                         "metric": metric, "fact": sentence,
-                         "hypotheses": kw.get("hypotheses", []),
-                         "recommended_actions": kw.get("actions", []),
-                         "confidence": kw.get("confidence")})
+        # §50: the full envelope. current, baseline and change_percent come
+        # from the handed dataset, and evidence names where each came from.
+        cur = _D(tot.get(metric)).get("value")
+        base = _D(_D(cmp_.get("totals")).get(metric)).get("value")
+        insights.append({
+            "type": kind, "severity": severity,
+            "entity_type": kw.get("entity_type", "ACCOUNT"),
+            "entity_id": kw.get("entity_id", ""),
+            "metric": metric, "current": cur, "baseline": base,
+            "change_percent": changes.get(metric),
+            "fact": sentence,
+            "evidence": kw.get("evidence") or [
+                f"{metric} now {cur} against {base} in the previous period",
+                f"computed by the analytics engine at "
+                f"{ds.get('generated_at')}"],
+            "hypotheses": kw.get("hypotheses", []),
+            "recommended_actions": kw.get("actions", []),
+            "confidence": kw.get("confidence")})
 
     spend = _D(tot.get("spend")).get("value")
     if spend is None or spend == 0:
@@ -545,6 +628,9 @@ def ai_insights(dataset) -> dict:
                  f"but {rv / tot_rv:.0%} of revenue.",
                  hypotheses=["the creative may be fatigued or mistargeted"],
                  actions=["REVIEW_CREATIVE", "GENERATE_VARIATIONS"],
+                 entity_type="CREATIVE", entity_id=row.get("key", ""),
+                 evidence=[f"{row.get('label')} spend {sp} of {tot_sp}",
+                           f"{row.get('label')} revenue {rv} of {tot_rv}"],
                  confidence=0.75)
     plats = _L(_D(ds.get("breakdowns")).get("platform"))
     scored = [(p.get("key"), _D(p.get("roas")).get("value"))

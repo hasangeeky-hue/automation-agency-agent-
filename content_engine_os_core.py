@@ -134,6 +134,7 @@ COLLECTIONS = (
     "ad_accounts", "media_campaigns", "ad_groups", "ads", "audiences",
     "creatives", "creative_versions", "media_plans", "ad_metrics",
     "sync_runs", "media_anomalies", "ad_rollups", "creative_experiments", "publish_jobs",
+    "provider_raw_metrics", "sync_jobs",
 )
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")

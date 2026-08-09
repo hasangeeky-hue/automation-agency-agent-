@@ -48,6 +48,7 @@ SECTIONS = (
     ("aud", "Audiences"), ("plc", "Placements"),
     ("funnel", "Funnel"), ("attr", "Attribution"),
     ("pace", "Budget & Pacing"), ("comp", "Platform Comparison"),
+    ("anom", "Anomalies"),
     ("reports", "Custom Reports"), ("health", "Data Health"),
 )
 
@@ -161,10 +162,38 @@ def build(r, store, ctx) -> str:
         saved = store.get_setting("media_saved_views", []) or []
     except Exception:
         pass
+    anomalies = []
+    try:
+        sc = MF.scan(r, save=False)
+        anomalies = [{**a} for a in sc.get("anomalies", [])[:40]]
+    except Exception:
+        pass
+    targets = {}
+    try:
+        import content_engine_ads as ADS
+        targets = ADS.targets(ADS.get_economics(store)) or {}
+    except Exception:
+        pass
+    alloc = {}
+    try:
+        import content_engine_media_plan as MP
+        alloc = MP.allocate(r, MF._live_budget(r) or 3000)
+    except Exception:
+        pass
+    collection = {}
+    try:
+        import content_engine_media_collect as CO
+        collection = CO.collection_status(r)
+    except Exception:
+        pass
     boot = {"cube": cube, "registry": _registry_js(), "pacing": pacing,
             "quality": quality, "attribution": attrib,
             "creatives": creatives, "audiences": audiences,
-            "views": saved,
+            "views": saved, "anomalies": anomalies,
+            "targets": {"cpa": targets.get("target_cpa_lead"),
+                        "roas": targets.get("target_roas")},
+            "allocation": alloc, "collection": collection,
+            "partial": MX.partial_state(quality),
             "generated_at": MX.now()}
     payload = json.dumps(boot).replace("</", "<\\/")
     nav = "".join(
@@ -195,15 +224,26 @@ def build(r, store, ctx) -> str:
         "onchange='wbCtxChanged()'> vs previous period</label>"
         "<span id='wb-fresh' class='wb-fresh'></span>"
         "<span id='wb-crumb' class='wb-crumb'></span>"
+        "<button class='mc-btn' onclick='wbAiToggle(this)'>&#10022; AI "
+        "analyst</button>"
+        "<button class='mc-btn' onclick='wbRefresh(this)'>&#8635; Refresh"
+        "</button>"
         "</div>"
+        "<div class='wb-drawer' id='wb-drawer'></div>"
+        "<div id='wb-partial'></div>"
         f"<div class='wb-navrow'>{nav}"
         "<span style='flex:1'></span>"
         "<select id='wb-views'></select>"
         "<input id='wb-viewname' placeholder='view name' "
         "style='width:110px'>"
         "<button class='mc-btn' onclick='wbSaveView(this)'>Save view"
-        "</button></div>"
-        f"{secs}"
+        "</button>"
+        "<button class='mc-btn' onclick='wbDuplicateView()'>Duplicate"
+        "</button>"
+        "<button class='mc-btn' onclick='wbDeleteView()'>Delete</button>"
+        "</div>"
+        f"<div class='wb-canvas'><div class='wb-main'>{secs}</div>"
+        "<div class='wb-ai' id='wb-ai'></div></div>"
         f"<script type='application/json' id='wb-boot'>{payload}</script>"
         + JS + CSS + "</div>")
 
@@ -268,6 +308,31 @@ cursor:pointer}
 margin:0 0 5px}
 .wb-repcol label{display:block;font-size:11px;color:var(--mc-mut);
 margin:2px 0}
+.wb-canvas{display:flex;gap:12px;align-items:flex-start}
+.wb-main{flex:1;min-width:0}
+.wb-ai{width:0;overflow:hidden}
+.wb-ai.on{width:290px;border:1px solid var(--mc-ln);border-radius:11px;
+padding:11px 13px;background:var(--mc-card)}
+.wb-ai h4{margin:0 0 6px;font-size:11px;letter-spacing:1px;
+color:#B98CFF}
+.wb-ai p{font-size:11px;color:var(--mc-ink);margin:0 0 7px}
+.wb-ai .hyp{color:var(--mc-mut)}
+.wb-drawer{position:fixed;top:0;right:0;height:100%;width:310px;
+background:var(--mc-card);border-left:1px solid var(--mc-ln);padding:16px;
+transform:translateX(100%);transition:transform .16s;z-index:40;
+overflow:auto}
+.wb-drawer.on{transform:translateX(0)}
+.wb-drawer b{display:block;font-size:15px;margin:0 0 8px}
+.wb-x{float:right;cursor:pointer;color:var(--mc-mut)}
+.wb-partial{border:1px solid #F5B14C;border-radius:9px;padding:7px 12px;
+color:#F5B14C;font-size:11px;margin:0 0 8px}
+.wb-tgt{font-size:10px;display:block;margin-top:2px}
+.wb-exp{cursor:pointer;color:var(--mc-go);margin-right:5px}
+.wb-sub td{background:rgba(76,141,255,.05);font-size:11px}
+.wb-hs{display:flex;gap:6px;flex-wrap:wrap;margin:5px 0}
+.wb-hs span{border:1px solid var(--mc-ln);border-radius:7px;
+padding:2px 8px;font-size:10px;color:var(--mc-mut)}
+.wb-sev-act{color:#FF6B93}.wb-sev-watch{color:#F5B14C}
 </style>"""
 
 
@@ -342,6 +407,96 @@ return "<span style='color:"+s.color+"'>"
 +(s.dash?'╌ ':'─ ')+esc(s.name)+"</span>";}).join(' &middot; ')
 +" &middot; low "+fmt(lo)+" &middot; high "+fmt(hi)+"</div></div>";
 return out;}
+function stackedBar(buckets,keys,data,colors){
+if(!buckets.length)return "<p class='wb-empty'>nothing to stack in this "
++"slice</p>";
+var w=640,h=140,pad=14;
+var tot=buckets.map(function(b){return keys.reduce(function(a,k){
+return a+((data[k]||{})[b]||0);},0);});
+var top=Math.max.apply(null,tot)||1;
+var slot=(w-2*pad)/buckets.length;var bw=slot*0.8;
+var out="<div class='wb-chart'><svg viewBox='0 0 "+w+" "+h+"'>";
+buckets.forEach(function(b,i){var y=h-24;
+keys.forEach(function(k,ki){var v=(data[k]||{})[b]||0;
+var bh=(v/top)*(h-38);y-=bh;
+out+="<rect x='"+(pad+i*slot).toFixed(1)+"' y='"+y.toFixed(1)
++"' width='"+bw.toFixed(1)+"' height='"+bh.toFixed(1)+"' fill='"
++colors[ki%colors.length]+"'><title>"+esc(b)+" "+esc(k)+" "+fmt(v)
++"</title></rect>";});});
+out+="</svg><div class='wb-legend'>"+keys.map(function(k,i){
+return "<span style='color:"+colors[i%colors.length]+"'>\u25a0 "+esc(k)
++"</span>";}).join(' ')+"</div></div>";return out;}
+function xyScatter(pts,xl,yl){if(pts.length<2)
+return "<p class='wb-empty'>needs at least two measured points</p>";
+var w=640,h=160,pad=22;
+var xs=pts.map(function(p){return p.x;}),ys=pts.map(function(p){return p.y;});
+var x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs);
+var y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys);
+var out="<div class='wb-chart'><svg viewBox='0 0 "+w+" "+h+"'>";
+pts.forEach(function(p){
+var x=pad+((p.x-x0)/((x1-x0)||1))*(w-2*pad);
+var y=(h-pad)-((p.y-y0)/((y1-y0)||1))*(h-2*pad);
+out+="<circle cx='"+x.toFixed(1)+"' cy='"+y.toFixed(1)+"' r='5' "
++"fill='#4C8DFF' opacity='.75'><title>"+esc(p.label)+"\n"+esc(xl)+" "
++fmt(p.x)+"\n"+esc(yl)+" "+fmt(p.y)+"</title></circle>";});
+out+="</svg><div class='wb-legend'>x: "+esc(xl)+" &middot; y: "+esc(yl)
++"</div></div>";return out;}
+function health(s,base){
+// §23 EXPLAINABLE. Every component is scored against something REAL:
+// a target the founder configured, or the account's own average over the
+// same slice. Where neither exists the component is 'not measured' and
+// is left out of the mean, because a score built on invented constants
+// is a number that looks like evidence and is not.
+var T=BOOT.targets||{};
+var b=base||[0,0,0,0,0];
+function rel(mine,acct,lowerBetter){
+if(mine===null||!acct)return null;
+var ratio=lowerBetter?(acct/mine):(mine/acct);
+return Math.max(0,Math.min(100,Math.round(ratio*50)));}
+var parts=[];
+var days=(CTX.days||30);
+var spendDays=(s[0]>0)?1:0;
+parts.push(['Delivery',s[1]>0?(s[0]>0?100:0):null,
+s[1]>0?'spent against measured impressions':'no impressions in slice']);
+var cpa=wbAgg('cpa',s),acctCpa=wbAgg('cpa',b);
+parts.push(['Efficiency',
+T.cpa&&cpa?Math.max(0,Math.min(100,Math.round(100*T.cpa/cpa))):
+rel(cpa,acctCpa,true),
+T.cpa?('against your target CPA '+fmt(T.cpa)):
+(acctCpa?'against the account average CPA '+fmt(acctCpa)
+:'no target and no account average')]);
+var cvr=wbAgg('cvr',s),acctCvr=wbAgg('cvr',b);
+parts.push(['Conversion',rel(cvr,acctCvr,false),
+acctCvr?('against the account average CVR '+fmt(acctCvr)+'%')
+:'no account CVR to compare against']);
+var roas=wbAgg('roas',s),acctRoas=wbAgg('roas',b);
+parts.push(['Return',
+T.roas&&roas?Math.max(0,Math.min(100,Math.round(100*roas/T.roas))):
+rel(roas,acctRoas,false),
+T.roas?('against your target ROAS '+fmt(T.roas)):
+(acctRoas?'against the account average ROAS '+fmt(acctRoas)
+:'no target and no account average')]);
+var ctr=wbAgg('ctr',s),acctCtr=wbAgg('ctr',b);
+parts.push(['Creative',rel(ctr,acctCtr,false),
+acctCtr?('against the account average CTR '+fmt(acctCtr)+'%')
+:'no account CTR to compare against']);
+var gq=(BOOT.quality.providers||{}).google;
+parts.push(['Tracking',gq?(gq.status==='LIVE'?100:
+(gq.status==='RECENT'?80:40)):null,
+gq?('provider freshness '+gq.status):'no provider read on record']);
+var got=parts.filter(function(p){return p[1]!==null;});
+return {score:got.length?Math.round(got.reduce(function(a,p){
+return a+p[1];},0)/got.length):null,parts:parts,
+why:got.length?(got.length+' of 6 components had something real to '
++'measure against'):'nothing measurable yet'};}
+function healthHtml(h){if(h.score===null)return "<span class='wb-tgt'>"
++"health not scoreable yet: "+esc(h.why)+"</span>";
+return "<div class='wb-hs'><span><b>"+h.score+"</b>/100</span>"
++h.parts.map(function(p){return "<span title='"+esc(p[2]||'')+"'>"
++esc(p[0])+" "+(p[1]===null?'not measured':p[1])+"</span>";}).join('')
++"</div><span class='wb-tgt'>"+esc(h.why)+". Each component is scored "
++"against a target you set or the account's own average; hover a "
++"component for its basis.</span>";}
 function hbars(rows,opts){opts=opts||{};
 if(!rows.length)return "<p class='wb-empty'>"+(opts.empty
 ||'nothing measured in this slice')+"</p>";
@@ -417,10 +572,15 @@ var map={revenue:'conversion_value'};
 function agg(k,s){return wbAgg(k==='revenue'?'revenue':k,s);}
 var kpis=ks.map(function(k){var v=wbAgg(k,cur),p=wbAgg(k,prev);
 var chg=(p&&v!==null)?+((v-p)/p*100).toFixed(1):null;
+var tgt=(BOOT.targets||{})[k];var tline='';
+if(tgt&&v!==null){var good=(REG[k].pol==='negative')?(v<=tgt):(v>=tgt);
+var off=Math.abs((v-tgt)/tgt*100).toFixed(1);
+tline="<span class='wb-tgt "+(good?'wb-good':'wb-bad')+"'>Target "
++fmt(tgt)+" &middot; "+off+"% "+(v<=tgt?'under':'over')+"</span>";}
 return "<div class='wb-kpi'><span>"+esc(REG[k].disp)+"</span><b>"
 +(v===null?'--':fmt(v))+"</b><i class='"+polCls(k,chg)+"'>"
 +(chg===null?(v===null?'no denominator in slice':'no previous period')
-:(chg>0?'+':'')+chg+'%')+"</i></div>";}).join('');
+:(chg>0?'+':'')+chg+'%')+"</i>"+tline+"</div>";}).join('');
 var g=grp(windowRows(false),function(r){return bucketOf(r[0],CTX.gran);});
 var gp=grp(windowRows(true),function(r){return bucketOf(r[0],CTX.gran);});
 var mk=window.wbMetric||'spend';
@@ -458,10 +618,16 @@ if(empty)return "<div class='wb-card'><p class='wb-ct'>NO PERFORMANCE "
 +"incomplete; the filters exclude every campaign.</p>"
 +"<button class='mc-btn' onclick=\"wbDrillPlat('')\">Clear filters"
 +"</button></div>";
+var stkP=[],stk={};
+windowRows(false).forEach(function(x){var b=bucketOf(x[0],CTX.gran);
+if(stkP.indexOf(x[1])<0)stkP.push(x[1]);
+var d=stk[x[1]]||(stk[x[1]]={});d[b]=(d[b]||0)+x[3];});
 return "<div class='wb-kpis'>"+kpis+"</div>"
 +card('Performance over time','Is overall performance improving?',
 msel+main+viewData('wb-vd-cc',['bucket',mk],
 bs.map(function(b){return [b,wbAgg(mk,g[b])];})))
++card('Where the budget is going','spend by platform over time',
+stackedBar(bs,stkP,stk,['#4C8DFF','#3FD98B','#F5B14C','#B98CFF']))
 +"<div class='wb-row'>"
 +card('Platform performance','Which platform returns most?',
 hbars(platRows,{click:'wbDrillPlat',
@@ -472,26 +638,75 @@ scatter(camps.filter(function(c){return c.spend&&c.roas!==null;})
 .map(function(c){return {x:c.spend,y:c.roas,n:c.conv,label:c.name};})))
 +"</div>"+card('Top / bottom campaigns','',tb);}
 function secPerf(){return secCC();}
+window.wbExpand=function(cid,el){
+var tr=document.getElementById('wb-sub-'+cid);
+if(tr){tr.parentNode.removeChild(tr);el.textContent='▸';return;}
+el.textContent='▾';
+var t=today(),from=dayShift(t,-CTX.days+1);
+var kids=CUBE.creative.filter(function(x){return x[0]>=from&&x[0]<=t
+&&(!CTX.plat||x[1]===CTX.plat);});
+var by=grp(kids,function(x){return x[2];});
+var host=document.getElementById('wb-row-'+cid);
+var html="<tr class='wb-sub' id='wb-sub-"+cid+"'><td colspan='10'>";
+var ks=Object.keys(by);
+html+=ks.length?("<table class='wb-tbl'><thead><tr><th>Creative</th>"
++"<th>Spend</th><th>CTR</th><th>CPA</th><th>ROAS</th></tr></thead>"
++"<tbody>"+ks.map(function(k){var s=by[k];
+var meta=BOOT.creatives[k]||{};
+return "<tr><td>"+esc(meta.name||k)+"</td><td>"+fmt(wbAgg('spend',s))
++"</td><td>"+fmt(wbAgg('ctr',s))+"</td><td>"+fmt(wbAgg('cpa',s))
++"</td><td>"+fmt(wbAgg('roas',s))+"</td></tr>";}).join('')
++"</tbody></table>"):("<span class='wb-empty'>no creative-level rows "
++"under this campaign in this slice; the pull is not segmented by "
++"creative yet</span>");
+html+="</td></tr>";
+host.insertAdjacentHTML('afterend',html);};
+window.wbDrawer=function(cid){
+var t=today(),from=dayShift(t,-CTX.days+1);
+var rows=rowsIn(CUBE.main,from,t).filter(function(x){return x[2]===cid;});
+var s=sums(rows);var meta=CUBE.campaigns[cid]||{};
+var h=health(s,sums(windowRows(false)));
+var el=document.getElementById('wb-drawer');
+el.innerHTML="<span class='wb-x' onclick=\"document."
++"getElementById('wb-drawer').classList.remove('on')\">✕</span>"
++"<b>"+esc(meta.name||cid)+"</b>"
++"<p class='wb-cq'>"+esc(meta.provider||'')+" &middot; "
++esc(meta.state||'')+"</p>"
++['spend','conversions','cpa','roas'].map(function(k){
+return "<p style='font-size:12px'>"+esc(REG[k].disp)+": <b>"
++fmt(wbAgg(k,s))+"</b></p>";}).join('')
++healthHtml(h)
++"<button class='mc-btn mc-go' onclick=\"wbDrillCamp('"+cid+"');"
++"document.getElementById('wb-drawer').classList.remove('on')\">"
++"Open full campaign</button>";
+el.classList.add('on');};
 function secCamps(){var byCamp=grp(windowRows(false),function(r){
 return r[2];});
-var rows=Object.keys(byCamp).map(function(c){var s=byCamp[c];
-var meta=CUBE.campaigns[c]||{};
-return [meta.name||c,meta.provider||'',meta.state||'',
-wbAgg('spend',s),wbAgg('clicks',s),wbAgg('conversions',s),
-wbAgg('cpa',s),wbAgg('revenue',s),wbAgg('roas',s)];})
-.sort(function(a,b){return (b[3]||0)-(a[3]||0);});
-if(!rows.length)return "<p class='wb-empty'>no campaign rows in this "
+var acctBase=sums(windowRows(false));
+var ids=Object.keys(byCamp).sort(function(a,b){
+return (byCamp[b][0]||0)-(byCamp[a][0]||0);});
+if(!ids.length)return "<p class='wb-empty'>no campaign rows in this "
 +"slice</p>";
-return card('Campaign analytics','sorted by spend; click a name in the '
-+'Command Center to drill',
+var body=ids.map(function(c){var s=byCamp[c];
+var meta=CUBE.campaigns[c]||{};var h=health(s,acctBase);
+return "<tr id='wb-row-"+c+"'><td><span class='wb-exp' "
++"onclick=\"wbExpand('"+c+"',this)\">▸</span>"
++"<span class='wb-link' onclick=\"wbDrawer('"+c+"')\">"
++esc(meta.name||c)+"</span></td><td>"+esc(meta.provider||'')
++"</td><td>"+esc(meta.state||'')+"</td><td>"+fmt(wbAgg('spend',s))
++"</td><td>"+fmt(wbAgg('clicks',s))+"</td><td>"
++fmt(wbAgg('conversions',s))+"</td><td>"+fmt(wbAgg('cpa',s))
++"</td><td>"+fmt(wbAgg('revenue',s))+"</td><td>"+fmt(wbAgg('roas',s))
++"</td><td>"+(h.score===null?'--':h.score)+"</td></tr>";}).join('');
+return card('Campaign analytics','click the arrow to expand the '
++'hierarchy, the name for the detail drawer',
 "<div class='wb-scroll'><table class='wb-tbl'><thead><tr>"
 +['Campaign','Platform','Status','Spend','Clicks','Conv.','CPA',
-'Revenue','ROAS'].map(function(h){return '<th>'+h+'</th>';}).join('')
-+"</tr></thead><tbody>"+rows.map(function(r){return '<tr>'
-+r.map(function(c,i){return '<td>'+(c===null?'--':(i>=3?fmt(c):esc(c)))
-+'</td>';}).join('')+'</tr>';}).join('')+"</tbody></table></div>"
+'Revenue','ROAS','Health'].map(function(h2){return '<th>'+h2+'</th>';})
+.join('')+"</tr></thead><tbody>"+body+"</tbody></table></div>"
 +viewData('wb-vd-camps',['campaign','spend'],
-rows.map(function(r){return [r[0],r[3]];})));}
+ids.map(function(c){return [(CUBE.campaigns[c]||{}).name||c,
+wbAgg('spend',byCamp[c])];})));}
 function secCreat(){var t=today(),
 from=dayShift(t,-CTX.days+1);
 var rows=CUBE.creative.filter(function(r){return r[0]>=from&&r[0]<=t
@@ -523,9 +738,36 @@ sp=s.sp+=c.spend||0;s.val+=(c.roas||0)*(c.spend||0);});});
 var arows=Object.keys(attrs).map(function(k){var s=attrs[k];
 return [k,s.sp?+(s.val/s.sp).toFixed(2):null];}).filter(function(r){
 return r[1]!==null;}).sort(function(a,b){return b[1]-a[1];});
-return card('Creative efficiency','high spend + low ROAS = investigate',
+var cvrPts=ids.map(function(id){var s=by[id];
+var meta=BOOT.creatives[id]||{};
+return {x:wbAgg('ctr',s),y:wbAgg('cvr',s),label:meta.name||id};})
+.filter(function(x){return x.x!==null&&x.y!==null;});
+var pick=window.wbCreMetric||'roas';
+var overTime=(function(){
+var top3=list.slice(0,3);
+var series=top3.map(function(c,i){
+var byB={};rows.filter(function(x){return x[2]===c.id;})
+.forEach(function(x){var b=bucketOf(x[0],CTX.gran);
+var acc=byB[b]||(byB[b]=[0,0,0,0,0]);
+for(var k=0;k<5;k++)acc[k]+=x[3+k];});
+var bs2=Object.keys(byB).sort();
+return {name:c.name,color:['#4C8DFF','#3FD98B','#F5B14C'][i],
+pts:bs2.map(function(b){return [b,wbAgg(pick,byB[b])];})};});
+return series.length?lineChart(series):"<p class='wb-empty'>no creative "
++"has two measured buckets yet</p>";})();
+var cmsel="<div class='wb-msel'>"+['roas','cpa','ctr'].map(function(m){
+return "<button class='"+(m===pick?'on':'')+"' onclick=\""
++"window.wbCreMetric='"+m+"';wbRender()\">"+REG[m].disp+"</button>";})
+.join('')+"</div>";
+return card('Creative efficiency','high spend + low ROAS = investigate; '
++'low spend + high ROAS = test scaling',
 scatter(list.filter(function(c){return c.spend&&c.roas!==null;})
 .map(function(c){return {x:c.spend,y:c.roas,n:c.conv,label:c.name};})))
++card('Click generator vs converter','CTR against CVR separates the ad '
++'that earns the click from the one that earns the sale',
+xyScatter(cvrPts,'CTR %','CVR %'))
++card('Creative performance over time','the fatigue view',
+cmsel+overTime)
 +card('Creative table','',tb)
 +card('Attribute performance','spend-weighted ROAS per attribute value',
 hbars(arows,{empty:'no attributed creative has measured return yet'}));}
@@ -576,8 +818,21 @@ out+="<div style='display:flex;gap:9px;align-items:center;margin:4px 0'>"
 +Math.max(2,Math.round(st[1]/top*100))+"%;background:#4C8DFF'></span>"
 +"</span><i style='font-style:normal;font-size:11px'>"+fmt(st[1],0)
 +drop+"</i></div>";});
+var byP=grp(windowRows(false),function(x){return x[1];});
+var cmp=Object.keys(byP).map(function(pl){var s2=byP[pl];
+var rate=(s2[2]>0)?(s2[3]/s2[2]*100):null;
+return [pl,rate===null?null:+rate.toFixed(2)];})
+.filter(function(x){return x[1]!==null;});
+var cmpHtml=cmp.length>1?
+(hbars(cmp,{color:'#3FD98B'})+"<p class='wb-cq'>click to purchase rate "
++"per platform. Definitions differ between providers, so this compares "
++"THIS engine's canonical conversion only.</p>")
+:"<p class='wb-empty'>a platform funnel comparison needs at least two "
++"platforms with measured clicks and conversions in this slice</p>";
 return card('Funnel','each transition shows its rate; deeper stages '
-+'(landing, cart, checkout) appear when first-party events flow',out);}
++'(landing, cart, checkout) appear when first-party events flow',out)
++card('Funnel by platform','where paid traffic is lost, per platform',
+cmpHtml);}
 function secAttr(){var a=BOOT.attribution;
 var camps=CUBE.campaigns;
 function vis(row){var cid=row.campaign_id||'';
@@ -602,8 +857,31 @@ var t2=rc.length?"<div class='wb-scroll'><table class='wb-tbl'>"
 +fmt(r.platform_claims)+"</td><td>"+fmt(r.engine_observed)+"</td><td>"
 +fmt(r.gap)+"</td></tr>";}).join('')+"</tbody></table></div>"
 :"<p class='wb-empty'>nothing to reconcile yet</p>";
+var byP2=grp(windowRows(false),function(x){return x[1];});
+var revRows=Object.keys(byP2).map(function(pl){
+var provRev=byP2[pl][4];
+var firstParty=rc.filter(function(x){
+var m2=CUBE.campaigns[x.campaign_id||''];
+return m2&&m2.provider===pl;}).reduce(function(acc,x){
+return acc+(x.engine_observed||0);},0);
+return {plat:pl,provider:provRev,first:firstParty};});
+var t3=revRows.length?("<div class='wb-scroll'><table class='wb-tbl'>"
++"<thead><tr><th>Platform</th><th>Platform reported</th>"
++"<th>First-party observed</th><th>Difference</th></tr></thead><tbody>"
++revRows.map(function(x){
+var diff=(x.provider&&x.first)?
+(((x.provider-x.first)/x.provider)*100).toFixed(1)+'%':'--';
+return "<tr><td>"+esc(x.plat)+"</td><td>"+fmt(x.provider)+"</td><td>"
++(x.first?fmt(x.first):"<span class='wb-empty'>none attributed</span>")
++"</td><td>"+diff+"</td></tr>";}).join('')+"</tbody></table></div>"
++"<p class='wb-cq'>Platform-reported revenue is what the provider "
++"claims; first-party is what this engine could attribute through the "
++"shared event layer. They are shown side by side and NEVER merged.</p>")
+:"<p class='wb-empty'>no revenue on either side yet</p>";
 return card('Five models, side by side',a.note,t1)
-+card('Platform-reported vs engine-observed',
++card('Revenue: platform reported vs first party',
+'the discrepancy is the finding',t3)
++card('Conversions: platform claims vs engine observed',
 'neither number is corrected into the other',t2);}
 function secPace(){var p=BOOT.pacing;
 if(!p.ok||!p.series||!p.series.length)
@@ -623,7 +901,29 @@ var chart=lineChart([
 pts:p.series.map(function(s){return [s.date,s.actual];})},
 {name:'ideal',color:'#8FA0C8',dash:true,
 pts:p.series.map(function(s){return [s.date,s.ideal];})}]);
+var byP3=grp(windowRows(false),function(x){return x[1];});
+var totS=0,totR=0;Object.keys(byP3).forEach(function(k){
+totS+=byP3[k][0];totR+=byP3[k][4];});
+var mix=Object.keys(byP3).map(function(k){
+return [k+' (budget '+(totS?(byP3[k][0]/totS*100).toFixed(0):0)
++'% / revenue '+(totR?(byP3[k][4]/totR*100).toFixed(0):0)+'%)',
+totS?+(byP3[k][0]/totS*100).toFixed(1):0];});
+var al=BOOT.allocation||{};
+var alHtml=(al.rows&&al.rows.length)?
+(al.rows.map(function(x){return "<p class='wb-cq'>"+esc(x.provider)
++": propose "+fmt(x.amount)+" &middot; "+esc((x.why||'').slice(0,120))
++"</p>";}).join('')
++"<p class='wb-cq'>"+esc(al.message||'')+"</p>"
++"<button class='mc-btn' onclick=\"mcTab&&mcTab('anom')\">"
++"Review in the action queue</button>"
++"<p class='wb-cq'>This panel never applies an allocation. It routes "
++"through the Action Engine and your approval.</p>")
+:"<p class='wb-empty'>"+esc(al.message||'no allocation yet')+"</p>";
 return "<div class='wb-kpis'>"+kpis+"</div>"
++card('Budget share vs revenue contribution',
+'a mismatch here is where money is misallocated',
+hbars(mix))
++card('AI budget recommendation','never applied from this card',alHtml)
 +card('Pacing','are we overspending or underspending?',chart
 +"<p class='wb-cq'>"+esc(p.message)+"</p>"
 +"<p class='wb-cq'>pacing is month-to-date and ignores the toolbar "
@@ -673,9 +973,18 @@ return card('Custom report','dimensions x metrics over the current '
 +'toolbar context',
 "<div class='wb-repgrid'><div class='wb-repcol'><p>DIMENSIONS</p>"+dcol
 +"</div><div class='wb-repcol'><p>METRICS</p>"+mcol+"</div></div>"
++"<div class='wb-repcol'><p>VISUALIZATION</p>"
++['table','bar','line'].map(function(v){
+return "<label><input type='radio' name='wb-rep-v' value='"+v+"'"
++(v==='table'?' checked':'')+"> "+v+"</label>";}).join('')
++"<p class='wb-cq'>a chart type appears only when the selected data "
++"suits it</p></div>"
 +"<div style='margin-top:9px'><button class='mc-btn mc-go' "
 +"onclick='wbRunReport()'>Run report</button> "
-+"<button class='mc-btn' onclick='wbCsv()'>Export CSV</button></div>"
++"<button class='mc-btn' onclick='wbCsv()'>Export CSV</button> "
++"<button class='mc-btn' onclick='wbPng()'>Download PNG</button> "
++"<button class='mc-btn' onclick='wbSchedule(this)'>Schedule</button>"
++"</div>"
 +"<div id='wb-rep-out'></div>");}
 window.wbRunReport=function(){var dims=[].slice.call(
 document.querySelectorAll('.wb-rep-d:checked')).map(function(x){
@@ -700,14 +1009,27 @@ if(srcMap[d])return r[2];return '';}).join(' | ');});
 var out=Object.keys(by).sort().map(function(k){
 return [k].concat(mets.map(function(m){return wbAgg(m,by[k]);}));});
 window.wbLastReport={heads:[dims.join(' | ')].concat(mets),rows:out};
-document.getElementById('wb-rep-out').innerHTML=out.length?
+var viz=(document.querySelector('input[name="wb-rep-v"]:checked')||{})
+.value||'table';
+var chartHtml='';
+if(out.length&&mets.length&&viz!=='table'){
+var lbl=out.map(function(x){return x[0];});
+var val=out.map(function(x){return x[1];});
+if(viz==='bar')chartHtml=hbars(lbl.map(function(l,i){
+return [l,val[i]];}));
+else chartHtml=lineChart([{name:mets[0],color:'#4C8DFF',
+pts:lbl.map(function(l,i){return [l,val[i]];})}]);
+if(dims.indexOf('date')<0&&viz==='line')chartHtml="<p class='wb-empty'>"
++"a line chart needs date as a dimension; showing the table instead</p>";}
+document.getElementById('wb-rep-out').innerHTML=chartHtml+(out.length?
 "<div class='wb-scroll'><table class='wb-tbl'><thead><tr>"
 +window.wbLastReport.heads.map(function(h){return '<th>'+esc(h)
 +'</th>';}).join('')+"</tr></thead><tbody>"
 +out.map(function(r){return '<tr>'+r.map(function(c,i){
 return '<td>'+(c===null?'--':(i?fmt(c):esc(c)))+'</td>';}).join('')
 +'</tr>';}).join('')+"</tbody></table></div>":
-"<p class='wb-empty'>no rows for this combination in this slice</p>";};
+"<p class='wb-empty'>no rows for this combination in this "
++"slice</p>");};
 window.wbCsv=function(){var rep=window.wbLastReport;
 if(!rep){wbRunReport();rep=window.wbLastReport;}
 if(!rep||!rep.rows.length)return;
@@ -717,6 +1039,28 @@ return r.map(function(c){return c===null?'':String(c).replace(/,/g,';');
 var a=document.createElement('a');
 a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
 a.download='media-report.csv';a.click();};
+function secAnom(){var a=BOOT.anomalies||[];
+var vis=a.filter(function(x){
+if(CTX.campaign&&x.campaign_id!==CTX.campaign)return false;
+if(CTX.plat&&x.provider&&x.provider!==CTX.plat)return false;
+return true;});
+if(!vis.length)return card('Anomaly center','',
+"<p class='wb-empty'>No campaign has broken its own baseline in the "
++"current context. Quiet is a finding; anomalies are judged against "
++"each campaign's own history, and a campaign without enough history "
++"is not judged at all.</p>");
+return card('Anomaly center','expected against actual, with the '
++'evidence that fired it',
+"<div class='wb-scroll'><table class='wb-tbl'><thead><tr>"
++['Severity','Detected','Campaign','Type','Expected','Actual','Evidence']
+.map(function(h){return '<th>'+h+'</th>';}).join('')
++"</tr></thead><tbody>"+vis.map(function(x){
+return "<tr><td class='wb-sev-"+esc(x.severity)+"'>"
++esc(String(x.severity||'').toUpperCase())+"</td><td>"
++esc(String(x.detected_at||'').slice(0,16))+"</td><td>"
++esc(x.name)+"</td><td>"+esc(x.type)+"</td><td>"+fmt(x.baseline)
++"</td><td>"+fmt(x.current)+"</td><td>"+esc(String(x.evidence||'')
+.slice(0,90))+"</td></tr>";}).join('')+"</tbody></table></div>");}
 function secHealth(){var q=BOOT.quality;var rows=Object.keys(q.providers)
 .map(function(p){var v=q.providers[p];
 return [p,v.status,v.last_sync||'never',
@@ -728,6 +1072,21 @@ return '<th>'+h+'</th>';}).join('')+"</tr></thead><tbody>"
 +rows.map(function(r){return '<tr>'+r.map(function(c){
 return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';}).join('')
 +"</tbody></table></div>"
++(function(){var c=BOOT.collection||{};
+var per=c.per_platform||{};var ks=Object.keys(per);
+return (ks.length?("<p class='wb-ct' style='margin-top:9px'>Collection"
++"</p><div class='wb-scroll'><table class='wb-tbl'><thead><tr><th>"
++"Platform</th><th>Job</th><th>Received</th><th>Written</th>"
++"<th>Failed</th><th>API</th></tr></thead><tbody>"
++ks.map(function(k){var v=per[k];
+return "<tr><td>"+esc(k)+"</td><td>"+esc(v.status)+"</td><td>"
++fmt(v.received,0)+"</td><td>"+fmt(v.written,0)+"</td><td>"
++fmt(v.failed,0)+"</td><td>"+esc(v.api_version||'')+"</td></tr>";})
+.join('')+"</tbody></table></div>"):"")
++"<p class='wb-cq'>"+esc(c.message||'no collection jobs yet')+"</p>"
++((c.undriven_report_types||[]).length?("<p class='wb-cq'>NOT YET "
++"DRIVEN by this engine: "+esc(c.undriven_report_types.join(', '))
++"</p>"):"");})()
 +"<p class='wb-cq'>"+esc(q.currency.note)+" &middot; "
 +esc(q.timezone)+" &middot; adopted aggregates excluded from date "
 +"math: "+q.adopted_aggregates_excluded+" &middot; estimated flags: "
@@ -735,7 +1094,7 @@ return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';}).join('')
 var RENDER={cc:secCC,perf:secPerf,camps:secCamps,creat:secCreat,
 aud:secAud,plc:function(){return secDim('placement',
 'Placement analytics');},funnel:secFunnel,attr:secAttr,pace:secPace,
-comp:secComp,reports:secReports,health:secHealth};
+comp:secComp,anom:secAnom,reports:secReports,health:secHealth};
 window.wbSec=function(sid,btn){
 document.querySelectorAll('.wb-sec').forEach(function(x){
 x.classList.remove('wb-on');});
@@ -753,7 +1112,104 @@ catch(ex){document.getElementById('wb-sec-'+sid).innerHTML=
 document.getElementById('wb-fresh').textContent=
 'cube generated '+BOOT.generated_at.slice(0,16).replace('T',' ')
 +(CUBE.adopted_excluded?(' | '+CUBE.adopted_excluded
-+' adopted aggregates excluded'):'');};
++' adopted aggregates excluded'):'');
+partialBanner();
+var ai=document.getElementById('wb-ai');
+if(ai&&ai.classList.contains('on'))wbAiLoad();};
+// §48 the persistent AI analyst panel. It renders ONLY what the engine
+// returned for the current context; it never computes a number itself.
+window.wbAiToggle=function(btn){
+var el=document.getElementById('wb-ai');
+el.classList.toggle('on');
+if(btn)btn.classList.toggle('mc-go');
+if(el.classList.contains('on'))wbAiLoad();};
+async function wbAiLoad(){
+var el=document.getElementById('wb-ai');
+el.innerHTML="<h4>\u2726 AI ANALYST</h4><p class='hyp'>reading the "
++"engine\u2026</p>";
+var ctx={date_range:{},filters:{}};
+if(CTX.plat)ctx.filters.platforms=[CTX.plat];
+if(CTX.campaign)ctx.filters.campaign_ids=[CTX.campaign];
+try{var r=await fetch('/mediaos/insights',{method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({context:ctx})});var j=await r.json();
+var head="<h4>\u2726 AI ANALYST</h4><p class='hyp'>Context: "
++esc(CTX.plat||'all platforms')+(CTX.campaign?(' \u00b7 '
++esc((CUBE.campaigns[CTX.campaign]||{}).name||'')):'')
++" \u00b7 last "+CTX.days+" days</p>";
+if(j.status!=='OK'||!(j.insights||[]).length){
+el.innerHTML=head+"<p class='hyp'>"+esc(j.message||'nothing to report')
++"</p>";return;}
+el.innerHTML=head+j.insights.map(function(i,n){
+return "<p><b>"+(n+1)+". FACT:</b> "+esc(i.fact)+"</p>"
++(i.hypotheses||[]).map(function(h){
+return "<p class='hyp'>HYPOTHESIS: "+esc(h)+"</p>";}).join('')
++(i.confidence?("<p class='hyp'>confidence "
++Math.round(i.confidence*100)+"%</p>"):'')
++(i.recommended_actions||[]).map(function(a){
+return "<button class='mc-btn' onclick=\"toast('"+esc(a)
++" is queued through the Action Engine, never applied from this "
++"panel',true)\">"+esc(a.replace(/_/g,' '))+"</button> ";}).join('');})
+.join('');}
+catch(e){el.innerHTML="<h4>\u2726 AI ANALYST</h4><p class='hyp'>the "
++"engine is unreachable, so no analysis is shown. The numbers on the "
++"page still come from the loaded cube.</p>";}}
+// §56 partial-data banner
+function partialBanner(){
+var pb=BOOT.partial||{};var el=document.getElementById('wb-partial');
+if(!el)return;
+el.innerHTML=pb.partial?("<div class='wb-partial'>"+esc(pb.message)
++" <span class='wb-link' onclick=\"wbSec('health',null)\">View sync "
++"status</span></div>"):'';}
+window.wbRefresh=async function(btn){
+if(btn){btn.disabled=true;btn.textContent='\u21bb Refreshing\u2026';}
+try{var r=await fetch('/mediaos/analytics',{method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({date_range:{},metrics:['spend'],
+dimensions:['date']})});var j=await r.json();
+toast(j&&j.ok!==false?('engine reachable; cube generated '
++BOOT.generated_at.slice(0,16).replace('T',' ')
++'. Reload the dashboard for a fresh cube.'):'engine returned an error',
+j&&j.ok!==false);}
+catch(e){toast('engine unreachable; the page keeps computing from the '
++'loaded cube and says so',false);}
+if(btn){btn.disabled=false;btn.textContent='\u21bb Refresh';}};
+window.wbPng=function(){
+var rep=window.wbLastReport;
+if(!rep||!rep.rows.length){toast('run a report first',false);return;}
+var W=760,H=40+rep.rows.length*22;
+var lines=[rep.heads.join('   ')].concat(rep.rows.map(function(r){
+return r.map(function(c){return c===null?'--':String(c);}).join('   ');}));
+var svg="<svg xmlns='http://www.w3.org/2000/svg' width='"+W+"' height='"
++H+"'><rect width='100%' height='100%' fill='#0E1526'/>"
++lines.map(function(l,i){return "<text x='12' y='"+(24+i*22)
++"' fill='#E8EEFF' font-family='monospace' font-size='12'>"
++l.replace(/[<>&]/g,'')+"</text>";}).join('')+"</svg>";
+var img=new Image();
+img.onload=function(){var cv=document.createElement('canvas');
+cv.width=W;cv.height=H;cv.getContext('2d').drawImage(img,0,0);
+var a=document.createElement('a');a.href=cv.toDataURL('image/png');
+a.download='media-report.png';a.click();};
+img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg)));};
+window.wbSchedule=function(btn){
+toast('scheduling a recurring report is NOT built yet; this button '
++'says so rather than pretending. Save the view and export for now.',
+false);};
+window.wbDeleteView=function(){
+var sel=document.getElementById('wb-views');var i=+sel.value;
+var v=BOOT.views[i];if(!v){toast('pick a view first',false);return;}
+fetch('/mediaos/views',{method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({name:v.name,action:'delete'})})
+.then(function(r){return r.json();}).then(function(j){
+toast(j.message||'deleted',j.ok!==false);
+if(j.ok!==false){BOOT.views.splice(i,1);viewsFill();}})
+.catch(function(){toast('engine unreachable; nothing changed',false);});};
+window.wbDuplicateView=function(){
+var sel=document.getElementById('wb-views');var v=BOOT.views[+sel.value];
+if(!v){toast('pick a view first',false);return;}
+document.getElementById('wb-viewname').value=v.name+' copy';
+wbSaveView();};
 // saved views
 function viewsFill(){var sel=document.getElementById('wb-views');
 sel.innerHTML="<option value=''>Saved views…</option>"

@@ -1201,7 +1201,8 @@ t("the analyst cannot reach the database itself",
 print("\nG40 THE WORKBENCH IS THE ANALYTICS UI")
 import content_engine_media_workbench as WB
 _wb = WB.build(r35, st35, {})
-t("the workbench has the twelve spec sections", len(WB.SECTIONS) == 12)
+t("the workbench has the spec's analytics sections",
+  len(WB.SECTIONS) == 13 and any(x[0] == "anom" for x in WB.SECTIONS))
 for _sid, _lab in WB.SECTIONS:
     t(f"section drawn: {_lab}", f"wb-sec-{_sid}" in _wb)
 t("the persistent toolbar carries platform, date, granularity, compare",
@@ -1254,6 +1255,192 @@ t("PRODUCTION_READY is only claimed at 18 of 18",
   and "okc == 18" in _asrc40)
 t("write tests never run without an explicit live flag",
   'SKIPPED" if not live' in _asrc40)
+
+print("\nG42 THE COLLECTION LAYER")
+import content_engine_media_collect as CO
+import content_engine_os_store as _ST42
+t("one reporting collector per platform",
+  set(CO.collectors()) == {"google", "meta", "linkedin", "tiktok"})
+t("the spec's ten report types are declared once",
+  len(CO.REPORT_TYPES) == 10 and "placement" in CO.REPORT_TYPES)
+t("an unsupported breakdown returns UNSUPPORTED_CAPABILITY",
+  CO.ReportingCollector("linkedin").fetch_placement_metrics()["code"]
+  == "UNSUPPORTED_CAPABILITY")
+t("and it never manufactures rows",
+  CO.ReportingCollector("linkedin").fetch_placement_metrics()["rows"] == [])
+t("a report type the PLATFORM supports but this engine does not drive "
+  "says so honestly",
+  "no collector wired" in
+  CO.ReportingCollector("meta").fetch_campaign_metrics()["message"])
+t("an unknown report type is refused with the real list",
+  "is not a report type" in CO.ReportingCollector("google")
+  .fetch("astrology")["message"])
+t("RAW PROVIDER DATA is a real table that is never deleted",
+  "provider_raw_metrics" in _ST42.SCHEMA
+  and "checksum" in str(_ST42.SCHEMA["provider_raw_metrics"]))
+t("sync jobs account for received, written and failed",
+  all(f in str(_ST42.SCHEMA["sync_jobs"]) for f in
+      ("records_received", "records_written", "records_failed",
+       "api_version", "provider_request_id", "freshness_timestamp")))
+st42 = Store()
+r42 = CORE.Repo(st42)
+_raw = CO.store_raw(r42, platform="google", account_id="a",
+                    object_type="campaign", object_id="1",
+                    report_date="2026-08-01", api_version="v25",
+                    payload={"cost": 10})
+t("raw storage keeps a checksum", len(_raw["checksum"]) == 32)
+t("storing the same raw twice does not duplicate it",
+  (CO.store_raw(r42, platform="google", account_id="a",
+                object_type="campaign", object_id="1",
+                report_date="2026-08-01", api_version="v25",
+                payload={"cost": 10}),
+   len(r42.all("provider_raw_metrics")))[1] == 1)
+_norm = CO.normalize_row("google", {"cost": 100, "clicks": 5, "weird": 1},
+                         day="2026-08-01", campaign_id="c1")
+t("normalization maps provider names to canonical ones",
+  _norm["spend"] == 100 and _norm["clicks"] == 5)
+t("and KEEPS what it could not map, rather than discarding it",
+  _norm["provider_native"].get("weird") == 1)
+t("the platform's own conversion claim is kept separately",
+  "provider_reported_conversions" in CO.normalize_row(
+      "google", {"conversions": 3}, day="2026-08-01"))
+t("a negative metric is refused at validation",
+  CO.validate_row({"provider": "google", "day": "2026-08-01",
+                   "spend": -5})[0] is False)
+t("a row with no date is refused",
+  CO.validate_row({"provider": "google"})[0] is False)
+t("the dedup key makes a re-fetch REPLACE rather than double",
+  CO.fact_id(r42, {"provider": "google", "day": "2026-08-01",
+                   "campaign_id": "c1"})
+  == CO.fact_id(r42, {"provider": "google", "day": "2026-08-01",
+                      "campaign_id": "c1"}))
+t("a foreign currency is NOT converted without a rate",
+  CO.convert_currency({"currency": "USD", "spend": 10})["exchange_rate"]
+  is None)
+t("and the refusal says why", "corrupt every total" in
+  CO.convert_currency({"currency": "USD", "spend": 10})["conversion_note"])
+_conv = CO.convert_currency({"currency": "USD", "spend": 10}, rate=0.9,
+                            rate_date="2026-08-09")
+t("with a rate it converts AND records the rate and its date",
+  _conv["spend"] == 9.0 and _conv["exchange_rate"] == 0.9
+  and _conv["exchange_rate_date"] == "2026-08-09")
+t("late conversions have a configurable backfill window per provider",
+  CO.backfill_window("linkedin")["days"] == 14
+  and CO.backfill_window("tiktok")["days"] == 3)
+_job = CO.run_sync_job(r42, platform="meta", report_type="campaign")
+t("a sync job is recorded even when the platform is not driven",
+  r42.all("sync_jobs") and _job["ok"] is False)
+t("collection status lists what is supported but NOT yet driven",
+  len(CO.collection_status(r42)["undriven_report_types"]) > 0)
+
+print("\nG43 THE FULL FACT MODEL")
+_cols = str(_ST42.SCHEMA["ad_metrics"])
+for _f in ("reach", "frequency", "link_clicks", "landing_page_views",
+           "video_views", "video_25", "video_100", "leads", "add_to_cart",
+           "checkout", "purchases", "provider_reported_conversions",
+           "provider_reported_conversion_value", "is_estimated",
+           "data_freshness", "currency", "exchange_rate", "hour",
+           "creative_id", "objective"):
+    t(f"fact column exists: {_f}", _f in _cols)
+
+print("\nG44 QUALITY FLAGS, INSIGHT ENVELOPE, CACHE, PARTIAL STATE")
+_mv = MX.metric_value("spend", {"spend": 10},
+                      {"estimated": True, "source": "META",
+                       "freshness": "x"})
+t("every metric value carries quality metadata",
+  _mv["estimated"] is True and _mv["source"] == "META"
+  and "unit" in _mv and "polarity" in _mv)
+t("the UI can never show estimated data as exact",
+  MX.metric_value("spend", {"spend": 1})["estimated"] is False)
+st44 = Store()
+r44 = CORE.Repo(st44)
+M.save_account(r44, "google", "a", name="G")
+_c44 = M.save_campaign(r44, name="C", objective="LEADS",
+                       provider="google", budget_amount=10)["id"]
+import datetime as _dt44
+for _i in range(6):
+    _d44 = (_dt44.date.today() - _dt44.timedelta(days=5 - _i)).isoformat()
+    r44.put("ad_metrics", {"id": "q%d" % _i, "day": _d44,
+                           "provider": "google", "campaign_id": _c44,
+                           "impressions": 1000, "clicks": 40,
+                           "conversions": 2, "conversion_value": 500,
+                           "spend": 100})
+_q44 = {"metrics": ["spend", "cpa"], "dimensions": ["date"]}
+_a1 = MX.analytics_query(r44, st44, _q44)
+_a2 = MX.analytics_query(r44, st44, _q44)
+t("the query cache serves a repeated identical question",
+  _a2.get("cached") is True)
+t("and the answer is identical, not merely similar",
+  _a1["totals"]["spend"]["value"] == _a2["totals"]["spend"]["value"])
+r44.put("ad_metrics", {"id": "qnew", "day":
+                       _dt44.date.today().isoformat(),
+                       "provider": "google", "campaign_id": _c44,
+                       "spend": 50, "impressions": 10, "clicks": 1})
+t("A NEW FACT INVALIDATES THE CACHE; no stale answer survives new data",
+  MX.analytics_query(r44, st44, _q44).get("cached") is not True)
+t("a changed filter cannot hit another filter's cache entry",
+  MX.analytics_query(r44, st44,
+                     {**_q44, "filters": {"platforms": ["meta"]}}
+                     )["totals"]["spend"]["value"]
+  != _a1["totals"]["spend"]["value"])
+_ins44 = MX.ai_insights(MX.ai_dataset(r44, st44, {}))
+for _i44 in _ins44.get("insights", []):
+    t("insight carries the spec's envelope",
+      all(k in _i44 for k in ("type", "severity", "entity_type",
+                              "entity_id", "metric", "current",
+                              "baseline", "change_percent", "evidence",
+                              "hypotheses", "recommended_actions",
+                              "confidence")))
+_ps = MX.partial_state(MX.data_quality(CORE.Repo(Store()), Store()))
+t("a degraded platform produces the PARTIAL DATA state",
+  _ps["partial"] is True and "PARTIAL DATA" in _ps["message"])
+t("and it says the totals are not padded to compensate",
+  "nothing is estimated to fill the gap" in _ps["message"])
+
+print("\nG45 THE UI PIECES THE AUDIT FOUND MISSING")
+import content_engine_media_workbench as WB2
+_wb2 = WB2.build(r44, st44, {})
+t("§14 Anomalies is a section of the ANALYTICS nav",
+  any(x[0] == "anom" for x in WB2.SECTIONS) and len(WB2.SECTIONS) == 13)
+t("§16 CHART B: spend stacked by platform over time",
+  "function stackedBar(" in _wb2 and "Where the budget is going" in _wb2)
+t("§17 KPI cards carry the configured target", "wb-tgt" in _wb2
+  and "Target " in _wb2)
+t("§22 the campaign table expands into its hierarchy",
+  "function wbExpand" in _wb2 or "wbExpand=" in _wb2)
+t("§23 the health score always exposes its components",
+  "function healthHtml(" in _wb2 and "not measured" in _wb2)
+t("AND every component is scored against a target or a MEASURED "
+  "account average, never an invented constant",
+  "account average" in _wb2 and "ctr*25" not in _wb2)
+t("§25 creative CTR against CVR", "Click generator vs converter" in _wb2)
+t("§25 creative performance over time", "the fatigue view" in _wb2)
+t("§32 the funnel compares platforms", "Funnel by platform" in _wb2)
+t("§34 attribution shows platform revenue against first-party",
+  "platform reported vs first party" in _wb2.lower())
+t("and never merges them", "NEVER merged" in _wb2)
+t("§37 budget share against revenue contribution",
+  "Budget share vs revenue contribution" in _wb2)
+t("§38 the AI budget panel never applies from the card",
+  "never applied from this card" in _wb2)
+t("§42 the report offers chart types", "VISUALIZATION" in _wb2)
+t("§42 PNG export exists", "function wbPng" in _wb2 or "wbPng=" in _wb2)
+t("§42 scheduling ADMITS it is not built rather than faking it",
+  "NOT built yet" in _wb2)
+t("§43 views can be duplicated and deleted",
+  "wbDuplicateView" in _wb2 and "wbDeleteView" in _wb2)
+t("§47 the side detail drawer exists", "wb-drawer" in _wb2)
+t("§48 the persistent AI analyst panel exists",
+  "AI ANALYST" in _wb2 and "wbAiToggle" in _wb2)
+t("and it reads the engine rather than computing its own numbers",
+  "/mediaos/insights" in _wb2)
+t("§56 the partial-data banner exists", "function partialBanner" in _wb2)
+t("§57 data health shows collection accounting too",
+  "Collection" in _wb2 and "NOT YET" in _wb2)
+t("the refresh control exists", "wbRefresh" in _wb2)
+_asrc45 = io.open("content_engine_api.py", encoding="utf-8").read()
+t("saved views can be deleted through the API",
+  '"delete"' in _asrc45 and "view {name!r} deleted" in _asrc45)
 
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)

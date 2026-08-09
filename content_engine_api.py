@@ -4093,11 +4093,18 @@ def build_app():
             return {"ok": False, "message": "a view needs a name"}
         store = get_store()
         views = store.get_setting("media_saved_views", []) or []
-        views = [v for v in views if v.get("name") != name]
-        views.append({"name": name[:60], "ctx": d.get("ctx") or {}})
-        store.set_setting("media_saved_views", views[:30])
+        kept = [v for v in views if v.get("name") != name]
+        if str(d.get("action") or "") == "delete":
+            if len(kept) == len(views):
+                return {"ok": False,
+                        "message": f"no saved view called {name!r}"}
+            store.set_setting("media_saved_views", kept)
+            return {"ok": True, "message": f"view {name!r} deleted",
+                    "count": len(kept)}
+        kept.append({"name": name[:60], "ctx": d.get("ctx") or {}})
+        store.set_setting("media_saved_views", kept[:30])
         return {"ok": True, "message": f"view {name!r} saved",
-                "count": len(views)}
+                "count": len(kept)}
 
     @app.post("/mediaos/wiretest")
     async def mediaos_wiretest(request: Request):
