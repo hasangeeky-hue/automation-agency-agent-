@@ -454,5 +454,61 @@ t("and in the _TAB_BOARDS registry, so the two lists cannot drift",
   '"seoopp":    [(' in _src6)
 t("the legacy Google boards survived the mount", "seo-google" in _sec6)
 
+print("\nL13 PHASE 8: SITE AUDIT, ISSUES AND CRAWLED PAGES, MOUNTED")
+import content_engine_search_screens as SS8
+
+_crawl8 = {"at": "2026-08-09",
+           "pages": [{"url": "/a", "status": 200, "indexable": True,
+                      "title": "A", "word_count": 800,
+                      "internal_links": 3, "clicks": 40},
+                     {"url": "/b", "status": 200, "indexable": False,
+                      "title": "", "word_count": 120,
+                      "internal_links": 0}],
+           "issues": [{"id": "i1", "severity": "CRITICAL",
+                       "title": "12 pages noindexed",
+                       "category": "Indexability", "urls": ["/b"],
+                       "impressions_at_risk": 18400},
+                      {"id": "i2", "severity": "MEDIUM",
+                       "title": "Thin content", "category": "Content",
+                       "urls": ["/b"]}]}
+_r8 = CORE.Repo(Store())
+t("with no crawl the audit REFUSES to show a health score",
+  "most confident wrong number" in SS8.site_audit(_r8))
+_a8 = SS8.site_audit(_r8, _crawl8)
+t("the score is shown with its components, never bare",
+  "Indexability" in _a8)
+t("A CATEGORY THE CRAWL DID NOT MEASURE IS LEFT OUT, not counted healthy",
+  "left out of the score" in _a8)
+_i8 = SS8.issues_board(_r8, _crawl8)
+t("issues sort worst first", _i8.index("CRITICAL") < _i8.index("MEDIUM"))
+t("every severity states its meaning in words, not colour alone",
+  "traffic is at risk right now" in _i8)
+t("impact with no impressions joined reads not measured, never zero",
+  "not measured" in _i8)
+t("the severity table is declared once",
+  len(SS8.SEVERITY) == 5 and len(SS8.AUDIT_CATEGORIES) == 9)
+_p8 = SS8.crawled_pages(_r8, _crawl8)
+t("a field the crawl did not check is NOT a pass",
+  "never a pass" in _p8)
+t("indexable, noindex and not-checked are three states",
+  "noindex" in _p8 and "indexable" in _p8)
+_sec8 = SEO6.seo_section({"crawl": _crawl8})
+_pp8 = _Panels()
+_pp8.feed(_sec8)
+for _tab8 in ("seoaudit", "seoissues", "seopages"):
+    t("tab " + _tab8 + " is declared", any(x[0] == _tab8
+                                           for x in SEO6.TABS))
+    t("AND its panel renders real content: " + _tab8,
+      _pp8.panels.get("spanel-" + _tab8, 0) > 500,
+      "text " + str(_pp8.panels.get("spanel-" + _tab8)))
+_diag = dict((g[0], g[3]) for g in SEO6.GROUPS)["diagnose"]
+t("the audit screens sit under DIAGNOSE, where 'what is wrong' lives",
+  all(x in _diag for x in ("seoaudit", "seoissues", "seopages")))
+t("mounting six Search OS screens created no duplicate id",
+  not [x for x in set(_pp8.ids) if _pp8.ids.count(x) > 1])
+t("the audit reads the crawl already on the context, not a second fetch",
+  "_crawl_of(ctx)" in open("content_engine_seo_boards.py",
+                           encoding="utf-8").read())
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

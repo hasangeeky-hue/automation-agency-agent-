@@ -2338,6 +2338,42 @@ def _repo_or_none():
         return None
 
 
+def _crawl_of(ctx):
+    """The crawl the SEO context already carries. No second fetch."""
+    c = (ctx or {}).get("crawl")
+    return c if isinstance(c, dict) else {}
+
+
+def _board_audit(ctx) -> str:
+    """Spec 22, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.site_audit(r, _crawl_of(ctx)) + "</div>")
+
+
+def _board_issues(ctx) -> str:
+    """Spec 23-24, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.issues_board(r, _crawl_of(ctx)) + "</div>")
+
+
+def _board_pages(ctx) -> str:
+    """Spec 25, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.crawled_pages(r, _crawl_of(ctx)) + "</div>")
+
+
 def _board_opportunities(ctx) -> str:
     """Spec 48-49, mounted."""
     import content_engine_search_screens as SS
@@ -2410,6 +2446,9 @@ _TAB_BOARDS = {
     # THE CLOSED LOOP. Its own tab, because the question it answers -
     # "did any of this actually work" - is not the same question as any
     # other board on this page.
+    "seoaudit":  [("Site Audit", _board_audit)],
+    "seoissues": [("Issues", _board_issues)],
+    "seopages":  [("Crawled Pages", _board_pages)],
     "seoopp":    [("Opportunities", _board_opportunities)],
     "seopage":   [("Page Intelligence", _board_page)],
     "seoloop":   [("Execution & Loops", _board_loop)],
@@ -2456,6 +2495,9 @@ TABS = [
     ("seogeo", "📍", "GEO — Local & Markets"),
     ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
+    ("seoaudit", "🔎", "Site Audit"),
+    ("seoissues", "⚠️", "Issues"),
+    ("seopages", "🗂️", "Crawled Pages"),
     ("seoopp", "🎯", "Opportunities"),
     ("seopage", "📄", "Page Intelligence"),
     ("seoloop", "🔁", "Execution & Loops"),
@@ -2467,7 +2509,8 @@ TABS = [
 GROUPS = [
     ("act", "③ ACT", "What should I do?",
      ["seocmd", "seoopp", "seopage", "seowork", "seoloop"]),
-    ("diagnose", "① DIAGNOSE", "What's wrong?", ["seotech", "seoonpage"]),
+    ("diagnose", "① DIAGNOSE", "What's wrong?",
+     ["seoaudit", "seoissues", "seopages", "seotech", "seoonpage"]),
     ("compete", "② COMPETE", "Where do I stand?",
      ["seokw", "seoaeo", "seogen", "seogeo", "seooff"]),
     ("sources", "④ SOURCES", "Where does the data come from?", ["seosrc"]),
@@ -2575,6 +2618,9 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
         "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
         "seowork": SCR.workorders_screen(ctx, []),
+        "seoaudit": _board_audit(ctx),
+        "seoissues": _board_issues(ctx),
+        "seopages": _board_pages(ctx),
         "seoopp": _board_opportunities(ctx),
         "seopage": _board_page(ctx),
         "seoloop": _board_loop(ctx),
