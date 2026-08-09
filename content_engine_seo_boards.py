@@ -2392,6 +2392,16 @@ def _board_report(ctx) -> str:
                                c.get("report_schedules")) + "</div>")
 
 
+def _board_rules(ctx) -> str:
+    """Spec 1-3, 100-107, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    return (SS.CSS + "<div class='ss-root'>" + SS.principles(r)
+            + SS.self_audit(r) + SS.worked_examples(r) + "</div>")
+
+
 def _board_system(ctx) -> str:
     """Spec 5, 97, mounted."""
     import content_engine_search_screens as SS
@@ -2626,6 +2636,7 @@ _TAB_BOARDS = {
     "seofind": [("Search &amp; Commands", _board_find)],
     "seodata": [("Data &amp; CMS", _board_data)],
     "seoreport": [("Reports", _board_report)],
+    "seorules": [("Rules &amp; Self Audit", _board_rules)],
     "seosystem": [("System &amp; Components", _board_system)],
     "seodomain": [("Domain Research", _board_domain)],
     "seokwx": [("Keyword Explorer", _board_kwx)],
@@ -2689,6 +2700,7 @@ TABS = [
     ("seofind", "🔎", "Search &amp; Commands"),
     ("seodata", "🗄", "Data &amp; CMS"),
     ("seoreport", "📄", "Reports"),
+    ("seorules", "⚖", "Rules &amp; Self Audit"),
     ("seosystem", "🧩", "System &amp; Components"),
     ("seodomain", "🌐", "Domain Research"),
     ("seokwx", "🔍", "Keyword Explorer"),
@@ -2721,7 +2733,7 @@ GROUPS = [
       "seolinks", "seoanswers", "seogeoai",
       "seoaeo", "seogen", "seogeo", "seooff"]),
     ("sources", "④ SOURCES", "Where does the data come from?",
-     ["seoanalytics", "seosrc", "seodata", "seosystem"]),
+     ["seoanalytics", "seosrc", "seodata", "seosystem", "seorules"]),
 ]
 
 _TAB_CSS = """<style>
@@ -2830,6 +2842,7 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seofind": _board_find(ctx),
         "seodata": _board_data(ctx),
         "seoreport": _board_report(ctx),
+        "seorules": _board_rules(ctx),
         "seosystem": _board_system(ctx),
         "seodomain": _board_domain(ctx),
         "seokwx": _board_kwx(ctx),

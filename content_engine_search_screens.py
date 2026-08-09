@@ -2143,3 +2143,95 @@ margin:0 0 5px}
 .ss-cmd b{font-size:12px;color:var(--so-text);min-width:170px}
 .ss-cmd i{flex:1;min-width:170px;font-style:normal;font-size:10px}
 </style>"""
+
+
+# ---------------------------------------------------------------------------
+# PRINCIPLES AND THE SELF-AUDIT (spec 1-3, 100-107)
+# ---------------------------------------------------------------------------
+import content_engine_search_rules as RU  # noqa: E402
+
+
+def principles(r) -> str:
+    """Spec 1-3. What this OS refuses to do, and why each refusal."""
+    rows = "".join(
+        "<div class='ss-ref'><b>" + e(what) + "</b><i>" + e(why)
+        + "</i></div>" for what, why in RU.REFUSALS)
+    return ("<p class='ss-h'>WHAT THIS SYSTEM REFUSES TO DO</p>"
+            + "<p class='ss-note'>" + str(len(RU.REFUSALS))
+            + " refusals. None of these are features that are missing. "
+            + "They are things the system will not do when asked, and "
+            + "each one is here because the alternative produced a "
+            + "confident wrong answer somewhere.</p>" + rows)
+
+
+def self_audit(r) -> str:
+    """Spec 107. Run every rule against the running code, right now."""
+    a = RU.audit()
+    tone = "success" if a["state"] == "ALL HOLD" else "danger"
+    rows = "".join(
+        "<tr><td class='so-" + ("success" if x["state"] == "HOLDS"
+                                else "danger") + "'>" + e(x["state"])
+        + "</td><td>" + e(x["rule"]) + "</td>"
+        + "<td>" + e(x["evidence"]) + "</td></tr>"
+        for x in _L(a.get("results")))
+    return ("<p class='ss-h'>SELF AUDIT</p>"
+            + "<p class='ss-note so-" + tone + "'>" + e(a["state"])
+            + ": " + e(a["why"]) + "</p>"
+            + "<p class='ss-note'>These ran when this page was drawn, "
+            + "against the modules actually loaded. A check that raises "
+            + "counts as BROKEN, never as skipped: an audit that "
+            + "quietly excuses what it could not run produces a green "
+            + "page over an unknown system.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "<th>State</th><th>Rule</th><th>Evidence, from this run</th>"
+            + "</tr></thead><tbody>" + rows + "</tbody></table></div>")
+
+
+def worked_examples(r) -> str:
+    """Spec 100-102. The three arithmetic rules, shown rather than told."""
+    rr = RU.ratio([1, 50], [10, 10000])
+    wrong = RU.mean_of_ratios([1 / 10, 50 / 10000])
+    gd = RU.golden_data_check(100, [50, 40], [100])
+    v_few = RU.verdict(10, 10, n=2)
+    v_flat = RU.verdict(10, 10, n=500)
+    return ("<p class='ss-h'>THE ARITHMETIC, WORKED</p>"
+            + "<p class='ss-h2'>A ratio is summed, then divided once</p>"
+            + "<div class='ss-doc'>"
+            + "<div class='ss-docrow'><span>Rows</span><b>1 click / 10 "
+            + "impressions, and 50 clicks / 10,000</b></div>"
+            + "<div class='ss-docrow'><span>Correct</span><b>"
+            + str(round(rr["value"] * 100, 3)) + "%</b></div>"
+            + "<div class='ss-docrow'><span>Mean of the two rates</span>"
+            + "<b class='so-danger'>" + str(round(wrong * 100, 3))
+            + "%</b></div></div>"
+            + "<p class='ss-note'>The wrong figure is "
+            + str(round(wrong / rr["value"], 1)) + " times the right "
+            + "one, because a ten-impression row counts as much as a "
+            + "ten-thousand-impression row. That is why no screen in "
+            + "this OS averages a rate.</p>"
+            + "<p class='ss-h2'>The headline, the chart and the table "
+            + "are one number</p>"
+            + "<div class='ss-doc'><div class='ss-docrow'>"
+            + "<span>Caught</span><b class='so-danger'>" + e(gd["state"])
+            + "</b></div><div class='ss-docrow'><span>Why</span><b>"
+            + e(gd["why"]) + "</b></div></div>"
+            + "<p class='ss-h2'>Not enough data is a verdict</p>"
+            + "<div class='ss-doc'>"
+            + "<div class='ss-docrow'><span>2 observations</span><b>"
+            + e(v_few["verdict"]) + "</b></div>"
+            + "<div class='ss-docrow'><span>500, unmoved</span><b>"
+            + e(v_flat["verdict"]) + "</b></div></div>"
+            + "<p class='ss-note'>NEUTRAL means we looked and it did not "
+            + "move. INSUFFICIENT_DATA means we could not look. A system "
+            + "forced to choose between good and bad will always find "
+            + "one, so this one is allowed to say it does not know.</p>")
+
+
+CSS += """<style>
+.ss-ref{padding:9px 12px;border-left:2px solid var(--so-danger-main);
+margin:0 0 7px;background:var(--so-surface);border-radius:0 8px 8px 0}
+.ss-ref b{display:block;font-size:12px;color:var(--so-text);
+font-weight:600;margin:0 0 3px}
+.ss-ref i{font-style:normal;font-size:11px;color:var(--so-text2);
+line-height:1.6}
+</style>"""

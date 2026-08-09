@@ -1097,5 +1097,101 @@ for _tab16 in ("seoloops", "seofind"):
 t("mounting them created no duplicate id",
   not [x for x in set(_pp16.ids) if _pp16.ids.count(x) > 1])
 
+print("\nL22 BATCH D: RULES AND THE SELF AUDIT (spec 1-3, 100-107)")
+import content_engine_search_rules as RU8
+_r17 = CORE.Repo(Store())
+t("the refusals are stated, each with its reason",
+  len(RU8.REFUSALS) >= 8 and all(len(x) == 2 and all(x)
+                                 for x in RU8.REFUSALS))
+_aud = RU8.audit()
+t("EVERY RULE THIS OS CLAIMS IS CHECKED AGAINST THE RUNNING CODE",
+  _aud["total"] == len(RU8.RULES) and _aud["total"] >= 11)
+t("AND EVERY ONE OF THEM HOLDS",
+  _aud["state"] == "ALL HOLD",
+  str([x["id"] for x in _aud["results"] if x["state"] == "BROKEN"]))
+t("every result carries evidence from this run, not a claim",
+  all(x["evidence"] for x in _aud["results"]))
+t("a check that raises counts as BROKEN, never as skipped",
+  "counts as a FAILURE" in RU8.audit.__doc__
+  or "is a FAILURE" in RU8.audit.__doc__)
+t("a ratio is summed then divided once",
+  abs(RU8.ratio([1, 50], [10, 10000])["value"] - 51.0 / 10010.0) < 1e-9)
+t("AND THE MEAN OF RATES IS A DIFFERENT, WRONG NUMBER",
+  RU8.mean_of_ratios([1 / 10, 50 / 10000])
+  > RU8.ratio([1, 50], [10, 10000])["value"] * 5)
+t("a rate over a zero denominator is None, never 0.0",
+  RU8.ratio([0], [0])["value"] is None)
+t("and it says why 0.0 would be a lie",
+  "where there was no opportunity" in RU8.ratio([0], [0])["why"])
+t("INSUFFICIENT_DATA is a peer verdict, not a fallback",
+  "INSUFFICIENT_DATA" in RU8.VERDICTS and len(RU8.VERDICTS) == 4)
+t("too few observations returns INSUFFICIENT_DATA",
+  RU8.verdict(10, 10, n=2)["verdict"] == "INSUFFICIENT_DATA")
+t("A MEASURED NO-CHANGE RETURNS NEUTRAL, so the two are separable",
+  RU8.verdict(10, 10, n=500)["verdict"] == "NEUTRAL")
+t("a missing baseline cannot produce a verdict",
+  RU8.verdict(10, None, n=500)["verdict"] == "INSUFFICIENT_DATA")
+t("a missing sample size cannot produce a verdict either",
+  RU8.verdict(10, 8)["verdict"] == "INSUFFICIENT_DATA")
+t("THE GOLDEN DATA RULE CATCHES A HEADLINE ITS CHART DISAGREES WITH",
+  RU8.golden_data_check(100, [50, 40], [100])["state"] == "DISAGREES")
+t("and passes when they are one number",
+  RU8.golden_data_check(100, [60, 40], [70, 30])["state"] == "AGREES")
+t("an unstamped artefact is not trustworthy",
+  RU8.stamp()["trustworthy"] is False)
+t("nor is one built on a stale source",
+  RU8.stamp("v17", "NORMAL",
+            [{"name": "GA4", "state": "STALE"}])["trustworthy"] is False)
+t("and the reason names the source that made it so",
+  "GA4" in RU8.stamp("v17", "NORMAL",
+                     [{"name": "GA4", "state": "STALE"}])["why"])
+t("an unknown mode degrades rather than being accepted",
+  RU8.stamp("v17", "TURBO")["mode"] == "DEGRADED")
+t("the principles screen renders every refusal",
+  all(w[:40] in SS8.principles(_r17) for w, _y in RU8.REFUSALS))
+t("the audit screen runs the checks when the page is drawn",
+  "ALL HOLD" in SS8.self_audit(_r17))
+t("the worked examples SHOW the wrong ratio beside the right one",
+  "times the right" in SS8.worked_examples(_r17))
+_sec17 = SEO6.seo_section({})
+_pp17 = _Panels()
+_pp17.feed(_sec17)
+t("tab seorules is declared",
+  any(x[0] == "seorules" for x in SEO6.TABS))
+t("AND its panel renders real content",
+  _pp17.panels.get("spanel-seorules", 0) > 500,
+  "text " + str(_pp17.panels.get("spanel-seorules")))
+t("mounting it created no duplicate id",
+  not [x for x in set(_pp17.ids) if _pp17.ids.count(x) > 1])
+t("NO TAB IN THE WHOLE OS BELONGS TO NO GROUP",
+  not [x[0] for x in SEO6.TABS
+       if not any(x[0] in g[3] for g in SEO6.GROUPS)],
+  str([x[0] for x in SEO6.TABS
+       if not any(x[0] in g[3] for g in SEO6.GROUPS)]))
+# seosrc is the ONE tab whose panel is not built from the panels dict: it
+# carries the legacy Google boards, which arrive as legacy_html from the
+# caller. So it is asserted against its own contract rather than excused.
+t("EVERY DECLARED TAB HAS A PANEL WITH REAL CONTENT",
+  not [x[0] for x in SEO6.TABS if x[0] != "seosrc"
+       and _pp17.panels.get("spanel-" + x[0], 0) < 200],
+  str([x[0] for x in SEO6.TABS if x[0] != "seosrc"
+       and _pp17.panels.get("spanel-" + x[0], 0) < 200]))
+_pp17b = _Panels()
+_pp17b.feed(SEO6.seo_section({}, "<div>LEGACY GOOGLE BOARDS</div>"))
+import re as _re17
+_sec17b = SEO6.seo_section({}, "<div>LEGACY GOOGLE BOARDS</div>")
+_m17 = _re17.search(
+    r"id=['\"]spanel-seosrc['\"](.*?)(?=id=['\"]spanel-|$)",
+    _sec17b, _re17.S)
+t("AND seosrc carries the legacy Google boards INSIDE ITS OWN PANEL",
+  bool(_m17) and "LEGACY GOOGLE BOARDS" in _m17.group(1),
+  "panel " + ("missing" if not _m17 else str(len(_m17.group(1)))))
+t("and there is exactly ONE seosrc panel on the page",
+  _pp17b.ids.count("spanel-seosrc") == 1,
+  str(_pp17b.ids.count("spanel-seosrc")))
+t("no em-dash reaches the rules module",
+  "\u2014" not in open("content_engine_search_rules.py",
+                       encoding="utf-8").read())
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)
