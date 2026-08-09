@@ -284,5 +284,63 @@ t("no em dash on the board",
   "—" not in open("content_engine_search_board.py",
                   encoding="utf-8").read())
 
+
+print("\nL10 PHASE 4: DESIGN TOKENS AND SCREEN CONTRACTS (spec 87-92, 96)")
+import content_engine_search_tokens as TK
+
+t("every colour is declared once, in the token module",
+  len(TK.ROLES) == 7 and "--so-primary-main" in TK.css())
+t("each role carries its MEANING, not just a hex",
+  set(TK.MEANING) == set(TK.ROLES))
+t("GREEN IS RESERVED FOR VERIFIED SUCCESS",
+  "VERIFIED success" in TK.MEANING["success"]
+  and "never a merely executed change" in TK.MEANING["success"])
+t("an executed-but-unverified thing is amber, never green",
+  TK.STATUS["executed"][0] == "warning")
+t("and it says so in words on the badge",
+  "not yet verified" in TK.status("executed"))
+t("status is never colour alone: a dot AND a word (spec 69)",
+  "so-dot" in TK.status("healthy") and "Healthy" in TK.status("healthy"))
+t("purple is reserved for AI actions", TK.CTA["ai"] == "ai"
+  and TK.MEANING["ai"] == "an AI action")
+t("and for AI forecasts on charts, so a projection cannot read as a "
+  "measurement", TK.CHART["ai_forecast"] == TK.ROLES["ai"]["main"])
+try:
+    TK.button("x", variant="rainbow")
+    t("an invented CTA variant is refused", False)
+except ValueError as _ex:
+    t("an invented CTA variant is refused", "is not a CTA variant" in str(_ex))
+try:
+    TK.button("x", state="sparkly")
+    t("an invented button state is refused", False)
+except ValueError:
+    t("an invented button state is refused", True)
+t("the button sizes and states are the spec's",
+  set(TK.BUTTON_H) == {"compact", "standard", "important"}
+  and len(TK.BUTTON_STATES) == 8)
+t("the 8px spacing grid is declared once", TK.SPACE[1] == 8)
+t("shadow is limited to floating things (spec 91)",
+  set(TK.SHADOW_ALLOWED) == {"dropdown", "drawer", "modal", "floating"})
+t("the contract fields are the spec's eighteen",
+  len(TK.CONTRACT_FIELDS) == 18 and "loop_connection" in TK.CONTRACT_FIELDS)
+t("an incomplete screen contract is refused with the gaps named",
+  TK.check_contract({"purpose": "p"})["code"] == "CONTRACT_INCOMPLETE")
+_cs = TK.contract_status()
+t("EVERY screen the spec names has a written contract (spec 95/96)",
+  _cs["written"] == _cs["total"] and not _cs["missing"],
+  f"missing: {_cs['missing'][:5]}")
+t("and there are 33 of them", _cs["total"] == 33)
+import os as _os10
+t("the contracts are real files on disk",
+  _os10.path.isfile("docs/search/ui/page_intelligence.md"))
+_pi = open("docs/search/ui/page_intelligence.md", encoding="utf-8").read()
+t("each contract states its LOOP CONNECTION, so no screen is a dead end",
+  "LOOP CONNECTION" in _pi and "initiative" in _pi)
+t("and its error state refuses 'something went wrong'",
+  "never 'something went wrong'" in _pi)
+t("no em dash in the token module",
+  "—" not in open("content_engine_search_tokens.py",
+                  encoding="utf-8").read())
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)
