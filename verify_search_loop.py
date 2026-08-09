@@ -629,5 +629,59 @@ t("both sit under COMPETE",
 t("mounting them created no duplicate id",
   not [x for x in set(_pp10.ids) if _pp10.ids.count(x) > 1])
 
+print("\nL16 PHASE 11: GEO / AI SEARCH VISIBILITY (spec 40-43)")
+_r11g = CORE.Repo(Store())
+_ps = [{"prompt": "best tattoo cartridges", "provider": "x",
+        "runs": [{"cited": True}, {"cited": True}, {"mentioned": True},
+                 {"cited": True}]},
+       {"prompt": "safest needles", "provider": "x",
+        "runs": [{"mentioned": True}]},
+       {"prompt": "cheapest", "provider": "x",
+        "runs": [{"cited": False, "mentioned": False}]},
+       {"prompt": "never asked", "provider": "x"}]
+t("with no prompts the screen shows no figures and says they are not "
+  "modelled", "modelled" in SS8.ai_visibility(_r11g))
+t("CITED and MENTIONED are separate facts", len(SS8.OBSERVED) == 4)
+_s0 = SS8.prompt_state(_ps[0])
+t("a well-observed prompt reports a citation rate",
+  _s0["state"] == "CITED" and _s0["rate"] == 75.0)
+t("ONE OBSERVATION IS AN ANECDOTE, and is marked provisional",
+  SS8.prompt_state(_ps[1])["provisional"] is True)
+t("and the reason names the run floor",
+  str(SS8.MIN_RUNS) in SS8.prompt_state(_ps[1])["why"])
+t("a prompt never observed is NOT RUN, not ABSENT",
+  SS8.prompt_state(_ps[3])["state"] == "NOT RUN")
+_v11 = SS8.ai_visibility(_r11g, {"prompts": _ps})
+t("RATES EXCLUDE PROMPTS NEVER RUN, and say why",
+  "not asking is not" in _v11)
+t("every AI figure names the engine it came from",
+  "Source:" in _v11)
+t("the tracker marks provisional rows on their face",
+  "provisional" in SS8.prompt_tracker(_r11g, _ps))
+t("the citation gap refuses without both sides observed",
+  "just a directory" in SS8.citation_gap(_r11g))
+t("and it frames AI evidence as a different question from ranking",
+  "different question from where search ranks you" in
+  SS8.citation_gap(_r11g, [{"source": "x.test"}]))
+t("the detail screen refuses to choose a prompt for you",
+  "will not choose" in SS8.ai_visibility_detail(_r11g))
+_det = SS8.ai_visibility_detail(_r11g, {"prompt": "p", "runs": [
+    {"at": "2026-08-09", "provider": "x", "cited": True,
+     "answer": "some answer"}]})
+t("and shows what the provider actually said, per run",
+  "some answer" in _det and "cited" in _det)
+_sec11 = SEO6.seo_section({"prompts": _ps})
+_pp11 = _Panels()
+_pp11.feed(_sec11)
+t("the AI Visibility tab is declared",
+  any(x[0] == "seogeoai" for x in SEO6.TABS))
+t("AND its panel renders real content",
+  _pp11.panels.get("spanel-seogeoai", 0) > 500,
+  "text " + str(_pp11.panels.get("spanel-seogeoai")))
+t("it sits under COMPETE",
+  "seogeoai" in dict((g[0], g[3]) for g in SEO6.GROUPS)["compete"])
+t("mounting GEO created no duplicate id",
+  not [x for x in set(_pp11.ids) if _pp11.ids.count(x) > 1])
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

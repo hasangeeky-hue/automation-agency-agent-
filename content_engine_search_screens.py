@@ -942,3 +942,192 @@ def answer_detail(r, row=None) -> str:
                "coverage state above says which.</p>")
             + TK.button("Improve answer", variant="ai", size="compact",
                         onclick="ssAnswer()"))
+
+
+# ---------------------------------------------------------------------------
+# GEO / AI SEARCH VISIBILITY (spec 40-43)
+# ---------------------------------------------------------------------------
+#: Spec 41. What one prompt observation can say. MENTIONED and CITED are
+#: different facts: an answer can name you without linking you, and that
+#: distinction is the whole point of the citation work.
+OBSERVED = ("CITED", "MENTIONED", "ABSENT", "NOT RUN")
+
+#: A prompt observed fewer times than this has not earned a trend line.
+#: AI answers vary between runs, so one observation is an anecdote.
+MIN_RUNS = 3
+
+
+def prompt_state(row) -> dict:
+    """What one prompt's observations actually establish."""
+    d = _D(row)
+    runs = _L(d.get("runs"))
+    if not runs:
+        return {"state": "NOT RUN", "runs": 0,
+                "why": "this prompt has never been observed"}
+    cited = sum(1 for x in runs if _D(x).get("cited"))
+    mentioned = sum(1 for x in runs if _D(x).get("mentioned"))
+    n = len(runs)
+    state = ("CITED" if cited else "MENTIONED" if mentioned else "ABSENT")
+    trend = (f"{cited} of {n} runs cited, {mentioned} of {n} mentioned")
+    if n < MIN_RUNS:
+        return {"state": state, "runs": n, "provisional": True,
+                "why": (f"{trend}. Only {n} observation(s): AI answers "
+                        f"vary between runs, so this is an anecdote until "
+                        f"there are {MIN_RUNS}.")}
+    return {"state": state, "runs": n, "provisional": False,
+            "rate": round(cited / n * 100, 1), "why": trend}
+
+
+def ai_visibility(r, data=None) -> str:
+    """Spec 40. The command centre for AI search visibility."""
+    d = _D(data)
+    prompts = _L(d.get("prompts"))
+    if not prompts:
+        return ("<p class='ss-h'>AI SEARCH VISIBILITY</p>"
+                + empty("No prompts tracked",
+                        "Nothing has been asked of any AI provider yet. "
+                        "Every figure on this screen comes from an "
+                        "observation this engine actually ran; none are "
+                        "modelled, so the screen stays empty until it has "
+                        "run some.",
+                        "Add prompts", "ssPrompts()"))
+    total = len(prompts)
+    states = {}
+    runs_total = 0
+    for x in prompts:
+        st = prompt_state(x)
+        states[st["state"]] = states.get(st["state"], 0) + 1
+        runs_total += st["runs"]
+    ran = total - states.get("NOT RUN", 0)
+    src = d.get("source") or "AI observation engine"
+    def pct(n):
+        return round(n / ran * 100, 1) if ran else None
+    return ("<p class='ss-h'>AI SEARCH VISIBILITY</p><div class='ss-kpis'>"
+            + metric("Tracked prompts", total, source=src)
+            + metric("Observed", ran, source=src)
+            + metric("Citation rate %", pct(states.get("CITED", 0)),
+                     source=src, polarity="positive")
+            + metric("Mention rate %",
+                     pct(states.get("CITED", 0)
+                         + states.get("MENTIONED", 0)),
+                     source=src, polarity="positive")
+            + metric("Observations", runs_total, source=src)
+            + "</div>"
+            + "<p class='ss-note'>Rates are over the "
+            + str(ran) + " prompt(s) actually observed, not over all "
+            + str(total) + ". A prompt that has never run is excluded "
+            + "rather than counted as absent, because not asking is not "
+            + "the same as not appearing.</p>")
+
+
+def prompt_tracker(r, prompts=None) -> str:
+    """Spec 41. Every prompt, provider and observation."""
+    items = _L(prompts)
+    if not items:
+        return ("<p class='ss-h'>PROMPT TRACKER</p>"
+                + empty("No prompts",
+                        "Add the prompts your buyers would actually type "
+                        "into an AI assistant. This engine observes what "
+                        "you give it; it does not invent a prompt list.",
+                        "Add prompts", "ssPrompts()"))
+    body = ""
+    for x in items[:50]:
+        d = _D(x)
+        st = prompt_state(d)
+        tone = {"CITED": "success", "MENTIONED": "warning",
+                "ABSENT": "danger"}.get(st["state"], "neutral")
+        body += ("<tr><td>" + e(str(d.get("prompt"))[:58]) + "</td>"
+                 + "<td>" + e(d.get("provider") or "not recorded")
+                 + "</td>"
+                 + "<td class='so-" + tone + "'>" + st["state"]
+                 + ("<br><span class='ss-meta'>provisional</span>"
+                    if st.get("provisional") else "") + "</td>"
+                 + "<td>" + str(st["runs"]) + "</td>"
+                 + "<td>" + e(st["why"])[:70] + "</td>"
+                 + "<td>" + e(d.get("competitor") or "none seen") + "</td>"
+                 + "<td>" + TK.button("Re-run", variant="ai",
+                                      size="compact",
+                                      onclick="ssRerun()") + "</td>"
+                 + "</tr>")
+    heads = ("Prompt", "Provider", "State", "Runs", "Evidence",
+             "Competitor seen", "Action")
+    return ("<p class='ss-h'>PROMPT TRACKER</p>"
+            + "<p class='ss-note'>A prompt observed fewer than "
+            + str(MIN_RUNS) + " times is marked provisional. AI answers "
+            + "vary between runs, and one observation is an anecdote.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+def citation_gap(r, gaps=None) -> str:
+    """Spec 42. Sources AI answers cite for competitors and not for us."""
+    items = _L(gaps)
+    if not items:
+        return ("<p class='ss-h'>CITATION GAP</p>"
+                + empty("No citation gap on record",
+                        "A gap needs observed citations for both us and a "
+                        "competitor on the same prompts. Until both exist "
+                        "there is nothing to compare, and a list of "
+                        "'authoritative sources' invented without them is "
+                        "just a directory.",
+                        "Run prompt observations", "ssRerun()"))
+    body = ""
+    for g in items[:40]:
+        d = _D(g)
+        body += ("<tr><td>" + e(d.get("source")) + "</td>"
+                 + "<td>" + e(d.get("topic") or "unclassified") + "</td>"
+                 + "<td>" + _n(d.get("our_citations"), "0") + "</td>"
+                 + "<td>" + _n(d.get("competitor_citations")) + "</td>"
+                 + "<td>" + e(d.get("relevance") or "not scored") + "</td>"
+                 + "<td>" + e(d.get("strategy") or "not recommended yet")
+                 + "</td></tr>")
+    heads = ("Source cited by the AI", "Topic", "Our citations",
+             "Competitor citations", "Relevance", "Recommended strategy")
+    return ("<p class='ss-h'>CITATION GAP</p>"
+            + "<p class='ss-note'>" + str(len(items)) + " source(s) that "
+            + "AI answers draw on for a competitor and not for us. This "
+            + "is where AI answers get their evidence, which is a "
+            + "different question from where search ranks you.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+def ai_visibility_detail(r, row=None) -> str:
+    """Spec 43. One prompt: what the provider actually said."""
+    d = _D(row)
+    if not d.get("prompt"):
+        return ("<p class='ss-h'>AI VISIBILITY DETAIL</p>"
+                + empty("No prompt selected",
+                        "This screen shows what a provider actually "
+                        "answered for one prompt, so it will not choose "
+                        "one for you.",
+                        "Open the tracker", "seoTab('seogeoai')"))
+    st = prompt_state(d)
+    runs = _L(d.get("runs"))
+    rows = "".join(
+        "<tr><td>" + e(str(_D(x).get("at"))[:16]) + "</td>"
+        + "<td>" + e(_D(x).get("provider") or "not recorded") + "</td>"
+        + "<td>" + ("cited" if _D(x).get("cited") else
+                    "mentioned" if _D(x).get("mentioned") else "absent")
+        + "</td>"
+        + "<td>" + e(str(_D(x).get("answer") or "")[:90]) + "</td>"
+        + "</tr>" for x in runs[:15])
+    return ("<p class='ss-h'>AI VISIBILITY DETAIL</p>"
+            + "<div class='ss-doc'>"
+            + "<div class='ss-docrow'><span>Prompt</span><b>"
+            + e(d.get("prompt")) + "</b></div>"
+            + "<div class='ss-docrow'><span>State</span><b>"
+            + st["state"] + " &middot; " + e(st["why"])[:80] + "</b></div>"
+            + "<div class='ss-docrow'><span>Competitors seen</span><b>"
+            + e(", ".join(str(x) for x in _L(d.get("competitors")))
+               or "none recorded") + "</b></div>"
+            + "</div>"
+            + (("<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+                "<th>Observed</th><th>Provider</th><th>Result</th>"
+                "<th>Answer extract</th></tr></thead><tbody>"
+                + rows + "</tbody></table></div>")
+               if runs else
+               "<p class='ss-note'>No observation is recorded for this "
+               "prompt yet.</p>"))

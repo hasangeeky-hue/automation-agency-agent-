@@ -2344,6 +2344,23 @@ def _crawl_of(ctx):
     return c if isinstance(c, dict) else {}
 
 
+def _board_geoai(ctx) -> str:
+    """Spec 40-43, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    c = ctx or {}
+    prompts = c.get("prompts") or []
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.ai_visibility(r, {"prompts": prompts,
+                                   "source": c.get("ai_source")})
+            + SS.prompt_tracker(r, prompts)
+            + SS.citation_gap(r, c.get("citation_gaps"))
+            + SS.ai_visibility_detail(r, c.get("selected_prompt"))
+            + "</div>")
+
+
 def _board_links(ctx) -> str:
     """Spec 36-37, mounted."""
     import content_engine_search_screens as SS
@@ -2486,6 +2503,7 @@ _TAB_BOARDS = {
     # THE CLOSED LOOP. Its own tab, because the question it answers -
     # "did any of this actually work" - is not the same question as any
     # other board on this page.
+    "seogeoai":  [("AI Visibility (GEO)", _board_geoai)],
     "seolinks":  [("Backlinks", _board_links)],
     "seoanswers": [("Answers (AEO)", _board_answers)],
     "seocontent": [("Content", _board_content)],
@@ -2538,6 +2556,7 @@ TABS = [
     ("seogeo", "📍", "GEO — Local & Markets"),
     ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
+    ("seogeoai", "🤖", "AI Visibility (GEO)"),
     ("seolinks", "🔗", "Backlinks"),
     ("seoanswers", "❓", "Answers (AEO)"),
     ("seocontent", "📝", "Content"),
@@ -2558,8 +2577,8 @@ GROUPS = [
     ("diagnose", "① DIAGNOSE", "What's wrong?",
      ["seoaudit", "seoissues", "seopages", "seotech", "seoonpage"]),
     ("compete", "② COMPETE", "Where do I stand?",
-     ["seokw", "seocontent", "seolinks", "seoanswers", "seoaeo",
-      "seogen", "seogeo", "seooff"]),
+     ["seokw", "seocontent", "seolinks", "seoanswers", "seogeoai",
+      "seoaeo", "seogen", "seogeo", "seooff"]),
     ("sources", "④ SOURCES", "Where does the data come from?", ["seosrc"]),
 ]
 
@@ -2665,6 +2684,7 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
         "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
         "seowork": SCR.workorders_screen(ctx, []),
+        "seogeoai": _board_geoai(ctx),
         "seolinks": _board_links(ctx),
         "seoanswers": _board_answers(ctx),
         "seocontent": _board_content(ctx),
