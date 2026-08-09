@@ -586,6 +586,23 @@ def run_offline(store) -> dict:
     return out
 
 
+def run_media_sync(store) -> dict:
+    """Daily: reconcile the canonical model against the platforms and
+    refresh the stored rollups. Read-only; spends nothing."""
+    try:
+        import content_engine_media_os as _M
+        import content_engine_media_perf as _MF
+        r = _M.repo(store)
+        out = _M.sync(r)
+        rolled = _MF.store_rollups(r)
+        return {"ok": True, "synced": out.get("seen"),
+                "rollups": rolled.get("written"),
+                "message": out.get("message", "")[:160]}
+    except Exception as e:
+        log.warning("media_sync failed: %s", e)
+        return {"skipped": f"media_sync failed: {type(e).__name__}"}
+
+
 def run_optimize(store) -> dict:
     """The media agent's cadence step: judge daily; draft only at PROPOSE."""
     import content_engine_media_orders as _MO

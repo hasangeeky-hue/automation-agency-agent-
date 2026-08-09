@@ -70,9 +70,8 @@ SCREENS = (
     ("plan", "📐", "Planner", "Budget, allocation, what-if"),
     ("creat", "🎨", "Creatives", "The library and what it learned"),
     ("aud", "👥", "Audiences", "Who, and what each platform drops"),
-    ("perf", "📈", "Performance", "Five grains, one arithmetic"),
+    ("alx", "📈", "Analytics", "The workbench: query, drill, decide"),
     ("intel", "🔍", "Search & Bidding", "Terms, keywords, pace, waste"),
-    ("attr", "🧾", "Attribution", "Five models that admit they disagree"),
     ("anom", "⚠️", "Anomalies & Verdicts", "What broke its own baseline"),
     ("cross", "🔗", "Cross-Channel", "Paid and organic in one picture"),
     ("comp", "🥊", "Competition & Research", "Who else is in the auction"),
@@ -1312,6 +1311,23 @@ def s_anom(r, ctx) -> str:
                    "after"))
 
 
+def s_alx(r, ctx) -> str:
+    """The analytics workbench: the metric registry executed in the
+    browser over an embedded cube, so a chart and its table are one
+    aggregation call. Replaces the old Performance and Attribution tabs."""
+    import content_engine_media_workbench as WB
+    store = None
+    try:
+        import content_engine_api as A
+        store = A.get_store()
+    except Exception:
+        pass
+    if store is None:
+        return ("<p class='mc-empty'>the store is not reachable, so the "
+                "workbench has nothing true to compute</p>")
+    return WB.build(r, store, ctx)
+
+
 def s_plat(r, ctx, legacy_campaigns="", legacy_tracking="") -> str:
     rows = []
     for p in M.PROVIDERS:
@@ -1739,9 +1755,8 @@ def build_panels(r, ctx, legacy_campaigns="", legacy_tracking="") -> dict:
               "plan": lambda: s_plan(r, ctx),
               "creat": lambda: s_creat(r, ctx),
               "aud": lambda: s_aud(r, ctx),
-              "perf": lambda: s_perf(r, ctx),
+              "alx": lambda: s_alx(r, ctx),
               "intel": lambda: s_intel(r, ctx),
-              "attr": lambda: s_attr(r, ctx),
               "anom": lambda: s_anom(r, ctx),
               "cross": lambda: s_cross(r, ctx),
               "comp": lambda: s_comp(r, ctx),

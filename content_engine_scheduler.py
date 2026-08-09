@@ -218,6 +218,8 @@ SEO_CADENCE = {
     "interlock":   {"every_days": 1, "cost": "free"},
     # the media agent: judge daily, draft only at PROPOSE, spend never
     "optimize":    {"every_days": 1, "cost": "free"},
+    # canonical-model sync + stored rollups, daily, free (reads only)
+    "media_sync":  {"every_days": 1, "cost": "free"},
     "offline":     {"every_days": 1, "cost": "free"},
     "social":      {"every_days": 1, "cost": "free"},
     "offpage":     {"every_days": 7, "cost": "paid"},
@@ -265,8 +267,16 @@ def run_seo_due(store, *, include_paid: bool = True) -> dict:
     for name in seo_due(store):
         if not include_paid and SEO_CADENCE[name]["cost"] == "paid":
             continue
+        # Resolve by convention when the dict has no entry: a cadence name
+        # maps to seo_ops.run_<name>. The hand-written dict above had
+        # silently missed optimize, offline and social - every run logged
+        # a KeyError as if the step had failed. Two lists again.
+        fn = fns.get(name) or getattr(SEO, f"run_{name}", None)
+        if fn is None:
+            out[name] = {"error": f"no runner named run_{name} exists"}
+            continue
         try:
-            out[name] = fns[name](store)
+            out[name] = fn(store)
         except Exception as e:
             out[name] = {"error": f"{type(e).__name__}: {e}"}
     return {"ran": list(out), "results": out}

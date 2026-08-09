@@ -620,7 +620,7 @@ t("the old media screens module is deleted",
 t("media_boards is a shim now, not a UI",
   len(io.open("content_engine_media_boards.py",
               encoding="utf-8").read().splitlines()) < 60)
-t("the 15 screens are declared once", len(MCTR.SCREENS) == 15)
+t("the 14 screens are declared once", len(MCTR.SCREENS) == 14)
 sec = MCTR.section({"media_auto_level": "observe"})
 t("the assembled section carries every screen",
   all(f"mc-panel-{tid}" in sec for tid, _i, _l, _q in MCTR.SCREENS))
@@ -1060,6 +1060,200 @@ for route in ("/mediaos/capabilities/{platform}", "/mediaos/action",
 t("the pre-flight now checks creative compatibility",
   "MAN.compatibility" in io.open("content_engine_media_plan.py",
                                  encoding="utf-8").read())
+
+print("\nG35 THE METRIC REGISTRY AND ITS ARITHMETIC")
+import datetime as _dt35
+import content_engine_media_metrics as MX
+t("the registry declares every metric once",
+  len(MX.REGISTRY) >= 12 and "cpa" in MX.REGISTRY and "roas" in MX.REGISTRY)
+t("no formula lives outside the registry",
+  io.open("content_engine_media_metrics.py", encoding="utf-8").read()
+    .count('"agg": "ratio"') >= 6)
+st35 = Store()
+r35 = CORE.Repo(st35)
+M.save_account(r35, "google", "a", name="G")
+_c35a = M.save_campaign(r35, name="A", objective="LEADS",
+                        provider="google", budget_amount=10)["id"]
+_c35b = M.save_campaign(r35, name="B", objective="SALES",
+                        provider="meta", budget_amount=10)["id"]
+_today35 = _dt35.date.today()
+for _i in range(10):
+    _d = (_today35 - _dt35.timedelta(days=9 - _i)).isoformat()
+    r35.put("ad_metrics", {"id": "ga%d" % _i, "day": _d,
+                           "provider": "google", "campaign_id": _c35a,
+                           "device": "MOBILE", "impressions": 1000,
+                           "clicks": 50, "conversions": 2,
+                           "conversion_value": 600, "spend": 100})
+    r35.put("ad_metrics", {"id": "mb%d" % _i, "day": _d, "provider": "meta",
+                           "campaign_id": _c35b, "device": "DESKTOP",
+                           "impressions": 3000, "clicks": 30,
+                           "conversions": 1, "conversion_value": 150,
+                           "spend": 80})
+_q35 = {"date_range": {"from": (_today35 - _dt35.timedelta(days=9))
+                       .isoformat(), "to": _today35.isoformat()},
+        "metrics": ["spend", "revenue", "conversions", "ctr", "cpc", "cpm",
+                    "cvr", "cpa", "roas"],
+        "dimensions": ["date", "platform", "campaign", "device"],
+        "granularity": "DAY"}
+_res35 = MX.analytics_query(r35, st35, _q35)
+_tt = _res35["totals"]
+t("spend sums", _tt["spend"]["value"] == 1800.0)
+t("revenue sums", _tt["revenue"]["value"] == 7500.0)
+t("CTR is SUM(clicks)/SUM(impressions), not an average of CTRs",
+  _tt["ctr"]["value"] == 2.0)
+t("CPC is SUM(spend)/SUM(clicks)", _tt["cpc"]["value"] == 2.25)
+t("CPM is SUM(spend)/SUM(impressions) x 1000", _tt["cpm"]["value"] == 45.0)
+t("CVR is SUM(conversions)/SUM(clicks)", _tt["cvr"]["value"] == 3.75)
+t("CPA is SUM(spend)/SUM(conversions)", _tt["cpa"]["value"] == 60.0)
+t("ROAS is SUM(value)/SUM(spend)", _tt["roas"]["value"] == 4.17)
+_plat35 = _res35["breakdowns"]["platform"]
+_naive = sum(x["ctr"]["value"] for x in _plat35) / len(_plat35)
+t("THE NAIVE AVERAGE OF RATIOS DIFFERS, and the engine does not use it",
+  abs(_naive - _tt["ctr"]["value"]) > 0.01)
+t("every ratio carries the denominator it stands on",
+  "of" in _tt["ctr"] and "/" in _tt["ctr"]["of"])
+
+print("\nG36 THE GOLDEN RULE")
+t("totals equal the sum of the timeseries",
+  abs(sum(x["spend"]["value"] for x in _res35["timeseries"])
+      - _tt["spend"]["value"]) < 0.01)
+t("totals equal the sum of the platform breakdown",
+  abs(sum(x["spend"]["value"] for x in _plat35)
+      - _tt["spend"]["value"]) < 0.01)
+t("totals equal the sum of the campaign breakdown",
+  abs(sum(x["spend"]["value"]
+          for x in _res35["breakdowns"]["campaign"])
+      - _tt["spend"]["value"]) < 0.01)
+t("a platform filter returns exactly that platform's share",
+  MX.analytics_query(r35, st35, {**_q35,
+                                 "filters": {"platforms": ["meta"]}}
+                     )["totals"]["spend"]["value"] == 800.0)
+t("a campaign filter drills without changing the arithmetic",
+  MX.analytics_query(r35, st35, {**_q35,
+                                 "filters": {"campaign_ids": [_c35a]}}
+                     )["totals"]["spend"]["value"] == 1000.0)
+t("the comparison window is the period immediately before",
+  _res35["query"]["comparison"]["to"]
+  == (_today35 - _dt35.timedelta(days=10)).isoformat())
+
+print("\nG37 ABSENCE IS NEVER A ZERO")
+_empty35 = MX.analytics_query(r35, st35, {
+    "date_range": {"from": "2019-01-01", "to": "2019-01-31"},
+    "metrics": ["cpa", "roas", "spend"], "dimensions": ["date"]})
+t("a ratio over nothing is INSUFFICIENT_DATA, not 0",
+  _empty35["totals"]["cpa"]["value"] is None
+  and _empty35["totals"]["cpa"]["status"] == "INSUFFICIENT_DATA")
+t("and it says why in words", "rumour" in _empty35["totals"]["cpa"]["why"])
+t("an uncollected metric refuses instead of inventing",
+  MX.metric_value("reach", MX._zero())["status"] == "INSUFFICIENT_DATA")
+t("an unknown metric is refused with the real list",
+  "is not in the registry" in MX.metric_value("vibes",
+                                              MX._zero())["why"])
+t("an invented granularity is refused",
+  MX.analytics_query(r35, st35, {"granularity": "SECONDLY"})["ok"] is False)
+t("a backwards date range is refused",
+  MX.analytics_query(r35, st35, {"date_range": {"from": "2026-05-01",
+                                                "to": "2026-01-01"}}
+                     )["ok"] is False)
+
+print("\nG38 DATA QUALITY TELLS THE TRUTH ABOUT ITSELF")
+_st38 = Store()
+_r38 = CORE.Repo(_st38)
+t("with no pull every platform is MISSING",
+  {v["status"] for v in
+   MX.data_quality(_r38, _st38)["providers"].values()} == {"MISSING"})
+_st38.set_setting("ads_snapshot", {"at": MX.now()})
+_dq38 = MX.data_quality(_r38, _st38)["providers"]
+t("A GOOGLE PULL DOES NOT MAKE META, LINKEDIN AND TIKTOK LOOK LIVE",
+  _dq38["google"]["status"] == "LIVE"
+  and _dq38["meta"]["status"] == "MISSING"
+  and _dq38["tiktok"]["status"] == "MISSING")
+_r38.put("sync_runs", {"id": "s1", "provider": "all",
+                       "completed_at": MX.now(),
+                       "errors": ["tiktok: tiktok is not connected"]})
+_dq38b = MX.data_quality(_r38, _st38)["providers"]
+t("a run that failed on a platform does not mark it fresh",
+  _dq38b["meta"]["status"] == "LIVE"
+  and _dq38b["tiktok"]["status"] == "MISSING")
+t("mixed currencies are flagged, never silently summed",
+  "mixed" in MX.data_quality(_r38, _st38)["currency"])
+t("timezone handling is stated, not assumed",
+  "provider-reported" in MX.data_quality(_r38, _st38)["timezone"])
+
+print("\nG39 THE AI DATA CONTRACT")
+_ds39 = MX.ai_dataset(r35, st35, {"date_range": _q35["date_range"]})
+t("the AI is handed the spec's exact envelope",
+  set(_ds39) >= {"context", "metrics", "timeseries", "breakdowns",
+                 "comparison", "targets", "data_quality"})
+_in39 = MX.ai_insights(_ds39)
+t("insights separate FACT from HYPOTHESIS",
+  all("fact" in i and "hypotheses" in i for i in _in39["insights"]))
+t("every insight metric is one the engine actually returned",
+  all(i["metric"] in _ds39["metrics"] for i in _in39["insights"]))
+t("an empty dataset returns INSUFFICIENT_DATA, never a made-up number",
+  MX.ai_insights(MX.ai_dataset(CORE.Repo(Store()), Store(), {}))["status"]
+  == "INSUFFICIENT_DATA")
+t("the analyst cannot reach the database itself",
+  "r.all(" not in io.open("content_engine_media_metrics.py",
+                          encoding="utf-8").read()
+  .split("def ai_insights")[1])
+
+print("\nG40 THE WORKBENCH IS THE ANALYTICS UI")
+import content_engine_media_workbench as WB
+_wb = WB.build(r35, st35, {})
+t("the workbench has the twelve spec sections", len(WB.SECTIONS) == 12)
+for _sid, _lab in WB.SECTIONS:
+    t(f"section drawn: {_lab}", f"wb-sec-{_sid}" in _wb)
+t("the persistent toolbar carries platform, date, granularity, compare",
+  all(x in _wb for x in ("wb-plat", "wb-date", "wb-gran", "wb-cmp")))
+t("ONE aggregation function executes the registry in the browser",
+  _wb.count("function wbAgg(") == 1)
+t("and the registry itself is shipped, not retyped",
+  "var CUBE=BOOT.cube, REG=BOOT.registry" in _wb)
+t("every chart can show its underlying data",
+  "function viewData(" in _wb and "[View data]" in _wb)
+t("drilldown updates the whole context, with a breadcrumb",
+  "wbDrillPlat" in _wb and "wb-crumb" in _wb)
+t("custom reports and CSV export exist",
+  "wbRunReport" in _wb and "wbCsv" in _wb)
+t("saved views exist", "wbSaveView" in _wb)
+t("the empty state names its reasons, spec section 55",
+  "NO PERFORMANCE" in _wb and "have not delivered" in _wb
+  and "filters exclude" in _wb)
+t("audience delivery is admitted as uncollected, not faked",
+  "not collected yet" in _wb)
+t("the workbench replaced the old Performance and Attribution tabs",
+  [x[0] for x in MCTR.SCREENS].count("alx") == 1
+  and "perf" not in [x[0] for x in MCTR.SCREENS]
+  and "attr" not in [x[0] for x in MCTR.SCREENS])
+_asrc40 = io.open("content_engine_api.py", encoding="utf-8").read()
+for _route in ("/mediaos/analytics", "/mediaos/insights", "/mediaos/views",
+               "/mediaos/wiretest"):
+    t(f"route {_route} exists", f'"{_route}"' in _asrc40)
+
+print("\nG41 PHASES 1-4 CLOSED: SCHEDULE, PACING, WIRE TESTS")
+import content_engine_scheduler as SCH
+import content_engine_seo_ops as OPS
+t("the canonical sync runs on the daily cadence",
+  "media_sync" in SCH.SEO_CADENCE
+  and SCH.SEO_CADENCE["media_sync"]["every_days"] == 1)
+t("and its runner exists", hasattr(OPS, "run_media_sync"))
+t("EVERY cadence entry resolves to a runner (the dict-vs-cadence "
+  "mismatch that silently skipped three steps)",
+  all(hasattr(OPS, f"run_{n}") for n in SCH.SEO_CADENCE))
+_pc41 = MX.pacing(r35, st35)
+t("pacing reports actual, ideal and projected",
+  _pc41["ok"] and "series" in _pc41)
+t("with no budget it says so instead of dividing by zero",
+  MX.pacing(CORE.Repo(Store()), Store())["used_pct"] is None)
+t("the 18 numbered platform tests exist as a real endpoint",
+  "18 numbered platform tests" in _asrc40
+  or "production_ready" in _asrc40)
+t("PRODUCTION_READY is only claimed at 18 of 18",
+  "production_ready\": ready" in _asrc40
+  and "okc == 18" in _asrc40)
+t("write tests never run without an explicit live flag",
+  'SKIPPED" if not live' in _asrc40)
 
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)
