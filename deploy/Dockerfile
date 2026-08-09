@@ -15,6 +15,14 @@ RUN pip install -r requirements.txt
 # connectors and the reply agent were missing).
 COPY *.py ./
 
+# The screen contracts. content_engine_factory_ui.check_screens() reads
+# docs/content-factory/ui/<screen>.md at RUNTIME to enforce spec section
+# 100 ("if the screen contract does not exist, do not code the screen").
+# With only *.py in the image that check failed on the box while passing
+# in the repo, which is the same failure the comment above describes: a
+# file the code depends on, left out of the build. 208K of markdown.
+COPY docs ./docs
+
 EXPOSE 8000
 
 # Default = the API. The worker service overrides CMD (see compose).

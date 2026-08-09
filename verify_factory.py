@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import io
+import os
 import re
 import sys
 
@@ -649,6 +650,33 @@ t("THE STUDIO HEADER READS THE FORMAT THE BRIEF ALREADY HOLDS",
 t("and still says 'not set' when neither holds one",
   "format not set" in S.studio({"content": {"title": "x", "blocks": [],
                                             "versions": []}}))
+
+head("L18 WHAT THE CODE READS AT RUNTIME MUST BE IN THE IMAGE")
+# The box found this one: check_screens() reads docs/ at runtime and the
+# Dockerfile copied only *.py, so the contract check passed in the repo
+# and failed in the container. Passing locally proved nothing about the
+# thing that actually runs.
+_df = io.open("deploy/Dockerfile", encoding="utf-8").read()
+t("the Dockerfile ships the screen contracts the code reads",
+  "COPY docs" in _df,
+  "check_screens() reads docs/ but the image would not contain it")
+t("and it still ships every root python module",
+  "COPY *.py" in _df)
+_reads = []
+for _mod in ("content_engine_factory_ui.py",
+             "content_engine_factory_os.py",
+             "content_engine_factory_agents.py",
+             "content_engine_factory_screens.py"):
+    _src2 = io.open(_mod, encoding="utf-8").read()
+    for _needle in ("docs/", "docs\\", 'join("docs"'):
+        if _needle in _src2:
+            _reads.append(_mod)
+            break
+t("every module that reads a non-python path is covered by a COPY",
+  not _reads or "COPY docs" in _df, str(sorted(set(_reads))))
+t("the contract directory the code looks in is the one on disk",
+  os.path.isdir(UI.CONTRACT_DIR),
+  UI.CONTRACT_DIR)
 
 # ---------------------------------------------------------------- verdict
 _done = sum(1 for v in STEPS.values() if v)
