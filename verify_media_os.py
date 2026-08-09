@@ -594,5 +594,40 @@ t("its collections are already declared in the core",
   all(c in CORE.COLLECTIONS for c in ("ad_metrics", "media_anomalies",
                                       "email_events")))
 
+print("\nG25 THE UI IS THE OS AND THE OLD UI IS GONE")
+import re as _re
+import content_engine_media_center as MCTR
+asrc = io.open("content_engine_api.py", encoding="utf-8").read()
+for route in ("/mediaos/campaign", "/mediaos/attach", "/mediaos/audience",
+              "/mediaos/creative", "/mediaos/validate", "/mediaos/launch",
+              "/mediaos/plan", "/mediaos/simulate", "/mediaos/scan",
+              "/mediaos/propose", "/mediaos/sync", "/mediaos/matrix"):
+    t(f"route {route} exists", f'"{route}"' in asrc)
+csrc = io.open("content_engine_media_center.py", encoding="utf-8").read()
+_posts = set(_re.findall(r"/mediaos/[a-z]+", csrc))
+t("every endpoint the screens call actually exists",
+  all(f'"{u}"' in asrc for u in _posts), str(sorted(_posts)))
+t("the centre holds no key, token or password",
+  all(w not in csrc.lower() for w in ("api_key", "access_token", "password",
+                                      "secret")))
+t("the centre reaches no platform and no HTTP client",
+  all(w not in csrc for w in ("MetaAds", "GoogleAds", "TikTokAds",
+                              "requests", "urllib")))
+t("no em dash in the centre", "\u2014" not in csrc)
+import os as _os
+t("the old media screens module is deleted",
+  not _os.path.exists("content_engine_media_screens.py"))
+t("media_boards is a shim now, not a UI",
+  len(io.open("content_engine_media_boards.py",
+              encoding="utf-8").read().splitlines()) < 60)
+t("the 11 screens are declared once", len(MCTR.SCREENS) == 11)
+sec = MCTR.section({"media_auto_level": "observe"})
+t("the assembled section carries every screen",
+  all(f"mc-panel-{tid}" in sec for tid, _i, _l, _q in MCTR.SCREENS))
+t("and none of the 16-tab markup",
+  all(w not in sec for w in ("a3swbar", "a3tab", "spanel-mb")))
+t("a launch from the UI goes through the plan module's gate",
+  "/mediaos/launch" in csrc and "_MP.launch" in asrc)
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)

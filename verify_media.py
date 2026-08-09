@@ -24,9 +24,16 @@ def gate(n, name):
 
 
 import content_engine_media_orders as MO
-import content_engine_media_screens as MS
+import content_engine_media_center as MCTR
 import content_engine_media_platforms as MP
 import content_engine_gtm as GTM
+
+_CTX = {"media_auto_level": "observe", "media_orders": [],
+        "media_verdicts": {}}
+
+
+def _section(ctx=None, **kw):
+    return MCTR.section(dict(_CTX if ctx is None else ctx), **kw)
 
 
 class _S:
@@ -39,9 +46,9 @@ class _S:
 def _g1():
     assert set(MO.CODES) == set(MO.EXEC_VIA), (
         f"registry and executor disagree: {set(MO.CODES) ^ set(MO.EXEC_VIA)}")
-    src = io.open("content_engine_media_screens.py", encoding="utf-8").read()
-    assert "MO.CODES" in src or "MO.UTM_LAW" in src, (
-        "the screens must import the registry, not retype it")
+    import content_engine_media_perf as _MF
+    assert all(c in MO.CODES for c in _MF.ANSWER.values()), (
+        "the anomaly answers must be codes the order engine declares")
     return f"{len(MO.CODES)} codes, one list, imported"
 
 
@@ -114,25 +121,26 @@ def _g7():
     return "audit honest, draft held, nonsense refused"
 
 
-@gate(8, "the sixteen panels render on empty AND hostile contexts")
+@gate(8, "every OS screen renders on empty AND hostile contexts")
 def _g8():
     for ctx in ({}, {k: None for k in ("ads", "econ", "interlock",
                                        "media_orders", "media_verdicts",
                                        "gtm_audit", "insights")},
                 {"interlock": {"burn": {"a": {"term": "t"}}}}):
-        panels = MS.build_panels(dict(ctx))
-        assert len(panels) == 16
-        for tid, html in panels.items():
-            assert html and len(html) > 40, f"{tid} rendered nothing"
-    return "16 of 16, three context shapes, no crash, no blank"
+        sec = _section(dict(ctx))
+        for tid, _i, _l, _q in MCTR.SCREENS:
+            assert f"mc-panel-{tid}" in sec, f"{tid} has no panel"
+        assert len(sec) > 8000, "the section rendered nearly nothing"
+    return (f"{len(MCTR.SCREENS)} screens, three context shapes, "
+            f"no crash, no blank")
 
 
 @gate(9, "the agent band shows the switch and never guesses it")
 def _g9():
-    h = MS.agent_band({"media_auto_level": "observe"})
+    h = MCTR._band({"media_auto_level": "observe"})
     assert "OBSERVE 24/7" in h and "s3on" in h
     assert "no auto-spend level at all" in h
-    h2 = MS.agent_band({})
+    h2 = MCTR._band({})
     assert "could not be read" in h2
     return "state in words; unknown admitted"
 
@@ -147,16 +155,22 @@ def _g10():
     return "tiktok drawn with its own chrome, honestly sampled"
 
 
-@gate(11, "the section carries the screens, the handlers, and no cards")
+@gate(11, "the section carries the OS screens, the handlers, and none of "
+          "the old UI")
 def _g11():
     import content_engine_media_boards as MB
     sec = MB.media_section({"media_auto_level": "observe"})
-    for need in ("s3band", "mediaAutoSet('propose'", "function mediaRun(",
-                 ".seoscr{", "gtmDraft", "a3swbar"):
+    for need in ("mc-root", "s3band", "mediaAutoSet('propose'",
+                 "function mediaRun", "function gtmDraft",
+                 "function mcTab", "/mediaos/"):
         assert need in sec, f"section missing {need}"
+    # THE OLD UI IS GONE. The founder's order: removed completely, not
+    # hidden behind a tab.
+    for gone in ("a3swbar", "a3tab", "seoTab('mb", "spanel-mb"):
+        assert gone not in sec, f"the old 16-tab UI still renders: {gone}"
     stray = re.findall(r"<div class='card (?:overflowcard )?sev-", sec)
     assert not stray, f"{len(stray)} old cards still render"
-    return "band, ladder, handlers, platforms aboard; zero cards"
+    return "band, handlers, OS screens aboard; old UI gone; zero cards"
 
 
 @gate(12, "the endpoints exist and refuse empty input in words")
@@ -336,61 +350,48 @@ def _g21():
 def _g22():
     panel = _media_panel(_full_page())
     for need in ("draftCampaign(", "mediaSectionSend(",
-                 "Campaign drafts", "your AI media buyer"):
+                 "Drafts from the media agent", "Website tracking"):
         assert need in panel, (
-            f"the media buyer's {need} was destroyed by the card removal - "
-            f"drafting and chat are function, not decoration")
-    assert "What GA4 and Search Console actually recorded" in panel, (
-        "the GA4/GSC boards were dropped instead of moved into Tracking")
+            f"the media buyer's {need} was destroyed by the replacement - "
+            f"drafting, chat and the Google boards are function, not "
+            f"decoration")
     return "draft flow, chat and the Google boards all rehomed"
 
 
 @gate(23, "switching the agent level updates EVERY band on the page")
 def _g23():
-    # The band renders on Command and on Work Orders. Updating only the
-    # clicked ladder left the other screen claiming a level that was no
-    # longer true, which a real press in a browser exposed.
-    js = MS.JS
+    # The handler updates every ladder on the page, not only the pressed
+    # one, so a second band can never keep claiming a stale level.
+    js = MCTR.JS
     assert "document.querySelectorAll('.s3lvl')" in js, (
-        "mediaAutoSet updates only the pressed ladder; the second band "
-        "on the page keeps showing the old level")
-    assert "btn.parentNode.querySelectorAll" not in js
+        "mediaAutoSet updates only the pressed ladder")
+    assert "parentNode.querySelectorAll('.s3lvl')" not in js, (
+        "the ladder update is scoped to one band again")
     panel = _media_panel(_full_page())
-    assert panel.count("s3ladder") >= 2, (
-        "this gate assumes more than one band; if that changed, revisit it")
-    return f"{panel.count('s3ladder')} bands, one source of truth"
+    assert panel.count("s3ladder") >= 1, "no agent band on the page"
+    return f"{panel.count('s3ladder')} band(s), one source of truth"
 
 
-@gate(21, "ONE ads environment: all five platforms behind one switcher")
+@gate(21, "the eight wizard steps and the launch gate are on the section")
 def _g21():
-    import content_engine_media_boards as MB
-    panels = MS.build_panels({"media_auto_level": "observe"})
-    holders = [t for t, h in panels.items() if "a3swbar" in h]
-    assert holders == ["mbtypes"], (
-        f"the environment must live on exactly one tab, found: {holders}. "
-        f"Splitting the managers across tabs is what the founder scored 0/10")
-    env = panels["mbtypes"]
-    for pid in MP.ORDER:
-        assert f"a3plat-{pid}" in env, f"{pid} is not in the environment"
-    assert len(env) > 20000, f"the environment is only {len(env)} chars"
-    return f"5 platforms, one switcher, {len(env)//1024} KB"
+    sec = _section()
+    import content_engine_media_plan as _MP
+    assert len(_MP.WIZARD_STEPS) == 8
+    for _k, lab, _why in _MP.WIZARD_STEPS:
+        assert lab in sec, f"wizard step {lab!r} is not drawn"
+    for need in ("/mediaos/launch", "/mediaos/campaign", "/mediaos/plan",
+                 "/mediaos/simulate", "Launch Centre"):
+        assert need in sec, f"missing {need}"
+    return "8 steps drawn; launch, plan and simulate wired"
 
 
-@gate(22, "every tab label matches what the panel behind it contains")
+@gate(22, "every OS tab has a panel and every panel has a tab")
 def _g22():
-    import content_engine_media_boards as MB
-    panels = MS.build_panels({"media_auto_level": "observe"})
-    labels = {t: l for t, _i, l in MB.TABS}
-    # the four that were catastrophically mislabelled
-    assert labels["mbtypes"] == "Ad Manager"
-    assert labels["mbaud"] == "Audiences"
-    assert labels["mbads"] == "Creative Library"
-    assert labels["mbconv"] == "Tracking & Tag Manager"
-    # and no platform manager hides behind an unrelated word
-    for t, l in labels.items():
-        if "a3bar" in panels[t] and t != "mbtypes":
-            raise AssertionError(f"a platform manager hides behind '{l}'")
-    return "16 labels, none lying about its panel"
+    sec = _section()
+    for tid, _i, label, _q in MCTR.SCREENS:
+        assert f"mc-tab-{tid}" in sec, f"{label} has no tab"
+        assert f"mc-panel-{tid}" in sec, f"{label} has no panel"
+    return f"{len(MCTR.SCREENS)} tabs, none lying about its panel"
 
 
 @gate(23, "Tag Manager connects from the Connect board like every other API")
@@ -412,11 +413,11 @@ def _g23():
 
 @gate(24, "the campaign-draft flow and the real GA4 panel survived")
 def _g24():
-    panels = MS.build_panels({}, legacy_campaigns="<b>DRAFTFLOW</b>",
-                             legacy_tracking="<b>GA4REAL</b>")
-    assert "DRAFTFLOW" in panels["mbtypes"], (
+    sec = _section({}, legacy_campaigns="<b>DRAFTFLOW</b>",
+                   legacy_tracking="<b>GA4REAL</b>")
+    assert "DRAFTFLOW" in sec, (
         "the AI media buyer's drafting flow was dropped")
-    assert "GA4REAL" in panels["mbconv"], (
+    assert "GA4REAL" in sec, (
         "the real GA4/Search Console panel was dropped")
     return "both legacy flows still injected"
 

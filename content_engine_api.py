@@ -3856,6 +3856,141 @@ def build_app():
                 f"{rep['done']} executed, {rep['held']} held with the "
                 f"reason written down, {rep['failed']} failed."}
 
+    # ---- THE MEDIA BUYING OS -------------------------------------------
+    # Thin routes over the canonical engines. No route here touches a
+    # platform, a token or a password: a launch queues an order in the
+    # media queue and everything else edits the internal model.
+    def _mrepo():
+        import content_engine_media_os as _M
+        return _M.repo(get_store())
+
+    @app.post("/mediaos/campaign")
+    async def mediaos_campaign(request: Request):
+        import content_engine_media_os as _M
+        d = await _body(request)
+        out = _M.save_campaign(
+            _mrepo(), name=str(d.get("name") or ""),
+            objective=str(d.get("objective") or "LEADS"),
+            provider=str(d.get("provider") or ""),
+            budget_type=str(d.get("budget_type") or "DAILY"),
+            budget_amount=d.get("budget_amount") or 0,
+            currency=str(d.get("currency") or "EUR"),
+            start_at=str(d.get("start_at") or ""),
+            end_at=str(d.get("end_at") or ""),
+            provider_config={"kpi": str(d.get("kpi") or "CPA")})
+        _log_decision(get_store(), "mediaos_campaign",
+                      str(d.get("name"))[:60], out.get("message", ""))
+        return out
+
+    @app.post("/mediaos/attach")
+    async def mediaos_attach(request: Request):
+        """Ad group + ad in one step, the wizard's steps 4 and 5."""
+        import content_engine_media_os as _M
+        d = await _body(request)
+        r = _mrepo()
+        cid = str(d.get("campaign_id") or "")
+        g = _M.save_ad_group(r, cid, name="Core",
+                             audience_id=str(d.get("audience_id") or ""))
+        if not g.get("ok"):
+            return g
+        a = _M.save_ad(r, g["id"], name="Ad 1",
+                       creative_id=str(d.get("creative_id") or ""),
+                       landing_page_url=str(d.get("landing_page_url") or ""))
+        return {"ok": a.get("ok"),
+                "message": f"{g.get('message', '')} {a.get('message', '')}"}
+
+    @app.post("/mediaos/audience")
+    async def mediaos_audience(request: Request):
+        import content_engine_media_creative as _MC
+        d = await _body(request)
+        return _MC.save_audience(_mrepo(), name=str(d.get("name") or ""),
+                                 type=str(d.get("type") or "PROSPECTING"),
+                                 definition=d.get("definition") or {})
+
+    @app.post("/mediaos/creative")
+    async def mediaos_creative(request: Request):
+        import content_engine_media_creative as _MC
+        d = await _body(request)
+        return _MC.save_creative(
+            _mrepo(), name=str(d.get("name") or ""),
+            type=str(d.get("type") or "IMAGE"),
+            concept=str(d.get("concept") or ""),
+            angle=str(d.get("angle") or ""),
+            hook=str(d.get("hook") or ""),
+            persona=str(d.get("persona") or ""),
+            cta=str(d.get("cta") or ""),
+            funnel_stage=str(d.get("funnel_stage") or "COLD"),
+            headline=str(d.get("headline") or ""),
+            primary_text=str(d.get("primary_text") or ""),
+            landing_page_url=str(d.get("landing_page_url") or ""),
+            publish=bool(d.get("publish")))
+
+    @app.post("/mediaos/validate")
+    async def mediaos_validate(request: Request):
+        import content_engine_media_os as _M
+        d = await _body(request)
+        return _M.validate(_mrepo(), str(d.get("campaign_id") or ""))
+
+    @app.post("/mediaos/launch")
+    async def mediaos_launch(request: Request):
+        import content_engine_media_plan as _MP
+        d = await _body(request)
+        out = _MP.launch(_mrepo(), str(d.get("campaign_id") or ""),
+                         scheduled_at=str(d.get("scheduled_at") or ""))
+        _log_decision(get_store(), "mediaos_launch",
+                      str(d.get("campaign_id"))[:40],
+                      out.get("message", "")[:120])
+        return out
+
+    @app.post("/mediaos/plan")
+    async def mediaos_plan(request: Request):
+        import content_engine_media_plan as _MP
+        d = await _body(request)
+        return _MP.save_plan(
+            _mrepo(), objective=str(d.get("objective") or "LEADS"),
+            budget=d.get("budget") or 0,
+            kpi=str(d.get("kpi") or "CPA"),
+            period_start=str(d.get("period_start") or ""),
+            period_end=str(d.get("period_end") or ""),
+            target_cpa=d.get("target_cpa") or None,
+            target_roas=d.get("target_roas") or None,
+            target_leads=d.get("target_leads") or None)
+
+    @app.post("/mediaos/simulate")
+    async def mediaos_simulate(request: Request):
+        import content_engine_media_plan as _MP
+        d = await _body(request)
+        return _MP.simulate(_mrepo(), budget=d.get("budget") or 0,
+                            compare_to=d.get("compare_to") or None)
+
+    @app.post("/mediaos/scan")
+    def mediaos_scan():
+        import content_engine_media_perf as _MF
+        return _MF.scan(_mrepo(), save=True)
+
+    @app.post("/mediaos/propose")
+    def mediaos_propose():
+        import content_engine_media_perf as _MF
+        out = _MF.propose(_mrepo(), get_store())
+        _log_decision(get_store(), "mediaos_propose",
+                      f"{out.get('proposed')} verdict(s)",
+                      out.get("message", "")[:120])
+        return out
+
+    @app.post("/mediaos/sync")
+    def mediaos_sync():
+        import content_engine_media_os as _M
+        out = _M.sync(_mrepo())
+        _log_decision(get_store(), "mediaos_sync", "",
+                      out.get("message", "")[:120])
+        return out
+
+    @app.post("/mediaos/matrix")
+    async def mediaos_matrix(request: Request):
+        import content_engine_media_creative as _MC
+        d = await _body(request)
+        return _MC.matrix(_mrepo(), str(d.get("dimension") or "angle"))
+
     @app.post("/gtm/audit")
     def gtm_audit_ep():
         import content_engine_gtm as G
