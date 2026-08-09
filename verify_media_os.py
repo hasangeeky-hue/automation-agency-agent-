@@ -399,5 +399,200 @@ t("no em dash anywhere in the planner", "\u2014" not in psrc)
 t("media_plans was already a declared collection",
   "media_plans" in CORE.COLLECTIONS)
 
+print("\nG19 ROLLUPS: FIVE GRAINS, ONE ARITHMETIC")
+import datetime as _dtm
+import content_engine_media_perf as MF
+import content_engine_media_orders as MO
+st4 = Store()
+r4 = CORE.Repo(st4)
+_e = MF.rollup(r4)
+t("an empty rollup says absence, not zero",
+  "absence, not a zero" in _e["message"])
+t("a derived metric over nothing is None with a sentence",
+  _e["totals"]["ctr"]["value"] is None
+  and "no impressions yet" in _e["totals"]["ctr"]["of"])
+t("an invented grain is refused with the real list",
+  "is not a grain" in MF.rollup(r4, grain="YEARLY")["message"])
+t("an invented level is refused with the real list",
+  "is not a level" in MF.rollup(r4, level="pixel")["message"])
+t("the grains are declared once", len(MF.GRAINS) == 5)
+M.save_account(r4, "google", "a1", name="G")
+_c1 = M.save_campaign(r4, name="Clinics DE", objective="LEADS",
+                      provider="google", budget_type="DAILY",
+                      budget_amount=50)["id"]
+_c2 = M.save_campaign(r4, name="Lawyers UK", objective="LEADS",
+                      provider="google", budget_type="DAILY",
+                      budget_amount=30)["id"]
+r4.put("media_campaigns", {**r4.one("media_campaigns", _c1), "state": "ACTIVE"})
+r4.put("media_campaigns", {**r4.one("media_campaigns", _c2), "state": "ACTIVE"})
+_today = _dtm.date.today()
+for _i in range(20):
+    _day = (_today - _dtm.timedelta(days=19 - _i)).isoformat()
+    _late = _i >= 17
+    r4.put("ad_metrics", {"id": "x%d" % _i, "day": _day, "provider": "google",
+                          "campaign_id": _c1, "ad_group_id": "g1",
+                          "ad_id": "ad1", "impressions": 5000, "clicks": 200,
+                          "conversions": 1 if _late else 5,
+                          "conversion_value": 300 if _late else 1500,
+                          "spend": 400})
+    r4.put("ad_metrics", {"id": "y%d" % _i, "day": _day, "provider": "google",
+                          "campaign_id": _c2, "ad_group_id": "g2",
+                          "ad_id": "ad2", "impressions": 3000, "clicks": 90,
+                          "conversions": 0 if _late else 2,
+                          "conversion_value": 0 if _late else 600,
+                          "spend": 0 if _late else 200})
+_roll = MF.rollup(r4, grain="DAILY")
+t("daily rollup sees every day", _roll["days_with_data"] == 20)
+t("every derived metric carries its denominator",
+  all("of" in _roll["totals"][m] for m in MF.DERIVED))
+t("weekly buckets are ISO weeks",
+  MF.rollup(r4, grain="WEEKLY")["rows"][0]["bucket"].count("-W") == 1)
+t("monthly buckets are months",
+  len(MF.rollup(r4, grain="MONTHLY")["rows"][0]["bucket"]) == 7)
+t("the campaign level filters by campaign",
+  all(row["key"] == _c1 for row in
+      MF.rollup(r4, campaign_id=_c1)["rows"]))
+_cmp = MF.compare(r4, campaign_id=_c1)
+t("compare shows both windows, not just a percent",
+  all("then" in m["why"] or "nothing to compare" in m["why"]
+      for m in _cmp["moves"]))
+t("a compare with no history says so instead of 0",
+  any(m["change"] is None for m in
+      MF.compare(r4, campaign_id="nope")["moves"]))
+
+print("\nG20 ONE TIMELINE: PAID EVENTS IN THE SHARED LAYER")
+t("the paid kinds live in the CORE vocabulary, imported not retyped",
+  MF.AD_EVENTS == ("AD_CLICK", "AD_CONVERSION")
+  and all(k in CORE.EVENT_TYPES for k in MF.AD_EVENTS))
+t("there is deliberately no AD_IMPRESSION",
+  "AD_IMPRESSION" not in CORE.EVENT_TYPES)
+CORE.record_event(r4, "EMAIL_CLICKED", profile_id="p1", campaign_id="em1",
+                  at="2026-08-01T10:00:00")
+_rp = MF.record_paid(r4, "AD_CLICK", profile_id="p1", campaign_id=_c1,
+                     at="2026-08-03T10:00:00")
+t("a paid click records through the ONE recorder", _rp["ok"])
+t("the same click twice is refused, same dedup as email",
+  MF.record_paid(r4, "AD_CLICK", profile_id="p1", campaign_id=_c1,
+                 at="2026-08-03T10:00:00")["ok"] is False)
+t("an invented paid kind is refused with the real list",
+  "is not a paid event" in MF.record_paid(r4, "AD_IMPRESSION",
+                                          profile_id="p1")["message"])
+MF.record_paid(r4, "AD_CONVERSION", profile_id="p1", campaign_id=_c1,
+               at="2026-08-05T10:00:00", value=500)
+MF.record_paid(r4, "AD_CLICK", profile_id="p2", campaign_id=_c2,
+               at="2026-08-02T09:00:00")
+MF.record_paid(r4, "AD_CONVERSION", profile_id="p2", campaign_id=_c2,
+               at="2026-08-02T11:00:00", value=200)
+MF.record_paid(r4, "AD_CONVERSION", profile_id="p3", campaign_id=_c1,
+               at="2026-08-04T11:00:00", value=100)
+r4.put("campaigns", {"id": "em1", "name": "Welcome flow"})
+t("paid rows land in email_events, the one table",
+  sum(1 for e in r4.all("email_events")
+      if e.get("event_type") in MF.AD_EVENTS) == 5)
+
+print("\nG21 ATTRIBUTION: FIVE MODELS THAT ADMIT THEY DISAGREE")
+_lt = MF.attribute(r4, model="last_touch")
+_ft = MF.attribute(r4, model="first_touch")
+t("an invented model is refused with the real list",
+  "is not a model" in MF.attribute(r4, model="vibes")["message"])
+t("last touch and first touch credit DIFFERENT campaigns for p1",
+  next(x["conversions"] for x in _lt["rows"] if x["campaign_id"] == _c1) == 1.0
+  and next(x["conversions"] for x in _ft["rows"]
+           if x["campaign_id"] == "em1") == 1.0)
+t("email and paid campaigns sit in ONE credit table",
+  {x["channel"] for x in
+   MF.attribute(r4, model="linear")["rows"]} == {"paid", "email"})
+t("linear credit sums to the converters it credits",
+  abs(sum(x["conversions"] for x in
+          MF.attribute(r4, model="linear")["rows"]) - 2.0) < 0.01)
+t("a conversion with no touch is counted NOWHERE and said out loud",
+  _lt["conversions_with_no_touch"] == 1
+  and "counted nowhere" in _lt["message"])
+t("position and decay are named as CONVENTIONS, not facts",
+  "CONVENTIONS" in _lt["convention"])
+_sp = MF.model_spread(r4)
+t("the spread screen shows the disagreement, not a favourite",
+  _sp["rows"][0]["spread"] > 0 and "a choice" in _sp["rows"][0]["why"])
+t("all five models are declared once",
+  len(MF.ATTRIBUTION_MODELS) == 5)
+_rc = MF.reconcile(r4)
+t("reconcile names BOTH numbers", all(
+  "platform_claims" in row and "engine_observed" in row
+  for row in _rc["rows"]))
+t("and refuses to correct one into the other",
+  "neither is corrected into the other" in _rc["message"])
+t("a platform-heavy gap blames view-through, not the founder",
+  any("view-through" in row["why"] for row in _rc["rows"]))
+
+print("\nG22 ANOMALIES NEED A BASELINE THEY HAVE EARNED")
+_sc = MF.scan(r4, save=True)
+_kinds = {a["type"] for a in _sc["anomalies"]}
+t("the broken CPA is caught with its own baseline",
+  "CPA_BREAK" in _kinds)
+t("the stopped delivery is caught on the ACTIVE campaign",
+  "DELIVERY_STOPPED" in _kinds)
+t("every anomaly carries the numbers it fired on",
+  all(a["baseline"] is not None and "evidence" in a
+      for a in _sc["anomalies"]))
+t("anomalies persist under the type column the table declares",
+  all(x.get("type") in MF.ANOMALY_KINDS
+      for x in r4.all("media_anomalies")))
+_c3 = M.save_campaign(r4, name="Fresh", objective="LEADS",
+                      provider="google", budget_amount=10)["id"]
+for _i in range(4):
+    _day = (_today - _dtm.timedelta(days=3 - _i)).isoformat()
+    r4.put("ad_metrics", {"id": "z%d" % _i, "day": _day, "provider": "google",
+                          "campaign_id": _c3, "impressions": 100, "clicks": 5,
+                          "conversions": 0, "conversion_value": 0,
+                          "spend": 20})
+_sc2 = MF.scan(r4, save=False)
+t("a thin baseline is REFUSED, not judged",
+  any(x["campaign_id"] == _c3 for x in _sc2["not_judged"]))
+t("and the refusal names the minimum",
+  any(str(MF.MIN_BASELINE_DAYS) in x["why"] for x in _sc2["not_judged"]))
+t("the refusal is LISTED in the message rather than hidden",
+  "NOT judged" in _sc2["message"])
+
+print("\nG23 VERDICTS GO INTO THE QUEUE THAT ALREADY EXISTS")
+t("every anomaly kind has exactly one answer",
+  set(MF.ANSWER) == set(MF.ANOMALY_KINDS))
+t("every answer is a code the order engine declares",
+  all(c in MO.CODES for c in MF.ANSWER.values()))
+_pr = MF.propose(r4, st4)
+t("verdicts are proposed from measured anomalies", _pr["proposed"] >= 2)
+t("each verdict carries the full evidence contract",
+  all(set(o["evidence"]) >= {"metric", "threshold", "window", "source"}
+      for o in _pr["orders"]))
+t("they land in the REAL media order store", len(MO.load(st4)) >= 2)
+t("re-running proposes but queues NOTHING new",
+  MF.propose(r4, st4)["queued"] == 0)
+t("the approval tier is reported, not assumed",
+  _pr["tier"] in ("observe", "confirm", "execute"))
+t("the unjudged campaigns ride along in the answer",
+  len(_pr["not_judged"]) >= 1)
+_sm = MF.summary(r4)
+t("the summary separates act from watch from not-judged",
+  isinstance(_sm["needs_action"], list) and isinstance(_sm["watching"], list)
+  and isinstance(_sm["not_judged"], list))
+t("the summary's CPA carries its denominator",
+  "of" in _sm["cpa"])
+
+print("\nG24 THE PERF ENGINE SPENDS NOTHING")
+fsrc = io.open("content_engine_media_perf.py", encoding="utf-8").read()
+for w in ("MetaAds", "GoogleAds", "TikTokAds", "LinkedInAds",
+          "requests", "urllib", "http.client", "smtplib"):
+    t(f"the perf engine contains no {w}", w not in fsrc)
+t("no em dash anywhere in it", "\u2014" not in fsrc)
+t("it records events only through the one recorder",
+  "CORE.record_event" in fsrc and "repo.append" not in fsrc)
+t("its base metrics are the platform's, nothing invented",
+  set(MF.BASE_METRICS) == {"impressions", "clicks", "spend",
+                           "conversions", "conversion_value"})
+t("touch and conversion kinds are two lists used by every model",
+  fsrc.count("TOUCH_KINDS = ") == 1 and fsrc.count("CONVERSION_KINDS = ") == 1)
+t("its collections are already declared in the core",
+  all(c in CORE.COLLECTIONS for c in ("ad_metrics", "media_anomalies",
+                                      "email_events")))
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)

@@ -68,7 +68,13 @@ JOB_STATES = ("QUEUED", "PROCESSING", "SENT", "DELIVERED", "BOUNCED",
 EVENT_TYPES = ("EMAIL_QUEUED", "EMAIL_SENT", "EMAIL_DELIVERED",
                "EMAIL_BOUNCED", "EMAIL_OPENED", "EMAIL_CLICKED",
                "EMAIL_UNSUBSCRIBED", "EMAIL_SPAM_COMPLAINT",
-               "EMAIL_CONVERTED")
+               "EMAIL_CONVERTED",
+               # Paid touches live in the SAME layer, because a person does
+               # not have an email history and a separate ads history; they
+               # have a history. There is deliberately no AD_IMPRESSION: no
+               # platform reports an impression per person, so recording one
+               # would be a fact this engine invented.
+               "AD_CLICK", "AD_CONVERSION")
 
 #: Marketing consent. SUPPRESSED is a state a person is put INTO by a
 #: suppression record; it is not something they choose.
