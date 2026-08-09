@@ -164,10 +164,13 @@ def _g11():
                  "function mediaRun", "function gtmDraft",
                  "function mcTab", "/mediaos/"):
         assert need in sec, f"section missing {need}"
-    # THE OLD UI IS GONE. The founder's order: removed completely, not
-    # hidden behind a tab.
-    for gone in ("a3swbar", "a3tab", "seoTab('mb", "spanel-mb"):
+    # THE OLD 16-TAB SYSTEM IS GONE, but the five-platform Ad Manager
+    # MODULE is back on the founder's order, so a3swbar/a3plat are allowed
+    # again; only the old tab chrome stays banned.
+    for gone in ("seoTab('mb", "spanel-mb", "stab-mb"):
         assert gone not in sec, f"the old 16-tab UI still renders: {gone}"
+    assert "a3swbar" in sec and "a3plat-google" in sec, (
+        "the five-platform Ad Manager module is missing again")
     stray = re.findall(r"<div class='card (?:overflowcard )?sev-", sec)
     assert not stray, f"{len(stray)} old cards still render"
     return "band, handlers, OS screens aboard; old UI gone; zero cards"

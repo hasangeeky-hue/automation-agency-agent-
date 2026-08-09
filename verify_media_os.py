@@ -620,12 +620,13 @@ t("the old media screens module is deleted",
 t("media_boards is a shim now, not a UI",
   len(io.open("content_engine_media_boards.py",
               encoding="utf-8").read().splitlines()) < 60)
-t("the 11 screens are declared once", len(MCTR.SCREENS) == 11)
+t("the 15 screens are declared once", len(MCTR.SCREENS) == 15)
 sec = MCTR.section({"media_auto_level": "observe"})
 t("the assembled section carries every screen",
   all(f"mc-panel-{tid}" in sec for tid, _i, _l, _q in MCTR.SCREENS))
-t("and none of the 16-tab markup",
-  all(w not in sec for w in ("a3swbar", "a3tab", "spanel-mb")))
+t("none of the old tab chrome, but the Ad Manager module mounted",
+  all(w not in sec for w in ("spanel-mb", "stab-mb"))
+  and "a3swbar" in sec)
 t("a launch from the UI goes through the plan module's gate",
   "/mediaos/launch" in csrc and "_MP.launch" in asrc)
 
@@ -852,6 +853,58 @@ t("the detail carries trend, audiences, creatives, placements, "
   "diagnosis and history",
   all(w in _dt for w in ("Trend", "Audiences", "Creatives", "Placements",
                          "AI diagnosis", "Execution history")))
+
+print("\nG32 THE RESTORED MODULES AND THE CHARTS")
+import re as _re2
+sec3 = MCTR.section({"media_auto_level": "observe"})
+t("the five-platform Ad Manager is MOUNTED, not rebuilt",
+  all(f"a3plat-{pid}" in sec3 for pid in
+      ("google", "facebook", "instagram", "linkedin", "tiktok")))
+t("it is the existing module, imported",
+  "content_engine_media_platforms" in io.open(
+      "content_engine_media_center.py", encoding="utf-8").read())
+for label in ("Search Terms", "Keywords",
+              "Bidding, judged against YOUR economics",
+              "Impression share", "Budget &amp; Pacing",
+              "Landing pages"):
+    t(f"intel board present: {label}", label in sec3)
+t("cross-channel board present",
+  "terms you pay for and already win free" in sec3)
+t("the funnel screen exists and refuses to invent stages",
+  "The funnel" in sec3 and ("nothing is invented" in sec3
+                            or "mc-hbar" in sec3))
+t("competition and research boards present",
+  "Competition" in sec3 and "GEO market research" in sec3)
+t("Google's recommendations are treated as claims, not orders",
+  "treated as claims" in sec3)
+t("the GTM audit board is back, with its one-click drafts",
+  "Tag Manager audit" in sec3 and "gtmDraft" in sec3)
+t("every unconnected board says WHY instead of showing zeros",
+  sec3.count("mc-empty") >= 8)
+_c2 = MCTR.chart([("d1", 10), ("d2", 30), ("d3", 20)], title="t")
+t("a chart with real points draws an SVG line",
+  "<svg" in _c2 and "polyline" in _c2)
+t("and prints its own range under it",
+  "low 10" in _c2 and "high 30" in _c2)
+t("a chart with one point REFUSES to draw",
+  "<svg" not in MCTR.chart([("d1", 10)], title="t")
+  and "not enough measured points" in MCTR.chart([("d1", 10)], title="t"))
+_f2 = MCTR.chart_funnel([("Impressions", 1000), ("Clicks", 50),
+                         ("Leads", 5)])
+t("the funnel names the drop between stages, because the drop IS the "
+  "finding", "5.0% of impressions" in _f2 and "10.0% of clicks" in _f2)
+t("a one-stage funnel is refused",
+  "at least two real stages" in MCTR.chart_funnel([("Impressions", 9)]))
+t("the command centre carries trend charts",
+  "Spend per day, 30d" in sec3)
+t("the campaign detail draws its trend, spec section 33",
+  '"Spend"' in io.open("content_engine_media_center.py",
+                       encoding="utf-8").read().replace("title=", '"')
+  or "title=\"Spend\"" in io.open("content_engine_media_center.py",
+                                  encoding="utf-8").read())
+_ids3 = _re2.findall(r"\sid='([^']+)'", sec3)
+t("no duplicate element ids across all fifteen screens",
+  not [i for i in set(_ids3) if _ids3.count(i) > 1])
 
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 raise SystemExit(0 if all(OK) else 1)

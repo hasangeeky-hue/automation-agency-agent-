@@ -66,12 +66,16 @@ SCREENS = (
     ("camps", "📋", "Campaigns", "Everything, with its real state"),
     ("wiz", "🧭", "New Campaign", "The eight steps"),
     ("launch", "🚀", "Launch Centre", "Checked before it costs anything"),
+    ("adman", "🗂️", "Ad Manager", "Every platform's own room"),
     ("plan", "📐", "Planner", "Budget, allocation, what-if"),
     ("creat", "🎨", "Creatives", "The library and what it learned"),
     ("aud", "👥", "Audiences", "Who, and what each platform drops"),
     ("perf", "📈", "Performance", "Five grains, one arithmetic"),
+    ("intel", "🔍", "Search & Bidding", "Terms, keywords, pace, waste"),
     ("attr", "🧾", "Attribution", "Five models that admit they disagree"),
     ("anom", "⚠️", "Anomalies & Verdicts", "What broke its own baseline"),
+    ("cross", "🔗", "Cross-Channel", "Paid and organic in one picture"),
+    ("comp", "🥊", "Competition & Research", "Who else is in the auction"),
     ("plat", "🔌", "Platforms & Tracking", "Connections, pulls, tags"),
 )
 
@@ -101,6 +105,90 @@ def kpi(label, value, of="") -> str:
     return ("<div class='mc-kpi'><b>" + value + "</b>"
             f"<span>{e(label)}</span>"
             + (f"<i>{e(of)}</i>" if of else "") + "</div>")
+
+
+def chart(series, *, h=110, w=640, color="#4C8DFF", title="") -> str:
+    """A dependency-free SVG line chart with an area fill.
+
+    Refuses to draw fewer than two real points: a chart of one number is
+    decoration pretending to be information."""
+    pts = [(str(b), float(v)) for b, v in series
+           if v is not None and str(v) != ""]
+    if len(pts) < 2:
+        return (f"<p class='mc-empty'>{e(title)}: not enough measured "
+                f"points to draw a line ({len(pts)} of 2). A chart appears "
+                f"when there are at least two days of data.</p>")
+    vals = [v for _b, v in pts]
+    lo, hi = min(vals), max(vals)
+    span = (hi - lo) or 1.0
+    pad, bh = 14, h - 28
+    step = (w - 2 * pad) / (len(pts) - 1)
+    xy = [(pad + i * step, pad + bh - (v - lo) / span * bh)
+          for i, (_b, v) in enumerate(pts)]
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in xy)
+    area = (f"{xy[0][0]:.1f},{pad + bh} " + line
+            + f" {xy[-1][0]:.1f},{pad + bh}")
+    lx, ly = xy[-1]
+    return (
+        f"<div class='mc-chart'><span class='mc-chtitle'>{e(title)}</span>"
+        f"<svg viewBox='0 0 {w} {h}' preserveAspectRatio='none' "
+        f"role='img' aria-label='{e(title)}'>"
+        f"<line x1='{pad}' y1='{pad + bh}' x2='{w - pad}' y2='{pad + bh}' "
+        f"stroke='rgba(143,160,200,.25)' stroke-width='1'/>"
+        f"<polygon points='{area}' fill='{color}' opacity='0.12'/>"
+        f"<polyline points='{line}' fill='none' stroke='{color}' "
+        f"stroke-width='2'/>"
+        f"<circle cx='{lx:.1f}' cy='{ly:.1f}' r='3.5' fill='{color}'/>"
+        f"</svg><span class='mc-chmeta'>{e(pts[0][0])} to {e(pts[-1][0])} "
+        f"&middot; low {lo:,.0f} &middot; high {hi:,.0f} &middot; "
+        f"latest {vals[-1]:,.0f}</span></div>")
+
+
+def chart_bars(rows, *, title="", color="#4C8DFF", unit="") -> str:
+    """Horizontal bars, scaled to the biggest value. Same refusal rule."""
+    rows = [(str(k), float(v)) for k, v in rows if v is not None]
+    if not rows:
+        return (f"<p class='mc-empty'>{e(title)}: nothing measured to "
+                f"draw.</p>")
+    top = max(v for _k, v in rows) or 1.0
+    bars = "".join(
+        f"<div class='mc-hbar'><span>{e(k)[:34]}</span>"
+        f"<span class='mc-hbtrack'><span style='width:"
+        f"{max(2, int(v / top * 100))}%;background:{color}'></span></span>"
+        f"<i>{v:,.0f}{e(unit)}</i></div>" for k, v in rows)
+    return (f"<div class='mc-chart'><span class='mc-chtitle'>{e(title)}"
+            f"</span>{bars}</div>")
+
+
+def chart_funnel(stages, *, title="Funnel") -> str:
+    """The funnel as narrowing bars: stage, count, and the drop between
+    stages named, because the drop IS the finding."""
+    st = [(str(k), float(v)) for k, v in stages if v]
+    if len(st) < 2:
+        return ("<p class='mc-empty'>the funnel needs at least two real "
+                "stages; nothing is invented to fill it</p>")
+    top = st[0][1] or 1.0
+    out = []
+    for i, (k, v) in enumerate(st):
+        drop = ""
+        if i:
+            prev = st[i - 1][1]
+            pct = v / prev * 100 if prev else 0
+            drop = f"{pct:.1f}% of {st[i - 1][0].lower()}"
+        out.append(
+            f"<div class='mc-hbar'><span>{e(k)}</span>"
+            f"<span class='mc-hbtrack'><span style='width:"
+            f"{max(2, int(v / top * 100))}%'></span></span>"
+            f"<i>{v:,.0f}</i><p>{e(drop)}</p></div>")
+    return (f"<div class='mc-chart'><span class='mc-chtitle'>{e(title)}"
+            f"</span>" + "".join(out) + "</div>")
+
+
+def _off(d, what) -> str:
+    """The honest banner for an unconnected pull."""
+    reason = _D(d).get("reason") or (f"no {what} on record yet; press "
+                                     f"'Pull platforms now'")
+    return f"<p class='mc-empty'>{e(reason)}</p>"
 
 
 def _band(ctx) -> str:
@@ -263,6 +351,22 @@ def s_cmd(r, ctx) -> str:
                   big("Gross profit", None, "set your margin in unit "
                                             "economics"))
                + "</div>")
+    # The spend and conversion trend, drawn, not tabled.
+    daily = {}
+    try:
+        for row in MF.rollup(r, days=30)["rows"]:
+            d = daily.setdefault(row["bucket"], {"spend": 0.0, "conv": 0.0})
+            d["spend"] += float(row["spend"] or 0)
+            d["conv"] += float(row["conversions"] or 0)
+    except Exception:
+        pass
+    days_sorted = sorted(daily)
+    figures += ("<div class='mc-chrow'>"
+                + chart([(d, daily[d]["spend"]) for d in days_sorted],
+                        title="Spend per day, 30d")
+                + chart([(d, daily[d]["conv"]) for d in days_sorted],
+                        title="Conversions per day, 30d", color="#3FD98B")
+                + "</div>")
     # AI STATUS, spec section 32.
     camps = r.all("media_campaigns")
     monitored = sum(1 for c in camps
@@ -505,8 +609,8 @@ def s_wiz(r, ctx) -> str:
         lch = (f"<button class='mc-btn mc-go' onclick=\"mcPost("
                f"'/mediaos/launch',{{campaign_id:'{cid}'}},this)\">"
                f"Launch campaign</button> "
-               f"<input id='mc-when-{cid}' type='datetime-local'> "
-               f"<button class='mc-btn' onclick=\"mcLaunchAt('{cid}',this)\">"
+               f"<input id='mc-wwhen-{cid}' type='datetime-local'> "
+               f"<button class='mc-btn' onclick=\"mcLaunchAt('{cid}',this,'mc-wwhen-{cid}')\">"
                f"Schedule</button>"
                "<p class='mc-note'>launching queues ONE order behind the "
                "approval tier; a blocking error in step 7 refuses it with "
@@ -546,12 +650,12 @@ def _attach_audience(r, draft) -> str:
               "<p class='mc-wq'>or define a new one, provider-neutrally:"
               "</p>"
               "<div class='mc-form'>"
-              "<label>Name<input id='mc-aname'></label>"
-              f"<label>Type<select id='mc-atype'>{types}</select></label>"
-              "<label>Definition (JSON)<textarea id='mc-adef' rows='3' "
+              "<label>Name<input id='mc-waname'></label>"
+              f"<label>Type<select id='mc-watype'>{types}</select></label>"
+              "<label>Definition (JSON)<textarea id='mc-wadef' rows='3' "
               "placeholder='{\"countries\": [\"DE\"]}'></textarea></label>"
-              "<button class='mc-btn' onclick='mcNewAudience(this)'>Save "
-              "audience</button>"
+              "<button class='mc-btn' onclick=\"mcNewAudience(this,"
+              "'mc-wa')\">Save audience</button>"
               f"<p class='mc-note'>targetable fields include {e(fields)}; "
               f"what a platform cannot express is DROPPED and named, "
               f"never silently widened</p></div>")
@@ -584,22 +688,23 @@ def _attach_creative(r, draft) -> str:
               "<p class='mc-wq'>or add to the library, with the attributes "
               "the engine learns from:</p>"
               "<div class='mc-form'>"
-              "<label>Name<input id='mc-crname'></label>"
-              f"<label>Format<select id='mc-crtype'>{types}</select></label>"
-              "<label>Concept<input id='mc-crconcept' "
+              "<label>Name<input id='mc-wcrname'></label>"
+              f"<label>Format<select id='mc-wcrtype'>{types}</select>"
+              f"</label>"
+              "<label>Concept<input id='mc-wcrconcept' "
               "placeholder='Save 30%'></label>"
-              "<label>Angle<input id='mc-crangle' "
+              "<label>Angle<input id='mc-wcrangle' "
               "placeholder='pain-point'></label>"
-              "<label>Hook<input id='mc-crhook' "
+              "<label>Hook<input id='mc-wcrhook' "
               "placeholder='Still booking by phone?'></label>"
-              "<label>Persona<input id='mc-crpersona'></label>"
-              "<label>CTA<input id='mc-crcta'></label>"
-              f"<label>Funnel stage<select id='mc-crstage'>{stages}"
+              "<label>Persona<input id='mc-wcrpersona'></label>"
+              "<label>CTA<input id='mc-wcrcta'></label>"
+              f"<label>Funnel stage<select id='mc-wcrstage'>{stages}"
               f"</select></label>"
-              "<label>Headline<input id='mc-crhead'></label>"
-              "<label>Primary text<input id='mc-crtext'></label>"
-              "<button class='mc-btn' onclick='mcNewCreative(this)'>Save + "
-              "publish v1</button></div>")
+              "<label>Headline<input id='mc-wcrhead'></label>"
+              "<label>Primary text<input id='mc-wcrtext'></label>"
+              "<button class='mc-btn' onclick=\"mcNewCreative(this,"
+              "'mc-wcr')\">Save + publish v1</button></div>")
 
 
 def _detail(r, c, ctx) -> str:
@@ -625,13 +730,20 @@ def _detail(r, c, ctx) -> str:
                 ("CTR", _n((tot.get("ctr") or {}).get("value")),
                  "percent"),
             )) + "</div>")
-    trend = table(("day", "spend", "clicks", "conv", "CPA", "ROAS"),
-                  [(x["bucket"], _n(x["spend"]), _n(x["clicks"]),
-                    _n(x["conversions"]),
-                    _n((x.get("cpa") or {}).get("value")),
-                    _n((x.get("roas") or {}).get("value")))
-                   for x in ro["rows"][-14:]],
-                  ro["message"])
+    trend = ("<div class='mc-chrow'>"
+             + chart([(x["bucket"], x["spend"]) for x in ro["rows"]],
+                     title="Spend", w=400)
+             + chart([(x["bucket"], (x.get("roas") or {}).get("value"))
+                      for x in ro["rows"]],
+                     title="ROAS", color="#3FD98B", w=400)
+             + "</div>"
+             + table(("day", "spend", "clicks", "conv", "CPA", "ROAS"),
+                     [(x["bucket"], _n(x["spend"]), _n(x["clicks"]),
+                       _n(x["conversions"]),
+                       _n((x.get("cpa") or {}).get("value")),
+                       _n((x.get("roas") or {}).get("value")))
+                      for x in ro["rows"][-14:]],
+                     ro["message"]))
     groups = r.find("ad_groups", campaign_id=cid)
     auds = [r.one("audiences", g.get("audience_id"))
             for g in groups if g.get("audience_id")]
@@ -1016,6 +1128,11 @@ def s_perf(r, ctx) -> str:
         f"<button class='mc-btn{' mc-go' if g == 'DAILY' else ''}' "
         f"onclick=\"mcGrain('{g}',this)\">{g}</button>"
         for g in ("DAILY", "WEEKLY", "MONTHLY"))
+    dsp = {}
+    for x in MF.rollup(r, grain="DAILY")["rows"]:
+        dsp[x["bucket"]] = dsp.get(x["bucket"], 0.0) + float(x["spend"] or 0)
+    perfchart = chart(sorted(dsp.items()), title="Spend per day, all "
+                                                 "campaigns")
     cmpres = MF.compare(r)
     crows = [(m["metric"], _n(m.get("before")), _n(m.get("now")),
               (f"{m['change']:+.1f}%" if m.get("change") is not None
@@ -1043,7 +1160,8 @@ def s_perf(r, ctx) -> str:
         else:
             dims.append(f"<p class='mc-note'>{e(by)}: "
                         f"{e(bd['message'])}</p>")
-    return (card("Rollups", f"<div class='mc-form'>{switch}</div>"
+    return (card("Rollups", perfchart
+                 + f"<div class='mc-form'>{switch}</div>"
                  + "".join(blocks),
                  "the same numbers at whichever grain the question needs")
             + card("This week against last week", ctab)
@@ -1190,6 +1308,34 @@ def s_plat(r, ctx, legacy_campaigns="", legacy_tracking="") -> str:
     out = (card("Connections", ptab)
            + card("What each platform can do", caps,
                   "three answers exist: yes, no, and not connected"))
+    # THE GTM AUDIT BOARD, rehomed. gtmDraft existed as a handler with no
+    # board calling it, which is a dead wire wearing a function name.
+    g = _D(ctx.get("gtm_audit"))
+    if g.get("ready"):
+        rows = []
+        for kind, items in (("missing", g.get("missing")),
+                            ("paused", g.get("paused")),
+                            ("silent", g.get("silent"))):
+            for name in _L(items)[:8]:
+                nm = name if isinstance(name, str) else \
+                    _D(name).get("name") or str(name)
+                rows.append((e(nm), kind,
+                             f"<button class='mc-btn' onclick=\"gtmDraft("
+                             f"'{e(nm)}',this)\">Draft the tag</button>"))
+        gtm = (table(("tag", "state", "fix"), rows,
+                     "every required tag exists, is live, and has fired "
+                     "recently")
+               + "<button class='mc-btn' onclick=\"act('/gtm/audit')\">"
+                 "Re-audit Tag Manager</button>")
+    else:
+        gtm = ("<p class='mc-empty'>Tag Manager is not granted yet; the "
+               "audit runs the day it is. Fields are on the Connect "
+               "board.</p>"
+               "<button class='mc-btn' onclick=\"act('/gtm/audit')\">"
+               "Audit Tag Manager</button>")
+    out += card("Tag Manager audit", gtm,
+                "missing, paused and silent tags, each with its one-click "
+                "draft")
     if legacy_campaigns:
         out += card("Drafts from the media agent", legacy_campaigns,
                     "the AI buyer's draft flow, unchanged wires")
@@ -1197,6 +1343,207 @@ def s_plat(r, ctx, legacy_campaigns="", legacy_tracking="") -> str:
         out += card("Website tracking (GA4 / Search Console)",
                     legacy_tracking)
     return out
+
+
+def s_adman(r, ctx) -> str:
+    """The five-platform Ad Manager, MOUNTED, not rebuilt. Google, Meta
+    (Facebook + Instagram), LinkedIn, TikTok, YouTube inside Google - each
+    with its own preview chrome, hierarchy and per-platform tabs. This
+    module already existed in content_engine_media_platforms and losing it
+    in the UI replacement was a mistake this screen corrects."""
+    import content_engine_media_platforms as MPL
+    ads = ctx.get("ads") or {}
+    bridge = ("<style>.mc-a3{--pap:var(--s2,#0A0F1E);--card:var(--s1,#0E1526);"
+              "--ln:var(--line,#1B2640);--tx:var(--ink,#E8EEFF);"
+              "--dm:var(--mut,#8FA0C8);--ft:var(--dim,#5A6A8F);"
+              "--ac:var(--blue,#4C8DFF);--warnc:var(--warn,#F5B14C);"
+              "--okc:var(--good,#3FD98B);--badbg:rgba(255,107,147,.09);"
+              "--warnbg:rgba(245,177,76,.09);--okbg:rgba(63,217,139,.09);"
+              "--hov:rgba(76,141,255,.07)}" + MPL.CSS + "</style>")
+    return (bridge + MPL.JS
+            + "<div class='mc-a3'>" + MPL.ads_screen(ads) + "</div>"
+            + "<p class='mc-note'>a platform without its key shows its "
+              "SAMPLE and says so; adding the key on the Connect board "
+              "flips it live with no rebuild</p>")
+
+
+def s_intel(r, ctx) -> str:
+    """Search Terms, Keywords, Bidding, Budget & Pacing, Landing pages.
+    Every board reads the ads snapshot; unconnected states say why."""
+    import content_engine_ads as ADS
+    terms_d = _D(ctx.get("terms"))
+    terms = _L(terms_d.get("terms"))
+    if terms:
+        w = ADS.waste(terms)
+        ttab = (table(("search term", "clicks", "cost", "conversions"),
+                      [(t.get("term"), _n(t.get("clicks")),
+                        _n(t.get("cost")), _n(t.get("conversions")))
+                       for t in terms[:20]])
+                + f"<p class='mc-note'>wasted spend "
+                  f"{_n(w.get('wasted_spend'))} "
+                  f"({_n(w.get('wasted_pct'))}% of term spend); negative "
+                  f"candidates: "
+                + (e(", ".join(w.get("negative_candidates") or [])[:160])
+                   or "none") + "</p>")
+    else:
+        ttab = _off(terms_d, "search terms")
+    kw_d = _D(ctx.get("kw"))
+    kws = _L(kw_d.get("keywords"))
+    ktab = (table(("keyword", "match", "QS", "clicks", "cost"),
+                  [(k.get("text") or k.get("keyword"), k.get("match_type"),
+                    _n(k.get("qs") or k.get("quality_score"),
+                       "not scored"), _n(k.get("clicks")),
+                    _n(k.get("cost"))) for k in kws[:20]])
+            if kws else _off(kw_d, "keywords"))
+    tgt = _D(ctx.get("targets"))
+    trows = [(k.replace("_", " "), _n(tgt.get(k)))
+             for k in ("target_cpa_lead", "target_cpa_consult",
+                       "target_cpa_client", "break_even_cpa_client",
+                       "target_roas") if k in tgt]
+    bid = _L(ctx.get("bid_advice"))
+    btab = ((table(("what", "value"), trows,
+                   "unit economics not set; press 'Set unit economics'")
+             if trows else
+             "<p class='mc-empty'>unit economics not set, so no CPC can "
+             "be judged; press 'Set unit economics'</p>")
+            + (table(("campaign", "advice"),
+                     [(b.get("campaign"), (b.get("advice") or "ok")[:110])
+                      for b in bid[:10]]) if bid else ""))
+    isr = _L(ctx.get("is_rows"))
+    istab = (table(("campaign", "verdict", "action"),
+                   [(x.get("campaign"), x.get("verdict"),
+                     (x.get("action") or "")[:100]) for x in isr[:10]])
+             if isr else
+             "<p class='mc-empty'>no impression-share rows yet; they "
+             "arrive with the Google pull</p>")
+    pac = _D(ctx.get("pacing"))
+    if pac.get("ready"):
+        ptab = (chart_bars([("spent so far", pac.get("spend")),
+                            ("projected month-end", pac.get("projected")),
+                            ("month budget", pac.get("month_budget"))],
+                           title="Budget pace")
+                + f"<p class='mc-note'>pace {_n(pac.get('pace_pct'))}% of "
+                  f"budget: {e(pac.get('status') or '')}</p>")
+    else:
+        ptab = ("<p class='mc-empty'>pacing needs a Google pull with "
+                "campaign budgets on it</p>")
+    ads_d = _D(ctx.get("ad_status"))
+    dis = _L(ads_d.get("disapproved"))
+    ltab = ((table(("campaign", "issue"),
+                   [(d.get("campaign"), (d.get("reason")
+                                         or "disapproved")[:90])
+                    for d in dis[:10]]) if dis else
+             "<p class='mc-note'>no disapproved ad on record</p>")
+            if ads_d.get("connected") else _off(ads_d, "ad status"))
+    return (card("Search Terms: what people actually typed", ttab)
+            + card("Keywords", ktab)
+            + card("Bidding, judged against YOUR economics", btab,
+                   "a CPC is not high or low until the margin says so")
+            + card("Impression share: budget problem or quality problem",
+                   istab)
+            + card("Budget & Pacing", ptab)
+            + card("Landing pages & disapprovals", ltab))
+
+
+def s_cross(r, ctx) -> str:
+    """Paid and organic in ONE picture: the interlock and the funnel."""
+    inter = _D(ctx.get("interlock"))
+    burn = inter.get("burn") or inter.get("overlap") or []
+    if isinstance(burn, dict):
+        burn = list(burn.values())
+    burn = [b for b in _L(burn) if isinstance(b, (dict, str))]
+    btab = (table(("term you already rank for", "organic position"),
+                  [((b.get("term") if isinstance(b, dict) else str(b)),
+                    (b.get("position", "<=3")
+                     if isinstance(b, dict) else "<=3"))
+                   for b in burn[:15]])
+            + "<p class='mc-note'>every row is money paid for a click the "
+              "organic result would have taken free; the agent drafts a "
+              "negative-keyword order for each</p>"
+            if burn else
+            "<p class='mc-empty'>no paid-vs-organic overlap on record. It "
+            "computes from a Google Ads pull plus Search Console; press "
+            "'Rebuild interlock'.</p>")
+    flows = _L(ctx.get("funnel"))
+    if flows:
+        # flows are (source, target, value); draw the stages in order
+        stages, seen = [], set()
+        for src, tgtt, v in [tuple(f) for f in flows if len(_L(f)) == 3]:
+            for name, val in ((src, None), (tgtt, v)):
+                if name not in seen and val is not None:
+                    stages.append((name, val))
+                    seen.add(name)
+        fhtml = chart_funnel(stages, title="Paid + organic funnel")
+    else:
+        a = _D(ctx.get("ads"))
+        stages = [("Ad impressions", a.get("impressions")),
+                  ("Ad clicks", a.get("clicks")),
+                  ("Conversions", a.get("conversions"))]
+        stages = [(k, v) for k, v in stages if v]
+        fhtml = (chart_funnel(stages) if len(stages) >= 2 else
+                 "<p class='mc-empty'>the funnel draws when the pull "
+                 "carries impressions and clicks; nothing is invented to "
+                 "fill it</p>")
+    cac = _D(inter.get("cac"))
+    ctab = (table(("stage", "count"),
+                  [(k, _n(cac.get(k))) for k in
+                   ("leads", "bookings", "customers") if cac.get(k)])
+            if any(cac.get(k) for k in ("leads", "bookings", "customers"))
+            else "<p class='mc-empty'>no lead-to-customer counts in the "
+                 "cross-channel snapshot yet</p>")
+    return (card("Cross-channel: terms you pay for and already win free",
+                 btab)
+            + card("The funnel", fhtml,
+                   "paid and organic in one picture, from whatever is real")
+            + card("After the click", ctab))
+
+
+def s_comp(r, ctx) -> str:
+    """Competition and research: intel, GEO, markets, recommendations."""
+    ci = _D(ctx.get("competitor_intel"))
+    rows = _L(ci.get("competitors") or ci.get("rows"))
+    citab = (table(("competitor", "seen"),
+                   [((c.get("name") or c.get("domain") or str(c)[:40]),
+                     (c.get("summary") or c.get("note") or "")[:110])
+                    for c in rows[:10] if isinstance(c, (dict, str))])
+             if rows else
+             "<p class='mc-empty'>no competitor intel on record. The "
+             "research agent writes it with sources; nothing is invented "
+             "here.</p>")
+    geo = _D(ctx.get("geo"))
+    grows = _L(geo.get("markets") or geo.get("rows"))
+    gtab = (table(("market", "note"),
+                  [((g.get("market") or g.get("name") or str(g)[:30]),
+                    (g.get("note") or g.get("verdict") or "")[:110])
+                   for g in grows[:10] if isinstance(g, (dict, str))])
+            if grows else
+            "<p class='mc-empty'>no GEO market audit yet</p>")
+    mk = _L(ctx.get("markets"))
+    mtab = ("<p class='mc-note'>markets in play: "
+            + e(", ".join(str(m) for m in mk[:10])) + "</p>"
+            if mk else "<p class='mc-empty'>no markets recorded in the "
+                       "cross-channel snapshot</p>")
+    recs_d = _D(ctx.get("recs"))
+    recs = _L(recs_d.get("recommendations"))
+    rtab = (table(("google recommends", "note"),
+                  [((x.get("type") or "")[:40],
+                    (x.get("description") or "")[:110])
+                   for x in recs[:10]])
+            + "<p class='mc-note'>Google's recommendations optimise "
+              "Google's revenue as well as yours; each becomes an order "
+              "only if a rule agrees</p>"
+            if recs else _off(recs_d, "recommendations"))
+    chg_d = _D(ctx.get("changes"))
+    chg = _L(chg_d.get("changes"))
+    htab = (table(("when", "what changed"),
+                  [((x.get("at") or "")[:16],
+                    (x.get("summary") or x.get("change") or "")[:110])
+                   for x in chg[:10]])
+            if chg else _off(chg_d, "change history"))
+    return (card("Competition", citab)
+            + card("GEO market research", gtab + mtab)
+            + card("Google's recommendations, treated as claims", rtab)
+            + card("Account change history", htab))
 
 
 # ---------------------------------------------------------------------------
@@ -1207,12 +1554,16 @@ def build_panels(r, ctx, legacy_campaigns="", legacy_tracking="") -> dict:
               "camps": lambda: s_camps(r, ctx),
               "wiz": lambda: s_wiz(r, ctx),
               "launch": lambda: s_launch(r, ctx),
+              "adman": lambda: s_adman(r, ctx),
               "plan": lambda: s_plan(r, ctx),
               "creat": lambda: s_creat(r, ctx),
               "aud": lambda: s_aud(r, ctx),
               "perf": lambda: s_perf(r, ctx),
+              "intel": lambda: s_intel(r, ctx),
               "attr": lambda: s_attr(r, ctx),
               "anom": lambda: s_anom(r, ctx),
+              "cross": lambda: s_cross(r, ctx),
+              "comp": lambda: s_comp(r, ctx),
               "plat": lambda: s_plat(r, ctx, legacy_campaigns,
                                      legacy_tracking)}
     out = {}
@@ -1407,6 +1758,24 @@ color:var(--mc-mut);text-transform:uppercase;margin-bottom:5px}
 .mc-preview p{color:var(--mc-mut);font-size:12px;margin:3px 0}
 .mc-preview i{display:block;font-style:normal;color:var(--mc-go);
 font-size:10px;margin:0 0 6px}
+.mc-chrow{display:flex;gap:12px;flex-wrap:wrap;margin:0 0 12px}
+.mc-chart{flex:1;min-width:280px;border:1px solid var(--mc-ln);
+border-radius:11px;padding:10px 13px;background:var(--mc-card);
+margin:0 0 8px}
+.mc-chart svg{width:100%;height:100px;display:block}
+.mc-chtitle{display:block;font-size:10px;letter-spacing:.8px;
+text-transform:uppercase;color:var(--mc-mut);margin:0 0 4px}
+.mc-chmeta{display:block;font-size:10px;color:var(--mc-mut);margin-top:3px;
+font-variant-numeric:tabular-nums}
+.mc-hbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;
+margin:0 0 6px}
+.mc-hbar span:first-child{width:150px;color:var(--mc-ink);font-size:11px}
+.mc-hbar i{font-style:normal;color:var(--mc-ink);font-size:11px;
+font-variant-numeric:tabular-nums}
+.mc-hbar p{width:100%;margin:0 0 0 159px;color:var(--mc-mut);font-size:10px}
+.mc-hbtrack{flex:1;min-width:110px;height:9px;border-radius:5px;
+background:rgba(255,255,255,.06);overflow:hidden}
+.mc-hbtrack span{display:block;height:100%;background:var(--mc-go)}
 </style>"""
 
 
@@ -1496,8 +1865,8 @@ end_at:mcV('mc-cend')},btn);}
 function mcAttach(cid,btn){mcPost('/mediaos/attach',{campaign_id:cid,
 audience_id:mcV('mc-aud-'+cid),creative_id:mcV('mc-cre-'+cid),
 landing_page_url:mcV('mc-lp-'+cid)},btn);}
-function mcLaunchAt(cid,btn){mcPost('/mediaos/launch',{campaign_id:cid,
-scheduled_at:mcV('mc-when-'+cid)},btn);}
+function mcLaunchAt(cid,btn,iid){mcPost('/mediaos/launch',{
+campaign_id:cid,scheduled_at:mcV(iid||('mc-when-'+cid))},btn);}
 function mcSavePlan(btn){mcPost('/mediaos/plan',{objective:mcV('mc-pobj'),
 budget:mcV('mc-pbud'),kpi:mcV('mc-pkpi'),period_start:mcV('mc-pfrom'),
 period_end:mcV('mc-pto'),target_cpa:mcV('mc-pcpa')},btn);}
@@ -1518,11 +1887,12 @@ h+='<p class="mc-note"><b>'+s.label+'</b> '+s.budget
 h+='<p class="mc-empty">'+(j.caveat||'')+'</p>';out.innerHTML=h;}}}
 catch(e){toast('could not reach the engine',false);}
 if(btn){btn.disabled=false;btn.textContent=lab;}}
-function mcNewCreative(btn){mcPost('/mediaos/creative',{
-name:mcV('mc-crname'),type:mcV('mc-crtype'),concept:mcV('mc-crconcept'),
-angle:mcV('mc-crangle'),hook:mcV('mc-crhook'),persona:mcV('mc-crpersona'),
-cta:mcV('mc-crcta'),funnel_stage:mcV('mc-crstage'),
-headline:mcV('mc-crhead'),primary_text:mcV('mc-crtext'),publish:true},btn);}
+function mcNewCreative(btn,p){p=p||'mc-cr';
+mcPost('/mediaos/creative',{
+name:mcV(p+'name'),type:mcV(p+'type'),concept:mcV(p+'concept'),
+angle:mcV(p+'angle'),hook:mcV(p+'hook'),persona:mcV(p+'persona'),
+cta:mcV(p+'cta'),funnel_stage:mcV(p+'stage'),
+headline:mcV(p+'head'),primary_text:mcV(p+'text'),publish:true},btn);}
 function mcNewExperiment(btn){var ids=(mcV('mc-xids')||'').split(',')
 .map(function(x){return x.trim();}).filter(Boolean);
 mcPost('/mediaos/experiment',{name:mcV('mc-xname'),creative_ids:ids,
@@ -1531,10 +1901,10 @@ function mcSavePolicy(btn){mcPost('/mediaos/policy',{
 budget_change_auto_pct:mcV('mc-pol-bud'),
 pause_auto_if_daily_spend_under:mcV('mc-pol-pause'),
 negative_keyword:mcV('mc-pol-neg')},btn);}
-function mcNewAudience(btn){var def={};
-try{def=JSON.parse(mcV('mc-adef')||'{}');}catch(e){
+function mcNewAudience(btn,p){p=p||'mc-a';var def={};
+try{def=JSON.parse(mcV(p+'def')||'{}');}catch(e){
 toast('the definition is not valid JSON; nothing was saved',false);return;}
-mcPost('/mediaos/audience',{name:mcV('mc-aname'),type:mcV('mc-atype'),
+mcPost('/mediaos/audience',{name:mcV(p+'name'),type:mcV(p+'type'),
 definition:def},btn);}
 async function mcMatrix(sel){try{var r=await fetch('/mediaos/matrix',{
 method:'POST',headers:{'Content-Type':'application/json'},
