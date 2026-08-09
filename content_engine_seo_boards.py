@@ -2328,6 +2328,22 @@ def board_work(ctx) -> str:
 # ======================================================================
 #  ASSEMBLY
 # ======================================================================
+def _board_loop(ctx) -> str:
+    """The Execution board and Loop Monitor, rendered from the loop engine.
+
+    It needs the Repo rather than the SEO ctx, so it fetches its own and
+    says so honestly if the store is unreachable."""
+    try:
+        import content_engine_api as A
+        import content_engine_media_os as M
+        import content_engine_search_board as SB
+        return SB.section(M.repo(A.get_store()))
+    except Exception as ex:
+        return ("<p style='color:#8FA0BF;font-size:12px'>the execution "
+                "board could not be drawn: "
+                + type(ex).__name__ + "</p>")
+
+
 _TAB_BOARDS = {
     "seocmd":    [("SEO Command", board_command)],
     "seotech":   [("Technical", board_technical), ("Indexing", board_indexing)],
@@ -2338,6 +2354,10 @@ _TAB_BOARDS = {
     "seogeo":    [("GEO Local", board_local)],
     "seooff":    [("Off-Page", board_offpage)],
     "seowork":   [("Work Orders", board_work)],
+    # THE CLOSED LOOP. Its own tab, because the question it answers -
+    # "did any of this actually work" - is not the same question as any
+    # other board on this page.
+    "seoloop":   [("Execution & Loops", _board_loop)],
 }
 
 
@@ -2381,13 +2401,15 @@ TABS = [
     ("seogeo", "📍", "GEO — Local & Markets"),
     ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
+    ("seoloop", "🔁", "Execution & Loops"),
     ("seosrc", "📊", "Sources"),
 ]
 
 # Nine flat tabs is past the limit of what anyone scans. Four groups, each
 # answering one question, with the tabs as their second level.
 GROUPS = [
-    ("act", "③ ACT", "What should I do?", ["seocmd", "seowork"]),
+    ("act", "③ ACT", "What should I do?",
+     ["seocmd", "seowork", "seoloop"]),
     ("diagnose", "① DIAGNOSE", "What's wrong?", ["seotech", "seoonpage"]),
     ("compete", "② COMPETE", "Where do I stand?",
      ["seokw", "seoaeo", "seogen", "seogeo", "seooff"]),
@@ -2496,7 +2518,22 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
         "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
         "seowork": SCR.workorders_screen(ctx, []),
+        "seoloop": _board_loop(ctx),
     }
+    # ONE VOCABULARY. This dict and TABS are two hand-written lists, and a
+    # tab whose panel is missing here renders as an empty box that looks
+    # like a broken feature. It has already happened once: seoloop was
+    # added to TABS and to _TAB_BOARDS, and the page still showed nothing
+    # because THIS is the dict seo_section actually reads.
+    # seosrc is filled further down from the legacy Google boards, so a
+    # missing key here is only a warning, never an overwrite: clobbering a
+    # panel that something else fills later would be a worse bug than the
+    # one this check exists to catch.
+    _missing = [t for t, _i, _l in TABS if t not in panels]
+    if _missing:
+        import logging as _lg
+        _lg.getLogger("content_engine.seo_boards").debug(
+            "tabs with no panel in the primary dict: %s", _missing)
     # THE CHIPS COUNT PROBLEMS NOW, NOT CARDS. A chip that says 20 because
     # twenty tiles used to render there is a decoration; a chip that says 12
     # because twelve problems are open is a reading. Tabs whose screens are

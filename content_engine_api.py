@@ -4146,6 +4146,22 @@ def build_app():
         return _SL.rollback(_srepo(), str(d.get("id") or ""),
                             why=str(d.get("why") or ""))
 
+    @app.post("/searchos/detect")
+    async def searchos_detect(request: Request):
+        """Open initiatives from MEASURED ranking drops. Nothing is
+        fetched here; the caller passes what it observed, so a drop no
+        pull saw cannot be invented."""
+        import content_engine_search_loop as _SL
+        d = await _body(request)
+        out = _SL.detect_ranking_drops(
+            _srepo(), current=d.get("current") or [],
+            previous=d.get("previous") or [],
+            limit=int(d.get("limit") or 10))
+        _log_decision(get_store(), "searchos_detect",
+                      f"{len(out.get('opened', []))} opened",
+                      out.get("message", "")[:120])
+        return out
+
     @app.get("/searchos/board")
     def searchos_board():
         import content_engine_search_loop as _SL

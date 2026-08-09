@@ -458,6 +458,89 @@ def step(r, run_id, *, name, cost_usd=0.0, tool_calls=0,
     return {"ok": True, "used": u, "message": f"step {name} recorded"}
 
 
+#: A drop worth opening an initiative for. Smaller than this is noise on
+#: a single reading, and opening work for noise is how a queue becomes
+#: something nobody reads.
+DROP_POSITIONS = 3.0
+DROP_MIN_IMPRESSIONS = 500
+
+
+def detect_ranking_drops(r, *, current, previous, limit=10) -> dict:
+    """THE FIRST DETECTOR. Measured ranking losses become initiatives with
+    a COMPLETE recommendation, or they do not enter at all.
+
+    current/previous are lists of {query, page, position, impressions}.
+    Nothing is fetched here: the caller passes what it measured, so this
+    function cannot invent a drop that no pull observed."""
+    prev = {}
+    for q in _L(previous):
+        k = (str(_D(q).get("query")), str(_D(q).get("page") or ""))
+        prev[k] = _D(q)
+    opened, skipped, thin = [], [], []
+    for q in _L(current):
+        d = _D(q)
+        key = (str(d.get("query")), str(d.get("page") or ""))
+        was = prev.get(key)
+        if not was:
+            continue
+        try:
+            now_pos = float(d.get("position"))
+            was_pos = float(was.get("position"))
+            imps = float(d.get("impressions") or 0)
+        except Exception:
+            continue
+        drop = now_pos - was_pos          # position rising is losing
+        if drop < DROP_POSITIONS:
+            skipped.append(key[0])
+            continue
+        if imps < DROP_MIN_IMPRESSIONS:
+            thin.append(key[0])
+            continue
+        if len(opened) >= limit:
+            break
+        rec = {
+            "problem": (f"{key[0]!r} moved from position {was_pos:.1f} to "
+                        f"{now_pos:.1f}"),
+            "evidence": [f"Search Console: position {was_pos:.1f} -> "
+                         f"{now_pos:.1f}",
+                         f"{int(imps):,} impressions over the window",
+                         f"landing page {key[1] or 'not recorded'}"],
+            "impact": "HIGH" if imps >= 5000 else "MEDIUM",
+            "business_value": "UNKNOWN - no conversion data joined yet",
+            "confidence": 0.6,
+            "effort": "MEDIUM",
+            "risk": "MEDIUM",
+            "action": f"investigate and refresh the page ranking for "
+                      f"{key[0]!r}",
+            "agent": "RankAgent",
+            "approval": "required",
+            "verification_method": "recrawl the page and confirm the "
+                                   "change is live",
+            "success_metric": "position",
+        }
+        got = open_initiative(r, kind="ranking", target=key[1] or key[0],
+                              recommendation=rec)
+        if got.get("ok"):
+            set_baseline(r, got["id"], {"position": now_pos,
+                                        "impressions": imps,
+                                        "clicks": d.get("clicks") or 0})
+            opened.append({"id": got["id"], "query": key[0],
+                           "drop": round(drop, 1)})
+    return {"ok": True, "opened": opened, "below_threshold": len(skipped),
+            "too_thin": thin,
+            "message": (f"{len(opened)} initiative(s) opened from measured "
+                        f"ranking drops of {DROP_POSITIONS:g} positions or "
+                        f"more. {len(skipped)} query/queries moved less "
+                        f"than that and were left alone."
+                        + (f" {len(thin)} dropped but carry under "
+                           f"{DROP_MIN_IMPRESSIONS} impressions, so they "
+                           f"are named rather than acted on: a drop on "
+                           f"thin volume is usually noise."
+                           if thin else "")
+                        + " Each one carries a baseline, so it can be "
+                          "judged later instead of guessed at.")}
+
+
 def board(r) -> dict:
     """The Execution board and Loop Monitor read this. States only, no
     invented progress."""

@@ -232,6 +232,54 @@ for _route in ("/searchos/initiative", "/searchos/advance",
                "/searchos/judge", "/searchos/rollback",
                "/searchos/board", "/searchos/learning"):
     t(f"route {_route} exists", _route in _asrc)
+print("\nL9  PHASE 3: THE DETECTOR AND THE MOUNTED BOARD")
+_r5 = CORE.Repo(Store())
+_prev = [{"query": "big drop", "page": "/a", "position": 4.2,
+          "impressions": 6000},
+         {"query": "small move", "page": "/b", "position": 7.0,
+          "impressions": 900},
+         {"query": "thin drop", "page": "/c", "position": 5.0,
+          "impressions": 100}]
+_cur = [{"query": "big drop", "page": "/a", "position": 11.4,
+         "impressions": 6100, "clicks": 120},
+        {"query": "small move", "page": "/b", "position": 7.6,
+         "impressions": 920},
+        {"query": "thin drop", "page": "/c", "position": 22.0,
+         "impressions": 120}]
+_det = SL.detect_ranking_drops(_r5, current=_cur, previous=_prev)
+t("a real ranking drop opens exactly one initiative",
+  len(_det["opened"]) == 1 and _det["opened"][0]["query"] == "big drop")
+t("a move under the threshold is left alone",
+  _det["below_threshold"] == 1)
+t("A DROP ON THIN VOLUME IS NAMED, NOT ACTED ON",
+  _det["too_thin"] == ["thin drop"])
+t("and the message explains why thin volume is usually noise",
+  "usually noise" in _det["message"])
+_opened = _r5.one("search_initiatives", _det["opened"][0]["id"])
+t("the opened initiative carries a COMPLETE recommendation",
+  SL.check_recommendation(_opened["recommendation"])["ok"])
+t("and a baseline, so it can be judged later instead of guessed at",
+  _opened["baseline"].get("position") == 11.4)
+t("business value is admitted as unknown rather than invented",
+  "UNKNOWN" in _opened["recommendation"]["business_value"])
+t("the detector invents nothing: it only reads what it was passed",
+  "Nothing is fetched here" in
+  open("content_engine_search_loop.py", encoding="utf-8").read())
+import content_engine_seo_boards as _SEO
+_sec = _SEO.seo_section({})
+t("the Execution tab exists in the SEO nav",
+  any(x[0] == "seoloop" for x in _SEO.TABS))
+t("AND ITS PANEL ACTUALLY RENDERS (a tab with an empty panel is a "
+  "broken feature that looks shipped)",
+  "spanel-seoloop" in _sec and "LOOP MONITOR" in _sec)
+t("the executed-is-not-a-result label survives onto the page",
+  "NOT a result yet" in _sec)
+t("mounting the loop did not displace the legacy Google boards",
+  "seo-google" in _sec)
+t("route /searchos/detect exists",
+  "/searchos/detect" in open("content_engine_api.py",
+                             encoding="utf-8").read())
+
 t("no em dash on the board",
   "—" not in open("content_engine_search_board.py",
                   encoding="utf-8").read())
