@@ -813,5 +813,76 @@ t("no em-dash reaches any Search OS screen",
   "\u2014" not in open("content_engine_search_screens.py",
                           encoding="utf-8").read())
 
+print("\nL19 PHASE 14: SHELL, NAVIGATION, COMPONENTS (spec 4-7, 97)")
+_r14 = CORE.Repo(Store())
+t("NEVER CONNECTED and NO DATA YET are different problems",
+  SS8.source_state({"name": "GA4"})["state"] == "NEVER CONNECTED"
+  and SS8.source_state({"name": "GA4", "connected": 1})["state"]
+  == "NO DATA YET")
+t("and the no-data reason says nobody has asked yet",
+  "nobody has\nasked yet" in SS8.source_state({"name": "GA4",
+                                               "connected": 1})["why"]
+  or "nobody has" in SS8.source_state({"name": "GA4",
+                                       "connected": 1})["why"])
+t("A CRAWL AND A RANK PULL AGE AT DIFFERENT SPEEDS",
+  SS8.source_state({"name": "Crawler", "connected": 1,
+                    "age_hours": 100})["state"] == "FRESH"
+  and SS8.source_state({"name": "GA4", "connected": 1,
+                        "age_hours": 100})["state"] == "STALE")
+t("a stale source names the window it broke",
+  "48h this source" in SS8.source_state({"name": "GA4", "connected": 1,
+                                         "age_hours": 100})["why"])
+t("an errored source is not called stale", SS8.source_state(
+    {"name": "x", "connected": 1, "error": "503"})["state"] == "ERROR")
+t("the freshness bar says what stale costs the screens below it",
+  "not the truth as of now" in SS8.data_freshness(
+      _r14, [{"name": "GA4", "connected": 1, "age_hours": 100}]))
+t("with no source declared it says the screens draw on nothing",
+  "drawing on nothing" in SS8.data_freshness(_r14))
+t("the attention band stays empty rather than filling itself",
+  "merely interesting" in SS8.attention(_r14))
+t("EVERY SEND, PUBLISH AND SPEND STOPS AT THE ATTENTION BAND",
+  "stops at\nthis band" in SS8.attention(_r14, [{"what": "w"}])
+  or "stops at" in SS8.attention(_r14, [{"what": "w"}]))
+_sh = SS8.shell(_r14, {"site": "x.test", "mode": "DEGRADED",
+                       "version": "v17", "sources": []})
+t("degraded mode is announced on the frame, not hidden",
+  "not a clean run" in _sh and "ss-shell-deg" in _sh)
+t("and a normal run does not shout",
+  "not a clean run" not in SS8.shell(_r14, {"site": "x",
+                                            "sources": []}))
+_nm = SS8.nav_map(_r14)
+t("the nav map counts every screen and group", "screen(s) in" in _nm)
+t("NO SCREEN BELONGS TO NO GROUP",
+  "belong to NO group" not in _nm)
+_cl = SS8.component_library(_r14)
+t("the library renders from the token module rather than redrawing it",
+  "not redrawn here" in _cl)
+t("it PROVES metric() refuses a sourceless number instead of claiming it",
+  "refused: metric() will not render" in _cl)
+t("status carries a dot and a word, for the one man in twelve",
+  "one man in twelve" in _cl)
+t("the CTA variant list is closed and says it raises",
+  "raises rather than quietly" in _cl)
+t("error() will not construct without a fix",
+  "dead end wearing a" in _cl)
+_sec14 = SEO6.seo_section({"site": "x.test",
+                           "sources": [{"name": "GA4", "connected": 1,
+                                        "age_hours": 100}]})
+_pp14 = _Panels()
+_pp14.feed(_sec14)
+t("tab seosystem is declared",
+  any(x[0] == "seosystem" for x in SEO6.TABS))
+t("AND its panel renders real content",
+  _pp14.panels.get("spanel-seosystem", 0) > 500,
+  "text " + str(_pp14.panels.get("spanel-seosystem")))
+t("THE SHELL RENDERS ABOVE THE TABS, not behind one",
+  "ss-shell" in _sec14
+  and _sec14.index("ss-shell") < _sec14.index("stab-"))
+t("and the freshness chips reach the assembled page",
+  "ss-chip" in _sec14)
+t("mounting the shell created no duplicate id",
+  not [x for x in set(_pp14.ids) if _pp14.ids.count(x) > 1])
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

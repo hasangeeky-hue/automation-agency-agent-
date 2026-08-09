@@ -2344,6 +2344,16 @@ def _crawl_of(ctx):
     return c if isinstance(c, dict) else {}
 
 
+def _board_system(ctx) -> str:
+    """Spec 5, 97, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    return (SS.CSS + "<div class='ss-root'>" + SS.nav_map(r)
+            + SS.component_library(r) + "</div>")
+
+
 def _board_domain(ctx) -> str:
     """Spec 15-16, mounted."""
     import content_engine_search_screens as SS
@@ -2564,6 +2574,7 @@ _TAB_BOARDS = {
     # THE CLOSED LOOP. Its own tab, because the question it answers -
     # "did any of this actually work" - is not the same question as any
     # other board on this page.
+    "seosystem": [("System &amp; Components", _board_system)],
     "seodomain": [("Domain Research", _board_domain)],
     "seokwx": [("Keyword Explorer", _board_kwx)],
     "seorank": [("Position Tracking", _board_rank)],
@@ -2622,6 +2633,7 @@ TABS = [
     ("seogeo", "📍", "GEO — Local & Markets"),
     ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
+    ("seosystem", "🧩", "System &amp; Components"),
     ("seodomain", "🌐", "Domain Research"),
     ("seokwx", "🔍", "Keyword Explorer"),
     ("seorank", "📍", "Position Tracking"),
@@ -2653,7 +2665,7 @@ GROUPS = [
       "seolinks", "seoanswers", "seogeoai",
       "seoaeo", "seogen", "seogeo", "seooff"]),
     ("sources", "④ SOURCES", "Where does the data come from?",
-     ["seoanalytics", "seosrc"]),
+     ["seoanalytics", "seosrc", "seosystem"]),
 ]
 
 _TAB_CSS = """<style>
@@ -2758,6 +2770,7 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
         "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
         "seowork": SCR.workorders_screen(ctx, []),
+        "seosystem": _board_system(ctx),
         "seodomain": _board_domain(ctx),
         "seokwx": _board_kwx(ctx),
         "seorank": _board_rank(ctx),
@@ -2869,8 +2882,17 @@ def seo_section(ctx, legacy_html: str = "") -> str:
               "--warnbg:rgba(245,177,76,.09);--okbg:rgba(63,217,139,.09);"
               "--hov:rgba(76,141,255,.07)}"
               + SCR.CSS + "</style>")
+    import content_engine_search_screens as _SS
+    _shell = (_SS.CSS + "<div class='ss-root'>"
+              + _SS.shell(_repo_or_none(), {
+                  "site": (ctx.get("site") or ctx.get("domain")),
+                  "mode": ctx.get("mode") or "NORMAL",
+                  "version": ctx.get("build_version"),
+                  "sources": ctx.get("sources"),
+                  "attention": ctx.get("attention"),
+              }) + "</div>")
     return ("<div class='seoscr'>" + bridge + SCR.JS
-            + _TAB_CSS + runbar + hint
+            + _TAB_CSS + _shell + runbar + hint
             + f"<div class='sgroups'>{grouprail}</div>"
             + f"<div class='stabs'>{bar}</div>" + tools + body + sources_panel
             + "</div>")

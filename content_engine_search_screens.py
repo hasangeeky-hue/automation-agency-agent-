@@ -1562,3 +1562,247 @@ def position_tracking(r, rows=None, meta=None) -> str:
             + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
             + "".join("<th>" + e(h) + "</th>" for h in heads)
             + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+# ---------------------------------------------------------------------------
+# THE SHELL (spec 4-7) AND THE COMPONENT LIBRARY (spec 97)
+# ---------------------------------------------------------------------------
+#: Spec 6. How old a pull may be before the screens built on it stop
+#: being current. Two floors, because a crawl and a rank pull age at very
+#: different speeds and one number for both would be wrong for both.
+STALE_HOURS = {"Google Search Console": 48, "GA4": 48, "Crawler": 168,
+               "Rank tracker": 48, "Backlink provider": 336,
+               "AI observation engine": 168}
+DEFAULT_STALE_HOURS = 72
+
+#: Spec 6. What a source can be. NEVER CONNECTED and NO DATA YET are
+#: different problems with different fixes, so they are different states.
+SOURCE_STATE = ("FRESH", "STALE", "NO DATA YET", "NEVER CONNECTED",
+                "ERROR")
+
+
+def source_state(row, now_hours=None) -> dict:
+    """One source: is what it gave us still worth trusting?"""
+    d = _D(row)
+    name = str(d.get("name") or "unnamed source")
+    if not d.get("connected"):
+        return {"name": name, "state": "NEVER CONNECTED",
+                "why": "no credential has been attached to this source"}
+    if d.get("error"):
+        return {"name": name, "state": "ERROR",
+                "why": str(d.get("error"))[:90]}
+    age = d.get("age_hours")
+    if age is None:
+        return {"name": name, "state": "NO DATA YET",
+                "why": ("connected, but nothing has been pulled. This is "
+                        "not the same as an empty result: nobody has "
+                        "asked yet.")}
+    limit = STALE_HOURS.get(name, DEFAULT_STALE_HOURS)
+    age = float(age)
+    if age > limit:
+        return {"name": name, "state": "STALE", "age": age,
+                "why": (f"last pull was {int(age)}h ago; anything built "
+                        f"on it is older than the {limit}h this source "
+                        f"is trusted for")}
+    return {"name": name, "state": "FRESH", "age": age,
+            "why": f"pulled {int(age)}h ago, within {limit}h"}
+
+
+def data_freshness(r, sources=None) -> str:
+    """Spec 6. Every source, its age, and what that costs the screens."""
+    items = _L(sources)
+    if not items:
+        return ("<div class='ss-bar ss-bar-warn'>No source is declared. "
+                "Every screen below is drawing on nothing, and says so "
+                "individually rather than showing zeros.</div>")
+    states = [source_state(x) for x in items]
+    bad = [s for s in states
+           if s["state"] in ("STALE", "ERROR", "NEVER CONNECTED")]
+    chips = "".join(
+        "<span class='ss-chip ss-chip-"
+        + {"FRESH": "ok", "STALE": "warn", "ERROR": "bad",
+           "NEVER CONNECTED": "off", "NO DATA YET": "off"}[s["state"]]
+        + "' title='" + e(s["why"]) + "'>" + e(s["name"])
+        + "<b>" + s["state"] + "</b></span>" for s in states)
+    head = ("Every source is current."
+            if not bad else
+            str(len(bad)) + " of " + str(len(states)) + " source(s) are "
+            + "not current. Screens built on them are showing the last "
+            + "thing that arrived, not the truth as of now.")
+    return ("<div class='ss-bar" + ("" if not bad else " ss-bar-warn")
+            + "'><p>" + e(head) + "</p><div class='ss-chips'>" + chips
+            + "</div></div>")
+
+
+def attention(r, items=None) -> str:
+    """Spec 7. What needs a human, above everything else on the page."""
+    xs = _L(items)
+    if not xs:
+        return ("<div class='ss-bar ss-bar-ok'><p>Nothing is waiting on "
+                "you. This band stays empty rather than filling itself "
+                "with things that are merely interesting.</p></div>")
+    rows = "".join(
+        "<div class='ss-att'><span class='ss-att-k'>"
+        + e(_D(x).get("kind") or "needs a decision") + "</span>"
+        + "<b>" + e(str(_D(x).get("what"))[:80]) + "</b>"
+        + "<i>" + e(str(_D(x).get("why") or "no reason recorded")[:90])
+        + "</i>"
+        + TK.button(_D(x).get("action") or "Open", variant="primary",
+                    size="compact",
+                    onclick=_D(x).get("onclick") or "void 0")
+        + "</div>" for x in xs[:8])
+    return ("<div class='ss-bar ss-bar-warn'><p>" + str(len(xs))
+            + " item(s) are waiting on you. Nothing here proceeds "
+            + "without a person: every send, publish and spend stops at "
+            + "this band.</p>" + rows + "</div>")
+
+
+def shell(r, ctx=None) -> str:
+    """Spec 4-5. The frame every search screen sits inside."""
+    c = _D(ctx)
+    site = c.get("site") or "no site configured"
+    mode = c.get("mode") or "NORMAL"
+    ver = c.get("version") or "not stamped"
+    degraded = str(mode).upper() != "NORMAL"
+    return ("<div class='ss-shell" + (" ss-shell-deg" if degraded else "")
+            + "'><div class='ss-shell-id'>"
+            + "<b>SEARCH INTELLIGENCE</b><span>" + e(site) + "</span>"
+            + "</div><div class='ss-shell-meta'>"
+            + "<span>mode <b>" + e(str(mode)) + "</b></span>"
+            + "<span>build <b>" + e(str(ver)) + "</b></span>"
+            + "</div></div>"
+            + (("<div class='ss-bar ss-bar-warn'><p>This OS is running "
+                "DEGRADED. Screens still render, but a degraded run is "
+                "not a clean run and no result from it should be filed "
+                "as evidence.</p></div>") if degraded else "")
+            + data_freshness(r, c.get("sources"))
+            + attention(r, c.get("attention")))
+
+
+def nav_map(r) -> str:
+    """Spec 5. The whole OS on one page, so nothing is stranded."""
+    import content_engine_seo_boards as B
+    labels = dict((t[0], t[2]) for t in B.TABS)
+    body = ""
+    for gid, glabel, question, tabs in B.GROUPS:
+        body += ("<div class='ss-navg'><p><b>" + e(glabel)
+                 + "</b><span>" + e(question) + "</span></p><div>"
+                 + "".join(
+                     "<button class='ss-navb' onclick=\"seoTab('"
+                     + t + "')\">" + e(labels.get(t, t)) + "</button>"
+                     for t in tabs) + "</div></div>")
+    orphans = [t[0] for t in B.TABS
+               if not any(t[0] in g[3] for g in B.GROUPS)]
+    return ("<p class='ss-h'>WHERE EVERYTHING IS</p>"
+            + "<p class='ss-note'>" + str(len(B.TABS)) + " screen(s) in "
+            + str(len(B.GROUPS)) + " group(s), each group answering one "
+            + "question. A screen reachable only by scrolling is a "
+            + "screen nobody uses, so every one of them is listed "
+            + "here.</p>" + body
+            + (("<p class='ss-note so-danger'>" + str(len(orphans))
+                + " screen(s) belong to NO group and can only be reached "
+                + "by accident: " + e(", ".join(orphans)) + "</p>")
+               if orphans else ""))
+
+
+def component_library(r) -> str:
+    """Spec 97. Every primitive, rendered, so the system is inspectable."""
+    states = "".join(TK.status(s) for s in TK.STATUS)
+    btns = "".join(TK.button(v.title(), variant=v, size="compact",
+                             onclick="void 0") for v in TK.CTA)
+    # metric() REFUSES a value with no named source. The library proves
+    # that by calling it wrongly and catching the raise, rather than
+    # printing a claim that it would refuse. A design system that only
+    # describes its own rules cannot be trusted to enforce them.
+    try:
+        metric("Without a source", 1420)
+        refused = "DID NOT REFUSE, which is a bug in the token module"
+    except TypeError:
+        refused = ("refused: metric() will not render a number that "
+                   "cannot name where it came from")
+    metrics = (metric("With a source", 1420, source="Google Search Console")
+               + metric("Not measured", None,
+                        source="Google Search Console"))
+    return ("<p class='ss-h'>COMPONENT LIBRARY</p>"
+            + "<p class='ss-note'>Rendered from the token module itself, "
+            + "not redrawn here. If a component changes, this page "
+            + "changes with it; a component gallery maintained by hand "
+            + "drifts from the product within a week and then lies about "
+            + "it.</p>"
+            + "<p class='ss-h2'>Status, " + str(len(TK.STATUS))
+            + " states</p><div class='ss-lib'>" + states + "</div>"
+            + "<p class='ss-note'>Every status carries a dot AND a word. "
+            + "Colour alone excludes anyone who cannot separate red from "
+            + "green, which is one man in twelve.</p>"
+            + "<p class='ss-h2'>Actions, " + str(len(TK.CTA))
+            + " variants</p><div class='ss-lib'>" + btns + "</div>"
+            + "<p class='ss-note'>These are the only variants that "
+            + "exist. Asking the token module for a variant outside this "
+            + "list raises rather than quietly rendering a grey "
+            + "button.</p>"
+            + "<p class='ss-h2'>Metrics</p><div class='ss-kpis'>"
+            + metrics + "</div>"
+            + "<p class='ss-note'>Sourceless metric, live: " + e(refused)
+            + ". An absent value reads 'not measured' "
+            + "rather than zero. Those two rules are why the numbers on "
+            + "this OS can be argued with.</p>"
+            + "<p class='ss-h2'>Empty and error</p>"
+            + empty("An empty state names the fix",
+                    "It says what is missing, why it is missing, and "
+                    "what to press. A shrug with a magnifying glass is "
+                    "not a state.", "Do the thing", "void 0")
+            + error("An error state names the failure",
+                    "provider returned 503 after 3 retries",
+                    "retry the pull, or connect a second provider")
+            + "<p class='ss-note'>error() takes three arguments and will "
+            + "not construct without the third. An error that says what "
+            + "broke but not what to do about it is a dead end wearing a "
+            + "red border.</p>")
+
+
+CSS += """<style>
+.ss-shell{display:flex;justify-content:space-between;align-items:center;
+gap:12px;flex-wrap:wrap;padding:11px 14px;border-radius:10px;
+border:1px solid var(--so-line);background:var(--so-surface);margin:0 0 9px}
+.ss-shell-deg{border-color:var(--so-warning-main)}
+.ss-shell-id b{font-size:12px;letter-spacing:.09em;color:var(--so-text)}
+.ss-shell-id span{margin-left:9px;font-size:12px;color:var(--so-text2)}
+.ss-shell-meta{display:flex;gap:14px;font-size:10px;color:var(--so-text2);
+letter-spacing:.05em}
+.ss-shell-meta b{color:var(--so-text);font-weight:600}
+.ss-bar{padding:9px 13px;border-radius:9px;border:1px solid var(--so-line);
+background:var(--so-surface);margin:0 0 9px}
+.ss-bar>p{margin:0;font-size:11px;color:var(--so-text2);line-height:1.55}
+.ss-bar-warn{border-color:var(--so-warning-main)}
+.ss-bar-ok{border-color:var(--so-line)}
+.ss-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ss-chip{display:inline-flex;gap:6px;align-items:center;font-size:10px;
+padding:3px 8px;border-radius:20px;border:1px solid var(--so-line);
+color:var(--so-text2)}
+.ss-chip b{font-weight:600;letter-spacing:.04em}
+.ss-chip-ok{border-color:var(--so-success-main);color:var(--so-success-main)}
+.ss-chip-warn{border-color:var(--so-warning-main);color:var(--so-warning-main)}
+.ss-chip-bad{border-color:var(--so-danger-main);color:var(--so-danger-main)}
+.ss-chip-off{opacity:.72}
+.ss-att{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+padding:7px 0;border-top:1px solid var(--so-line);margin-top:7px}
+.ss-att-k{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+color:var(--so-text2);min-width:112px}
+.ss-att b{font-size:12px;color:var(--so-text);font-weight:600}
+.ss-att i{flex:1;min-width:180px;font-style:normal;font-size:10px;
+color:var(--so-text2)}
+.ss-navg{margin:0 0 11px}
+.ss-navg>p{margin:0 0 6px;display:flex;gap:9px;align-items:baseline;
+flex-wrap:wrap}
+.ss-navg>p b{font-size:11px;letter-spacing:.07em;color:var(--so-text)}
+.ss-navg>p span{font-size:10px;color:var(--so-text2)}
+.ss-navg>div{display:flex;flex-wrap:wrap;gap:6px}
+.ss-navb{font-size:11px;padding:5px 10px;border-radius:7px;cursor:pointer;
+border:1px solid var(--so-line);background:transparent;color:var(--so-text2)}
+.ss-navb:hover{color:var(--so-text);border-color:var(--so-primary-main)}
+.ss-lib{display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+padding:11px;border-radius:9px;border:1px solid var(--so-line);
+background:var(--so-surface);margin:0 0 7px}
+.ss-h2{margin:14px 0 6px;font-size:10px;letter-spacing:.09em;
+text-transform:uppercase;color:var(--so-text2)}
+</style>"""
