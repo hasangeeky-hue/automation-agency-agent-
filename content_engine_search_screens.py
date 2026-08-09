@@ -360,3 +360,157 @@ var(--so-radius-card);padding:13px 16px;background:var(--so-surface)}
 .ss-empty b,.ss-error b{display:block;font-size:13px;margin-bottom:4px}
 .ss-empty p,.ss-error p{font-size:12px;color:var(--so-text2);margin:2px 0 8px}
 </style>"""
+
+
+# ---------------------------------------------------------------------------
+# SITE AUDIT (spec 22-25)
+# ---------------------------------------------------------------------------
+#: Spec 22. The categories a crawl is judged on, declared once so the
+#: overview, the issue board and the score cannot name different sets.
+AUDIT_CATEGORIES = ("Crawlability", "HTTPS", "Indexability",
+                    "Internal Linking", "Structured Data", "Performance",
+                    "International SEO", "Metadata", "Content")
+
+#: Spec 23. Severity drives order, and each says what it MEANS, so the
+#: word is readable without the colour.
+SEVERITY = {"CRITICAL": ("danger", "traffic is at risk right now"),
+            "HIGH": ("danger", "will cost traffic if left"),
+            "MEDIUM": ("warning", "worth fixing in this cycle"),
+            "LOW": ("neutral", "housekeeping"),
+            "NOTICE": ("neutral", "informational")}
+
+
+def site_audit(r, crawl=None) -> str:
+    """Spec 22. Health WITH its components; never a bare score."""
+    c = _D(crawl)
+    pages = _L(c.get("pages"))
+    if not pages:
+        return ("<p class='ss-h'>SITE AUDIT</p>"
+                + empty("No crawl on record",
+                        "The crawler has not run for this site, so there "
+                        "is nothing to audit. A health score invented "
+                        "without a crawl would be the most confident "
+                        "wrong number on the dashboard.",
+                        "Run a crawl", "act('/seo/crawl')"))
+    issues = _L(c.get("issues"))
+    by_sev = {}
+    for i in issues:
+        by_sev.setdefault(str(_D(i).get("severity") or "NOTICE").upper(),
+                          []).append(i)
+    comp, missing = {}, []
+    for cat in AUDIT_CATEGORIES:
+        rel = [i for i in issues if str(_D(i).get("category") or "") == cat]
+        key = cat.lower().replace(" ", "_")
+        checked = [x for x in pages if _D(x).get(key) is not None]
+        if not rel and not checked:
+            missing.append(cat)
+            continue
+        comp[cat] = max(0, round(100 - (len(rel) / max(len(pages), 1)) * 100))
+    from content_engine_search_board import health_breakdown
+    errs = len(by_sev.get("CRITICAL", [])) + len(by_sev.get("HIGH", []))
+    return ("<p class='ss-h'>SITE AUDIT</p><div class='ss-kpis'>"
+            + metric("Pages crawled", len(pages), source="crawler",
+                     freshness=str(c.get("at", ""))[:16])
+            + metric("Errors", errs, source="crawler")
+            + metric("Warnings", len(by_sev.get("MEDIUM", [])),
+                     source="crawler")
+            + metric("Notices", len(by_sev.get("LOW", []))
+                     + len(by_sev.get("NOTICE", [])), source="crawler")
+            + "</div>" + health_breakdown(comp)
+            + ((f"<p class='ss-note'>{len(missing)} category/categories "
+                f"were NOT measured by this crawl and are left out of the "
+                f"score rather than counted as healthy: "
+                f"{e(chr(44).join(missing))}.</p>") if missing else ""))
+
+
+def issues_board(r, crawl=None) -> str:
+    """Spec 23-24. Every problem with its impact and its fix path."""
+    c = _D(crawl)
+    issues = _L(c.get("issues"))
+    if not issues:
+        return ("<p class='ss-h'>ISSUES</p>"
+                + empty("No issues detected",
+                        "Either the crawl found nothing or no crawl has "
+                        "run. Check the audit date before reading this as "
+                        "a clean bill of health.",
+                        "Run a crawl", "act('/seo/crawl')"))
+    order = {k: n for n, k in enumerate(SEVERITY)}
+    issues = sorted(issues, key=lambda i: order.get(
+        str(_D(i).get("severity") or "NOTICE").upper(), 9))
+    rows = ""
+    for i in issues[:40]:
+        d = _D(i)
+        sev = str(d.get("severity") or "NOTICE").upper()
+        tone, means = SEVERITY.get(sev, ("neutral", ""))
+        urls = _L(d.get("urls"))
+        rows += ("<tr>"
+                 f"<td class='so-{tone}'>{e(sev)}<br>"
+                 f"<span class='ss-meta'>{e(means)}</span></td>"
+                 f"<td>{e(d.get(chr(116)+chr(105)+chr(116)+chr(108)+chr(101)) or d.get(chr(105)+chr(115)+chr(115)+chr(117)+chr(101)))}</td>"
+                 f"<td>{_n(len(urls) or d.get(chr(99)+chr(111)+chr(117)+chr(110)+chr(116)), chr(45)+chr(45))}</td>"
+                 f"<td>{_n(d.get(chr(105)+chr(109)+chr(112)+chr(114)+chr(101)+chr(115)+chr(115)+chr(105)+chr(111)+chr(110)+chr(115)+chr(95)+chr(97)+chr(116)+chr(95)+chr(114)+chr(105)+chr(115)+chr(107)))}</td>"
+                 f"<td>{e(d.get(chr(99)+chr(97)+chr(116)+chr(101)+chr(103)+chr(111)+chr(114)+chr(121)) or chr(117)+chr(110)+chr(115)+chr(101)+chr(116))}</td>"
+                 f"<td>{e(d.get(chr(102)+chr(105)+chr(114)+chr(115)+chr(116)+chr(95)+chr(115)+chr(101)+chr(101)+chr(110)) or chr(110)+chr(111)+chr(116)+chr(32)+chr(114)+chr(101)+chr(99)+chr(111)+chr(114)+chr(100)+chr(101)+chr(100))}</td>"
+                 "<td>"
+                 + TK.button("Generate fix", variant="ai", size="compact",
+                             onclick="ssFix()")
+                 + "</td></tr>")
+    heads = ("Severity", "Issue", "URLs", "Impressions at risk",
+             "Category", "First seen", "Action")
+    return ("<p class='ss-h'>ISSUES</p>"
+            f"<p class='ss-note'>{len(issues)} open, worst first. "
+            f"Traffic at risk shows only where impressions are joined to "
+            f"the URL; where they are not it reads not measured rather "
+            f"than zero.</p>"
+            "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join(f"<th>{e(h)}</th>" for h in heads)
+            + "</tr></thead><tbody>" + rows + "</tbody></table></div>")
+
+
+def crawled_pages(r, crawl=None, limit=60) -> str:
+    """Spec 25. Every URL and its real state; unchecked is never a pass."""
+    c = _D(crawl)
+    pages = _L(c.get("pages"))
+    if not pages:
+        return ("<p class='ss-h'>CRAWLED PAGES</p>"
+                + empty("No crawled pages",
+                        "The crawler has not run, so this table has "
+                        "nothing true to list.",
+                        "Run a crawl", "act('/seo/crawl')"))
+    rows = ""
+    for x in pages[:limit]:
+        d = _D(x)
+        idx = d.get("indexable")
+        tone = ("success" if idx else
+                "danger" if idx is False else "neutral")
+        word = ("indexable" if idx else
+                "noindex" if idx is False else "not checked")
+        rows += ("<tr>"
+                 f"<td>{e(str(d.get(chr(117)+chr(114)+chr(108)))[:60])}</td>"
+                 f"<td>{_n(d.get(chr(115)+chr(116)+chr(97)+chr(116)+chr(117)+chr(115)), chr(45)+chr(45))}</td>"
+                 f"<td class='so-{tone}'>{word}</td>"
+                 f"<td>{e(str(d.get(chr(116)+chr(105)+chr(116)+chr(108)+chr(101)) or chr(0))[:44]) or chr(109)+chr(105)+chr(115)+chr(115)+chr(105)+chr(110)+chr(103)}</td>"
+                 f"<td>{_n(d.get(chr(119)+chr(111)+chr(114)+chr(100)+chr(95)+chr(99)+chr(111)+chr(117)+chr(110)+chr(116)))}</td>"
+                 f"<td>{_n(d.get(chr(105)+chr(110)+chr(116)+chr(101)+chr(114)+chr(110)+chr(97)+chr(108)+chr(95)+chr(108)+chr(105)+chr(110)+chr(107)+chr(115)))}</td>"
+                 f"<td>{_n(d.get(chr(99)+chr(108)+chr(105)+chr(99)+chr(107)+chr(115)))}</td>"
+                 "</tr>")
+    heads = ("URL", "HTTP", "Indexable", "Title", "Words",
+             "Internal links", "Clicks")
+    return ("<p class='ss-h'>CRAWLED PAGES</p>"
+            f"<p class='ss-note'>{len(pages)} crawled, showing "
+            f"{min(limit, len(pages))}. A field the crawl did not check "
+            f"reads not checked, never a pass.</p>"
+            "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join(f"<th>{e(h)}</th>" for h in heads)
+            + "</tr></thead><tbody>" + rows + "</tbody></table></div>")
+
+
+CSS += """<style>
+.ss-scroll{overflow-x:auto}
+.ss-tbl{border-collapse:collapse;width:100%;font-size:12px}
+.ss-tbl th{color:var(--so-text2);text-transform:uppercase;font-size:10px;
+letter-spacing:.4px;text-align:left;padding:6px 8px;
+border-bottom:1px solid var(--so-border)}
+.ss-tbl td{padding:6px 8px;border-bottom:1px solid var(--so-border);
+color:var(--so-text);font-variant-numeric:tabular-nums;vertical-align:top}
+</style>"""
