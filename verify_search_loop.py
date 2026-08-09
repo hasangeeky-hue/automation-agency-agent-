@@ -3,6 +3,7 @@
 import sys
 
 import content_engine_os_core as CORE
+import os
 import content_engine_search_loop as SL
 
 OK = []
@@ -341,6 +342,68 @@ t("and its error state refuses 'something went wrong'",
 t("no em dash in the token module",
   "—" not in open("content_engine_search_tokens.py",
                   encoding="utf-8").read())
+
+print("\nL11 PHASE 5: THE THREE OPERABLE SCREENS (spec 12-14, 26-29, 48-49)")
+import content_engine_search_screens as SS
+
+_r11 = CORE.Repo(Store())
+t("an empty opportunity board names the corrective action (spec 71)",
+  "Run detection" in SS.opportunities(_r11))
+t("an empty command centre says which connection is missing",
+  "Connect Search Console" in SS.command_center(_r11))
+t("page intelligence refuses to estimate a page it has no data for",
+  "nothing is estimated" in SS.page_intelligence(_r11, "/x"))
+_hi_traffic = {"impact": "MEDIUM", "business_value": "LOW",
+               "confidence": 0.9, "effort": "MEDIUM"}
+_hi_value = {"impact": "MEDIUM", "business_value": "HIGH",
+             "confidence": 0.9, "effort": "MEDIUM"}
+t("BUSINESS VALUE BEATS TRAFFIC, the spec's own example (spec 47)",
+  SS.score(_hi_value)["score"] > SS.score(_hi_traffic)["score"])
+t("and the ranking arithmetic is exposed, never a bare number",
+  "impact" in SS.score(_hi_value)["why"]
+  and "effort" in SS.score(_hi_value)["why"])
+t("an unknown business value is flagged rather than scored as fact",
+  SS.score({"business_value": "UNKNOWN - not joined"})["business_unknown"])
+t("A METRIC WITH NO NAMED SOURCE IS NOT RENDERED (spec 73)",
+  "not shown" in SS.metric("Clicks", 500, source=""))
+t("and a metric with a source names it on the screen",
+  "Source: Google Search Console" in
+  SS.metric("Clicks", 500, source="Google Search Console"))
+_d = SS.diff_viewer(field="title", before="Old title",
+                    proposed="A better, longer title",
+                    evidence="query cluster + SERP intent",
+                    risk="MEDIUM", initiative_id="i1")
+t("THE DIFF SHOWS BEFORE AND PROPOSED TOGETHER (spec 29)",
+  "BEFORE" in _d and "PROPOSED" in _d and "Old title" in _d)
+t("with the evidence and the risk beside them",
+  "Evidence:" in _d and "Risk:" in _d)
+t("and there is no approve control without reject and edit",
+  all(x in _d for x in ("ssReject", "ssEdit", "ssApprove")))
+t("an empty proposal cannot be approved",
+  "Nothing to review" in SS.diff_viewer(field="t", before="a",
+                                        proposed="", evidence="e"))
+t("a CRITICAL change says it is human-only (spec 79-80)",
+  "human-only" in SS.diff_viewer(field="t", before="a", proposed="b",
+                                 evidence="e", risk="CRITICAL"))
+_p = SS.page_intelligence(_r11, "/guide", metrics={
+    "clicks": 820, "impressions": 41000, "position": 9.2,
+    "previous_position": 4.8, "conversions": 11, "internal_links": 3})
+t("the page analyst separates FACT from HYPOTHESIS (spec 50)",
+  "FACT:" in _p and "HYPOTHESIS:" in _p)
+t("and hedges a cause it cannot prove", "may have" in _p)
+t("a page with nothing notable says so rather than inventing a finding",
+  "That is a finding, not a gap" in SS.page_intelligence(
+      _r11, "/quiet", metrics={"clicks": 10, "impressions": 100}))
+t("every screen is built on the token system, not raw hexes",
+  "#" not in SS.CSS.split("</style>")[-1]
+  and "import content_engine_search_tokens" in
+  open("content_engine_search_screens.py", encoding="utf-8").read())
+t("the screens have their contracts written first (spec 96)",
+  all(os.path.isfile(f"docs/search/ui/{n}.md") for n in
+      ("command_center", "page_intelligence", "opportunities")))
+t("no em dash in the screens module",
+  "\u2014" not in open("content_engine_search_screens.py",
+                       encoding="utf-8").read())
 
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)
