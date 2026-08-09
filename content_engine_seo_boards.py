@@ -2344,6 +2344,45 @@ def _crawl_of(ctx):
     return c if isinstance(c, dict) else {}
 
 
+def _board_domain(ctx) -> str:
+    """Spec 15-16, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    c = ctx or {}
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.domain_overview(r, c.get("domain_profile"))
+            + SS.organic_research(r, c.get("organic_keywords"))
+            + "</div>")
+
+
+def _board_kwx(ctx) -> str:
+    """Spec 17-19, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    c = ctx or {}
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.keyword_explorer(r, c.get("keyword_research"))
+            + SS.keyword_gap(r, c.get("keyword_gaps"),
+                             c.get("competitors"))
+            + "</div>")
+
+
+def _board_rank(ctx) -> str:
+    """Spec 20-21, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    c = ctx or {}
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.position_tracking(r, c.get("tracked_keywords"),
+                                   c.get("tracking_meta")) + "</div>")
+
+
 def _board_analytics(ctx) -> str:
     """Spec 44-47, mounted."""
     import content_engine_search_screens as SS
@@ -2525,6 +2564,9 @@ _TAB_BOARDS = {
     # THE CLOSED LOOP. Its own tab, because the question it answers -
     # "did any of this actually work" - is not the same question as any
     # other board on this page.
+    "seodomain": [("Domain Research", _board_domain)],
+    "seokwx": [("Keyword Explorer", _board_kwx)],
+    "seorank": [("Position Tracking", _board_rank)],
     "seoanalytics": [("Search Analytics", _board_analytics)],
     "seoagents": [("Agent Centre", _board_agents)],
     "seogeoai":  [("AI Visibility (GEO)", _board_geoai)],
@@ -2580,6 +2622,9 @@ TABS = [
     ("seogeo", "📍", "GEO — Local & Markets"),
     ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
+    ("seodomain", "🌐", "Domain Research"),
+    ("seokwx", "🔍", "Keyword Explorer"),
+    ("seorank", "📍", "Position Tracking"),
     ("seoanalytics", "📈", "Search Analytics"),
     ("seoagents", "🧠", "Agent Centre"),
     ("seogeoai", "🤖", "AI Visibility (GEO)"),
@@ -2604,7 +2649,8 @@ GROUPS = [
     ("diagnose", "① DIAGNOSE", "What's wrong?",
      ["seoaudit", "seoissues", "seopages", "seotech", "seoonpage"]),
     ("compete", "② COMPETE", "Where do I stand?",
-     ["seokw", "seocontent", "seolinks", "seoanswers", "seogeoai",
+     ["seodomain", "seokwx", "seorank", "seokw", "seocontent",
+      "seolinks", "seoanswers", "seogeoai",
       "seoaeo", "seogen", "seogeo", "seooff"]),
     ("sources", "④ SOURCES", "Where does the data come from?",
      ["seoanalytics", "seosrc"]),
@@ -2712,6 +2758,9 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
         "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
         "seowork": SCR.workorders_screen(ctx, []),
+        "seodomain": _board_domain(ctx),
+        "seokwx": _board_kwx(ctx),
+        "seorank": _board_rank(ctx),
         "seoanalytics": _board_analytics(ctx),
         "seoagents": _board_agents(ctx),
         "seogeoai": _board_geoai(ctx),

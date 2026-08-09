@@ -1326,3 +1326,239 @@ color:var(--so-text2)}
 background:rgba(148,163,184,.18);overflow:hidden}
 .ss-funbar span{display:block;height:100%;background:var(--so-primary-main)}
 </style>"""
+
+
+# ---------------------------------------------------------------------------
+# RESEARCH BOARDS (spec 15-21)
+# ---------------------------------------------------------------------------
+#: Spec 17. Intent, and the fact that we may not know it. UNCLASSIFIED is
+#: a real answer: a keyword whose intent nobody determined is not
+#: informational by default, and guessing turns a research board into a
+#: horoscope.
+INTENT = ("TRANSACTIONAL", "COMMERCIAL", "INFORMATIONAL", "NAVIGATIONAL",
+          "UNCLASSIFIED")
+
+#: Spec 18. Volume below this is too thin for a monthly figure to mean
+#: anything; providers round and estimate down here.
+MIN_VOLUME = 10
+
+
+def _kw_intent(row) -> str:
+    d = _D(row)
+    v = str(d.get("intent") or "").upper()
+    return v if v in INTENT else "UNCLASSIFIED"
+
+
+def domain_overview(r, d=None) -> str:
+    """Spec 15. One domain, at a glance, with every figure sourced."""
+    x = _D(d)
+    if not x.get("domain"):
+        return ("<p class='ss-h'>DOMAIN OVERVIEW</p>"
+                + empty("No domain analysed",
+                        "Enter a domain to pull its organic profile. Every "
+                        "number on this board comes from a provider and "
+                        "carries that provider's name, because two "
+                        "providers will disagree and you need to know "
+                        "which one you are reading.",
+                        "Analyse a domain", "ssDomain()"))
+    src = x.get("source") or "not recorded"
+    return ("<p class='ss-h'>DOMAIN OVERVIEW &middot; "
+            + e(x.get("domain")) + "</p><div class='ss-kpis'>"
+            + metric("Authority", x.get("authority"), source=src)
+            + metric("Organic keywords", x.get("keywords"), source=src)
+            + metric("Organic traffic (est)", x.get("traffic"), source=src)
+            + metric("Referring domains", x.get("referring_domains"),
+                     source=src)
+            + metric("Top 3 positions", x.get("top3"), source=src)
+            + metric("Top 10 positions", x.get("top10"), source=src)
+            + "</div>"
+            + "<p class='ss-note'>Traffic here is a provider ESTIMATE "
+            + "modelled from position and volume, not measured sessions. "
+            + "Your own GA4 number is the measured one, and the two will "
+            + "differ; this figure is for comparing domains to each "
+            + "other, not for reporting your own traffic.</p>")
+
+
+def organic_research(r, rows=None) -> str:
+    """Spec 16. Every keyword a domain ranks for, and the movement."""
+    items = _L(rows)
+    if not items:
+        return ("<p class='ss-h'>ORGANIC RESEARCH</p>"
+                + empty("No ranking keywords pulled",
+                        "This board lists what a domain already ranks for. "
+                        "It reads a provider; it does not model rankings.",
+                        "Run research", "ssResearch()"))
+    body = ""
+    for k in items[:60]:
+        kd = _D(k)
+        pos, prev = kd.get("position"), kd.get("prev_position")
+        move, tone = "first seen", "neutral"
+        if pos is not None and prev is not None:
+            dlt = float(prev) - float(pos)
+            move = ("no change" if abs(dlt) < 0.5
+                    else ("up " if dlt > 0 else "down ")
+                    + str(abs(round(dlt, 1))))
+            tone = ("neutral" if abs(dlt) < 0.5
+                    else "success" if dlt > 0 else "danger")
+        body += ("<tr><td>" + e(str(kd.get("keyword"))[:44]) + "</td>"
+                 + "<td>" + _n(pos) + "</td>"
+                 + "<td class='so-" + tone + "'>" + e(move) + "</td>"
+                 + "<td>" + _n(kd.get("volume")) + "</td>"
+                 + "<td>" + e(_kw_intent(kd)) + "</td>"
+                 + "<td>" + e(str(kd.get("url") or "not mapped")[:38])
+                 + "</td></tr>")
+    unc = sum(1 for k in items if _kw_intent(k) == "UNCLASSIFIED")
+    heads = ("Keyword", "Position", "Movement", "Volume", "Intent", "URL")
+    return ("<p class='ss-h'>ORGANIC RESEARCH</p>"
+            + "<p class='ss-note'>" + str(len(items)) + " keyword(s). A "
+            + "keyword with no previous position reads FIRST SEEN, not "
+            + "'new', because it may simply be the first time we looked."
+            + (" " + str(unc) + " have no classified intent and say so "
+               + "rather than defaulting to informational." if unc else "")
+            + "</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+def keyword_explorer(r, rows=None) -> str:
+    """Spec 17-18. Keywords with volume, difficulty and intent."""
+    items = _L(rows)
+    if not items:
+        return ("<p class='ss-h'>KEYWORD EXPLORER</p>"
+                + empty("No keywords researched",
+                        "Search a seed term to pull volume, difficulty and "
+                        "intent. Difficulty is a provider's model, not a "
+                        "measurement, and this board labels it that way.",
+                        "Explore keywords", "ssKeywords()"))
+    body, thin = "", 0
+    for k in items[:60]:
+        kd = _D(k)
+        vol = kd.get("volume")
+        note = ""
+        if vol is not None and float(vol) < MIN_VOLUME:
+            thin += 1
+            note = "below " + str(MIN_VOLUME) + "/mo, provider estimates "\
+                   "are unreliable this low"
+        kdiff = kd.get("difficulty")
+        body += ("<tr><td>" + e(str(kd.get("keyword"))[:44]) + "</td>"
+                 + "<td>" + _n(vol) + "</td>"
+                 + "<td>" + (_n(kdiff) + " (modelled)"
+                             if kdiff is not None else "not scored")
+                 + "</td>"
+                 + "<td>" + e(_kw_intent(kd)) + "</td>"
+                 + "<td>" + _n(kd.get("cpc")) + "</td>"
+                 + "<td>" + e(note or (str(kd.get("serp_note") or "")))
+                 + "</td></tr>")
+    heads = ("Keyword", "Volume/mo", "Difficulty", "Intent", "CPC",
+             "Caveat")
+    return ("<p class='ss-h'>KEYWORD EXPLORER</p>"
+            + "<p class='ss-note'>Difficulty is a MODELLED score from a "
+            + "provider, not something anyone measured. It is comparable "
+            + "within one provider and meaningless across two."
+            + (" " + str(thin) + " keyword(s) fall below "
+               + str(MIN_VOLUME) + "/mo and are flagged: providers round "
+               + "and estimate at that floor." if thin else "")
+            + "</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+def keyword_gap(r, rows=None, competitors=None) -> str:
+    """Spec 19. What competitors rank for and we do not."""
+    items = _L(rows)
+    comps = [str(c) for c in _L(competitors)]
+    if not items or not comps:
+        return ("<p class='ss-h'>KEYWORD GAP</p>"
+                + empty("No gap computed",
+                        "A gap needs our rankings AND at least one "
+                        "competitor's, pulled from the same provider on "
+                        "the same day. Comparing two providers or two "
+                        "dates produces a gap that is about the pull, not "
+                        "about the websites.",
+                        "Add a competitor", "ssCompetitors()"))
+    body = ""
+    for k in items[:60]:
+        kd = _D(k)
+        ours = kd.get("our_position")
+        best = [(_D(x).get("position"), _D(x).get("domain"))
+                for x in _L(kd.get("competitors"))
+                if _D(x).get("position") is not None]
+        best.sort()
+        body += ("<tr><td>" + e(str(kd.get("keyword"))[:40]) + "</td>"
+                 + "<td>" + (_n(ours) if ours is not None
+                             else "not ranking") + "</td>"
+                 + "<td>" + (str(best[0][0]) + " &middot; "
+                             + e(str(best[0][1])) if best
+                             else "none ranking") + "</td>"
+                 + "<td>" + _n(kd.get("volume")) + "</td>"
+                 + "<td>" + e(_kw_intent(kd)) + "</td>"
+                 + "<td>" + e("we do not rank" if ours is None
+                              else "they rank higher" if best
+                              and float(best[0][0]) < float(ours)
+                              else "we rank higher") + "</td></tr>")
+    heads = ("Keyword", "Us", "Best competitor", "Volume", "Intent",
+             "Gap")
+    return ("<p class='ss-h'>KEYWORD GAP</p>"
+            + "<p class='ss-note'>Against " + e(", ".join(comps[:4]))
+            + ". A keyword where we do not rank reads NOT RANKING, never "
+            + "position 100: an absence is not a bad position, and "
+            + "averaging invented hundreds would corrupt every summary "
+            + "above it.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")
+
+
+def position_tracking(r, rows=None, meta=None) -> str:
+    """Spec 20-21. Tracked positions over time, with the pull dated."""
+    items = _L(rows)
+    m = _D(meta)
+    if not items:
+        return ("<p class='ss-h'>POSITION TRACKING</p>"
+                + empty("Nothing tracked",
+                        "Add the keywords you want watched. Tracking is "
+                        "the only ranking number here that is measured "
+                        "rather than estimated, so it is the one worth "
+                        "keeping.",
+                        "Track keywords", "ssTrack()"))
+    up = sum(1 for x in items if _D(x).get("delta") is not None
+             and float(_D(x)["delta"]) > 0.5)
+    down = sum(1 for x in items if _D(x).get("delta") is not None
+               and float(_D(x)["delta"]) < -0.5)
+    flat = len(items) - up - down
+    body = ""
+    for x in items[:60]:
+        d = _D(x)
+        dl = d.get("delta")
+        tone = ("neutral" if dl is None or abs(float(dl)) < 0.5
+                else "success" if float(dl) > 0 else "danger")
+        body += ("<tr><td>" + e(str(d.get("keyword"))[:40]) + "</td>"
+                 + "<td>" + _n(d.get("position")) + "</td>"
+                 + "<td class='so-" + tone + "'>"
+                 + (("+" if dl and float(dl) > 0 else "")
+                    + str(round(float(dl), 1)) if dl is not None
+                    else "no prior pull") + "</td>"
+                 + "<td>" + _n(d.get("best")) + "</td>"
+                 + "<td>" + e(d.get("device") or "not recorded") + "</td>"
+                 + "<td>" + e(d.get("location") or "not recorded")
+                 + "</td></tr>")
+    heads = ("Keyword", "Position", "Change", "Best ever", "Device",
+             "Location")
+    return ("<p class='ss-h'>POSITION TRACKING</p><div class='ss-kpis'>"
+            + metric("Tracked", len(items), source="rank tracker")
+            + metric("Improved", up, source="rank tracker",
+                     polarity="positive")
+            + metric("Declined", down, source="rank tracker",
+                     polarity="negative")
+            + metric("Unchanged", flat, source="rank tracker")
+            + "</div>"
+            + "<p class='ss-note'>Last pull: "
+            + e(m.get("pulled_at") or "not recorded") + ". Device and "
+            + "location are shown per keyword because a position without "
+            + "them is not a fact: the same query ranks differently on "
+            + "mobile in Munich and desktop in Boston.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "".join("<th>" + e(h) + "</th>" for h in heads)
+            + "</tr></thead><tbody>" + body + "</tbody></table></div>")

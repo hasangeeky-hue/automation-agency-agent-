@@ -738,5 +738,80 @@ t("analytics sits under SOURCES, beside where the data comes from",
 t("mounting them created no duplicate id",
   not [x for x in set(_pp12.ids) if _pp12.ids.count(x) > 1])
 
+print("\nL18 PHASE 13: RESEARCH BOARDS (spec 15-21)")
+_r13 = CORE.Repo(Store())
+t("with no domain the overview refuses and says why",
+  "which one you are reading" in SS8.domain_overview(_r13))
+_dom = SS8.domain_overview(_r13, {"domain": "x.test", "authority": 41,
+                                  "traffic": 9000, "source": "DataForSEO"})
+t("PROVIDER TRAFFIC IS LABELLED AN ESTIMATE, not traffic",
+  "provider ESTIMATE" in _dom)
+t("and it points at GA4 as the measured number instead",
+  "GA4" in _dom and "measured" in _dom)
+t("every domain figure carries its provider name",
+  "DataForSEO" in _dom)
+_org = SS8.organic_research(_r13, [{"keyword": "a", "position": 4,
+                                    "prev_position": 9, "volume": 300},
+                                   {"keyword": "b", "position": 11}])
+t("movement is stated against the previous pull", "up 5" in _org)
+t("A KEYWORD WITH NO PRIOR POSITION READS 'FIRST SEEN', NOT 'NEW'",
+  "FIRST SEEN" in _org and "first time we looked" in _org)
+t("intent has an UNCLASSIFIED state and it is not informational",
+  "UNCLASSIFIED" in SS8.INTENT
+  and SS8._kw_intent({"keyword": "b"}) == "UNCLASSIFIED")
+t("and the board says it refuses to default intent",
+  "rather than defaulting to informational" in _org)
+_kx = SS8.keyword_explorer(_r13, [{"keyword": "a", "volume": 4,
+                                   "difficulty": 30},
+                                  {"keyword": "b", "volume": 900}])
+t("DIFFICULTY IS LABELLED A MODEL, NOT A MEASUREMENT",
+  "MODELLED score" in _kx and "meaningless across two" in _kx)
+t("volume below the floor is flagged as unreliable",
+  "below " + str(SS8.MIN_VOLUME) + "/mo" in _kx)
+t("an unscored keyword says 'not scored' rather than showing zero",
+  "not scored" in _kx)
+t("the gap refuses without both sides from one pull",
+  "about the pull, not" in SS8.keyword_gap(_r13))
+_gap = SS8.keyword_gap(_r13,
+                       [{"keyword": "a", "our_position": None,
+                         "competitors": [{"position": 3, "domain": "c"}]},
+                        {"keyword": "b", "our_position": 2,
+                         "competitors": [{"position": 8, "domain": "c"}]}],
+                       ["c.test"])
+t("NOT RANKING IS AN ABSENCE, NEVER POSITION 100",
+  "not ranking" in _gap and "an absence is not a bad position" in _gap)
+t("and where we lead it says so rather than only listing losses",
+  "we rank higher" in _gap)
+t("nothing tracked refuses, and names tracking as the measured number",
+  "rather than estimated" in SS8.position_tracking(_r13))
+_pt = SS8.position_tracking(_r13,
+                            [{"keyword": "a", "position": 3,
+                              "delta": 2.0, "device": "mobile",
+                              "location": "Munich"},
+                             {"keyword": "b", "position": 30}],
+                            {"pulled_at": "2026-08-09"})
+t("the pull is dated on the face of the board", "2026-08-09" in _pt)
+t("A POSITION WITHOUT DEVICE AND LOCATION IS NOT A FACT",
+  "is not a fact" in _pt and "mobile in Munich" in _pt)
+t("a keyword with no prior pull says so rather than showing 0 change",
+  "no prior pull" in _pt)
+_sec13 = SEO6.seo_section({"domain_profile": {"domain": "x.test"}})
+_pp13 = _Panels()
+_pp13.feed(_sec13)
+for _tab13 in ("seodomain", "seokwx", "seorank"):
+    t("tab " + _tab13 + " is declared",
+      any(x[0] == _tab13 for x in SEO6.TABS))
+    t("AND its panel renders real content: " + _tab13,
+      _pp13.panels.get("spanel-" + _tab13, 0) > 500,
+      "text " + str(_pp13.panels.get("spanel-" + _tab13)))
+t("all three sit under COMPETE",
+  all(x in dict((g[0], g[3]) for g in SEO6.GROUPS)["compete"]
+      for x in ("seodomain", "seokwx", "seorank")))
+t("mounting them created no duplicate id",
+  not [x for x in set(_pp13.ids) if _pp13.ids.count(x) > 1])
+t("no em-dash reaches any Search OS screen",
+  "\u2014" not in open("content_engine_search_screens.py",
+                          encoding="utf-8").read())
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)
