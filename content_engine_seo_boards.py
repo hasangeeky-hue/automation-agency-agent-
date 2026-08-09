@@ -2344,6 +2344,31 @@ def _crawl_of(ctx):
     return c if isinstance(c, dict) else {}
 
 
+def _board_data(ctx) -> str:
+    """Spec 75-78, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    c = ctx or {}
+    return (SS.CSS + "<div class='ss-root'>" + SS.data_model(r)
+            + SS.identity_rules(r, c.get("identity_sample"))
+            + SS.retention_board(r)
+            + SS.cms_board(r, c.get("cms")) + "</div>")
+
+
+def _board_report(ctx) -> str:
+    """Spec 85-86, mounted."""
+    import content_engine_search_screens as SS
+    r = _repo_or_none()
+    if r is None:
+        return "<p class='cc'>The store is not reachable.</p>"
+    c = ctx or {}
+    return (SS.CSS + "<div class='ss-root'>"
+            + SS.reports_board(r, c.get("report"),
+                               c.get("report_schedules")) + "</div>")
+
+
 def _board_system(ctx) -> str:
     """Spec 5, 97, mounted."""
     import content_engine_search_screens as SS
@@ -2574,6 +2599,8 @@ _TAB_BOARDS = {
     # THE CLOSED LOOP. Its own tab, because the question it answers -
     # "did any of this actually work" - is not the same question as any
     # other board on this page.
+    "seodata": [("Data &amp; CMS", _board_data)],
+    "seoreport": [("Reports", _board_report)],
     "seosystem": [("System &amp; Components", _board_system)],
     "seodomain": [("Domain Research", _board_domain)],
     "seokwx": [("Keyword Explorer", _board_kwx)],
@@ -2633,6 +2660,8 @@ TABS = [
     ("seogeo", "📍", "GEO — Local & Markets"),
     ("seooff", "🔗", "Off-Page & Links"),
     ("seowork", "🛠", "Work Orders"),
+    ("seodata", "🗄", "Data &amp; CMS"),
+    ("seoreport", "📄", "Reports"),
     ("seosystem", "🧩", "System &amp; Components"),
     ("seodomain", "🌐", "Domain Research"),
     ("seokwx", "🔍", "Keyword Explorer"),
@@ -2657,7 +2686,7 @@ TABS = [
 GROUPS = [
     ("act", "③ ACT", "What should I do?",
      ["seocmd", "seoopp", "seopage", "seoagents", "seowork",
-      "seoloop"]),
+      "seoloop", "seoreport"]),
     ("diagnose", "① DIAGNOSE", "What's wrong?",
      ["seoaudit", "seoissues", "seopages", "seotech", "seoonpage"]),
     ("compete", "② COMPETE", "Where do I stand?",
@@ -2665,7 +2694,7 @@ GROUPS = [
       "seolinks", "seoanswers", "seogeoai",
       "seoaeo", "seogen", "seogeo", "seooff"]),
     ("sources", "④ SOURCES", "Where does the data come from?",
-     ["seoanalytics", "seosrc", "seosystem"]),
+     ["seoanalytics", "seosrc", "seodata", "seosystem"]),
 ]
 
 _TAB_CSS = """<style>
@@ -2770,6 +2799,8 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seogeo": SCR.health_header(ctx) + SCR.geo_local_screen(ctx),
         "seooff": SCR.health_header(ctx) + SCR.backlinks_screen(ctx),
         "seowork": SCR.workorders_screen(ctx, []),
+        "seodata": _board_data(ctx),
+        "seoreport": _board_report(ctx),
         "seosystem": _board_system(ctx),
         "seodomain": _board_domain(ctx),
         "seokwx": _board_kwx(ctx),

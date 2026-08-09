@@ -884,5 +884,122 @@ t("and the freshness chips reach the assembled page",
 t("mounting the shell created no duplicate id",
   not [x for x in set(_pp14.ids) if _pp14.ids.count(x) > 1])
 
+print("\nL20 BATCH B: DATA, IDENTITY, CMS, REPORTS (spec 75-78, 85-86)")
+import content_engine_search_data as DAT8
+_r15 = CORE.Repo(Store())
+t("every entity is declared once, with a key and a meaning",
+  len(DAT8.ENTITIES) >= 12
+  and all(len(x) == 3 and all(x) for x in DAT8.ENTITIES))
+t("an unknown entity returns None rather than a guess",
+  DAT8.entity("nonsense") is None)
+t("CREDENTIALS ARE A REFERENCE, NEVER A TOKEN",
+  "never a token" in DAT8.CREDENTIAL_RULE
+  and DAT8.entity("credential")["key"] == "credential_ref")
+_nu = DAT8.normalize_url("HTTPS://Example.com/Guide/?utm_source=x&page=2#top")
+t("tracking parameters are dropped and content parameters are kept",
+  _nu["params_dropped"] == ["utm_source"] and _nu["params_kept"] == ["page=2"])
+t("the host is lowercased but the PATH IS NOT",
+  DAT8.url_identity("https://A.test/Guide") == "https://a.test/Guide")
+t("HTTP AND HTTPS ARE NOT MERGED BY A STRING RULE",
+  DAT8.url_identity("http://a.test/x") != DAT8.url_identity("https://a.test/x"))
+t("and neither are www and the bare host",
+  DAT8.url_identity("https://a.test/x")
+  != DAT8.url_identity("https://www.a.test/x"))
+t("parameter order does not create two identities for one page",
+  DAT8.url_identity("https://a.test/x?b=2&a=1")
+  == DAT8.url_identity("https://a.test/x?a=1&b=2"))
+t("the normaliser reports what it did AND what it refused to do",
+  len(_nu["changed"]) >= 3 and len(_nu["not_done"]) == 3)
+t("MARKET IS PART OF THE KEYWORD KEY",
+  DAT8.keyword_identity("Tattoo Needles", "de") == "tattoo needles|de"
+  and DAT8.keyword_identity("Tattoo Needles", "de")
+  != DAT8.keyword_identity("Tattoo Needles", "us"))
+t("singular and plural are NOT folded into one keyword",
+  DAT8.keyword_identity("tattoo needle", "de")
+  != DAT8.keyword_identity("tattoo needles", "de"))
+_plan = DAT8.retention_plan()
+t("every entity has a retention row", len(_plan) == len(DAT8.ENTITIES))
+t("AND NO ENTITY IS LEFT WITH NO POLICY",
+  not [x for x in _plan if x["state"] == "NO POLICY"],
+  str([x["entity"] for x in _plan if x["state"] == "NO POLICY"]))
+t("every policy carries a reason", all(x["why"] for x in _plan))
+t("initiatives are kept forever, because outcomes teach",
+  [x for x in _plan if x["entity"] == "initiative"][0]["days"] is None)
+t("an unknown CMS is UNKNOWN, not incapable",
+  DAT8.cms_capability("squarespace", "update_title")["state"]
+  == "UNKNOWN PLATFORM")
+t("an unsupported capability says which CMS and why",
+  DAT8.cms_capability("webflow", "create_redirect")["state"] == "UNSUPPORTED")
+t("shopify refuses slug changes rather than breaking every link",
+  not DAT8.cms_capability("shopify", "update_slug")["supported"])
+t("'no CMS' is a supported mode, not a broken one",
+  "not a broken one" in DAT8.CMS["manual"]["notes"])
+t("DRY RUN IS THE DEFAULT for a live-site write",
+  DAT8.apply_change("wordpress", "update_title", "/g", "a", "b")["state"]
+  == "DRY RUN")
+t("a change that changes nothing is refused",
+  DAT8.apply_change("wordpress", "update_title", "/g", "a", "a",
+                    dry_run=False)["state"] == "NO CHANGE")
+t("clearing a value is never something a fix engine does alone",
+  DAT8.apply_change("wordpress", "update_title", "/g", "a", "",
+                    dry_run=False)["state"] == "REFUSED")
+t("A LIVE WRITE WITHOUT A NAMED APPROVER IS BLOCKED",
+  DAT8.apply_change("wordpress", "update_title", "/g", "a", "b",
+                    dry_run=False)["state"] == "NEEDS APPROVAL")
+t("and with one it applies, recording who approved it",
+  DAT8.apply_change("wordpress", "update_title", "/g", "a", "b",
+                    approved_by="Murtuja", dry_run=False)["applied"] is True)
+_rep = DAT8.build_report(
+    [{"section": "summary",
+      "figures": [{"label": "clicks", "source": "GSC"},
+                  {"label": "vibes"}]},
+     {"section": "rankings", "figures": [{"label": "avg"}]},
+     {"section": "astrology", "figures": [{"label": "x", "source": "y"}]}],
+    window="2026-07", sources=[{"name": "GSC", "state": "STALE"}])
+t("AN UNSOURCED FIGURE NEVER REACHES A REPORT",
+  "vibes" in [x["figure"] for x in _rep["unsourced"]])
+t("a section whose every figure was unsourced is dropped whole",
+  any(d["section"] == "rankings" for d in _rep["dropped"]))
+t("a section nobody defined cannot be added to a report",
+  any(d["section"] == "astrology" for d in _rep["dropped"]))
+t("a stale source QUALIFIES the report rather than being used quietly",
+  _rep["state"] == "QUALIFIED" and "not the window" in _rep["caveat"])
+t("with fresh sources the report is clean",
+  DAT8.build_report([{"section": "summary",
+                      "figures": [{"label": "c", "source": "GSC"}]}],
+                    sources=[{"name": "GSC", "state": "FRESH"}])["state"]
+  == "CLEAN")
+t("there is no 'real time' cadence", "real_time" not in DAT8.CADENCE)
+t("a schedule with no recipient is refused",
+  DAT8.schedule_report("weekly", [])["state"] == "REFUSED")
+t("A RECURRING OUTBOUND SEND NEEDS A NAMED OWNER",
+  DAT8.schedule_report("weekly", ["a@b.c"])["state"] == "NEEDS APPROVAL")
+t("the model screen prints the credential rule where it cannot be missed",
+  "never a token" in SS8.data_model(_r15))
+t("the identity screen shows what it deliberately did NOT do",
+  "deliberately did NOT" in SS8.identity_rules(_r15))
+t("the retention screen prints reasons, not just numbers",
+  "whoever speaks loudest" in SS8.retention_board(_r15))
+t("the CMS screen shows dry run as the default outcome",
+  "DRY RUN" in SS8.cms_board(_r15, "wordpress"))
+t("an empty report screen says it assembles from sourced figures or not at all",
+  "or not at all" in SS8.reports_board(_r15))
+t("and a built report lists what it refused to print",
+  "refused to print" in SS8.reports_board(_r15, _rep))
+_sec15 = SEO6.seo_section({"cms": "wordpress"})
+_pp15 = _Panels()
+_pp15.feed(_sec15)
+for _tab15 in ("seodata", "seoreport"):
+    t("tab " + _tab15 + " is declared",
+      any(x[0] == _tab15 for x in SEO6.TABS))
+    t("AND its panel renders real content: " + _tab15,
+      _pp15.panels.get("spanel-" + _tab15, 0) > 500,
+      "text " + str(_pp15.panels.get("spanel-" + _tab15)))
+t("mounting them created no duplicate id",
+  not [x for x in set(_pp15.ids) if _pp15.ids.count(x) > 1])
+t("no em-dash reaches the data module",
+  "\u2014" not in open("content_engine_search_data.py",
+                       encoding="utf-8").read())
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)

@@ -1806,3 +1806,199 @@ background:var(--so-surface);margin:0 0 7px}
 .ss-h2{margin:14px 0 6px;font-size:10px;letter-spacing:.09em;
 text-transform:uppercase;color:var(--so-text2)}
 </style>"""
+
+
+# ---------------------------------------------------------------------------
+# DATA ARCHITECTURE, CMS AND REPORTING (spec 75-78, 85-86)
+# ---------------------------------------------------------------------------
+import content_engine_search_data as DAT  # noqa: E402
+
+
+def data_model(r) -> str:
+    """Spec 75. Every entity, its key, and the credential rule."""
+    rows = "".join(
+        "<tr><td>" + e(n) + "</td><td><code>" + e(k) + "</code></td>"
+        + "<td>" + e(w) + "</td></tr>" for n, k, w in DAT.ENTITIES)
+    return ("<p class='ss-h'>THE CANONICAL MODEL</p>"
+            + "<p class='ss-note'>" + str(len(DAT.ENTITIES))
+            + " entities, one list. A table that exists in the store but "
+            + "not here is an orphan: nothing retains it, nothing backs "
+            + "it up and nothing deletes it.</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "<th>Entity</th><th>Identified by</th><th>What it is</th>"
+            + "</tr></thead><tbody>" + rows + "</tbody></table></div>"
+            + "<div class='ss-bar ss-bar-warn'><p><b>Credentials.</b> "
+            + e(DAT.CREDENTIAL_RULE) + "</p></div>")
+
+
+def identity_rules(r, sample=None) -> str:
+    """Spec 76. What the normaliser does, proved on a real string."""
+    probe = str(sample or
+                "HTTPS://Example.com/Guide/?utm_source=x&page=2#top")
+    n = DAT.normalize_url(probe)
+    kw = DAT.normalize_keyword("  Tattoo Needles ", "de")
+    did = "".join("<li>" + e(c) + "</li>" for c in n["changed"])
+    didnt = "".join("<li>" + e(c) + "</li>" for c in n["not_done"])
+    kwnot = "".join("<li>" + e(c) + "</li>" for c in kw["not_done"])
+    return ("<p class='ss-h'>IDENTITY RULES</p>"
+            + "<p class='ss-note'>Two records are the same thing only "
+            + "when a rule says so, and every rule is listed. A "
+            + "normaliser that works silently is impossible to argue "
+            + "with on the day two pages turn out to have merged.</p>"
+            + "<div class='ss-doc'><div class='ss-docrow'>"
+            + "<span>Input</span><b><code>" + e(probe)
+            + "</code></b></div><div class='ss-docrow'>"
+            + "<span>Identity</span><b><code>" + e(n["url"])
+            + "</code></b></div></div>"
+            + "<p class='ss-h2'>What it changed</p><ul class='ss-ul'>"
+            + did + "</ul>"
+            + "<p class='ss-h2'>What it deliberately did NOT change</p>"
+            + "<ul class='ss-ul ss-ul-warn'>" + didnt + "</ul>"
+            + "<p class='ss-h2'>Keywords</p>"
+            + "<div class='ss-doc'><div class='ss-docrow'>"
+            + "<span>Input</span><b><code>  Tattoo Needles  </code> in "
+            + "market <code>de</code></b></div>"
+            + "<div class='ss-docrow'><span>Key</span><b><code>"
+            + e(kw["key"]) + "</code></b></div></div>"
+            + "<ul class='ss-ul ss-ul-warn'>" + kwnot + "</ul>")
+
+
+def retention_board(r) -> str:
+    """Spec 77. How long everything is kept, and why."""
+    plan = DAT.retention_plan()
+    gaps = [x for x in plan if x["state"] == "NO POLICY"]
+    rows = "".join(
+        "<tr><td>" + e(x["entity"]) + "</td>"
+        + "<td class='so-" + ("danger" if x["state"] == "NO POLICY"
+                              else "neutral") + "'>" + e(x["state"])
+        + "</td>"
+        + "<td>" + (str(x["days"]) + " days" if x["days"] else "no expiry")
+        + "</td><td>" + e(x["why"]) + "</td></tr>" for x in plan)
+    return ("<p class='ss-h'>RETENTION</p>"
+            + "<p class='ss-note'>Every policy carries its reason. A "
+            + "retention rule with no reason gets reopened every year "
+            + "and settled by whoever speaks loudest."
+            + ((" " + str(len(gaps)) + " entity(ies) have NO policy and "
+                + "grow forever by accident rather than on purpose.")
+               if gaps else "") + "</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "<th>Entity</th><th>State</th><th>Kept</th><th>Why</th>"
+            + "</tr></thead><tbody>" + rows + "</tbody></table></div>")
+
+
+def cms_board(r, connected=None) -> str:
+    """Spec 78. What each CMS can be asked to do, and what it cannot."""
+    cur = str(connected or "manual").lower()
+    body = ""
+    for key, spec in DAT.CMS.items():
+        on = (key == cur)
+        can = "".join("<span class='ss-cap ss-cap-y'>" + e(c) + "</span>"
+                      for c in spec["can"]) or \
+            "<span class='ss-cap ss-cap-n'>nothing</span>"
+        cannot = "".join("<span class='ss-cap ss-cap-n'>" + e(c)
+                         + "</span>" for c in spec["cannot"])
+        body += ("<div class='ss-cms" + (" on" if on else "") + "'>"
+                 + "<p><b>" + e(spec["label"]) + "</b>"
+                 + ("<i>connected</i>" if on else "") + "</p>"
+                 + "<p class='ss-meta'>Auth: " + e(spec["auth"])
+                 + "</p><div class='ss-caps'>" + can + cannot + "</div>"
+                 + "<p class='ss-meta'>" + e(spec["notes"]) + "</p></div>")
+    demo = DAT.apply_change(cur, "update_title", "/guide",
+                            before="Old", after="New")
+    return ("<p class='ss-h'>CMS ADAPTERS</p>"
+            + "<p class='ss-note'>A capability missing from an adapter "
+            + "comes back UNSUPPORTED and becomes a work order. It never "
+            + "silently does nothing, which is the failure that makes an "
+            + "operator believe a fix landed.</p>" + body
+            + "<p class='ss-h2'>What a change actually does</p>"
+            + "<div class='ss-doc'><div class='ss-docrow'>"
+            + "<span>Result</span><b>" + e(demo["state"])
+            + "</b></div><div class='ss-docrow'><span>Why</span><b>"
+            + e(demo["why"]) + "</b></div></div>"
+            + "<p class='ss-note'>Dry run is the DEFAULT. A live write "
+            + "needs the capability, a real difference, a non-empty new "
+            + "value and a named approver. 'The agent decided' is not a "
+            + "name.</p>")
+
+
+def reports_board(r, report=None, schedules=None) -> str:
+    """Spec 85-86. What a report contains, and what it refused."""
+    rep = _D(report)
+    scheds = _L(schedules)
+    if not rep:
+        return ("<p class='ss-h'>REPORTS</p>"
+                + empty("No report built",
+                        "A report is the artefact that outlives this "
+                        "dashboard and gets forwarded to people who "
+                        "cannot check it, so this one is assembled from "
+                        "sourced figures or not at all.",
+                        "Build a report", "ssReport()")
+                + _sched_block(scheds))
+    tone = {"CLEAN": "success", "QUALIFIED": "warning",
+            "EMPTY": "danger"}.get(rep.get("state"), "neutral")
+    secs = "".join(
+        "<div class='ss-docrow'><span>" + e(_D(s).get("section"))
+        + "</span><b>" + str(len(_L(_D(s).get("figures"))))
+        + " sourced figure(s)</b></div>" for s in _L(rep.get("sections")))
+    drops = "".join(
+        "<li><b>" + e(_D(d).get("section") or _D(d).get("figure"))
+        + "</b> " + e(_D(d).get("why")) + "</li>"
+        for d in (_L(rep.get("dropped")) + _L(rep.get("unsourced"))))
+    return ("<p class='ss-h'>REPORTS</p>"
+            + "<p class='ss-note so-" + tone + "'>State: "
+            + e(rep.get("state")) + ". Window: "
+            + e(str(rep.get("window") or "not stated")) + ".</p>"
+            + (("<div class='ss-bar ss-bar-warn'><p>"
+                + e(rep.get("caveat")) + "</p></div>")
+               if rep.get("caveat") else "")
+            + "<div class='ss-doc'>" + (secs or
+               "<div class='ss-docrow'><span>Sections</span><b>none "
+               "survived</b></div>") + "</div>"
+            + (("<p class='ss-h2'>What this report refused to print</p>"
+                + "<ul class='ss-ul ss-ul-warn'>" + drops + "</ul>")
+               if drops else
+               "<p class='ss-note'>Nothing was dropped: every figure "
+               "offered named its source.</p>")
+            + _sched_block(scheds))
+
+
+def _sched_block(scheds) -> str:
+    """Schedules, which are recurring outbound sends and are gated."""
+    if not scheds:
+        return ("<p class='ss-h2'>Schedules</p><p class='ss-note'>None. "
+                "A recurring report is a standing rule that emails "
+                "people without anyone reading it first, so it needs a "
+                "named owner before it exists.</p>")
+    rows = "".join(
+        "<tr><td>" + e(_D(s).get("cadence")) + "</td>"
+        + "<td>" + str(len(_L(_D(s).get("recipients")))) + "</td>"
+        + "<td class='so-" + ("success" if _D(s).get("state") == "SCHEDULED"
+                              else "warning") + "'>"
+        + e(_D(s).get("state")) + "</td>"
+        + "<td>" + e(_D(s).get("approved_by") or "nobody yet") + "</td>"
+        + "</tr>" for s in _L(scheds))
+    return ("<p class='ss-h2'>Schedules</p>"
+            + "<div class='ss-scroll'><table class='ss-tbl'><thead><tr>"
+            + "<th>Cadence</th><th>Recipients</th><th>State</th>"
+            + "<th>Approved by</th></tr></thead><tbody>" + rows
+            + "</tbody></table></div>")
+
+
+CSS += """<style>
+.ss-ul{margin:0 0 10px;padding-left:17px}
+.ss-ul li{font-size:11px;color:var(--so-text2);line-height:1.6;
+margin:0 0 4px}
+.ss-ul-warn li{color:var(--so-warning-main)}
+.ss-cms{padding:10px 12px;border-radius:9px;border:1px solid var(--so-line);
+margin:0 0 7px}
+.ss-cms.on{border-color:var(--so-primary-main)}
+.ss-cms>p{margin:0 0 5px;font-size:12px;color:var(--so-text)}
+.ss-cms>p i{font-style:normal;margin-left:8px;font-size:9px;
+letter-spacing:.08em;text-transform:uppercase;color:var(--so-primary-main)}
+.ss-caps{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 6px}
+.ss-cap{font-size:10px;padding:2px 7px;border-radius:5px;
+border:1px solid var(--so-line);color:var(--so-text2)}
+.ss-cap-y{border-color:var(--so-success-main);color:var(--so-success-main)}
+.ss-cap-n{border-color:var(--so-danger-main);color:var(--so-danger-main);
+text-decoration:line-through}
+</style>"""
