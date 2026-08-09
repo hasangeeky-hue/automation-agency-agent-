@@ -2904,6 +2904,20 @@ def seo_section(ctx, legacy_html: str = "") -> str:
     The new work is additive. Anything that was on this page before this build
     is still on this page, in the same place.
     """
+
+    # Translate the engine's own ctx into the keys the Search OS screens
+    # read. Mounted HERE rather than at the dashboard call site so every
+    # caller gets it, including the deploy prover and the tests. Search
+    # Console and GA4 have been connected the whole time; the new screens
+    # were reading a different vocabulary and reporting "not connected".
+    try:
+        import content_engine_search_bridge as _BR
+        ctx = _BR.enrich(ctx or {})
+    except Exception:                                  # noqa: BLE001
+        # A broken bridge must not take the section down with it. The
+        # screens fall back to their empty states, which say what is
+        # missing, which is the correct behaviour when a feed fails.
+        ctx = ctx or {}
     H = _H()
     # THE SEMRUSH SCREENS REPLACE THE CARD BOARDS. The founder's words:
     # "old dashboard cards gonna replace". Each tab now renders the audit

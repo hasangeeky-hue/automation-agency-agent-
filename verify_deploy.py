@@ -218,6 +218,55 @@ try:
 except Exception as exc:                              # noqa: BLE001
     check("the behaviour checks ran", False, repr(exc)[:90])
 
+# ------------------------------------------------------------ live data
+head("8. IS REAL GOOGLE DATA REACHING THE SCREENS?")
+# Reporting only. Nothing here can fail the deploy: a store that has not
+# pulled yet is not a broken build. It is here so that "Search Console is
+# connected but the screens are empty" is never a mystery again.
+try:
+    import content_engine_search_bridge as BR
+    import content_engine_seo_ops as OPS
+    import content_engine_api as A
+    live = OPS.build_ctx(A.get_store())
+    ins = (live.get("insights") or {})
+    gsc, ga4 = (ins.get("gsc") or {}), (ins.get("ga4") or {})
+    print("       last Google pull: " + str(ins.get("at") or "never"))
+    print("       Search Console: "
+          + (str(len(gsc.get("queries") or [])) + " queries, "
+             + str(len(gsc.get("daily") or [])) + " days"
+             if gsc else "NO DATA IN THE STORE"))
+    print("       GA4: " + ("connected, "
+                            + str(len(ga4.get("channels") or []))
+                            + " channels"
+                            if ga4 else "NO DATA IN THE STORE"))
+    print("       rank tracker rows: " + str(len(live.get("ranks") or [])))
+    print("")
+    fed = BR.enrich(live)
+    for key in BR.MAPPING:
+        val = fed.get(key)
+        if val in (None, {}, [], "manual"):
+            print("       -- " + key.ljust(18)
+                  + "no data yet; the screen will say what is missing")
+        else:
+            size = (str(len(val)) + " row(s)"
+                    if isinstance(val, list) else
+                    str(len(val)) + " field(s)"
+                    if isinstance(val, dict) else str(val))
+            print("       OK " + key.ljust(18) + size)
+    tot = fed.get("search_totals") or {}
+    if tot.get("clicks") is not None:
+        print("")
+        print("       Search totals now on the command screen: "
+              + str(tot.get("clicks")) + " clicks, "
+              + str(tot.get("impressions")) + " impressions, CTR "
+              + str(tot.get("ctr")) + "%, avg position "
+              + str(tot.get("position")) + " (impression-weighted)")
+        print("       Organic sessions from GA4: "
+              + str(tot.get("sessions")))
+except Exception as exc:                              # noqa: BLE001
+    print("       could not read the live store: " + repr(exc)[:100])
+    print("       (this is not a deploy failure; the code still shipped)")
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

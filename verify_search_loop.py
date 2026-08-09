@@ -1227,5 +1227,107 @@ t("no tab label carries an em-dash",
   not [x[2] for x in SEO6.TABS if "\u2014" in x[2]],
   str([x[2] for x in SEO6.TABS if "\u2014" in x[2]]))
 
+print("")
+print("L24 THE BRIDGE: ENGINE DATA REACHES THE NEW SCREENS")
+# Search Console and GA4 were connected the whole time. The screens read
+# search_totals/tracked_keywords/domain_profile; build_ctx() produces
+# insights/ranks/offpage. Two correct vocabularies that never met, which
+# is the same class of bug as the two hand-written lists.
+import content_engine_search_bridge as BR8
+_GCTX = {
+    "insights": {
+        "at": "2026-08-09T18:00:00+00:00",
+        "gsc": {
+            "queries": [
+                {"key": "q one", "clicks": 40, "impressions": 1200,
+                 "ctr": 3.33, "position": 6.2},
+                {"key": "q two", "clicks": 60, "impressions": 300,
+                 "ctr": 20.0, "position": 1.4}],
+            "pages": [{"key": "https://x.test/a", "clicks": 70,
+                       "impressions": 1500, "ctr": 4.67, "position": 5.1}],
+            "daily": [
+                {"key": "2026-08-08", "clicks": 4, "impressions": 40,
+                 "ctr": 10.0, "position": 20.0},
+                {"key": "2026-08-09", "clicks": 107, "impressions": 2360,
+                 "ctr": 4.53, "position": 5.3}]},
+        "ga4": {
+            "totals": {"sessions": "820", "totalUsers": "610"},
+            "channels": [
+                {"sessionDefaultChannelGroup": "Direct",
+                 "sessions": "300"},
+                {"sessionDefaultChannelGroup": "Organic Search",
+                 "sessions": "410"},
+                {"sessionDefaultChannelGroup": "Paid Search",
+                 "sessions": "110"}],
+            "pages": [{"pagePath": "/a", "sessions": "260"}]}},
+    "ranks": [{"query": "q one", "position": 6, "delta": 2.0,
+               "device": "desktop", "location": "Munich",
+               "at": "2026-08-09T06:00:00"}],
+    "offpage": {"connected": True, "referring_domains": 84,
+                "domain_rank": 31},
+    "aeo_history": [{"prompt": "p", "provider": "chatgpt", "cited": True,
+                     "at": "2026-08-08"}],
+}
+_E8 = BR8.enrich(_GCTX)
+_ST8 = _E8["search_totals"]
+t("Search Console clicks reach the screens", _ST8["clicks"] == 111)
+t("and impressions are summed across every day",
+  _ST8["impressions"] == 2400)
+t("CTR IS SUM OVER SUM, not the mean of the daily rates",
+  abs(_ST8["ctr"] - 111.0 / 2400.0 * 100) < 0.01,
+  str(_ST8["ctr"]) + " vs mean-of-dailies 7.27")
+t("AVERAGE POSITION IS IMPRESSION-WEIGHTED, not a mean of means",
+  abs(_ST8["position"] - 5.5) < 0.1,
+  str(_ST8["position"]) + " vs plain mean 12.65")
+t("SESSIONS ARE THE ORGANIC CHANNEL ONLY, not every session",
+  _ST8["sessions"] == 410.0, str(_ST8["sessions"]) + " of 820 total")
+t("conversions stay absent rather than becoming zero",
+  _ST8["conversions"] is None and _ST8["revenue"] is None)
+_KR8 = _E8["keyword_research"]
+t("GSC IMPRESSIONS ARE NEVER PUT IN A VOLUME COLUMN",
+  all(r["volume"] is None for r in _KR8))
+t("and the caveat says impressions are not search volume",
+  "not market search volume" in _KR8[0]["serp_note"])
+t("difficulty stays unscored with no provider to model it",
+  _KR8[0]["difficulty"] is None)
+t("the funnel carries only the stages actually measured",
+  sorted(k for k, v in _E8["funnel_stages"].items() if v is not None)
+  == ["clicks", "impressions", "organic_sessions"])
+t("measured clicks are not passed off as a traffic ESTIMATE",
+  _E8["domain_profile"]["traffic"] is None
+  and _E8["domain_profile"]["clicks"] == 111)
+t("referring domains come from the backlink provider",
+  _E8["domain_profile"]["referring_domains"] == 84)
+t("tracked positions keep their device and location",
+  _E8["tracked_keywords"][0]["location"] == "Munich")
+t("one AI observation becomes ONE run, so GEO marks it provisional",
+  len(_E8["prompts"][0]["runs"]) == 1)
+t("A KEY THE CALLER ALREADY SET IS NEVER CLOBBERED",
+  BR8.enrich({"insights": _GCTX["insights"],
+              "search_totals": {"clicks": 999}})["search_totals"]
+  == {"clicks": 999})
+t("an empty store still invents nothing",
+  not [k for k in BR8.MAPPING
+       if k != "cms" and BR8.enrich({}).get(k)],
+  str([k for k in BR8.MAPPING
+       if k != "cms" and BR8.enrich({}).get(k)]))
+t("a mapper that raises loses its own key and nothing else",
+  BR8.enrich({"insights": {"gsc": {"daily": "not a list"}},
+              "ranks": [{"query": "k", "at": "2026-01-01"}]}
+             ).get("tracked_keywords") is not None)
+t("THE BRIDGE IS MOUNTED INSIDE seo_section, not at one call site",
+  "content_engine_search_bridge" in
+  open("content_engine_seo_boards.py", encoding="utf-8").read())
+_secB = SEO6.seo_section(_GCTX)
+for _tabB, _markB in (("seocmd", "111"), ("seoanalytics", "410"),
+                      ("seorank", "Munich"),
+                      ("seokwx", "not market search"),
+                      ("seodomain", "84"), ("seogeoai", "chatgpt")):
+    _mB = _re17.search("id=['\"]spanel-" + _tabB + "['\"](.*?)"
+                       "(?=id=['\"]spanel-|$)", _secB, _re17.S)
+    t("live data reaches " + _tabB,
+      bool(_mB) and _markB in _mB.group(1),
+      "missing " + _markB)
+
 print(f"\n{sum(OK)} passed, {len(OK) - sum(OK)} failed")
 sys.exit(1 if not all(OK) else 0)
