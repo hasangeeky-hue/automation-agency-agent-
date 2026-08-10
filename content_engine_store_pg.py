@@ -34,7 +34,9 @@ from typing import Optional
 
 # Runnable statuses are computed in Python (is_runnable), but we prefilter in
 # SQL to keep the claim query cheap: not terminal, and not a blocked gate.
-_TERMINAL = ("optimized", "revision_needed", "halted_budget", "failed")
+# MUST equal orchestrator.TERMINAL - the deploy prover asserts it.
+_TERMINAL = ("optimized", "revision_needed", "halted_budget", "failed",
+             "discarded")
 _GATE_STATUS = "AWAITING_APPROVAL"
 
 DDL = """
@@ -48,9 +50,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+DROP INDEX IF EXISTS jobs_claimable_idx;
 CREATE INDEX IF NOT EXISTS jobs_claimable_idx
     ON jobs (status) WHERE status NOT IN
-    ('optimized','revision_needed','halted_budget','failed');
+    ('optimized','revision_needed','halted_budget','failed','discarded');
 
 CREATE TABLE IF NOT EXISTS daily_cost (
     day  DATE PRIMARY KEY,

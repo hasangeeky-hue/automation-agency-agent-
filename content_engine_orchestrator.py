@@ -401,7 +401,13 @@ FLOW_OUTREACH = {
 FLOWS = {"content_piece": FLOW_CONTENT, "outreach_campaign": FLOW_OUTREACH}
 
 # Terminal / halted statuses the poller must not pick up.
-TERMINAL = {"optimized", "revision_needed", "halted_budget", "failed"}
+# "discarded" is a HUMAN decision and therefore terminal. It was in no
+# list at all: not here, not in the pg store's copy, not in the DDL
+# index - so claim_next kept handing the worker jobs advance() had no
+# step for, ten tracebacks a second, and the day's real work starved
+# behind three long-discarded pieces.
+TERMINAL = {"optimized", "revision_needed", "halted_budget", "failed",
+            "discarded"}
 
 
 def flow_for(job: dict) -> dict:
@@ -745,7 +751,16 @@ def advance(job: dict, store: JobStore) -> str:
         return status
     step = flow_for(job).get(status)
     if step is None:
-        raise SkillFailed(f"no step for status '{status}' in {job['type']}")
+        # PARK, never raise. The raise left the job runnable in the pg
+        # store (whose SQL filters on status lists, not steps), so the
+        # same dead job was re-claimed forever and the worker hot-looped.
+        # A status this flow does not know becomes a visible, revivable
+        # failure instead.
+        job["status"] = "failed"
+        job["halt_reason"] = f"no step for status '{status}' in {job['type']}"
+        job["needs_human"] = True
+        store.save(job)
+        return job["status"]
 
     try:
         if step.kind == "wait":
@@ -910,10 +925,11 @@ def revive(job: dict) -> dict:
     Worse, revision_needed - QA literally saying "revise this" - was filed in
     the same bucket as dead.
 
-    TERMINAL itself stays as the passive-loop guard: advance() raises on any
-    status with no step (L693), so simply shrinking the set would make the
-    worker crash-loop on revived states. The edge is this function instead,
-    and it only ever fires on a click, because re-running spends money.
+    TERMINAL itself stays as the passive-loop guard: advance() PARKS any
+    status with no step as a failed-with-reason (it used to raise, which
+    hot-looped the worker on the pg store). The edge is this function
+    instead, and it only ever fires on a click, because re-running spends
+    money.
 
       revision_needed -> re-enters at the writing step, carrying QA's verdict
                          as revision_note (the field prepare_input already

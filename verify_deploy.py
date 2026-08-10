@@ -992,6 +992,26 @@ try:
 
     check("the default unattended level never touches visitor copy",
           SC17.seo_auto_level(_st17) in ("off", "safe", "all"))
+
+    # THE ONE-VOCABULARY RULE, enforced where it bit: the terminal set
+    # lived in three hand-written copies (orchestrator, pg store, DDL)
+    # and "discarded" was in none - so the worker hot-looped on three
+    # dead jobs while the day's real work starved.
+    import content_engine_orchestrator as OR17
+    import content_engine_store_pg as PG17
+    check("ONE terminal vocabulary: orch, pg store and DDL agree",
+          set(PG17._TERMINAL) == OR17.TERMINAL
+          and all(f"'{t}'" in PG17.DDL for t in PG17._TERMINAL))
+    check("a human discard is terminal and never claimed",
+          "discarded" in OR17.TERMINAL)
+    _mst = OR17.InMemoryJobStore()
+    _j17 = {"job_id": "wv", "type": "content_piece",
+            "status": "no_such_status", "payload": {}}
+    _mst.save(_j17)
+    check("an unknown status PARKS with a reason, never hot-loops",
+          OR17.advance(_j17, _mst) == "failed"
+          and "no step for status" in _j17.get("halt_reason", "")
+          and _j17.get("needs_human") is True)
     _due17 = SC17.seo_due(_st17)
     _on = (not _sw["paused"]) and bool(_sw["cadence_on"])
     print("       engine: " + ("ON, supervised" if _on else "OFF")
