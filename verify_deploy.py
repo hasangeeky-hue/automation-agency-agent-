@@ -37,7 +37,7 @@ def head(t):
 
 
 print("=" * 74)
-print("SEARCH + FACTORY + BI + CONTROL PLANE - DEPLOY VERIFICATION")
+print("SEARCH + FACTORY + BI + CONTROL PLANE + COCKPIT - DEPLOY VERIFICATION")
 print("=" * 74)
 
 # ---------------------------------------------------------------- modules
@@ -669,6 +669,103 @@ try:
           + ")")
 except Exception as exc:                              # noqa: BLE001
     check("the System Control Plane loaded", False, repr(exc)[:110])
+
+# ------------------------------------------------------ command cockpit
+head("13. THE COMMAND COCKPIT")
+try:
+    import content_engine_command_core as KC
+    import content_engine_command_ui as KU
+    import content_engine_cockpit_boards as KB
+
+    check("the command modules are in this image", True)
+    check("the section 101 contract shipped with the image",
+          KU.check_contract()["ok"], KU.check_contract()["why"])
+    check("the old cockpit module is a shim over the command UI",
+          "content_engine_command_ui" in
+          open("content_engine_cockpit_boards.py",
+               encoding="utf-8").read())
+    check("the dashboard's entry point still resolves",
+          callable(KB.cockpit_section))
+    _ksec = KB.cockpit_section({})
+    check("the cockpit renders with the LIVE machine pulse",
+          len(_ksec) > 3000 and "Machine Pulse" in _ksec,
+          str(len(_ksec)) + " chars")
+    print("       " + str(len(_ksec)) + " characters")
+
+    check("CAC up is BAD and spend up is NEUTRAL",
+          KC.judge_change("cac", 8)["verdict"] == "BAD"
+          and KC.judge_change("spend", 9)["verdict"] == "NEUTRAL")
+    check("an unregistered metric stays uncoloured",
+          KC.judge_change("vibes", 50)["verdict"] == "UNDECIDED")
+    check("a decision missing its contract is DECISION_INCOMPLETE",
+          KC.decision(what="x", why="y")["state"]
+          == "DECISION_INCOMPLETE")
+    check("an unknown action is UNROUTABLE, never guessed",
+          KC.route("DO_MARKETING", approved_by="M")["state"]
+          == "UNROUTABLE")
+    check("nothing routes without a named approver",
+          KC.route("CREATE_CONTENT")["state"] == "NEEDS_APPROVAL")
+    check("seven operations are forbidden with ANY approval",
+          KC.route("rotate_secrets", approved_by="anyone")["state"]
+          == "FORBIDDEN")
+    check("a fix without rollback is a mysterious button, refused",
+          "mysterious" in KC.quick_fix("RETRY_WORKFLOW",
+                                       current_state="x")["why"])
+    check("success is not an API 200",
+          KC.verify_machine_fix(service_recovered=True,
+                                dependency_healthy=True,
+                                workflow_works=False)["success"]
+          is False)
+    check("a business action is not judged before its window",
+          KC.verify_business_action(metric="cac", before=116, after=108,
+                                    observed_days=3)["state"]
+          == "STILL_OBSERVING")
+    check("initiatives are measured on the metric, not actions done",
+          "do not count as progress" in KC.initiative_health(
+              target_metric="cac", target_value=110, current_value=116,
+              actions_done=3, actions_total=3, observing=True)["why"])
+    check("47 identical errors are ONE incident",
+          len(KC.aggregate_incident(
+              [{"component": "img", "kind": "TIMEOUT", "at": str(i)}
+               for i in range(47)])["incidents"]) == 1)
+    check("the Commander refuses without snapshots",
+          KC.commander("what is happening?")["state"] == "NO_EVIDENCE")
+    check("and returns at most five actions with them",
+          KC.MAX_RECOMMENDATIONS == 5)
+
+    # the section 102 slice, on the box
+    _kchain = KC.root_chain([
+        {"layer": "BUSINESS", "text": "TikTok CPA up 32%"},
+        {"layer": "PROCESS", "text": "no fresh creative published"},
+        {"layer": "SYSTEM", "text": "Image Provider degraded"}])
+    check("SLICE: the chain runs business to process to system",
+          _kchain["ok"]
+          and _kchain["root"]["text"] == "Image Provider degraded")
+    _kplan = [("SWITCH_FALLBACK_TOOL", "SYSTEM_CONTROL_PLANE"),
+              ("CREATE_VARIANTS", "CONTENT_FACTORY"),
+              ("REDUCE_CAMPAIGN_BUDGET", "MEDIA_BUYING_OS")]
+    check("SLICE: every plan step routes to its owning OS",
+          all(KC.route(a, approved_by="M")["target"] == t2
+              for a, t2 in _kplan))
+    check("SLICE: CAC improved after the window closes the initiative",
+          KC.verify_business_action(metric="cac", before=116, after=108,
+                                    observed_days=14)["success"] is True)
+    check("no while loop in the command engine",
+          not [n for n in ast.walk(ast.parse(open(
+              "content_engine_command_core.py",
+              encoding="utf-8").read()))
+               if isinstance(n, ast.While)])
+
+    print("")
+    _kmp = KU.enrich({}).get("machine") or {}
+    for _name, _st in list(_kmp.items())[:4]:
+        _std = _st if isinstance(_st, dict) else {"status": _st}
+        print("       machine pulse: " + str(_name) + " = "
+              + str(_std.get("status"))
+              + (" (" + str(_std.get("why"))[:70] + ")"
+                 if _std.get("why") else ""))
+except Exception as exc:                              # noqa: BLE001
+    check("the Command Cockpit loaded", False, repr(exc)[:110])
 
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
