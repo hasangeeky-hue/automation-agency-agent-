@@ -37,7 +37,7 @@ def head(t):
 
 
 print("=" * 74)
-print("SEARCH OS + CONTENT FACTORY + COST-AWARE BI - DEPLOY VERIFICATION")
+print("SEARCH + FACTORY + BI + CONTROL PLANE - DEPLOY VERIFICATION")
 print("=" * 74)
 
 # ---------------------------------------------------------------- modules
@@ -549,6 +549,126 @@ try:
                if isinstance(n, ast.While)])
 except Exception as exc:                              # noqa: BLE001
     check("the cost-aware BI OS loaded", False, repr(exc)[:110])
+
+# ---------------------------------------------------- control plane
+head("12. THE SYSTEM CONTROL PLANE")
+try:
+    import content_engine_control_plane as XP
+    import content_engine_control_ui as XU
+    import content_engine_system_boards as XB
+
+    check("the control plane modules are in this image", True)
+    _xchk = XU.check_screens()
+    check("thirteen screens, one list", _xchk["ok"],
+          str(_xchk["problems"]))
+    check("the old system boards module is a shim over the control plane",
+          "content_engine_control_ui" in
+          open("content_engine_system_boards.py",
+               encoding="utf-8").read())
+    check("the dashboard's entry point still resolves",
+          callable(XB.system_section))
+
+    _xsec = XB.system_section({})
+    check("the section renders from the LIVE registry",
+          len(_xsec) > 5000, str(len(_xsec)) + " chars")
+    print("       " + str(len(_xsec)) + " characters")
+    _xids = re.findall(r"id=['\"]([^'\"]+)", _xsec)
+    check("no duplicate element id",
+          not [x for x in set(_xids) if _xids.count(x) > 1])
+    _xempty = []
+    for _sid, _n, _lab, _fn, _q in XU.SCREENS:
+        _m = re.search(r"id=['\"]scpanel-" + _sid + r"['\"](.*?)"
+                       r"(?=id=['\"]scpanel-|$)", _xsec, re.S)
+        _txt = re.sub(r"<[^>]+>", " ", _m.group(1)) if _m else ""
+        if len(" ".join(_txt.split())) < 80:
+            _xempty.append(_sid)
+    check("every one of the thirteen panels renders real content",
+          not _xempty, str(_xempty))
+
+    # the health rules, against running code
+    _xc = [XP.component("Factory", "OS", id="f",
+                        status="HEALTHY")["component"],
+           XP.component("Creator", "AGENT", id="cr",
+                        status="HEALTHY")["component"],
+           XP.component("LLM", "API", id="llm",
+                        status="HEALTHY")["component"],
+           XP.component("Image", "API", id="img",
+                        status="FAILED")["component"]]
+    _xe = [XP.dependency("f", "cr", relationship="USES",
+                         criticality="REQUIRED")["edge"],
+           XP.dependency("cr", "llm", relationship="USES",
+                         criticality="REQUIRED")["edge"],
+           XP.dependency("cr", "img", relationship="USES",
+                         criticality="OPTIONAL")["edge"]]
+    _xh = XP.derive_health(_xc, _xe)
+    check("VERTICAL SLICE: image down degrades the agent, not fails it",
+          _xh["cr"]["status"] == "DEGRADED")
+    check("and the factory reads DEGRADED, not OFFLINE",
+          _xh["f"]["status"] == "DEGRADED")
+    check("a REQUIRED dependency down FAILS its dependent",
+          XP.derive_health(
+              [dict(x, status="FAILED") if x["id"] == "llm" else x
+               for x in _xc], _xe)["cr"]["status"] == "FAILED")
+    check("recovery heals every dependent automatically",
+          all(XP.derive_health(
+              [dict(x, status="HEALTHY") for x in _xc],
+              _xe)[k]["status"] == "HEALTHY" for k in ("f", "cr")))
+    check("UNKNOWN is excluded from the health score, not counted "
+          "healthy",
+          XP.health_score({"a": ["UNKNOWN"]})["score"] is None)
+    check("impact analysis names dependents before a disconnect",
+          XP.impact("img", _xc, _xe)["count"] == 2)
+    check("waiting past 3x normal is STALLED, and named",
+          XP.loop_state({"status": "WAITING", "waited_s": 14400,
+                         "normal_wait_s": 3600,
+                         "next_expected_event": "X"})["state"]
+          == "STALLED")
+    check("never-seen is UNKNOWN, not OFFLINE",
+          XP.heartbeat_state(60, None)["state"] == "UNKNOWN")
+    check("five firings of one failure dedupe to one incident",
+          len(XP.dedupe_alerts(
+              [XP.alert("AGENT_FAILURE", severity="P1", component="c",
+                        why="x", at=str(i))["alert"]
+               for i in range(5)])) == 1)
+    check("secret_meta cannot even receive a value",
+          "value" not in XP.secret_meta.__code__.co_varnames)
+    check("six operations are forbidden to the AI",
+          all(not XP.ai_may(a)["ok"] for a in XP.AI_FORBIDDEN))
+    check("the analyst refuses to answer without evidence",
+          XP.analyst("what is wrong?")["state"] == "NO EVIDENCE")
+    _xan = XP.analyst("why degraded?", components=_xc, edges=_xe,
+                      telemetry={"retry_rate": "27%"})
+    check("with evidence it separates FACT, INFERENCE, RECOMMENDATION",
+          _xan["facts"] and _xan["inferences"]
+          and _xan["recommendations"])
+    check("no while loop in the control engine",
+          not [n for n in ast.walk(ast.parse(open(
+              "content_engine_control_plane.py",
+              encoding="utf-8").read())) if isinstance(n, ast.While)])
+
+    # what only this box can answer
+    print("")
+    try:
+        import content_engine_connectors as XC
+        _xw = XC.status()
+        _xon = [k for k, vv in _xw.items() if vv]
+        print("       wires connected on this box: " + str(len(_xon))
+              + " of " + str(len(_xw)))
+        print("       " + ", ".join(sorted(_xon)[:10])
+              + (" ..." if len(_xon) > 10 else ""))
+    except Exception as exc:                          # noqa: BLE001
+        print("       wire status unavailable: " + repr(exc)[:80])
+    _xm = XP.local_metrics()
+    _xi = XP.infra_state(_xm)
+    print("       host " + str(_xm.get("host"))
+          + " | disk " + str(_xm.get("disk_pct")) + "%"
+          + " | mem " + str(_xm.get("mem_pct")) + "%"
+          + " | load " + str(_xm.get("load"))
+          + " | uptime " + str(_xm.get("uptime_days")) + "d")
+    print("       infra verdict: " + _xi["state"] + " (" + _xi["why"]
+          + ")")
+except Exception as exc:                              # noqa: BLE001
+    check("the System Control Plane loaded", False, repr(exc)[:110])
 
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
