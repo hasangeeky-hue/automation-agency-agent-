@@ -37,7 +37,7 @@ def head(t):
 
 
 print("=" * 74)
-print("SEARCH INTELLIGENCE OS + CONTENT FACTORY OS - DEPLOY VERIFICATION")
+print("SEARCH OS + CONTENT FACTORY + COST-AWARE BI - DEPLOY VERIFICATION")
 print("=" * 74)
 
 # ---------------------------------------------------------------- modules
@@ -419,6 +419,136 @@ try:
               + _c["state"].ljust(18) + _c["why"][:60])
 except Exception as exc:                              # noqa: BLE001
     check("the Content Factory OS loaded", False, repr(exc)[:110])
+
+# ------------------------------------------------------ cost-aware BI
+head("11. THE COST-AWARE BI OS")
+try:
+    import content_engine_bi_cost as BC
+    import content_engine_bi_economics as BE
+    import content_engine_bi_ui as BU
+    import content_engine_bi_boards as BB
+
+    check("the four BI modules are in this image", True)
+    _bchk = BU.check_screens()
+    check("nine screens, Costs and Agent Economics mandatory",
+          _bchk["ok"], str(_bchk["problems"]))
+    check("the old boards module is a shim over the new OS",
+          "content_engine_bi_ui" in
+          open("content_engine_bi_boards.py", encoding="utf-8").read())
+    check("the dashboard's entry point still resolves",
+          callable(BB.bi_section))
+    check("content_engine_bi.py still computes the value half",
+          "def revenue" in open("content_engine_bi.py",
+                                encoding="utf-8").read())
+
+    _bsec = BB.bi_section({"revenue": {"total": 284000}, "cogs": 40000,
+                           "media_spend": 48000, "ai_cost": 3100,
+                           "tool_cost": 4390, "cloud_cost": 1240})
+    check("the BI section renders", len(_bsec) > 5000,
+          str(len(_bsec)) + " chars")
+    print("       " + str(len(_bsec)) + " characters")
+    _bids = re.findall(r"id=['\"]([^'\"]+)", _bsec)
+    check("no duplicate element id in the BI section",
+          not [x for x in set(_bids) if _bids.count(x) > 1])
+    _bempty = []
+    for _sid, _n, _lab, _fn, _q in BU.SCREENS:
+        _m = re.search(r"id=['\"]bipanel-" + _sid + r"['\"](.*?)"
+                       r"(?=id=['\"]bipanel-|$)", _bsec, re.S)
+        _txt = re.sub(r"<[^>]+>", " ", _m.group(1)) if _m else ""
+        if len(" ".join(_txt.split())) < 100:
+            _bempty.append(_sid)
+    check("every one of the nine BI panels renders real content",
+          not _bempty, str(_bempty))
+    _bvals = sorted({m for m in re.findall(
+        r"Contribution[^\u20ac]{0,60}\u20ac([\d,]+)", _bsec)})
+    check("HEADER AND EXECUTIVE SHOW ONE CONTRIBUTION",
+          len(_bvals) == 1 and _bvals == ["187,270"], str(_bvals))
+
+    # the money rules, against the running code
+    _bwf = BC.contribution(revenue=284000, cogs=40000, media=48000,
+                           ai=3100, tools=2000, cloud=1200,
+                           other_variable=700)
+    check("contribution is revenue less every variable cost",
+          _bwf["contribution"] == 189000.0)
+    check("and is never called net profit",
+          _bwf["is_net_profit"] is False)
+    _bvs = [BC.price_version("llm", effective_from="2026-01-01",
+                             pricing_model="PER_1M_TOKENS",
+                             pricing={"input": 3.0, "output": 15.0},
+                             effective_to="2026-06-30")["version"],
+            BC.price_version("llm", effective_from="2026-07-01",
+                             pricing_model="PER_1M_TOKENS",
+                             pricing={"input": 5.0,
+                                      "output": 25.0})["version"]]
+    check("a January call is costed at January's price",
+          BC.price_on(_bvs, "llm",
+                      "2026-03-15")["pricing_json"]["input"] == 3.0)
+    check("an unpriced call is UNKNOWN, never zero",
+          BC.cost_of(BC.usage_event(tool_id="ghost",
+                                    occurred_at="2026-08-01"),
+                     _bvs)["cost"] is None)
+    check("a total containing an estimate IS an estimate",
+          BC.weakest_quality(["EXACT", "ESTIMATED"]) == "ESTIMATED")
+    check("media and software cost are never summed",
+          BC.split_media_and_software(
+              [BC.usage_event(tool_id="a", cost=100,
+                              occurred_at="2026-08-01",
+                              metadata={"category": "MEDIA"}),
+               BC.usage_event(tool_id="b", cost=10,
+                              occurred_at="2026-08-01",
+                              metadata={"category": "AI_MODEL"})]
+          )["media_spend"] == 100.0)
+    check("the registry refuses a row carrying a key",
+          BC.register_tool(name="x", provider="p",
+                           api_key="sk-1")["ok"] is False)
+    check("a policy breach is blocked BEFORE the spend",
+          BC.check_policy({"max_run_cost": 3.0},
+                          {"max_run_cost": 7.5})["state"] == "BLOCKED")
+    check("waste on the spec's own example is 27.8 percent",
+          BC.waste([BC.usage_event(tool_id="v", cost=520,
+                                   status="SUCCESS",
+                                   occurred_at="2026-08-01"),
+                    BC.usage_event(tool_id="v", cost=140,
+                                   status="FAILED",
+                                   occurred_at="2026-08-01"),
+                    BC.usage_event(tool_id="v", cost=60,
+                                   status="REJECTED",
+                                   occurred_at="2026-08-01")]
+                   )["waste_pct"] == 27.8)
+    _bcard = BE.agent_card({"agent_id": "video", "runs": 84,
+                            "successful_runs": 71, "total_cost": 740,
+                            "actions_generated": 84,
+                            "actions_approved": 44},
+                           accepted_outputs=44)
+    check("the spec's video agent reads 16.82 per accepted, EXPENSIVE",
+          _bcard["cost_per_accepted"] == 16.8182
+          and _bcard["status"] == "EXPENSIVE")
+    check("an unattributed value produces NO ROI",
+          BE.agent_roi(100, 5000,
+                       confidence="UNKNOWN")["roi_state"]
+          == "UNATTRIBUTED")
+    check("ranked on NET value, the biggest spend does not win",
+          BE.rank_options([
+              BE.option("paid", expected_value_low=6000,
+                        expected_value_high=6000,
+                        expected_cost_low=4000,
+                        expected_cost_high=4000),
+              BE.option("email", expected_value_low=3000,
+                        expected_value_high=5000,
+                        expected_cost_low=70, expected_cost_high=70)]
+          )["recommended"] == "email")
+    check("a saving that costs HIGH quality is refused",
+          BE.optimisation("MODEL_OVERUSE", saving_low=240,
+                          saving_high=240,
+                          quality_impact="HIGH")["ok"] is False)
+    check("no while loop in the cost or economics engines",
+          not [n for f in ("content_engine_bi_cost.py",
+                           "content_engine_bi_economics.py")
+               for n in ast.walk(ast.parse(open(
+                   f, encoding="utf-8").read()))
+               if isinstance(n, ast.While)])
+except Exception as exc:                              # noqa: BLE001
+    check("the cost-aware BI OS loaded", False, repr(exc)[:110])
 
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
