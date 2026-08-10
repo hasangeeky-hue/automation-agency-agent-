@@ -14,10 +14,10 @@ Visual-by-data map (from the BOS brief):
 """
 from __future__ import annotations
 
-_INK = "#EDF1FB"
-_MUT = "#8E9BBE"
-_LINE = "#1B2640"
-_PAL = ["#4C8DFF", "#2FE3D2", "#8B7CFF", "#F5B14C", "#3FD98B", "#FF6B93", "#5A7BE8"]
+_INK = "#111827"
+_MUT = "#4B5563"
+_LINE = "#E5E7EB"
+_PAL = ["#2563EB", "#2563EB", "#7C3AED", "#D97706", "#16A34A", "#DC2626", "#5A7BE8"]
 
 
 def _e(s):
@@ -68,7 +68,7 @@ def neural(layers, labels=None):
         pos.append([(x, y) for y in ys])
 
     def lcol(li):
-        return "#4C8DFF" if li == 0 else ("#3FD98B" if li == nL - 1 else "#2FE3D2")
+        return "#2563EB" if li == 0 else ("#16A34A" if li == nL - 1 else "#2563EB")
     edges = ""
     pulses = ""
     for li in range(nL - 1):
@@ -192,8 +192,8 @@ def statusgrid(items):
     for i, (label, ok, detail) in enumerate(items):
         x = (i % cols) * (cw + gap)
         y = (i // cols) * (ch + gap)
-        col = "#3FD98B" if ok else ("#F5B14C" if ok is None else "#FF6B93")
-        cells += (f"<rect x='{x}' y='{y}' width='{cw}' height='{ch}' rx='9' fill='#0F1626' stroke='{col}' stroke-opacity='.6'/>"
+        col = "#16A34A" if ok else ("#D97706" if ok is None else "#DC2626")
+        cells += (f"<rect x='{x}' y='{y}' width='{cw}' height='{ch}' rx='9' fill='#FFFFFF' stroke='{col}' stroke-opacity='.6'/>"
                   f"<circle cx='{x+14}' cy='{y+18}' r='5' fill='{col}'/>"
                   f"<text x='{x+26}' y='{y+22}' fill='{_INK}' font-size='12' font-weight='600'>{_e(label)[:16]}</text>"
                   f"<text x='{x+12}' y='{y+40}' fill='{_MUT}' font-size='10'>{_e(detail)[:22]}</text>")
@@ -250,7 +250,7 @@ def waterfall(steps):
     inner = f"<line x1='{pad}' y1='{yy(0)}' x2='{W-pad}' y2='{yy(0)}' stroke='{_LINE}'/>"
     for i, (l, a, b, d) in enumerate(pts):
         x = pad + i * bw + bw * 0.15
-        col = "#3FD98B" if d >= 0 else "#FF6B93"
+        col = "#16A34A" if d >= 0 else "#DC2626"
         y0, y1 = yy(max(a, b)), yy(min(a, b))
         inner += (f"<rect x='{x}' y='{y0}' width='{bw*0.7}' height='{max(2,y1-y0)}' rx='3' fill='{col}'/>"
                   f"<text x='{x+bw*0.35}' y='{H-8}' text-anchor='middle' fill='{_MUT}' font-size='9'>{_e(l)[:8]}</text>")
@@ -277,7 +277,7 @@ def cohort(labels, grid):
         for c, v in enumerate(row):
             x = 90 + c * cw
             a = max(0.06, min(1, (v or 0) / 100))
-            inner += (f"<rect x='{x}' y='{y}' width='{cw-3}' height='{chh-4}' rx='4' fill='#2FE3D2' fill-opacity='{a:.2f}'/>"
+            inner += (f"<rect x='{x}' y='{y}' width='{cw-3}' height='{chh-4}' rx='4' fill='#2563EB' fill-opacity='{a:.2f}'/>"
                       f"<text x='{x+cw/2}' y='{y+16}' text-anchor='middle' fill='{_INK}' font-size='9'>{int(v)}</text>")
     return _svg(W, H, inner)
 
@@ -301,7 +301,7 @@ def heatmap(row_labels, col_labels, matrix):
         for c, v in enumerate(row):
             x = 120 + c * cw
             a = max(0.08, min(1, (v or 0) / 100))
-            inner += f"<rect x='{x}' y='{y}' width='{cw-3}' height='{chh-4}' rx='3' fill='#3FD98B' fill-opacity='{a:.2f}'/>"
+            inner += f"<rect x='{x}' y='{y}' width='{cw-3}' height='{chh-4}' rx='3' fill='#16A34A' fill-opacity='{a:.2f}'/>"
     return _svg(W, H, inner)
 
 
@@ -338,7 +338,7 @@ def sankey(flows):
                   f"<text x='22' y='{y+12}' fill='{_INK}' font-size='10'>{_e(s)[:16]}</text>")
     for i, t in enumerate(tgts):
         y, h = rp[t]
-        inner += (f"<rect x='{W-18}' y='{y}' width='12' height='{h}' rx='3' fill='#2FE3D2'/>"
+        inner += (f"<rect x='{W-18}' y='{y}' width='12' height='{h}' rx='3' fill='#2563EB'/>"
                   f"<text x='{W-24}' y='{y+12}' text-anchor='end' fill='{_INK}' font-size='10'>{_e(t)[:16]}</text>")
     soff = {s: lp[s][0] for s in srcs}
     toff = {t: rp[t][0] for t in tgts}
@@ -375,9 +375,9 @@ def confband(points, band=0.15):
     up = " ".join(f"{'M' if i==0 else 'L'}{X(split+i):.1f} {Y(v*(1+band)):.1f}" for i, v in enumerate(pts[split:]))
     dn = " ".join(f"L{X(n-1-i):.1f} {Y(v*(1-band)):.1f}" for i, v in enumerate(reversed(pts[split:])))
     band_path = (up + " " + dn + " Z") if up else ""
-    inner = (f"<path d='{band_path}' fill='#4C8DFF' fill-opacity='.14'/>" if band_path else "")
-    inner += f"<path d='{line}' fill='none' stroke='#4C8DFF' stroke-width='2.5'/>"
-    inner += f"<circle cx='{X(n-1):.1f}' cy='{Y(pts[-1]):.1f}' r='3.5' fill='#4C8DFF'/>"
+    inner = (f"<path d='{band_path}' fill='#2563EB' fill-opacity='.14'/>" if band_path else "")
+    inner += f"<path d='{line}' fill='none' stroke='#2563EB' stroke-width='2.5'/>"
+    inner += f"<circle cx='{X(n-1):.1f}' cy='{Y(pts[-1]):.1f}' r='3.5' fill='#2563EB'/>"
     return _svg(W, H, inner)
 
 
@@ -403,8 +403,8 @@ def digraph(nodes, edges):
             inner += f"<line x1='{x0}' y1='{y0}' x2='{x1}' y2='{y1}' stroke='{_LINE}' stroke-width='1.5'/>"
     for nid, label, ok in nodes:
         x, y = pos[nid]
-        col = "#3FD98B" if ok else ("#F5B14C" if ok is None else "#FF6B93")
-        inner += (f"<circle cx='{x}' cy='{y}' r='13' fill='#0F1626' stroke='{col}' stroke-width='2'/>"
+        col = "#16A34A" if ok else ("#D97706" if ok is None else "#DC2626")
+        inner += (f"<circle cx='{x}' cy='{y}' r='13' fill='#FFFFFF' stroke='{col}' stroke-width='2'/>"
                   f"<circle cx='{x}' cy='{y}' r='4' fill='{col}'/>"
                   f"<text x='{x}' y='{y+26}' text-anchor='middle' fill='{_INK}' font-size='9'>{_e(label)[:12]}</text>")
     return _svg(W, H, inner)
@@ -470,7 +470,7 @@ def n8n_flow(lanes):
     maxn = max(len(nodes) for _, nodes in lanes)
     W = PAD * 2 + maxn * NW + (maxn - 1) * GAP
     H = len(lanes) * LH + 8
-    kindcol = {"agent": "#2FE3D2", "gate": "#F5B14C", "human": "#8B7CFF", "code": "#4C8DFF"}
+    kindcol = {"agent": "#2563EB", "gate": "#D97706", "human": "#7C3AED", "code": "#2563EB"}
     inner = ""
     for li, (label, nodes) in enumerate(lanes):
         y0 = li * LH + 26
@@ -478,11 +478,11 @@ def n8n_flow(lanes):
                   f"letter-spacing='2'>{_e(label).upper()}</text>")
         for ni, (icon, name, badge, kind) in enumerate(nodes):
             x = PAD + ni * (NW + GAP)
-            col = kindcol.get(kind, "#2FE3D2")
+            col = kindcol.get(kind, "#2563EB")
             # wire to the next node — BRIGHT, with an n8n-style arrowhead + glow dot
             # (was a near-invisible dark stroke that made nodes look disconnected)
             if ni < len(nodes) - 1:
-                ncol = kindcol.get(nodes[ni + 1][3], "#2FE3D2")
+                ncol = kindcol.get(nodes[ni + 1][3], "#2563EB")
                 x1, x2 = x + NW, x + NW + GAP
                 ym = y0 + NH / 2
                 path = f"M{x1} {ym} C{x1 + GAP * 0.5} {ym} {x2 - GAP * 0.5} {ym} {x2} {ym}"
@@ -540,12 +540,12 @@ def tri_map(apis, tools, stores, links_at, links_ts):
     onmap = {nid: on for nid, _i, _l, on in list(apis) + list(tools) + list(stores)}
 
     def wire(x1, y1, x2, y2, on):
-        col = "#2FE3D2" if on else "#3A4160"
+        col = "#2563EB" if on else "#3A4160"
         op = ".65" if on else ".35"
         path = f"M{x1} {y1} C{x1+70} {y1} {x2-70} {y2} {x2} {y2}"
         w = f"<path d='{path}' fill='none' stroke='{col}' stroke-opacity='{op}' stroke-width='1.8'/>"
         if on:
-            w += (f"<circle r='2.6' fill='#2FE3D2' filter='url(#{_gid})'>"
+            w += (f"<circle r='2.6' fill='#2563EB' filter='url(#{_gid})'>"
                   f"<animateMotion dur='2.4s' repeatCount='indefinite' path='{path}'/></circle>")
         return w
     for a, t in links_at:
@@ -561,7 +561,7 @@ def tri_map(apis, tools, stores, links_at, links_ts):
         out = ""
         for nid, icon, label, on in items:
             x, y = pos[nid]
-            col = "#3FD98B" if on else ("#8E9BBE" if on is None else "#FF6B93")
+            col = "#16A34A" if on else ("#4B5563" if on is None else "#DC2626")
             out += (f"<rect x='{x}' y='{y}' width='{NW}' height='{NH}' rx='10' "
                     f"fill='#121B2F' stroke='{col}' stroke-opacity='.5' stroke-width='1.4'/>"
                     f"<text x='{x + 12}' y='{y + 27}' font-size='13'>{icon}</text>"

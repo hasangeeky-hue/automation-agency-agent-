@@ -1156,6 +1156,12 @@ def search_analytics(r, totals=None) -> str:
                         "This screen exists to put clicks next to money, "
                         "so it shows nothing until both sides are real.",
                         "Connect Google", "nav('map')"))
+    _daily = [(_D(r).get("clicks")) for r in (t.get("daily") or [])]
+    _chart = ""
+    if len([v for v in _daily if v is not None]) >= 2:
+        import content_engine_ui_kit as UK
+        _chart = UK.line(_daily, title="Organic clicks per day",
+                         source="Google Search Console")
     return ("<p class='ss-h'>SEARCH ANALYTICS</p><div class='ss-kpis'>"
             + metric("Organic clicks", t.get("clicks"),
                      source="Google Search Console")
@@ -1164,7 +1170,7 @@ def search_analytics(r, totals=None) -> str:
             + metric("Revenue", t.get("revenue"), source="GA4 / CRM")
             + metric("Avg position", t.get("position"),
                      source="Rank tracker", polarity="negative")
-            + "</div>"
+            + "</div>" + _chart
             + "<p class='ss-note'>Clicks come from Search Console and "
             + "sessions from GA4. They will not match, and neither is "
             + "wrong: they count different things at different moments. "

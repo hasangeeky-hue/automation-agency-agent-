@@ -1280,7 +1280,7 @@ def dash_authed(cookies: dict) -> bool:
 
 
 _STATUS_COLOR = {"working": "#46E08B", "live": "#46E08B",
-                 "partial": "#2FE3D2", "needs key": "#F5B14C"}
+                 "partial": "#2563EB", "needs key": "#D97706"}
 
 
 def _connectors_status() -> dict:
@@ -1323,12 +1323,12 @@ def _blueprint_svg(st: dict) -> str:
     """A simple 'circuit board' wiring map. Destination nodes turn green when
     their connector is live, amber when the key is still missing."""
     def col(k):
-        return "#46E08B" if st.get(k) else "#F5B14C"
+        return "#46E08B" if st.get(k) else "#D97706"
 
     def node(x, y, w, label, color, sub=""):
         return (
             f'<rect x="{x}" y="{y}" width="{w}" height="46" rx="9" '
-            f'fill="#0F1626" stroke="{color}" stroke-width="1.6"/>'
+            f'fill="#FFFFFF" stroke="{color}" stroke-width="1.6"/>'
             f'<text x="{x + w/2}" y="{y + (20 if sub else 28)}" fill="#EAF0FF" '
             f'font-size="12" font-weight="600" text-anchor="middle">{label}</text>'
             + (f'<text x="{x + w/2}" y="{y + 35}" fill="{color}" font-size="10" '
@@ -1336,18 +1336,18 @@ def _blueprint_svg(st: dict) -> str:
 
     def wire(x1, y1, x2, y2):
         return (f'<path d="M{x1} {y1} C {(x1+x2)/2} {y1}, {(x1+x2)/2} {y2}, {x2} {y2}" '
-                f'stroke="#2FE3D2" stroke-width="1.4" fill="none" opacity="0.55"/>')
+                f'stroke="#2563EB" stroke-width="1.4" fill="none" opacity="0.55"/>')
 
     parts = ['<svg viewBox="0 0 900 470" width="100%" xmlns="http://www.w3.org/2000/svg" '
              'style="max-width:100%;height:auto">']
     # sources (left)
     parts.append(node(20, 40, 150, "Web / Search", col("web_search"), "search + scrape"))
     parts.append(node(20, 120, 150, "LinkedIn", col("linkedin_leads"), "leads"))
-    parts.append(node(20, 350, 150, "n8n", "#8B7CFF", "triggers / cron"))
+    parts.append(node(20, 350, 150, "n8n", "#7C3AED", "triggers / cron"))
     # center: VPS
     parts.append('<rect x="330" y="150" width="240" height="150" rx="14" fill="#0C1120" '
-                 'stroke="#2FE3D2" stroke-width="2"/>')
-    parts.append('<text x="450" y="185" fill="#2FE3D2" font-size="14" font-weight="700" '
+                 'stroke="#2563EB" stroke-width="2"/>')
+    parts.append('<text x="450" y="185" fill="#2563EB" font-size="14" font-weight="700" '
                  'text-anchor="middle">VPS — Agents + Engine</text>')
     parts.append('<text x="450" y="210" fill="#9AA6C6" font-size="11" '
                  'text-anchor="middle">orchestrator · blackboard · dashboard</text>')
@@ -1356,8 +1356,8 @@ def _blueprint_svg(st: dict) -> str:
     parts.append('<text x="450" y="270" fill="#46E08B" font-size="11" '
                  'text-anchor="middle">Claude (Opus / Haiku)</text>')
     # Google hub (right top)
-    ghue = "#46E08B" if (st.get("google_sheets") or st.get("google_drive")) else "#F5B14C"
-    parts.append('<rect x="700" y="30" width="180" height="120" rx="12" fill="#0F1626" '
+    ghue = "#46E08B" if (st.get("google_sheets") or st.get("google_drive")) else "#D97706"
+    parts.append('<rect x="700" y="30" width="180" height="120" rx="12" fill="#FFFFFF" '
                  f'stroke="{ghue}" stroke-width="1.8"/>')
     parts.append('<text x="790" y="55" fill="#EAF0FF" font-size="12" font-weight="700" '
                  'text-anchor="middle">Google Workspace</text>')
@@ -1371,7 +1371,7 @@ def _blueprint_svg(st: dict) -> str:
     parts.append(node(700, 190, 180, "WordPress", col("wordpress_publish"), "publish"))
     social_live = st.get("social_linkedin") or st.get("social_twitter") or st.get("social_facebook")
     parts.append(node(700, 260, 180, "Social channels",
-                      "#46E08B" if social_live else "#F5B14C", "LI · X · FB · IG · TT"))
+                      "#46E08B" if social_live else "#D97706", "LI · X · FB · IG · TT"))
     parts.append(node(700, 330, 180, "Email out + replies", col("email_send"), "Gmail / IMAP"))
     # wires
     parts.append(wire(170, 63, 330, 200))
@@ -1803,10 +1803,16 @@ def _dashboard_kwargs() -> dict:
         google_insights=_safe_google_insights())
 
 
-def api_dashboard_html() -> str:
+def api_dashboard_html(days: int = 30) -> str:
     """Render the Business Control Center: the original nine-board layout."""
     import content_engine_dashboard as D
-    return D.dashboard_html(**_dashboard_kwargs())
+    kw = _dashboard_kwargs()
+    kw["window_days"] = days
+    for _cname in ("seo_ctx", "media_ctx", "bi_ctx", "system_ctx",
+                   "cockpit_ctx"):
+        if isinstance(kw.get(_cname), dict):
+            kw[_cname]["window_days"] = days
+    return D.dashboard_html(**kw)
 
 
 def api_leads_html() -> str:
@@ -1837,8 +1843,8 @@ def api_leads_html() -> str:
         "<small>Everyone you know, and every email you sent them</small>"
         "</div></div>"
         "<div style='display:flex;gap:9px;align-items:center'>"
-        "<a href='/' style='color:#8FA0C8;font-size:12px;text-decoration:none;"
-        "border:1px solid #1B2640;border-radius:7px;padding:5px 11px'>"
+        "<a href='/' style='color:#4B5563;font-size:12px;text-decoration:none;"
+        "border:1px solid #E5E7EB;border-radius:7px;padding:5px 11px'>"
         "Back to the control centre</a></div></div>"
         "<div class='shell'><div class='main' style='width:100%'>"
         + SCR.build(ctx) + "</div></div>"
@@ -1969,7 +1975,16 @@ def build_app():
     def dashboard(request: Request):
         if not dash_authed(request.cookies):
             return HTMLResponse(_login_html(), headers=_NO_CACHE)
-        return HTMLResponse(api_dashboard_html(), headers=_NO_CACHE)
+        # ?days=7|30|90: the reporting window. Sections that measure by
+        # day follow it; snapshot boards keep stating their own window.
+        try:
+            _days = int(request.query_params.get("days") or 30)
+        except (TypeError, ValueError):
+            _days = 30
+        if _days not in (7, 30, 90):
+            _days = 30
+        return HTMLResponse(api_dashboard_html(days=_days),
+                            headers=_NO_CACHE)
 
     # VX2 - the new layout, served BESIDE the old one. Same login, same data,
     # same handlers. "/" is untouched, so nothing that works today can break

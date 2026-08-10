@@ -37,7 +37,7 @@ def head(t):
 
 
 print("=" * 74)
-print("FIVE OS + UI KIT + LIGHT SECTIONS - DEPLOY VERIFICATION")
+print("ONE LIGHT OS - DEPLOY VERIFICATION")
 print("=" * 74)
 
 # ---------------------------------------------------------------- modules
@@ -840,8 +840,9 @@ try:
              "var(--s1)", "var(--s2)", "var(--s1,", "var(--s2,")
     _seo = SB15.seo_section({"site": "x"}, legacy_html="<i>L</i>")
     check("the SEO section renders as a rail column",
-          "seo-cols" in _seo and "seo-rail" in _seo
-          and _seo.index("seo-rail") < _seo.index("seo-main"))
+          "seo-cols" in _seo
+          and _seo.index("class='seo-rail'")
+          < _seo.index("class='seo-main'"))
     check("its group rail sits above the vertical tabs",
           _seo.index("class='sgroups'") < _seo.index("class='stabs'"))
     check("and no dark-shell colour survives in it",
@@ -871,6 +872,164 @@ try:
           + str(len(_mc)) + " chars, both on their own light ground")
 except Exception as exc:                              # noqa: BLE001
     check("the three aligned sections rendered", False, repr(exc)[:110])
+
+# ----------------------------------------------- rounds 2-4: one light OS
+head("16. THE UNIFIED SHELL, THE INPUTS, THE CHARTS")
+try:
+    import content_engine_command_ui as CU16
+    import content_engine_control_screens as CS16
+    import content_engine_dashboard as D16
+    import content_engine_media_center as MC16
+    import content_engine_search_bridge as BR16
+    import content_engine_search_screens as SS16
+    import content_engine_seo_boards as SB16
+
+    check("THE SHELL ITSELF IS LIGHT: tokens flipped at the root",
+          "--bg:#F3F4F6" in D16.CSS and "#080B14" not in D16.CSS
+          and "#2FE3D2" not in D16.CSS)
+    check("the page ground extends to the html element",
+          "html{background:var(--bg)}" in D16.CSS)
+    check("the nav is grouped Command/Growth/Intelligence/System",
+          ".navgrp" in D16.CSS)
+    _dsrc = open("content_engine_dashboard.py", encoding="utf-8").read()
+    check("the reporting window pills are real links",
+          "function setDays(d)" in _dsrc and "'?days='+d" in _dsrc)
+    check("the last section and sub-tab survive a reload",
+          "_lastsec" in _dsrc and "_tabs" in _dsrc)
+
+    _cn = CS16.connections({"wires": {"w": True}, "connection_tests": {},
+                            "connect_html": "<form id='kf'>k</form>"})
+    check("THE KEY-ENTRY BOARD IS BACK in Connections",
+          "id='kf'" in _cn and "Add, replace" in _cn)
+    _wr = CS16.wiring({"legacy_svgs": "<svg id='bp'></svg>"})
+    check("and the system blueprint renders again in Wiring",
+          "id='bp'" in _wr)
+
+    check("the Search OS has a Tracking tab (26 tabs)",
+          len(SB16.TABS) == 26
+          and any(t[0] == "seotrack" for t in SB16.TABS))
+    _tk = SB16._board_tracking({"gtm_audit": {"ready": True,
+                                              "missing": ["m"],
+                                              "paused": [],
+                                              "silent": []}})
+    check("its audited state drafts tags",
+          "gtmDraft('m'" in _tk)
+    check("and its unaudited state says so instead of pretending",
+          "not granted or not audited"
+          in SB16._board_tracking({}))
+
+    _mch = MC16.chart([("a", 1), ("b", 2), ("c", None), ("d", 4),
+                       ("e", 5)], title="T")
+    check("MEDIA'S CHART IS THE KIT'S: a gap breaks the polyline",
+          _mch.count("<polyline") == 2)
+    _tt = BR16.search_totals({"insights": {"gsc": {"daily": [
+        {"date": "d1", "clicks": 2, "impressions": 9, "position": 3},
+        {"date": "d2", "clicks": 5, "impressions": 9, "position": 3},
+    ]}}})
+    check("the bridge hands the daily rows to the screen",
+          len((_tt or {}).get("daily") or []) == 2)
+    check("and Search Analytics draws clicks per day from them",
+          "Organic clicks per day" in SS16.search_analytics(None, _tt))
+
+    _ck = CU16.cockpit_section({
+        "log": {"has_data": True, "total": 1, "series": [1],
+                "rows": [{"at": "t", "action": "approve",
+                          "title": "x"}]},
+        "wires": {"a": True, "b": False}})
+    check("the cockpit carries a Decision Log zone",
+          "Decision Log" in _ck and "approve" in _ck)
+    check("and a Connections zone with live/not-live counts",
+          "Connections" in _ck and "1</b> live" in _ck)
+    check("ckOpen navigates instead of doing nothing",
+          "function ckOpen(t){}" not in _ck and "nav(id)" in _ck)
+
+    _fu = open("content_engine_factory_ui.py", encoding="utf-8").read()
+    _su = open("content_engine_seo_screens.py", encoding="utf-8").read()
+    check("a button whose wire is missing SAYS SO instead of dying",
+          "uiNotWired" in _fu and "uiNotWired" in _su)
+    print("       shell light, keys back, window real, charts from the "
+          "kit, log unified")
+except Exception as exc:                              # noqa: BLE001
+    check("rounds 2-4 rendered", False, repr(exc)[:110])
+
+# ----------------------------------------------- rounds 2-4: one light OS
+head("16. THE UNIFIED SHELL, THE INPUTS, THE CHARTS")
+try:
+    import content_engine_command_ui as CU16
+    import content_engine_control_screens as CS16
+    import content_engine_dashboard as D16
+    import content_engine_media_center as MC16
+    import content_engine_search_bridge as BR16
+    import content_engine_search_screens as SS16
+    import content_engine_seo_boards as SB16
+
+    check("THE SHELL ITSELF IS LIGHT: tokens flipped at the root",
+          "--bg:#F3F4F6" in D16.CSS and "#080B14" not in D16.CSS
+          and "#2FE3D2" not in D16.CSS)
+    check("the page ground extends to the html element",
+          "html{background:var(--bg)}" in D16.CSS)
+    check("the nav is grouped Command/Growth/Intelligence/System",
+          ".navgrp" in D16.CSS)
+    _dsrc = open("content_engine_dashboard.py", encoding="utf-8").read()
+    check("the reporting window pills are real links",
+          "function setDays(d)" in _dsrc and "'?days='+d" in _dsrc)
+    check("the last section and sub-tab survive a reload",
+          "_lastsec" in _dsrc and "_tabs" in _dsrc)
+
+    _cn = CS16.connections({"wires": {"w": True}, "connection_tests": {},
+                            "connect_html": "<form id='kf'>k</form>"})
+    check("THE KEY-ENTRY BOARD IS BACK in Connections",
+          "id='kf'" in _cn and "Add, replace" in _cn)
+    _wr = CS16.wiring({"legacy_svgs": "<svg id='bp'></svg>"})
+    check("and the system blueprint renders again in Wiring",
+          "id='bp'" in _wr)
+
+    check("the Search OS has a Tracking tab (26 tabs)",
+          len(SB16.TABS) == 26
+          and any(t[0] == "seotrack" for t in SB16.TABS))
+    _tk = SB16._board_tracking({"gtm_audit": {"ready": True,
+                                              "missing": ["m"],
+                                              "paused": [],
+                                              "silent": []}})
+    check("its audited state drafts tags",
+          "gtmDraft('m'" in _tk)
+    check("and its unaudited state says so instead of pretending",
+          "not granted or not audited"
+          in SB16._board_tracking({}))
+
+    _mch = MC16.chart([("a", 1), ("b", 2), ("c", None), ("d", 4),
+                       ("e", 5)], title="T")
+    check("MEDIA'S CHART IS THE KIT'S: a gap breaks the polyline",
+          _mch.count("<polyline") == 2)
+    _tt = BR16.search_totals({"insights": {"gsc": {"daily": [
+        {"date": "d1", "clicks": 2, "impressions": 9, "position": 3},
+        {"date": "d2", "clicks": 5, "impressions": 9, "position": 3},
+    ]}}})
+    check("the bridge hands the daily rows to the screen",
+          len((_tt or {}).get("daily") or []) == 2)
+    check("and Search Analytics draws clicks per day from them",
+          "Organic clicks per day" in SS16.search_analytics(None, _tt))
+
+    _ck = CU16.cockpit_section({
+        "log": {"has_data": True, "total": 1, "series": [1],
+                "rows": [{"at": "t", "action": "approve",
+                          "title": "x"}]},
+        "wires": {"a": True, "b": False}})
+    check("the cockpit carries a Decision Log zone",
+          "Decision Log" in _ck and "approve" in _ck)
+    check("and a Connections zone with live/not-live counts",
+          "Connections" in _ck and "1</b> live" in _ck)
+    check("ckOpen navigates instead of doing nothing",
+          "function ckOpen(t){}" not in _ck and "nav(id)" in _ck)
+
+    _fu = open("content_engine_factory_ui.py", encoding="utf-8").read()
+    _su = open("content_engine_seo_screens.py", encoding="utf-8").read()
+    check("a button whose wire is missing SAYS SO instead of dying",
+          "uiNotWired" in _fu and "uiNotWired" in _su)
+    print("       shell light, keys back, window real, charts from the "
+          "kit, log unified")
+except Exception as exc:                              # noqa: BLE001
+    check("rounds 2-4 rendered", False, repr(exc)[:110])
 
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)

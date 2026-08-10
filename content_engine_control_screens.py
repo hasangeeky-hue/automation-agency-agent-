@@ -114,7 +114,9 @@ def mark(status) -> str:
     """Section 6: icon plus word, never colour alone."""
     st = _s(status).upper() or "UNKNOWN"
     label = CP.STATUS_MARK.get(st, "? " + st.title())
-    return ("<span class='sc-pill sc-pill-" + _TONE.get(st, "") + "'>"
+    # a neutral tone is the base pill, not a dangling modifier class
+    _t = _TONE.get(st, "sys")
+    return ("<span class='sc-pill" + ((" sc-pill-" + _t) if _t else "") + "'>"
             + e(label if st in CP.STATUS_MARK
                 else {"STALLED": "▲ Stalled", "WAITING": "◌ Waiting",
                       "BACKLOG": "▲ Backlog", "PASS": "● Pass",
@@ -247,11 +249,16 @@ def wiring(ctx=None) -> str:
     c = _d(ctx)
     comps = _l(c.get("components"))
     edges = _l(c.get("edges"))
+    # The old system blueprint SVG (every connection in the machine) is
+    # still built by the dashboard and passed in; it belongs under the
+    # live tree, not in the bin.
+    legacy = _s(c.get("legacy_svgs"))
     if not comps:
         return ("<p class='sc-h1'>Wiring Map</p>"
                 + empty("Nothing to draw",
                         "The map draws the registry. Register components "
-                        "and dependencies first."))
+                        "and dependencies first.")
+                + legacy)
     h = c.get("health") or CP.derive_health(comps, edges)
     by_id = {_d(x).get("id"): _d(x) for x in comps}
     kids: Dict[str, List[dict]] = {}
@@ -313,7 +320,8 @@ def wiring(ctx=None) -> str:
               "d.style.display='block';"
               "d.innerHTML='<b>'+p[0]+'</b> <span class=sc-meta>'+p[1]"
               "+'</span><br>Status: '+p[2]+'<br>Why: '+p[3]"
-              "+'<br>If disconnected: '+p[4];}</script>")
+              "+'<br>If disconnected: '+p[4];}</script>"
+            + legacy)
 
 
 # ===========================================================================
@@ -324,11 +332,19 @@ def connections(ctx=None) -> str:
     c = _d(ctx)
     wires = _d(c.get("wires"))
     tests = _d(c.get("connection_tests"))
+    # THE PASTE-IN BOARD, restored. The dashboard has always built these
+    # connect forms (saveConnect -> /connect, allow-listed keys, masked
+    # fields, values write-only) and passes them in as connect_html; the
+    # shim dropped them, which left SSH as the only way to add a key.
+    forms = _s(c.get("connect_html"))
+    forms_html = (("<p class='sc-h2' style='margin-top:18px'>Add, replace "
+                   "or disconnect keys</p>" + forms) if forms else "")
     if not wires:
         return ("<p class='sc-h1'>Connections</p>"
                 + empty("No wire status supplied",
                         "This screen reads the live connector status "
-                        "map. Nothing here is assumed connected."))
+                        "map. Nothing here is assumed connected.")
+                + forms_html)
     on = [k for k, v in wires.items() if v]
     out = ["<p class='sc-h1'>Connections</p>",
            "<div class='sc-kpis'>"
@@ -355,6 +371,7 @@ def connections(ctx=None) -> str:
                "<th>Wire</th><th>Configured</th><th>Last test</th>"
                "<th>Detail</th></tr></thead><tbody>" + body
                + "</tbody></table></div>")
+    out.append(forms_html)
     return "".join(out)
 
 

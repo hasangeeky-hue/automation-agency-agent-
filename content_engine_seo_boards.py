@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 
 TEAL, VIOLET, BLUE, GREEN, AMBER, PINK = (
-    "#2FE3D2", "#8B7CFF", "#4C8DFF", "#3FD98B", "#F5B14C", "#FF6B93")
+    "#2563EB", "#7C3AED", "#2563EB", "#16A34A", "#D97706", "#DC2626")
 
 
 def _H():
@@ -197,7 +197,7 @@ def _link(url, label=None, max_len=46):
         return H._esc(label or "")
     text = label if label is not None else url.split("://")[-1]
     return (f"<a href='{H._esc(url)}' target='_blank' rel='noopener' "
-            f"style='color:#2FE3D2;text-decoration:none;border-bottom:1px dotted #2FE3D2'>"
+            f"style='color:#2563EB;text-decoration:none;border-bottom:1px dotted #2563EB'>"
             f"{H._esc(str(text)[:max_len])}</a>")
 
 
@@ -296,8 +296,8 @@ def _score_gauge(value, target=80, label=""):
              f"<rect x='{W*0.5:.0f}' y='16' width='{W*0.3:.0f}' height='14' fill='#FCD34D' opacity='.5'/>")
     bar = f"<rect x='0' y='18' width='{W*v/100:.1f}' height='10' rx='5' fill='{col}'/>"
     tgt = (f"<line x1='{W*target/100:.1f}' y1='12' x2='{W*target/100:.1f}' y2='34' "
-           f"stroke='#EDF1FB' stroke-width='2'/>"
-           f"<text x='{W*target/100:.1f}' y='48' text-anchor='middle' fill='#8FA0BF' "
+           f"stroke='#111827' stroke-width='2'/>"
+           f"<text x='{W*target/100:.1f}' y='48' text-anchor='middle' fill='#4B5563' "
            f"font-size='9'>target {int(target)}</text>")
     txt = (f"<text x='{W}' y='12' text-anchor='end' fill='{col}' font-size='13' "
            f"font-weight='800'>{v:.0f}</text>")
@@ -328,8 +328,8 @@ def _histogram(values, buckets=8, unit=""):
         x = pad + i * bw
         bars += (f"<rect x='{x:.1f}' y='{HGT-14-h:.1f}' width='{bw*0.84:.1f}' "
                  f"height='{h:.1f}' rx='2' fill='{TEAL}' opacity='.85'/>")
-    labels = (f"<text x='{pad}' y='{HGT-2}' fill='#8FA0BF' font-size='9'>{lo:.0f}{unit}</text>"
-              f"<text x='{W-pad}' y='{HGT-2}' text-anchor='end' fill='#8FA0BF' "
+    labels = (f"<text x='{pad}' y='{HGT-2}' fill='#4B5563' font-size='9'>{lo:.0f}{unit}</text>"
+              f"<text x='{W-pad}' y='{HGT-2}' text-anchor='end' fill='#4B5563' "
               f"font-size='9'>{hi:.0f}{unit}</text>")
     return (f"<svg viewBox='0 0 {W} {HGT}' width='100%' height='{HGT}' "
             f"xmlns='http://www.w3.org/2000/svg'>{bars}{labels}</svg>")
@@ -568,7 +568,7 @@ def _viz(title, big, sub, chart, insight, src, accent=BLUE, links="",
             + (f"<div style='margin-top:8px;text-align:center;overflow-x:auto'>{chart}</div>"
                if chart else "")
             + (f"<div style='margin-top:8px;padding:7px 10px;border-radius:8px;"
-               f"background:rgba(139,124,255,.08);border-left:3px solid #8B7CFF;"
+               f"background:rgba(139,124,255,.08);border-left:3px solid #7C3AED;"
                f"font-size:12px'>💡 {H._esc(insight)}</div>" if insight else "")
             + _cta(f"<a class='cbtn sm ghost' href='#{cid}'>🔗 link</a>")
             + (f"<div style='margin-top:8px'>{links}</div>" if links else "")
@@ -698,11 +698,11 @@ def _hero(title, big, sub, body, insight, action_label, action):
             f"<div class='sevbadge s-critical'>▶ START HERE</div>"
             f"<p class='ct' style='margin:0'>{H._esc(title)}</p>"
             f"<div style='display:flex;align-items:baseline;gap:10px;margin-top:6px'>"
-            f"<span style='font-size:34px;font-weight:800;color:#8B7CFF' class='tnum'>{H._esc(str(big))}</span>"
+            f"<span style='font-size:34px;font-weight:800;color:#7C3AED' class='tnum'>{H._esc(str(big))}</span>"
             f"<span class='dim'>{H._esc(sub)}</span></div>"
             f"<div style='margin-top:9px'>{body}</div>"
             f"<div style='margin-top:9px;padding:8px 11px;border-radius:8px;"
-            f"background:rgba(139,124,255,.10);border-left:3px solid #8B7CFF;font-size:12.5px'>"
+            f"background:rgba(139,124,255,.10);border-left:3px solid #7C3AED;font-size:12.5px'>"
             f"💡 {H._esc(insight)}</div>"
             f"<div class='cta'><button class='cbtn' onclick=\"{action}\">{H._esc(action_label)}</button>"
             f"<a class='cbtn sm ghost' href='#card-seo-command-what-needs-doing'>See the full queue</a>"
@@ -2680,10 +2680,56 @@ def _board_loop(ctx) -> str:
         import content_engine_search_board as SB
         return SB.section(M.repo(A.get_store()))
     except Exception as ex:
-        return ("<p style='color:#8FA0BF;font-size:12px'>the execution "
+        return ("<p style='color:#4B5563;font-size:12px'>the execution "
                 "board could not be drawn: "
                 + type(ex).__name__ + "</p>")
 
+
+
+
+def _board_tracking(ctx) -> str:
+    """Tag Manager, from the SEO side. Same stored audit snapshot the
+    media screen reads; same handlers (gtmDraft ships with the media
+    section on this page). Rankings measured on pages whose tags do not
+    fire are rankings measured on a broken till."""
+    H = _H()
+    g = ctx.get("gtm_audit") or {}
+    out = ["<div class='card full'><p class='ct'>🏷 Tag Manager audit</p>"
+           "<p class='cc'>Missing, paused and silent tags. Conversions "
+           "and GA4 events are what turn rankings into measured money; "
+           "a page that ranks with dead tags reports nothing.</p>"]
+    if not g.get("ready"):
+        out.append(
+            "<p class='cc'>Tag Manager is not granted or not audited "
+            "yet. Keys live on the Connections board in System &amp; "
+            "Wiring; the audit runs the day they do.</p>"
+            "<div class='cta'><button class='cta' "
+            "onclick=\"act('/gtm/audit')\">Audit Tag Manager</button>"
+            "</div></div>")
+        return "".join(out)
+    rows = []
+    for kind, items in (("missing", g.get("missing")),
+                        ("paused", g.get("paused")),
+                        ("silent", g.get("silent"))):
+        for name in (items or [])[:10]:
+            nm = name if isinstance(name, str) else (
+                (name or {}).get("name") or str(name))
+            rows.append(
+                "<tr><td>" + H._esc(nm) + "</td><td>" + kind + "</td>"
+                "<td><button class='cta' onclick=\"gtmDraft('"
+                + H._esc(nm) + "',this)\">Draft the tag</button>"
+                "</td></tr>")
+    if rows:
+        out.append("<div class='tbwrap'><table><thead><tr><th>Tag</th>"
+                   "<th>State</th><th>Fix</th></tr></thead><tbody>"
+                   + "".join(rows) + "</tbody></table></div>")
+    else:
+        out.append("<p class='cc'>Every required tag exists, is live, "
+                   "and has fired recently.</p>")
+    out.append("<div class='cta'><button class='cta' "
+               "onclick=\"act('/gtm/audit')\">Re-audit Tag Manager"
+               "</button></div></div>")
+    return "".join(out)
 
 _TAB_BOARDS = {
     "seocmd":    [("SEO Command", board_command)],
@@ -2708,6 +2754,7 @@ _TAB_BOARDS = {
     "seokwx": [("Keyword Explorer", _board_kwx)],
     "seorank": [("Position Tracking", _board_rank)],
     "seoanalytics": [("Search Analytics", _board_analytics)],
+    "seotrack": [("Tracking (GTM)", _board_tracking)],
     "seoagents": [("Agent Centre", _board_agents)],
     "seogeoai":  [("AI Visibility (GEO)", _board_geoai)],
     "seolinks":  [("Backlinks", _board_links)],
@@ -2733,7 +2780,7 @@ def _safe_board(name, fn, ctx) -> str:
         return fn(ctx)
     except Exception as e:
         H = _H()
-        return ("<div class='card full' style='margin-top:12px;border-color:#FF6B93'>"
+        return ("<div class='card full' style='margin-top:12px;border-color:#DC2626'>"
                 f"<p class='ct'>⚠ {H._esc(name)} board failed to render</p>"
                 f"<p class='cc'>{H._esc(type(e).__name__)}: {H._esc(str(e)[:300])}</p>"
                 "<p class='cc'>Every other board on this page is unaffected. "
@@ -2766,6 +2813,7 @@ TABS = [
     ("seokwx", "🔍", "Keyword Explorer"),
     ("seorank", "📍", "Position Tracking"),
     ("seoanalytics", "📈", "Search Analytics"),
+    ("seotrack", "🏷", "Tracking"),
     ("seoagents", "🧠", "Agent Centre"),
     ("seogeoai", "🤖", "AI Visibility (GEO)"),
     ("seolinks", "🔗", "Backlinks"),
@@ -2792,7 +2840,8 @@ GROUPS = [
      ["seodomain", "seokwx", "seorank", "seocontent",
       "seolinks", "seoanswers", "seogeoai", "seogeo"]),
     ("sources", "④ SOURCES", "Where does the data come from?",
-     ["seoanalytics", "seosrc", "seodata", "seosystem", "seorules"]),
+     ["seoanalytics", "seotrack", "seosrc", "seodata", "seosystem",
+      "seorules"]),
 ]
 
 # THE TAB CHROME, in the section's own palette. _TAB_CSS is light now
@@ -2841,6 +2890,7 @@ color:#4B5563}
 _TAB_VERT = """<style>
 .seo-cols{display:grid;grid-template-columns:240px 1fr;gap:14px;
 align-items:start}
+.seo-main{min-width:0}
 .seo-rail{position:sticky;top:8px;background:#FFFFFF;
 border:1px solid #E5E7EB;border-radius:10px;padding:8px}
 .seoscr .sgroups{display:flex;flex-direction:column;gap:5px;margin:0}
@@ -2972,6 +3022,7 @@ def seo_section(ctx, legacy_html: str = "") -> str:
         "seodata": _board_data(ctx),
         "seoreport": _board_report(ctx),
         "seorules": _board_rules(ctx),
+        "seotrack": _board_tracking(ctx),
         "seosystem": _board_system(ctx),
         "seodomain": _board_domain(ctx),
         "seokwx": _board_kwx(ctx),
@@ -3044,7 +3095,9 @@ def seo_section(ctx, legacy_html: str = "") -> str:
                 ("Apply safe fixes", "runFixes()", "secondary"),
                 ("Check rankings", "runRanks()", "secondary"),
                 ("Probe AI answers", "runAeo()", "ai"),
-                ("Find link prospects", "runProspect()", "secondary"))
+                ("Find link prospects", "runProspect()", "secondary"),
+                ("Run what is due", "runSeoDue()", "secondary"),
+                ("Unattended level", "seoAuto()", "secondary"))
     runbar = ("<div class='ss-runbar'>"
               + "".join(_TK.button(_l, variant=_v, size="compact",
                                    onclick=_o)
@@ -3066,7 +3119,7 @@ def seo_section(ctx, legacy_html: str = "") -> str:
             f"{'s' if total != 1 else ''}</b> across the audit. Every row "
             f"carries what it costs and the button that repairs it.</div>")
     legacy_head = ("<div id='seo-google' class='card full' style='margin-top:14px;"
-                   "border-color:#4C8DFF'><p class='ct'>📊 Search Console &amp; Analytics</p>"
+                   "border-color:#2563EB'><p class='ct'>📊 Search Console &amp; Analytics</p>"
                    "<p class='cc'>Your original Google boards — same data, same order, "
                    "now with a home of their own in ④ Sources.</p></div>")
     # The Google boards become the ④ Sources panel: still every card, still
@@ -3391,8 +3444,8 @@ if __name__ == "__main__":
     assert _spark([1]) == "", "a sparkline needs at least 3 points"
     # #17 delta helper
     assert "▲" in _delta(120, 100) and "▼" in _delta(80, 100)
-    assert "color:#3FD98B" in _delta(120, 100), "up on a good metric must read green"
-    assert "color:#FF6B93" in _delta(120, 100, higher_is_better=False), "direction respected"
+    assert "color:#16A34A" in _delta(120, 100), "up on a good metric must read green"
+    assert "color:#DC2626" in _delta(120, 100, higher_is_better=False), "direction respected"
     assert _delta(5, 0) == "" and "no change" in _delta(10, 10)
     # severity sort: within a board, broken sorts above healthy
     sevs = _re.findall(r"data-sev='([a-z]+)' data-w='(\d)'", html)

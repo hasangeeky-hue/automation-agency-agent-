@@ -85,7 +85,7 @@ _QUALITY_NOTE = {
 
 def quality_pill(q) -> str:
     k = _s(q).upper() or "UNKNOWN"
-    return ("<span class='bi-pill bi-pill-" + _QUALITY_TONE.get(k, "")
+    return ("<span class='bi-pill bi-pill-" + _QUALITY_TONE.get(k, "wa")
             + "' title='" + e(_QUALITY_NOTE.get(k, "")) + "'>"
             + e(k.replace("_", " ").title()) + "</span>")
 
@@ -227,6 +227,25 @@ def executive(ctx=None) -> str:
                      note="includes the machine behind it")
                + "</div>")
     if wf.get("state") == "OK":
+        # the picture first, the arithmetic under it; a missing cost
+        # line is NAMED on the chart, never deducted as zero
+        try:
+            import content_engine_ui_kit as UK
+            _steps = ([(_s(_d(st).get("step")).replace("_", " "),
+                        _d(st).get("amount"))
+                       for st in _l(wf.get("steps"))]
+                      + [(m.replace("_", " "), None)
+                         for m in _l(wf.get("missing"))])
+            if _steps:
+                out.append(UK.waterfall(
+                    "Revenue", wf.get("revenue"), _steps,
+                    title="Where revenue goes",
+                    source="cost events and revenue records",
+                    end_label="Contribution"))
+        except Exception as _wfe:
+            out.append("<p class='bi-note bi-wa'>The waterfall chart "
+                       "could not draw: " + e(repr(_wfe)[:90])
+                       + ". The rows below are the same numbers.</p>")
         out.append("<p class='bi-h2'>Margin waterfall</p>"
                    "<div class='bi-card'>")
         out.append("<div class='bi-row'><span>Revenue</span><b>"
@@ -560,7 +579,7 @@ def risks(ctx=None) -> str:
             tone = {"HIGH": "er", "MEDIUM": "wa"}.get(
                 _s(r.get("severity")).upper(), "")
             out.append("<div class='bi-card'>"
-                       + "<span class='bi-pill bi-pill-" + tone + "'>"
+                       + "<span class='bi-pill" + ((" bi-pill-" + tone) if tone else "") + "'>"
                        + e(r.get("severity") or "INFO") + "</span> "
                        + "<span class='bi-pill'>"
                        + e(_s(r.get("type")).replace("_", " "))
@@ -710,7 +729,7 @@ def health(ctx=None) -> str:
                    + e(key.replace("_", " ").title()) + "</b><br>"
                    + "<span class='bi-meta'>"
                    + e(ECON.HEALTH_QUESTION[key]) + "</span></span>"
-                   + "<span class='bi-pill bi-pill-" + tone + "'>"
+                   + "<span class='bi-pill" + ((" bi-pill-" + tone) if tone else "") + "'>"
                    + e(state) + "</span></div>"
                    + ("<p class='bi-meta'>" + e(block.get("why")) + "</p>"
                       if block.get("why") else

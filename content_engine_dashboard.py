@@ -72,9 +72,9 @@ BUILD_TAG = (CODE_STAMP + " · THE CADENCE — the worker now queues the daily b
              "Risk 208")
 
 CSS = """
-:root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--line2:#132038;
---ink:#EDF1FB;--mut:#8E9BBE;--dim:#59668A;--teal:#2FE3D2;--violet:#8B7CFF;
---good:#3FD98B;--warn:#F5B14C;--bad:#FF6B93;--blue:#4C8DFF}
+:root{--bg:#F3F4F6;--s1:#FFFFFF;--s2:#F9FAFB;--line:#E5E7EB;--line2:#ECEEF2;
+--ink:#111827;--mut:#4B5563;--dim:#6B7280;--teal:#2563EB;--violet:#7C3AED;
+--good:#16A34A;--warn:#D97706;--bad:#DC2626;--blue:#2563EB}
 *{box-sizing:border-box}
 /* KEYBOARD FOCUS. There was no :focus-visible anywhere in 53KB of CSS, so a
    person tabbing through 2,227 cards could not see where they were. That is
@@ -83,7 +83,7 @@ CSS = """
 font-size:10.5px;font-weight:700;line-height:17px;text-align:center;
 background:var(--bad);color:#fff;display:none}
 .navcount.on{display:inline-block}
-.navcount.zero{background:rgba(255,255,255,.10);color:var(--mut)}
+.navcount.zero{background:rgba(17,24,39,.08);color:var(--mut)}
 *:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:4px}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,
 textarea:focus-visible{outline:2px solid var(--teal);outline-offset:3px}
@@ -91,23 +91,27 @@ textarea:focus-visible{outline:2px solid var(--teal);outline-offset:3px}
    has usually asked for a reason. */
 @media (prefers-reduced-motion:reduce){
 *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+html{background:var(--bg)}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
 .tnum{font-variant-numeric:tabular-nums}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line2);position:sticky;top:0;background:var(--bg);z-index:5}
 .brand{display:flex;align-items:center;gap:10px}
-.logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--teal),var(--violet));display:grid;place-items:center;color:#04121a;font-weight:800;font-size:14px}
+.logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--teal),var(--violet));display:grid;place-items:center;color:#FFFFFF;font-weight:800;font-size:14px}
 h1{font-size:15.5px;margin:0;font-weight:700}.brand small{display:block;color:var(--mut);font-size:11px}
 .status{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--mut);background:var(--s1);border:1px solid var(--line);border-radius:99px;padding:5px 11px}
 .status .d{width:8px;height:8px;border-radius:50%}
 .logout{color:var(--mut);font-size:12px;border:1px solid var(--line);border-radius:8px;padding:6px 11px;text-decoration:none}
 .shell{display:flex;gap:16px;max-width:1320px;margin:0 auto;padding:16px 16px 40px}
 .side{width:212px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;position:sticky;top:64px;align-self:flex-start;max-height:calc(100vh - 80px);overflow:auto}
+.navgrp{font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+color:var(--dim);font-weight:800;padding:10px 11px 2px}
+.navgrp:first-child{padding-top:2px}
 .navb{display:flex;align-items:center;gap:10px;background:transparent;border:1px solid transparent;color:var(--mut);border-radius:9px;padding:9px 11px;font:inherit;font-size:13px;cursor:pointer;text-align:left;width:100%}
 .navb:hover{background:var(--s1);color:var(--ink)}
 .navb.act{background:var(--s1);border-color:var(--line);color:var(--ink);font-weight:650}
 .navb .ic{width:20px;text-align:center;font-size:14px}
 .navb .bd{margin-left:auto;font-size:10px;background:var(--line);color:var(--mut);border-radius:99px;padding:1px 7px}
-.navb.act .bd{background:var(--teal);color:#04121a}
+.navb.act .bd{background:var(--teal);color:#FFFFFF}
 .main{flex:1;min-width:0}
 .page{display:none}.page.on{display:block}
 .ph{margin:0 0 4px;font-size:18px;font-weight:750;letter-spacing:-.01em}
@@ -134,7 +138,7 @@ h1{font-size:15.5px;margin:0;font-weight:700}.brand small{display:block;color:va
 .p-live{color:var(--good);background:rgba(63,217,139,.12)}.p-need{color:var(--warn);background:rgba(245,177,76,.13)}
 .pill .d{width:6px;height:6px;border-radius:50%}
 .fn{display:flex;flex-direction:column;gap:6px}.fr{display:flex;align-items:center;gap:10px}
-.fbar{height:26px;border-radius:6px;display:flex;align-items:center;padding:0 9px;color:#05131f;font-weight:750;font-size:12px;min-width:28px}
+.fbar{height:26px;border-radius:6px;display:flex;align-items:center;padding:0 9px;color:#FFFFFF;font-weight:750;font-size:12px;min-width:28px}
 .fr .fl{width:120px;color:var(--mut);font-size:12px;flex-shrink:0}
 .bars{display:flex;flex-direction:column;gap:8px}.br{display:flex;align-items:center;gap:10px}
 .br .bl{width:110px;font-size:12px;color:var(--mut)}.track{flex:1;height:11px;background:var(--s2);border-radius:99px;overflow:hidden}.track i{display:block;height:100%;border-radius:99px}
@@ -154,8 +158,8 @@ th,td{text-align:left;padding:9px 10px;font-size:12px;border-bottom:1px solid va
 th{color:var(--dim);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700}
 .tbwrap{overflow-x:auto}
 .cmd{display:flex;gap:8px;flex-wrap:wrap}.cmd select,.cmd input{flex:1;min-width:130px;background:var(--s2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:9px 11px;font:inherit}
-.cmd button{background:var(--teal);color:#04121a;font-weight:700;border:none;border-radius:8px;padding:9px 15px;cursor:pointer}
-pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font-size:11.5px;color:#B9C4E0;max-height:190px;margin-top:8px}
+.cmd button{background:var(--teal);color:#FFFFFF;font-weight:700;border:none;border-radius:8px;padding:9px 15px;cursor:pointer}
+pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font-size:11.5px;color:#374151;max-height:190px;margin-top:8px}
 .maplegend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);margin-top:12px}
 .ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 .cbtn{background:var(--s1);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:8px 13px;font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
@@ -163,12 +167,12 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .attn{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
 .alert{background:var(--s1);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:12.5px;color:var(--ink);cursor:pointer;display:inline-flex;gap:7px;align-items:center}
 .alert:hover{border-color:var(--teal)}
-.sbtn{background:var(--good);color:#04140a;border:none;border-radius:7px;padding:5px 11px;font-weight:700;font-size:11.5px;cursor:pointer}
+.sbtn{background:var(--good);color:#FFFFFF;border:none;border-radius:7px;padding:5px 11px;font-weight:700;font-size:11.5px;cursor:pointer}
 .prog{height:8px;background:var(--s2);border-radius:99px;overflow:hidden;margin:6px 0 10px}.prog i{display:block;height:100%;background:var(--teal);border-radius:99px}
 .cgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
 .cform{background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:13px;display:flex;flex-direction:column;gap:7px}
 .cflab{font-size:12.5px;font-weight:700}
-.cform input{background:#0a0f1b;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:8px 10px;font:inherit;font-size:12px}
+.cform input{background:#FFFFFF;border:1px solid var(--line);color:var(--ink);border-radius:7px;padding:8px 10px;font:inherit;font-size:12px}
 .cform input:focus{outline:none;border-color:var(--teal)}
 /* A label that STAYS. Placeholders vanish the moment you type, which turned six
    stacked password boxes into six identical fields with no way to tell them apart. */
@@ -227,7 +231,7 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 .dfconn .line{position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--line2),var(--teal),var(--line2))}
 .dfconn::after{content:'';position:absolute;top:-2px;left:0;width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 7px var(--teal);animation:dfflow 1.7s linear infinite}
 @keyframes dfflow{0%{left:-4px;opacity:0}15%{opacity:1}85%{opacity:1}100%{left:100%;opacity:0}}
-.mcard{background:linear-gradient(180deg,#0d1a33,#0b111f);border-color:#22345a;margin-bottom:12px}
+.mcard{background:linear-gradient(180deg,#0d1a33,#F9FAFB);border-color:#22345a;margin-bottom:12px}
 .mhead{display:flex;align-items:center;gap:11px;margin-bottom:13px}
 .mi{font-size:22px}.mt{font-size:15px;font-weight:750;letter-spacing:-.01em}
 .mbody{display:flex;gap:20px;flex-wrap:wrap;align-items:center}
@@ -239,13 +243,13 @@ pre{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:
 @media(max-width:860px){.mbody{flex-direction:column;align-items:stretch}}
 .wkgrid{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:8px;overflow-x:auto;padding-bottom:4px}
 .wkcol{background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:8px;min-height:130px;display:flex;flex-direction:column}
-.wkcol.today{border-color:#2FE3D2;box-shadow:0 0 16px -5px rgba(47,227,210,.55)}
+.wkcol.today{border-color:#2563EB;box-shadow:0 0 16px -5px rgba(47,227,210,.55)}
 .wkcol.wknd{opacity:.72}
 .wkhead{font-weight:700;font-size:12px;color:var(--ink);padding:2px 2px 8px;border-bottom:1px solid var(--line);margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline}
 .wkhead small{color:var(--mut);font-weight:500;font-size:10px}
-.wkhead .tdy{color:#2FE3D2;font-size:9px;letter-spacing:1px}
-.wkcard{background:rgba(255,255,255,.04);border-radius:8px;padding:7px 8px;margin-bottom:6px;border-left:3px solid var(--c,#2FE3D2);transition:transform .15s}
-.wkcard:hover{transform:translateX(2px);background:rgba(255,255,255,.07)}
+.wkhead .tdy{color:#2563EB;font-size:9px;letter-spacing:1px}
+.wkcard{background:rgba(17,24,39,.04);border-radius:8px;padding:7px 8px;margin-bottom:6px;border-left:3px solid var(--c,#2563EB);transition:transform .15s}
+.wkcard:hover{transform:translateX(2px);background:rgba(17,24,39,.06)}
 .wkcard b{font-size:12px;line-height:1.32;display:block;color:var(--ink)}
 .wkchip{display:inline-block;font-size:9.5px;padding:0 6px;border-radius:6px;margin-top:4px;margin-right:3px}
 .wkempty{color:#3A4160;font-size:11px;text-align:center;margin:auto 0;padding:10px 0}
@@ -752,11 +756,11 @@ def _donut(pct, color):
     off = circ * (1 - min(100, max(0, pct)) / 100)
     return (f'<svg width="112" height="112" viewBox="0 0 112 112"><circle cx="56" cy="56" r="{r}" fill="none" stroke="#16223c" stroke-width="13"/>'
             f'<circle cx="56" cy="56" r="{r}" fill="none" stroke="{color}" stroke-width="13" stroke-linecap="round" stroke-dasharray="{circ:.0f}" stroke-dashoffset="{off:.0f}" transform="rotate(-90 56 56)"/>'
-            f'<text x="56" y="53" text-anchor="middle" fill="#EDF1FB" font-size="22" font-weight="750">{pct}%</text>'
-            f'<text x="56" y="71" text-anchor="middle" fill="#8E9BBE" font-size="10">of budget</text></svg>')
+            f'<text x="56" y="53" text-anchor="middle" fill="#111827" font-size="22" font-weight="750">{pct}%</text>'
+            f'<text x="56" y="71" text-anchor="middle" fill="#4B5563" font-size="10">of budget</text></svg>')
 
 
-_FN = ["#4C8DFF", "#5A7BE8", "#8B7CFF", "#F5B14C", "#2FE3D2", "#3FD98B"]
+_FN = ["#2563EB", "#5A7BE8", "#7C3AED", "#D97706", "#2563EB", "#16A34A"]
 
 
 def _funnel(rows):
@@ -766,7 +770,7 @@ def _funnel(rows):
         for i, (l, v) in enumerate(rows)) + "</div>"
 
 
-def _bars(rows, color="#4C8DFF", money=False):
+def _bars(rows, color="#2563EB", money=False):
     mx = max((v for _, v in rows), default=0) or 1
     out = ["<div class='bars'>"]
     for l, v in rows:
@@ -866,7 +870,7 @@ def _master(icon, title, sub, kpis, chart_html):
 def _sparkline(vals, color, h=42, w=220):
     if not vals or max(vals) == 0:
         return (f"<svg width='100%' height='{h}' viewBox='0 0 {w} {h}' preserveAspectRatio='none'>"
-                f"<line x1='0' y1='{h-6}' x2='{w}' y2='{h-6}' stroke='#1B2640' stroke-width='1.5'/></svg>")
+                f"<line x1='0' y1='{h-6}' x2='{w}' y2='{h-6}' stroke='#E5E7EB' stroke-width='1.5'/></svg>")
     mx = max(vals) or 1
     step = w / max(len(vals) - 1, 1)
     pts = " ".join(f"{i*step:.0f},{h-6-(v/mx)*(h-14):.0f}" for i, v in enumerate(vals))
@@ -962,8 +966,8 @@ _BLUEPRINT = [
 def _blueprint(st):
     def stat(key):
         if key is None:
-            return ("#8B7CFF", "core", "")          # always-on internal part
-        return ("#3FD98B", "live", "on") if st.get(key) else ("#F5B14C", "needs key", "off")
+            return ("#7C3AED", "core", "")          # always-on internal part
+        return ("#16A34A", "live", "on") if st.get(key) else ("#D97706", "needs key", "off")
     cols = []
     for layer, items in _BLUEPRINT:
         live = sum(1 for k, *_ in items if k and st.get(k))
@@ -979,9 +983,9 @@ def _blueprint(st):
         badge = f"<span class='n'>{live}/{keyed} live</span>" if keyed else ""
         cols.append(f"<div class='bpcol'><div class='bpcl'>{_esc(layer)}{badge}</div>{''.join(cards)}</div>")
     legend = ("<div class='bplegend'>"
-              "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#3FD98B;margin-right:5px'></span>Connected &amp; live</span>"
-              "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#F5B14C;margin-right:5px'></span>Ready — needs its key</span>"
-              "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#8B7CFF;margin-right:5px'></span>Always-on engine part</span></div>")
+              "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#16A34A;margin-right:5px'></span>Connected &amp; live</span>"
+              "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#D97706;margin-right:5px'></span>Ready — needs its key</span>"
+              "<span><span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:#7C3AED;margin-right:5px'></span>Always-on engine part</span></div>")
     return ("<div class='bpwrap'>" + "<div class='bparrow'>→</div>".join(cols) + "</div>" + legend)
 
 
@@ -1041,8 +1045,8 @@ def _media_funnel(mb):
     leads = int(_mid(mb.get("estimated_leads_range"), max(1, clicks * 0.05)))
     customers = max(0, round(leads * 0.2))                       # ~20% close assumption
     cpl = (monthly / leads) if leads else 0
-    stages = [("Impressions", impressions, "#4C8DFF"), ("Clicks", clicks, "#2FE3D2"),
-              ("Leads", leads, "#8B7CFF"), ("Customers", customers, "#46E08B")]
+    stages = [("Impressions", impressions, "#2563EB"), ("Clicks", clicks, "#2563EB"),
+              ("Leads", leads, "#7C3AED"), ("Customers", customers, "#46E08B")]
     mx = max(impressions, 1)
     bars = ""
     for label, val, col in stages:
@@ -1088,7 +1092,7 @@ def _media_card(jid, mb, approved=False, live=False, ads_on=False, history=None)
     if q:
         sc = int(q.get("score", 0) or 0)
         weak = q.get("verdict") in ("revise", "block") or sc < 75
-        qcol, qbg = (("#F5B14C", "#3a2c10") if weak else ("#3FD98B", "#10281c"))
+        qcol, qbg = (("#D97706", "#3a2c10") if weak else ("#16A34A", "#10281c"))
         qissues = "".join(f"<div class='fe'><span class='mut'>• {_esc(x)}</span></div>"
                           for x in (q.get("issues") or [])[:3])
         quality = (f"<div style='margin-top:12px;padding:10px 12px;border-radius:9px;background:{qbg}'>"
@@ -1107,7 +1111,7 @@ def _media_card(jid, mb, approved=False, live=False, ads_on=False, history=None)
                 f"<span class='mut'>{_esc(h.get('text',''))}</span></div>")
     chat = (
         f"<div class='mchat' id='mchat-{_esc(jid)}' style='display:none;margin-top:12px;"
-        "border-top:1px solid rgba(255,255,255,.08);padding-top:12px'>"
+        "border-top:1px solid rgba(17,24,39,.08);padding-top:12px'>"
         f"<div class='dim'>💬 Talk to the media buyer — ask why, or request changes (budget, keywords, headlines, locations)</div>"
         f"<div class='mlog' id='mlog-{_esc(jid)}' style='margin-top:8px;max-height:240px;overflow:auto'>{log}</div>"
         "<div class='ctrl' style='margin-top:8px'>"
@@ -1166,7 +1170,7 @@ def _media_tracking_panel(web):
             "This is what your funnel is built on.</p>"
             "<div style='display:flex;gap:22px;flex-wrap:wrap'>"
             f"<div style='flex:1;min-width:240px'><div class='dim'>Sessions</div>"
-            f"<div class='big tnum' style='color:#2FE3D2'>{sessions:,}</div>"
+            f"<div class='big tnum' style='color:#2563EB'>{sessions:,}</div>"
             f"<div class='dim' style='margin-top:8px'>Top pages</div>{pages}</div>"
             f"<div style='flex:1;min-width:240px'><div class='dim'>Top search queries (Search Console)</div>"
             f"<div style='margin-top:4px'>{queries}</div></div></div></div>")
@@ -1186,10 +1190,10 @@ def _media_page(jobs, st, web_tracking=None, with_master=True):
     live = sum(1 for j, _ in drafts if j.get("status") == "campaign_live")
     master = _master("🎯", "Media buying — at a glance",
         "AI-drafted Google Ads campaigns from your creatives. Nothing spends until you deploy.",
-        [("Drafts", len(drafts), "#EDF1FB"), ("Waiting you", waiting, "#F5B14C"),
-         ("Live", live, "#3FD98B"),
-         ("Budget drafted", f"${total:,.0f}/mo", "#8B7CFF"),
-         ("Google Ads", "live" if ads_on else "not connected", "#3FD98B" if ads_on else "#F5B14C")],
+        [("Drafts", len(drafts), "#111827"), ("Waiting you", waiting, "#D97706"),
+         ("Live", live, "#16A34A"),
+         ("Budget drafted", f"${total:,.0f}/mo", "#7C3AED"),
+         ("Google Ads", "live" if ads_on else "not connected", "#16A34A" if ads_on else "#D97706")],
         "<div class='ctrl' style='margin-top:8px'>"
         "<button class='sbtn' id='draftbtn' onclick='draftCampaign()'>✍️ Draft a campaign now</button>"
         "<span class='dim' style='align-self:center'>Runs the media buyer on your ICP — a full campaign appears below in ~15s.</span></div>")
@@ -1269,7 +1273,7 @@ def _pipeline_health(st, jobs):
         ok = bool(st.get(k))
         if not ok and k in _HEALTH_CRITICAL:
             down_critical.append(name)
-        badge = ("<span class='pill p-live'><span class='d' style='background:#3FD98B'></span>OK</span>" if ok
+        badge = ("<span class='pill p-live'><span class='d' style='background:#16A34A'></span>OK</span>" if ok
                  else "<span class='pill p-need'><span class='d' style='background:#F5788A'></span>DOWN</span>")
         rows += f"<tr><td>{name}</td><td>{badge}</td><td class='mut'>{'Working.' if ok else _esc(why)}</td></tr>"
     fails = [j for j in jobs if j.get("status") in ("failed", "halted_budget")]
@@ -1285,8 +1289,8 @@ def _pipeline_health(st, jobs):
         banner = ("<div style='padding:10px 12px;border-radius:8px;background:#2c1420;border-left:4px solid #F5788A;margin-bottom:10px'>"
                   f"<b style='color:#F5788A'>⛔ Can't run:</b> {', '.join(down_critical)} is down — connect it on the System Map.</div>")
     elif not fails:
-        banner = ("<div style='padding:10px 12px;border-radius:8px;background:#10281c;border-left:4px solid #3FD98B;margin-bottom:10px'>"
-                  "<b style='color:#3FD98B'>✅ Pipeline healthy</b> — every critical wire is up and no jobs are stuck.</div>")
+        banner = ("<div style='padding:10px 12px;border-radius:8px;background:#10281c;border-left:4px solid #16A34A;margin-bottom:10px'>"
+                  "<b style='color:#16A34A'>✅ Pipeline healthy</b> — every critical wire is up and no jobs are stuck.</div>")
     else:
         banner = ""
     fail_tbl = (f"<div class='dim' style='margin-top:12px'>Recent stops ({len(fails)})</div>"
@@ -1302,12 +1306,12 @@ def _pipeline_health(st, jobs):
 
 
 _LEAD_STATUS = {
-    "sent": ("emailed", "#3FD98B"), "measuring": ("emailed", "#3FD98B"),
-    "measured": ("emailed", "#3FD98B"), "optimized": ("emailed", "#3FD98B"),
-    "AWAITING_APPROVAL": ("email ready — awaiting your OK", "#F5B14C"),
-    "drafted": ("writing email", "#4C8DFF"), "segmented": ("qualified", "#8B7CFF"),
-    "qualified": ("qualified", "#8B7CFF"), "revision_needed": ("email held (QA)", "#F5788A"),
-    "failed": ("stopped", "#F5788A"), "created": ("sourced", "#8E9BBE"),
+    "sent": ("emailed", "#16A34A"), "measuring": ("emailed", "#16A34A"),
+    "measured": ("emailed", "#16A34A"), "optimized": ("emailed", "#16A34A"),
+    "AWAITING_APPROVAL": ("email ready — awaiting your OK", "#D97706"),
+    "drafted": ("writing email", "#2563EB"), "segmented": ("qualified", "#7C3AED"),
+    "qualified": ("qualified", "#7C3AED"), "revision_needed": ("email held (QA)", "#F5788A"),
+    "failed": ("stopped", "#F5788A"), "created": ("sourced", "#4B5563"),
 }
 
 
@@ -1357,22 +1361,22 @@ def _leads_table(jobs):
     rows = ""
     for L, js, q, em in triples[:200]:
         if em:
-            label, col = ("✉ emailed", "#3FD98B")
+            label, col = ("✉ emailed", "#16A34A")
         elif js in ("sent", "measuring", "measured", "optimized"):
-            label, col = ("in list · not emailed", "#8E9BBE")
+            label, col = ("in list · not emailed", "#4B5563")
         else:
-            label, col = _LEAD_STATUS.get(js, ("sourced", "#8E9BBE"))
+            label, col = _LEAD_STATUS.get(js, ("sourced", "#4B5563"))
         fit = q.get("fit_score")
         fit_txt = f"{fit}/10" if fit not in (None, "") else "—"
         prio = q.get("priority", "")
-        pcol = {"urgent": "#F5788A", "high": "#F5B14C", "medium": "#4C8DFF", "low": "#8E9BBE"}.get(prio, "#8E9BBE")
+        pcol = {"urgent": "#F5788A", "high": "#D97706", "medium": "#2563EB", "low": "#4B5563"}.get(prio, "#4B5563")
         biz = q.get("business") or (q.get("category") if q.get("category") != "disqualified" else "") or "—"
         pain = q.get("pain_point") or "—"
         offer = q.get("offer") or "—"
         reason = q.get("reason") or ""
         web = (L.get("domain") or "").strip()
         weblink = (f"<div class='dim'>🌐 <a href='https://{_esc(web)}' target='_blank' "
-                   f"style='color:#4C8DFF'>{_esc(web)}</a></div>") if web else ""
+                   f"style='color:#2563EB'>{_esc(web)}</a></div>") if web else ""
         reason_html = (f"<div class='dim' style='margin-top:3px'>Why: {_esc(reason)}</div>") if reason else ""
         rows += (f"<tr><td><b>{_esc(L.get('name','') or '—')}</b>"
                  f"<div class='dim'>{_esc(L.get('title','') or '')}</div></td>"
@@ -1456,14 +1460,14 @@ def _brand_palette(ci_text=""):
 
 def _blog_webview_srcdoc(title, body, ci_text="", hero_url="", kicker="ANTHROPOS · FIELD NOTES"):
     """Render the piece EXACTLY like a real post on anthropos-automation.com:
-    dark theme (#080B14), Sora headings + Instrument Sans body, teal/coral
+    dark theme (#F3F4F6), Sora headings + Instrument Sans body, teal/coral
     accents, 760px column, rounded images, teal booking CTA. Matched from the
     live site's computed styles — not an invented template."""
     # real site palette (accent overridable via saved CI hexes)
     _, accent, _a2 = _brand_palette(ci_text)
     if not ci_text.strip():
-        accent = "#2FE3D2"                    # site teal
-    BG, INK, MUT, CORAL = "#080B14", "#EAF0FF", "#9AA6C6", "#FF5C8A"
+        accent = "#2563EB"                    # site teal
+    BG, INK, MUT, CORAL = "#F3F4F6", "#EAF0FF", "#9AA6C6", "#FF5C8A"
     inner = _md_to_html(body)
     hero = (f"<img class='hero' src='{_esc(hero_url)}' alt=''>"
             if isinstance(hero_url, str) and hero_url.startswith("http") else "")
@@ -1481,7 +1485,7 @@ def _blog_webview_srcdoc(title, body, ci_text="", hero_url="", kicker="ANTHROPOS
         "h1{font-family:'Sora',system-ui,sans-serif;font-weight:800;font-size:38px;line-height:1.15;"
         "margin:0 0 14px;color:" + INK + "}"
         ".hero{width:100%;height:auto;display:block;border-radius:16px;margin:24px 0 8px;"
-        "border:1px solid rgba(255,255,255,.09)}"
+        "border:1px solid rgba(17,24,39,.08)}"
         "h2{font-family:'Sora',system-ui,sans-serif;font-weight:700;font-size:27px;line-height:1.2;"
         "margin:40px 0 14px;color:" + INK + "}"
         "h3{font-family:'Sora',system-ui,sans-serif;font-weight:600;font-size:21px;"
@@ -1490,10 +1494,10 @@ def _blog_webview_srcdoc(title, body, ci_text="", hero_url="", kicker="ANTHROPOS
         "a{color:" + accent + ";text-decoration:underline}"
         "ul{margin:0 0 20px;padding-left:22px}li{margin:9px 0;color:" + INK + "}"
         "li::marker{color:" + accent + "}"
-        "img{max-width:100%;border-radius:14px;margin:14px 0;border:1px solid rgba(255,255,255,.09)}"
+        "img{max-width:100%;border-radius:14px;margin:14px 0;border:1px solid rgba(17,24,39,.08)}"
         "strong{color:#fff;font-weight:600}"
         ".cta{margin-top:44px;padding:28px;border-radius:18px;"
-        "background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.09)}"
+        "background:rgba(17,24,39,.03);border:1px solid rgba(17,24,39,.08)}"
         ".cta .ek{font:700 11px/1 'Instrument Sans',sans-serif;letter-spacing:2px;color:" + accent + ";"
         "text-transform:uppercase}"
         ".cta b{display:block;font-family:'Sora',sans-serif;font-size:22px;font-weight:700;margin:8px 0 6px;color:#fff}"
@@ -1606,7 +1610,7 @@ def _outbox(jobs):
                 "</div>"
                 "<p class='cc'>Each customer gets a <b>3-dot cycle</b> (●●●) you can track and send step by step — "
                 "and after the 3rd email we stop automatically. "
-                f"<b style='color:#F5B14C'>{_esc(why)}</b></p></div>")
+                f"<b style='color:#D97706'>{_esc(why)}</b></p></div>")
     ready = sum(1 for it in items if it[6] == "ready")
     complete = sum(1 for it in items if it[6] == "complete")
     emails_sent = sum(it[8] for it in items)          # total emails sent across all steps
@@ -1618,7 +1622,7 @@ def _outbox(jobs):
     sample = ""
     if sample_html:
         _sd = sample_html.replace("&", "&amp;").replace('"', "&quot;")
-        sample = ("<details style='margin-bottom:12px'><summary style='cursor:pointer;color:#4C8DFF;font-weight:600'>"
+        sample = ("<details style='margin-bottom:12px'><summary style='cursor:pointer;color:#2563EB;font-weight:600'>"
                   "🎨 Preview how your email looks to the customer (branded)</summary>"
                   f"<iframe srcdoc=\"{_sd}\" style='width:100%;max-width:640px;height:560px;border:1px solid var(--line);"
                   "border-radius:9px;background:#fff;margin-top:8px'></iframe>"
@@ -1629,7 +1633,7 @@ def _outbox(jobs):
     npages = (len(items) + PAGE - 1) // PAGE
     rows = ""
     _tlabel = {1: "intro", 2: "follow-up", 3: "final note"}
-    _tstatecol = {"sent": "#3FD98B", "next": "#F5B14C", "pending": "#8E9BBE"}
+    _tstatecol = {"sent": "#16A34A", "next": "#D97706", "pending": "#4B5563"}
     _tstatelbl = {"sent": "✓ sent", "next": "→ next to send", "pending": "queued"}
     _whenlbl = {"sent": "sent", "due": "due now", "scheduled": "scheduled"}
     for i, (jid, L, q, subj, raw, html, status, was_edited, sent_n, nxt, touches) in enumerate(items):
@@ -1641,8 +1645,8 @@ def _outbox(jobs):
                      if nt["when"] != "due" else "⏰ due now")
         else:
             sched = "✓ complete"
-        stcol = {"complete": "#3FD98B", "ready": "#F5B14C", "held": "#8E9BBE", "blocked": "#F5788A"}.get(status, "#8E9BBE")
-        dots = "".join(f"<span style='color:{'#3FD98B' if k < sent_n else '#3A4160'}'>●</span>" for k in range(3))
+        stcol = {"complete": "#16A34A", "ready": "#D97706", "held": "#4B5563", "blocked": "#F5788A"}.get(status, "#4B5563")
+        dots = "".join(f"<span style='color:{'#16A34A' if k < sent_n else '#3A4160'}'>●</span>" for k in range(3))
         _steplbl = _tlabel.get(nxt, "")
         stlabel = {"complete": "✓ 3/3 done",
                    "ready": f"○ next: {_steplbl}" if _steplbl else "○ ready",
@@ -1658,7 +1662,7 @@ def _outbox(jobs):
         tblocks = ""
         for t in touches:
             thtml_attr = (t["html"] or "").replace("&", "&amp;").replace('"', "&quot;")
-            scol = _tstatecol.get(t["state"], "#8E9BBE")
+            scol = _tstatecol.get(t["state"], "#4B5563")
             slbl = _tstatelbl.get(t["state"], t["state"])
             # the real date this step went out / is due / is scheduled
             when = t.get("when", "")
@@ -1717,7 +1721,7 @@ def _outbox(jobs):
                  "<button class='cbtn' onclick='pageOutbox(1)'>Next ›</button></div>")
     # the follow-up cadence explainer — COLLAPSIBLE so it doesn't eat the screen
     cadence = (
-        "<details class='card' open style='margin-bottom:10px;background:rgba(76,141,255,.06);border-left:4px solid #4C8DFF'>"
+        "<details class='card' open style='margin-bottom:10px;background:rgba(76,141,255,.06);border-left:4px solid #2563EB'>"
         "<summary style='cursor:pointer;font-weight:700;list-style:none'>🔁 3-email follow-up cycle (then we stop) "
         "<span class='dim' style='font-weight:400'>— click to fold/unfold</span></summary>"
         "<div style='display:flex;gap:10px;flex-wrap:wrap;font-size:13px;margin-top:10px'>"
@@ -1727,12 +1731,12 @@ def _outbox(jobs):
         "</div>"
         f"<p class='cc' style='margin-top:8px'>Each customer gets <b>at most 3 emails</b>, each one different. "
         f"After the 3rd, that customer is done — <b>no more emails</b>. The dots (●●●) track where each person is.</p>"
-        f"<div class='dim' style='margin-top:6px'>{customers} customers · <b style='color:#3FD98B'>{emails_sent} emails sent</b> · "
-        f"<b style='color:#F5B14C'>{remaining} still to send</b> across all cycles · {complete} finished all 3.</div></details>")
+        f"<div class='dim' style='margin-top:6px'>{customers} customers · <b style='color:#16A34A'>{emails_sent} emails sent</b> · "
+        f"<b style='color:#D97706'>{remaining} still to send</b> across all cycles · {complete} finished all 3.</div></details>")
     return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>📬 Email outbox — your agent's emails, per customer</p>"
             f"<p class='cc'>One personalized email per lead, built from their persona (business · pain · offer), "
-            f"sent as a <b>3-step sequence</b>. <b style='color:#F5B14C'>{ready} ready for their next email</b> · "
-            f"<b style='color:#3FD98B'>{emails_sent} emails sent</b>. "
+            f"sent as a <b>3-step sequence</b>. <b style='color:#D97706'>{ready} ready for their next email</b> · "
+            f"<b style='color:#16A34A'>{emails_sent} emails sent</b>. "
             "Send one, tick several and send selected, or send all — warm-up capped so day-one stays safe. "
             "Nothing sends until you click.</p>"
             + cadence
@@ -1757,7 +1761,7 @@ def _junk_box(trashed_items):
                  f"<span class='dim'>({_esc(email)})</span></span>"
                  f"<button class='cbtn' style='margin-left:auto;padding:2px 10px' "
                  f"onclick=\"restoreEmail('{_esc(jid)}','{_esc(email)}')\">↩ Restore</button></div>")
-    return ("<details style='margin-top:12px'><summary style='cursor:pointer;color:#8E9BBE;font-weight:600'>"
+    return ("<details style='margin-top:12px'><summary style='cursor:pointer;color:#4B5563;font-weight:600'>"
             f"🗑 Junk box ({len(trashed_items)}) — deleted emails, kept safe &amp; restorable</summary>"
             "<div style='margin-top:8px'>" + rows + "</div>"
             "<div class='dim' style='margin-top:6px'>Deleting an email moves it here (it's never permanently lost). "
@@ -1781,14 +1785,14 @@ def _replies_inbox(reply_drafts):
     if not pending and not done:
         return (head + "<div class='fe'><span class='mut'>No replies yet. When customers reply to your emails, "
                 "their message + a ready-to-edit draft answer will appear here.</span></div></div>")
-    _icol = {"interested": "#3FD98B", "question": "#4C8DFF", "objection": "#F5B14C",
-             "unsubscribe": "#FF6B93", "complaint": "#FF6B93", "not_interested": "#8E9BBE"}
+    _icol = {"interested": "#16A34A", "question": "#2563EB", "objection": "#D97706",
+             "unsubscribe": "#DC2626", "complaint": "#DC2626", "not_interested": "#4B5563"}
     rows = ""
     for i, d in enumerate(pending):
         rid = _esc(d.get("id", ""))
         intent = d.get("intent") or "reply"
-        icol = _icol.get(intent, "#8E9BBE")
-        hflag = (" <span class='pill' style='background:rgba(255,107,147,.15);color:#FF6B93;padding:1px 7px'>"
+        icol = _icol.get(intent, "#4B5563")
+        hflag = (" <span class='pill' style='background:rgba(255,107,147,.15);color:#DC2626;padding:1px 7px'>"
                  "needs your judgement</span>" if d.get("needs_human") else "")
         edited = " <span class='pill p-live' style='padding:1px 7px'>edited</span>" if d.get("edited") else ""
         rows += (
@@ -1799,7 +1803,7 @@ def _replies_inbox(reply_drafts):
             f"<span class='pill' style='background:{icol}22;color:{icol};padding:1px 8px'>{_esc(intent)}</span>"
             f"{hflag}</div>"
             # what the customer wrote
-            f"<div style='margin-top:8px;padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.03);"
+            f"<div style='margin-top:8px;padding:9px 11px;border-radius:8px;background:rgba(17,24,39,.03);"
             "border-left:3px solid #3A4160'>"
             f"<div class='dim' style='font-size:12px'>They wrote — re: {_esc(d.get('subject_in',''))}</div>"
             f"<div style='white-space:pre-wrap;margin-top:3px;font-size:13.5px'>{_esc((d.get('message_in') or '')[:1200])}</div></div>"
@@ -1817,11 +1821,11 @@ def _replies_inbox(reply_drafts):
         drows = ""
         for d in done[-40:][::-1]:
             tag = "✓ sent" if d.get("status") == "sent" else "dismissed"
-            tcol = "#3FD98B" if d.get("status") == "sent" else "#8E9BBE"
+            tcol = "#16A34A" if d.get("status") == "sent" else "#4B5563"
             drows += (f"<div class='fe'><span class='mut'>{_esc(d.get('from_name') or d.get('from_email'))} "
                       f"<span class='dim'>— re: {_esc(d.get('subject_in',''))}</span></span>"
                       f"<span style='margin-left:auto;color:{tcol};font-weight:600'>{tag}</span></div>")
-        donebox = ("<details style='margin-top:8px'><summary style='cursor:pointer;color:#8E9BBE;font-weight:600'>"
+        donebox = ("<details style='margin-top:8px'><summary style='cursor:pointer;color:#4B5563;font-weight:600'>"
                    f"History ({len(done)})</summary><div style='margin-top:8px'>" + drows + "</div></details>")
     return head + rows + donebox + "</div>"
 
@@ -1876,16 +1880,16 @@ def _followups_due(jobs):
             cards += (
                 "<div style='background:var(--s2);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px'>"
                 f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'>"
-                f"<span class='pill' style='background:rgba(245,177,76,.15);color:#F5B14C;padding:1px 8px'>⏰ {_tname.get(nxt,'Follow-up')} due</span>"
+                f"<span class='pill' style='background:rgba(245,177,76,.15);color:#D97706;padding:1px 8px'>⏰ {_tname.get(nxt,'Follow-up')} due</span>"
                 f"<b>{_esc(L.get('name',''))}</b><span class='dim'>{_esc(L.get('company',''))} · {_esc(e)}</span>"
                 f"<button class='sbtn' style='margin-left:auto' onclick=\"sendOne('{_esc(j.get('job_id'))}','{_esc(e)}')\">✓ Approve &amp; send</button></div>"
                 f"<div class='dim' style='margin-top:6px'>Subject: <b>{_esc(subj)}</b></div>"
-                f"<details style='margin-top:6px'><summary style='cursor:pointer;color:#4C8DFF;font-weight:600'>👁 Preview this follow-up</summary>"
+                f"<details style='margin-top:6px'><summary style='cursor:pointer;color:#2563EB;font-weight:600'>👁 Preview this follow-up</summary>"
                 f"<iframe srcdoc=\"{html_attr}\" style='width:100%;max-width:600px;height:460px;border:1px solid var(--line);"
                 "border-radius:9px;background:#fff;margin-top:8px'></iframe></details></div>")
     if not n:
         return ""
-    return ("<div class='card full' style='margin-bottom:12px;border-left:4px solid #F5B14C'>"
+    return ("<div class='card full' style='margin-bottom:12px;border-left:4px solid #D97706'>"
             f"<p class='ct'>⏰ Follow-ups due for approval ({n})</p>"
             "<p class='cc'>These customers are due for their next email in the 3-step cycle (they haven't replied). "
             "Preview each follow-up and approve it — nothing sends on its own.</p>" + cards + "</div>")
@@ -1919,7 +1923,7 @@ def _outbox_pointer(jobs):
     n = _outbox_ready_count(jobs)
     if not n:
         return ""
-    return ("<div class='card full' style='margin-bottom:12px;border-left:4px solid #F5B14C'>"
+    return ("<div class='card full' style='margin-bottom:12px;border-left:4px solid #D97706'>"
             f"<p class='ct'>📬 {n} personalized email{'s' if n != 1 else ''} ready to send</p>"
             "<p class='cc'>Your agent has written one on-brand email per customer (from their persona). Send them all "
             "from here in one click, or open the outbox to review, edit, preview or send individually.</p>"
@@ -1988,10 +1992,10 @@ def _factory_line(content_jobs):
     for i, (ic, nm, desc, _s) in enumerate(_FACTORY):
         n = counts[i]
         active = n > 0
-        col = "#2FE3D2" if active else "#3A4160"
-        badge = (f"<span style='position:absolute;top:-8px;right:-8px;background:#2FE3D2;color:#04121a;"
+        col = "#2563EB" if active else "#3A4160"
+        badge = (f"<span style='position:absolute;top:-8px;right:-8px;background:#2563EB;color:#FFFFFF;"
                  f"font-weight:800;font-size:11px;border-radius:10px;padding:1px 7px'>{n}</span>" if active else "")
-        arrow = (f"<div class='cf-arrow' style='align-self:center;color:#2FE3D2;font-size:18px;flex:0 0 auto;"
+        arrow = (f"<div class='cf-arrow' style='align-self:center;color:#2563EB;font-size:18px;flex:0 0 auto;"
                  f"animation-delay:{i * 0.22:.2f}s'>→</div>" if i < len(_FACTORY) - 1 else "")
         stations += (
             f"<div class='cf-station{' cf-live' if active else ''}' style='position:relative;flex:0 0 150px;"
@@ -2019,21 +2023,21 @@ _CF3D_CSS = """
  transform-style:preserve-3d;display:grid;grid-template-columns:repeat(6,1fr);grid-auto-rows:78px;gap:13px;
  transform:rotateX(54deg) rotateZ(0deg);transition:transform .08s linear;will-change:transform}
 .cf3d-tile{position:relative;transform-style:preserve-3d;transform:translateZ(var(--z,0px));
- border-radius:10px;background:rgba(255,255,255,.028);border:1px solid var(--line);
+ border-radius:10px;background:rgba(17,24,39,.03);border:1px solid var(--line);
  display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;
  transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s,filter .3s}
-.cf3d-has{background:rgba(255,255,255,.05);border-color:var(--c);
+.cf3d-has{background:rgba(17,24,39,.05);border-color:var(--c);
  box-shadow:0 0 22px -5px var(--c),0 14px 26px rgba(0,0,0,.5)}
 .cf3d-tile:hover{transform:translateZ(calc(var(--z,0px) + 46px)) scale(1.06);filter:brightness(1.25);z-index:9}
 .cf3d-sel{outline:2px solid #fff;outline-offset:1px}
-.cf3d-dnum{font-weight:800;font-size:19px;color:#EDF1FB;line-height:1}
-.cf3d-dow{font-size:9px;color:#8E9BBE;text-transform:uppercase;letter-spacing:1.5px;margin-top:2px}
-.cf3d-cnt{position:absolute;top:-9px;right:-9px;color:#04121a;font-weight:800;font-size:11px;border-radius:10px;padding:1px 6px}
+.cf3d-dnum{font-weight:800;font-size:19px;color:#111827;line-height:1}
+.cf3d-dow{font-size:9px;color:#4B5563;text-transform:uppercase;letter-spacing:1.5px;margin-top:2px}
+.cf3d-cnt{position:absolute;top:-9px;right:-9px;color:#FFFFFF;font-weight:800;font-size:11px;border-radius:10px;padding:1px 6px}
 .cf3d-dots{display:flex;gap:3px;margin-top:4px}
 .cf3d-dot{width:5px;height:5px;border-radius:50%}
-.cf3d-legend{position:absolute;top:12px;left:14px;display:flex;gap:12px;font-size:11px;color:#8E9BBE;z-index:5}
+.cf3d-legend{position:absolute;top:12px;left:14px;display:flex;gap:12px;font-size:11px;color:#4B5563;z-index:5}
 .cf3d-lg{display:flex;align-items:center;gap:5px}.cf3d-sw{width:9px;height:9px;border-radius:2px;display:inline-block}
-.cf3d-hint{position:absolute;bottom:10px;left:14px;color:#59668A;font-size:11px;z-index:5}
+.cf3d-hint{position:absolute;bottom:10px;left:14px;color:#6B7280;font-size:11px;z-index:5}
 .cf3d-reset{position:absolute;bottom:10px;right:14px;z-index:5}
 </style>"""
 
@@ -2086,7 +2090,7 @@ def _week_calendar(content_jobs, content_plan):
                                   "seg": it.get("segment", ""), "si": 0, "status": "plan", "jid": "", "ref": ""})
 
     def _chip(label):
-        col = "#4C9AFF" if label == "LinkedIn" else "#2FE3D2"
+        col = "#4C9AFF" if label == "LinkedIn" else "#2563EB"
         return f"<span class='wkchip' style='background:{col}22;color:{col}'>{'in ' if label=='LinkedIn' else '🌐 '}{_esc(label)}</span>"
 
     cols = ""
@@ -2100,7 +2104,7 @@ def _week_calendar(content_jobs, content_plan):
         if items:
             body = ""
             for it in items:
-                col = "#4C9AFF" if ("LinkedIn" in it["ch"] and "Website" not in it["ch"]) else "#2FE3D2"
+                col = "#4C9AFF" if ("LinkedIn" in it["ch"] and "Website" not in it["ch"]) else "#2563EB"
                 chips = "".join(_chip(c) for c in it["ch"])
                 seg = f"<div class='dim' style='font-size:10px;margin-top:3px'>{_esc(it['seg'])}</div>" if it.get("seg") else ""
                 si = it.get("si", 0)
@@ -2111,18 +2115,18 @@ def _week_calendar(content_jobs, content_plan):
                     cta = (f"<div style='margin-top:5px;display:flex;gap:4px'>"
                            f"<button class='sbtn' style='padding:2px 8px;font-size:11px' onclick=\"approve('{_esc(jid)}')\">✓ Approve</button>"
                            f"<button class='cbtn' style='padding:2px 8px;font-size:11px' onclick=\"nav('appr')\">👁 Review</button></div>")
-                    stg_col = "#F5B14C"
+                    stg_col = "#D97706"
                 elif st == "plan":
                     cta = (f"<div style='margin-top:5px'><button class='sbtn' style='padding:2px 8px;font-size:11px' "
                            f"onclick=\"nav('appr')\">Approve the plan →</button></div>")
-                    stg_col = "#8B7CFF"
+                    stg_col = "#7C3AED"
                 elif isinstance(ref, str) and ref.startswith("http"):
                     cta = (f"<div style='margin-top:5px'><a class='cbtn' style='padding:2px 8px;font-size:11px' "
                            f"href='{_esc(ref)}' target='_blank'>🔗 View live</a></div>")
-                    stg_col = "#3FD98B"
+                    stg_col = "#16A34A"
                 else:
                     cta = ""
-                    stg_col = "#8E9BBE"
+                    stg_col = "#4B5563"
                 body += (f"<div class='wkcard' style='--c:{col}'><b>{_esc(str(it['t'])[:64])}</b>{chips}{seg}"
                          f"<div style='font-size:10px;margin-top:3px;color:{stg_col};font-weight:600'>{stage}</div>{cta}</div>")
         else:
@@ -2133,10 +2137,10 @@ def _week_calendar(content_jobs, content_plan):
     span = f"{days[0].strftime('%b %d')} → {days[-1].strftime('%b %d')}"
     # honest production summary (the real state, not just a drawing)
     if total:
-        summary = (f"<b style='color:#F5B14C'>{waiting} waiting for you</b> · "
-                   f"<b style='color:#4C8DFF'>{inprod} in production</b> · "
-                   f"<b style='color:#3FD98B'>{live} live</b>"
-                   + (f" · <b style='color:#8B7CFF'>{planned_n} planned (not yet approved)</b>" if planned_n else ""))
+        summary = (f"<b style='color:#D97706'>{waiting} waiting for you</b> · "
+                   f"<b style='color:#2563EB'>{inprod} in production</b> · "
+                   f"<b style='color:#16A34A'>{live} live</b>"
+                   + (f" · <b style='color:#7C3AED'>{planned_n} planned (not yet approved)</b>" if planned_n else ""))
     else:
         summary = "Nothing in the factory yet — hit <b>Plan my week</b> below to fill it, agency-style."
     stuck = (inprod and False)   # placeholder for an engine-off signal
@@ -2159,21 +2163,21 @@ def _content_calendar(content_jobs, content_plan):
         for c in chs or ["website"]:
             c = str(c).lower()
             if c in ("website", "web", "blog", "wordpress"):
-                out += "<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 7px'>🌐 Website</span> "
+                out += "<span class='pill' style='background:rgba(47,227,210,.14);color:#2563EB;padding:1px 7px'>🌐 Website</span> "
             else:
                 # Instagram, Facebook, YouTube, X and TikTok rendered NOTHING —
                 # a piece planned for Instagram showed a title with no channel.
                 _CH_PILL = {
                     "linkedin": ("in LinkedIn", "10,102,194", "#4C9AFF"),
                     "instagram": ("◎ Instagram", "225,48,108", "#F5788A"),
-                    "facebook": ("f Facebook", "24,119,242", "#4C8DFF"),
-                    "meta": ("f Facebook", "24,119,242", "#4C8DFF"),
+                    "facebook": ("f Facebook", "24,119,242", "#2563EB"),
+                    "meta": ("f Facebook", "24,119,242", "#2563EB"),
                     "youtube": ("▶ YouTube", "255,0,0", "#F5788A"),
                     "twitter": ("𝕏 X", "120,120,140", "#C7D0E8"),
                     "x": ("𝕏 X", "120,120,140", "#C7D0E8"),
-                    "tiktok": ("♪ TikTok", "0,242,234", "#2FE3D2"),
+                    "tiktok": ("♪ TikTok", "0,242,234", "#2563EB"),
                 }
-                lbl, rgb, col = _CH_PILL.get(c, (c.title(), "139,124,255", "#8B7CFF"))
+                lbl, rgb, col = _CH_PILL.get(c, (c.title(), "139,124,255", "#7C3AED"))
                 out += (f"<span class='pill' style='background:rgba({rgb},.16);"
                         f"color:{col};padding:1px 7px'>{_esc(lbl)}</span> ")
         return out
@@ -2207,12 +2211,12 @@ def _content_calendar(content_jobs, content_plan):
         items = ""
         for title, chans, stage, is_plan in by_day[d]:
             items += (
-                "<div style='padding:8px 0 8px 14px;border-left:2px solid rgba(255,255,255,.08);margin:6px 0 6px 6px'>"
+                "<div style='padding:8px 0 8px 14px;border-left:2px solid rgba(17,24,39,.08);margin:6px 0 6px 6px'>"
                 f"<div style='display:flex;gap:8px;align-items:baseline;flex-wrap:wrap'><b>{_esc(str(title)[:80])}</b>"
                 f"<span style='margin-left:auto'>{_chan_badges(chans)}</span></div>"
                 f"<div class='dim' style='margin-top:2px'>{_esc(stage)}</div></div>")
         rows += (f"<div style='margin-top:10px'><span class='pill' style='background:rgba(139,124,255,.16);"
-                 f"color:#8B7CFF;padding:2px 10px;font-weight:700'>📅 {lbl}</span>{items}</div>")
+                 f"color:#7C3AED;padding:2px 10px;font-weight:700'>📅 {lbl}</span>{items}</div>")
     return ("<div class='card full' style='margin-bottom:12px'>"
             "<p class='ct'>🗓️ Content calendar — what posts, which day, which channel</p>"
             "<p class='cc'>Every planned + in-production piece on a timeline, with its channels and where it is in the "
@@ -2266,10 +2270,10 @@ def _factory_3d(content_jobs, content_plan):
         n = len(items)
         li = sum(1 for it in items if "LinkedIn" in it["ch"])
         web = sum(1 for it in items if "Website" in it["ch"])
-        col = "#4C9AFF" if (li and li >= web) else ("#2FE3D2" if web else "#3A4160")
+        col = "#4C9AFF" if (li and li >= web) else ("#2563EB" if web else "#3A4160")
         z = min(n, 7) * 16
         dots = "".join(
-            f"<span class='cf3d-dot' style='background:{'#4C9AFF' if 'LinkedIn' in it['ch'] else '#2FE3D2'}'></span>"
+            f"<span class='cf3d-dot' style='background:{'#4C9AFF' if 'LinkedIn' in it['ch'] else '#2563EB'}'></span>"
             for it in items[:5])
         cnt = f"<div class='cf3d-cnt' style='background:{col}'>{n}</div>" if n else ""
         tiles += (f"<div class='cf3d-tile{' cf3d-has' if n else ''}' data-date='{iso}' "
@@ -2281,7 +2285,7 @@ def _factory_3d(content_jobs, content_plan):
     scene = (
         "<div class='cf3d-scene' id='cf3dScene'>"
         "<div class='cf3d-legend'>"
-        "<span class='cf3d-lg'><span class='cf3d-sw' style='background:#2FE3D2'></span>Website</span>"
+        "<span class='cf3d-lg'><span class='cf3d-sw' style='background:#2563EB'></span>Website</span>"
         "<span class='cf3d-lg'><span class='cf3d-sw' style='background:#4C9AFF'></span>LinkedIn</span>"
         "<span class='cf3d-lg'>taller = more content that day</span></div>"
         "<div class='cf3d-board' id='cf3dBoard'>" + tiles + "</div>"
@@ -2302,9 +2306,9 @@ def _factory_3d(content_jobs, content_plan):
           "el.classList.add('cf3d-sel');var d=el.getAttribute('data-date');var it=data[d]||[];"
           "var h=\"<div class='card full' style='margin-top:10px'><p class='ct'>📅 \"+d+' — '+it.length+' piece'+(it.length==1?'':'s')+'</p>';"
           "if(!it.length){h+=\"<p class='cc'>Nothing scheduled this day.</p>\";}"
-          "else{it.forEach(function(x){var chs=(x.ch||[]).map(function(c){var col=c=='LinkedIn'?'#4C9AFF':'#2FE3D2';"
+          "else{it.forEach(function(x){var chs=(x.ch||[]).map(function(c){var col=c=='LinkedIn'?'#4C9AFF':'#2563EB';"
           "return \"<span class='pill' style='background:\"+col+\"22;color:\"+col+\";padding:1px 8px'>\"+esc(c)+'</span>';}).join(' ');"
-          "h+=\"<div style='padding:9px 0;border-top:1px solid rgba(255,255,255,.06)'><div style='display:flex;gap:8px;flex-wrap:wrap;align-items:baseline'><b>\"+esc(x.t)+\"</b><span style='margin-left:auto'>\"+chs+'</span></div>'"
+          "h+=\"<div style='padding:9px 0;border-top:1px solid rgba(17,24,39,.06)'><div style='display:flex;gap:8px;flex-wrap:wrap;align-items:baseline'><b>\"+esc(x.t)+\"</b><span style='margin-left:auto'>\"+chs+'</span></div>'"
           "+\"<div class='dim' style='margin-top:2px'>\"+esc(x.seg)+' · '+esc(x.stage)+'</div></div>';});}"
           "h+='</div>';document.getElementById('cf3dDetail').innerHTML=h;};"
           "ap();var _t=0;function idleSpin(){if(idle){_t+=0.012;rz=Math.sin(_t)*9;ap();}requestAnimationFrame(idleSpin);}requestAnimationFrame(idleSpin);"
@@ -2328,7 +2332,7 @@ def _approval_log(jobs):
                  or (p.get("config", {}) or {}).get("chosen_topic") or j.get("job_id"))
         appr = "✓ yes" if j.get("approved") else "—"
         pub = (p.get("publisher", {}) or {}).get("published_ref") or ""
-        publink = (f"<a href='{_esc(pub)}' target='_blank' style='color:#4C8DFF'>view</a>"
+        publink = (f"<a href='{_esc(pub)}' target='_blank' style='color:#2563EB'>view</a>"
                    if str(pub).startswith("http") else ("sent" if j.get("status") == "sent" else "—"))
         kind = "email" if j.get("type") == "outreach_campaign" else "blog"
         rows += (f"<tr><td>{_esc(str(title)[:56])}</td><td class='mut'>{kind}</td>"
@@ -2345,17 +2349,17 @@ def _approval_log(jobs):
 # ---------------------------------------------------------------------------
 def _system_map(st):
     def c(k):
-        return "#3FD98B" if st.get(k) else "#F5B14C"
+        return "#16A34A" if st.get(k) else "#D97706"
     g_on = st.get("google_sheets") or st.get("google_drive")
     P = ['<svg width="100%" viewBox="0 0 1220 560" style="max-width:100%;height:auto">'
          '<defs><marker id="arw" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#5a79aa"/></marker></defs>']
 
     def box(x, y, w, h, col, t, sub=""):
-        s = f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="7" fill="#0B111F" stroke="{col}" stroke-width="1.3"/>'
+        s = f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="7" fill="#F9FAFB" stroke="{col}" stroke-width="1.3"/>'
         yt = y + (h / 2 + 4) if not sub else y + h / 2 - 2
-        s += f'<text x="{x+w/2}" y="{yt:.0f}" text-anchor="middle" fill="#EDF1FB" font-size="11" font-weight="600">{t}</text>'
+        s += f'<text x="{x+w/2}" y="{yt:.0f}" text-anchor="middle" fill="#111827" font-size="11" font-weight="600">{t}</text>'
         if sub:
-            s += f'<text x="{x+w/2}" y="{y+h/2+11:.0f}" text-anchor="middle" fill="#8E9BBE" font-size="9">{sub}</text>'
+            s += f'<text x="{x+w/2}" y="{y+h/2+11:.0f}" text-anchor="middle" fill="#4B5563" font-size="9">{sub}</text>'
         return s
 
     def wire(x1, y1, x2, y2, col="#33507e", dash="", label="", lx=None, ly=None, flow=True):
@@ -2368,59 +2372,59 @@ def _system_map(st):
                   f'stroke-dasharray="0.1 13" opacity="0.95">'
                   f'<animate attributeName="stroke-dashoffset" from="26" to="0" dur="1.5s" repeatCount="indefinite"/></path>')
         if label:
-            s += f'<text x="{lx or mx:.0f}" y="{(ly or (y1+y2)/2-4):.0f}" text-anchor="middle" fill="#8E9BBE" font-size="9">{label}</text>'
+            s += f'<text x="{lx or mx:.0f}" y="{(ly or (y1+y2)/2-4):.0f}" text-anchor="middle" fill="#4B5563" font-size="9">{label}</text>'
         return s
 
     for lx, txt in [(95, "SOURCES"), (300, "TRIGGER"), (610, "ENGINE (VPS)"), (940, "GOOGLE HUB"), (1130, "CHANNELS")]:
-        P.append(f'<text x="{lx}" y="20" text-anchor="middle" fill="#59668A" font-size="9.5" font-weight="700" letter-spacing="1">{txt}</text>')
+        P.append(f'<text x="{lx}" y="20" text-anchor="middle" fill="#6B7280" font-size="9.5" font-weight="700" letter-spacing="1">{txt}</text>')
     src = [("Web search", c("web_search"), 46), ("Web scraper", c("web_search"), 92),
            ("LinkedIn", c("linkedin_leads"), 138), ("Search Console", c("google_gsc_ga4"), 204),
            ("Analytics (GA4)", c("google_gsc_ga4"), 250)]
     for n, col, y in src:
         P.append(box(20, y, 150, 36, col, n))
-    P.append(box(228, 440, 140, 40, "#8B7CFF", "n8n", "cron + webhooks"))
-    P.append('<rect x="410" y="36" width="400" height="440" rx="12" fill="#0D1526" stroke="#2FE3D2" stroke-width="1.6"/>')
-    P.append('<text x="610" y="58" text-anchor="middle" fill="#2FE3D2" font-size="12.5" font-weight="750">Automation Engine · 24/7</text>')
-    P.append(box(434, 74, 352, 30, "#4C8DFF", "Orchestrator", "decides each job's next step"))
-    P.append('<rect x="434" y="114" width="352" height="64" rx="7" fill="#0B111F" stroke="#2b3a5c"/>')
-    P.append('<text x="444" y="130" fill="#8B7CFF" font-size="9" font-weight="700">CONTENT AGENTS</text>')
+    P.append(box(228, 440, 140, 40, "#7C3AED", "n8n", "cron + webhooks"))
+    P.append('<rect x="410" y="36" width="400" height="440" rx="12" fill="#0D1526" stroke="#2563EB" stroke-width="1.6"/>')
+    P.append('<text x="610" y="58" text-anchor="middle" fill="#2563EB" font-size="12.5" font-weight="750">Automation Engine · 24/7</text>')
+    P.append(box(434, 74, 352, 30, "#2563EB", "Orchestrator", "decides each job's next step"))
+    P.append('<rect x="434" y="114" width="352" height="64" rx="7" fill="#F9FAFB" stroke="#2b3a5c"/>')
+    P.append('<text x="444" y="130" fill="#7C3AED" font-size="9" font-weight="700">CONTENT AGENTS</text>')
     P.append('<text x="444" y="146" fill="#C7D0EA" font-size="9.5">site · competitor · strategist · writer</text>')
     P.append('<text x="444" y="161" fill="#C7D0EA" font-size="9.5">SEO/AEO · quality &amp; legal · publisher</text>')
-    P.append('<text x="444" y="174" fill="#8E9BBE" font-size="8.5">→ images + video (phase 2)</text>')
-    P.append('<rect x="434" y="190" width="352" height="60" rx="7" fill="#0B111F" stroke="#2b3a5c"/>')
-    P.append('<text x="444" y="206" fill="#8B7CFF" font-size="9" font-weight="700">LEAD MACHINE</text>')
+    P.append('<text x="444" y="174" fill="#4B5563" font-size="8.5">→ images + video (phase 2)</text>')
+    P.append('<rect x="434" y="190" width="352" height="60" rx="7" fill="#F9FAFB" stroke="#2b3a5c"/>')
+    P.append('<text x="444" y="206" fill="#7C3AED" font-size="9" font-weight="700">LEAD MACHINE</text>')
     P.append('<text x="444" y="222" fill="#C7D0EA" font-size="9.5">sourcing · verify · qualifier · segmenter</text>')
     P.append('<text x="444" y="237" fill="#C7D0EA" font-size="9.5">outreach writer · reply responder</text>')
-    P.append(box(434, 262, 172, 30, "#4C8DFF", "Ads optimizer"))
-    P.append(box(614, 262, 172, 30, "#4C8DFF", "Learning agent"))
-    P.append(box(434, 302, 172, 30, "#3FD98B", "Approval gate"))
-    P.append(box(614, 302, 172, 30, "#3FD98B", "Budget guard $200"))
+    P.append(box(434, 262, 172, 30, "#2563EB", "Ads optimizer"))
+    P.append(box(614, 262, 172, 30, "#2563EB", "Learning agent"))
+    P.append(box(434, 302, 172, 30, "#16A34A", "Approval gate"))
+    P.append(box(614, 302, 172, 30, "#16A34A", "Budget guard $200"))
     P.append(box(434, 342, 172, 36, c("claude_api"), "Claude · the brain", "Opus / Haiku"))
-    P.append(box(614, 342, 172, 36, "#2FE3D2", "Postgres", "engine memory"))
-    P.append(box(434, 390, 352, 34, "#2FE3D2", "Control dashboard", "this screen"))
-    P.append(f'<rect x="890" y="50" width="176" height="150" rx="10" fill="#0D1526" stroke="{"#3FD98B" if g_on else "#F5B14C"}" stroke-width="1.5"/>')
-    P.append('<text x="978" y="70" text-anchor="middle" fill="#EDF1FB" font-size="11" font-weight="700">Google Workspace</text>')
+    P.append(box(614, 342, 172, 36, "#2563EB", "Postgres", "engine memory"))
+    P.append(box(434, 390, 352, 34, "#2563EB", "Control dashboard", "this screen"))
+    P.append(f'<rect x="890" y="50" width="176" height="150" rx="10" fill="#0D1526" stroke="{"#16A34A" if g_on else "#D97706"}" stroke-width="1.5"/>')
+    P.append('<text x="978" y="70" text-anchor="middle" fill="#111827" font-size="11" font-weight="700">Google Workspace</text>')
     P.append(box(904, 84, 148, 30, c("google_sheets"), "Sheets", "dashboard data"))
     P.append(box(904, 120, 148, 30, c("google_drive"), "Drive", "content JSON"))
     P.append(box(904, 156, 148, 30, c("email_send"), "Gmail", "sending"))
     ch = [("Website", c("wordpress_publish"), 46), ("LinkedIn", c("social_linkedin"), 86),
           ("X / Twitter", c("social_twitter"), 126), ("Facebook", c("social_facebook"), 166),
-          ("Instagram", "#F5B14C", 206), ("TikTok", "#F5B14C", 246),
+          ("Instagram", "#D97706", 206), ("TikTok", "#D97706", 246),
           ("Email out", c("email_send"), 300), ("Replies in", c("email_reply_inbound"), 340)]
     for n, col, y in ch:
         P.append(box(1086, y, 128, 32, col, n))
     for _, _, y in src:
         P.append(wire(170, y + 18, 410, 89, "#33507e"))
-    P.append('<text x="295" y="128" text-anchor="middle" fill="#8E9BBE" font-size="9">leads · research · SEO data</text>')
+    P.append('<text x="295" y="128" text-anchor="middle" fill="#4B5563" font-size="9">leads · research · SEO data</text>')
     P.append(wire(368, 460, 410, 230, "#5b4fb0", label="triggers", lx=392, ly=330))
-    P.append(wire(810, 120, 890, 120, "#2FE3D2", label="mirror + content", lx=850, ly=108))
-    P.append(wire(810, 300, 1086, 62, "#2FE3D2", label="publish", lx=980, ly=150))
-    P.append(wire(810, 320, 1086, 182, "#2FE3D2", label="post", lx=980, ly=250))
-    P.append(wire(810, 350, 1086, 316, "#2FE3D2", label="send", lx=980, ly=320))
+    P.append(wire(810, 120, 890, 120, "#2563EB", label="mirror + content", lx=850, ly=108))
+    P.append(wire(810, 300, 1086, 62, "#2563EB", label="publish", lx=980, ly=150))
+    P.append(wire(810, 320, 1086, 182, "#2563EB", label="post", lx=980, ly=250))
+    P.append(wire(810, 350, 1086, 316, "#2563EB", label="send", lx=980, ly=320))
     P.append(wire(1086, 356, 810, 400, "#33507e", dash='stroke-dasharray="4 3"', label="answer replies", lx=980, ly=395))
     P.append("</svg>")
-    legend = ('<div class="maplegend"><span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3FD98B;margin-right:5px"></span>Connected &amp; running</span>'
-              '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#F5B14C;margin-right:5px"></span>Ready — needs its key</span>'
+    legend = ('<div class="maplegend"><span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#16A34A;margin-right:5px"></span>Connected &amp; running</span>'
+              '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#D97706;margin-right:5px"></span>Ready — needs its key</span>'
               '<span><span style="color:#5a79aa">→</span> data flows this way</span></div>')
     return "".join(P) + legend
 
@@ -2435,21 +2439,21 @@ def login_html(error="", nxt=""):
     to the login form, and arrived at / with no way of knowing what you had
     asked for. A bookmark to a board was therefore never usable twice.
     """
-    err = f'<p style="color:#FF6B93;font-size:13px;margin:0 0 10px">{_esc(error)}</p>' if error else ""
+    err = f'<p style="color:#DC2626;font-size:13px;margin:0 0 10px">{_esc(error)}</p>' if error else ""
     # only a local path, never an absolute URL - an open redirect on a login
     # form is how a sign-in page gets used to send someone elsewhere
     nxt = str(nxt or "")
     safe = nxt if (nxt.startswith("/") and not nxt.startswith("//")) else ""
     hidden = (f"<input type='hidden' name='next' value='{_esc(safe)}'>"
               if safe else "")
-    going = (f"<p style='color:#8E9BBE;font-size:11.5px;margin:-8px 0 14px'>"
+    going = (f"<p style='color:#4B5563;font-size:11.5px;margin:-8px 0 14px'>"
              f"then on to <b>{_esc(safe)}</b></p>" if safe else "")
     return ("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             "<title>Sign in</title><style>" + CSS +
             "body{display:flex;align-items:center;justify-content:center;min-height:100vh}.box{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:26px;width:330px;max-width:90vw}"
-            "input{width:100%;margin-bottom:12px;background:var(--s2);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:11px}button{width:100%;background:var(--teal);color:#04121a;font-weight:700;border:none;border-radius:9px;padding:11px;cursor:pointer}</style></head><body>"
+            "input{width:100%;margin-bottom:12px;background:var(--s2);border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:11px}button{width:100%;background:var(--teal);color:#FFFFFF;font-weight:700;border:none;border-radius:9px;padding:11px;cursor:pointer}</style></head><body>"
             "<form class='box' method='post' action='/login'><h1 style='font-size:17px;margin:0 0 2px'>Business Control Center</h1>"
-            "<p style='color:#8E9BBE;font-size:12px;margin:0 0 16px'>Sign in to continue</p>" + going + err + hidden +
+            "<p style='color:#4B5563;font-size:12px;margin:0 0 16px'>Sign in to continue</p>" + going + err + hidden +
             "<input type='password' name='password' placeholder='Password' autofocus><button type='submit'>Sign in</button></form></body></html>")
 
 
@@ -2461,16 +2465,16 @@ def login_html(error="", nxt=""):
 # ---------------------------------------------------------------------------
 def _intel_card(title, current, *, sub="", trend="", trend_up=None, goal="", forecast="",
                 confidence="", insight="", recommendation="", action_label="", action="",
-                source="", dept="", chart="", accent="#2FE3D2", empty=""):
+                source="", dept="", chart="", accent="#2563EB", empty=""):
     if empty:
         return ("<div class='card' style='display:flex;flex-direction:column'>"
                 f"<div style='display:flex;align-items:center;gap:8px'><span class='ct' style='margin:0'>{_esc(title)}</span>"
-                + (f"<span class='pill' style='margin-left:auto;background:rgba(255,255,255,.05);color:#8E9BBE;padding:1px 8px'>{_esc(dept)}</span>" if dept else "")
+                + (f"<span class='pill' style='margin-left:auto;background:rgba(17,24,39,.05);color:#4B5563;padding:1px 8px'>{_esc(dept)}</span>" if dept else "")
                 + "</div>"
                 f"<div class='dim' style='margin-top:10px;line-height:1.5'>⚪ {_esc(empty)}</div></div>")
     tr = ""
     if trend:
-        tcol = "#3FD98B" if trend_up else ("#FF6B93" if trend_up is False else "#8E9BBE")
+        tcol = "#16A34A" if trend_up else ("#DC2626" if trend_up is False else "#4B5563")
         arr = "▲" if trend_up else ("▼" if trend_up is False else "•")
         tr = f"<span style='color:{tcol};font-weight:700;font-size:13px;margin-left:8px'>{arr} {_esc(trend)}</span>"
     stats = []
@@ -2486,7 +2490,7 @@ def _intel_card(title, current, *, sub="", trend="", trend_up=None, goal="", for
             f"<div><div class='dim' style='font-size:10px'>{_esc(l)}</div>"
             f"<div style='font-weight:700;font-size:14px'>{_esc(v)}</div></div>" for l, v in stats) + "</div>"
     insight_html = (f"<div style='margin-top:12px;padding:9px 11px;border-radius:8px;background:rgba(139,124,255,.08);"
-                    f"border-left:3px solid #8B7CFF'><div class='dim' style='font-size:10px;letter-spacing:1px'>🧠 AI INSIGHT</div>"
+                    f"border-left:3px solid #7C3AED'><div class='dim' style='font-size:10px;letter-spacing:1px'>🧠 AI INSIGHT</div>"
                     f"<div style='font-size:12.5px;margin-top:2px'>{_esc(insight)}</div></div>") if insight else ""
     rec_html = (f"<div style='margin-top:8px;padding:9px 11px;border-radius:8px;background:rgba(47,227,210,.07);"
                 f"border-left:3px solid {accent}'><div class='dim' style='font-size:10px;letter-spacing:1px'>✅ RECOMMENDATION</div>"
@@ -2513,9 +2517,9 @@ def _exec_briefing(name, health, sub_kpis, risks, opportunities, actions):
     """The AI brain: one glance instead of dozens of cards. health=0-100 int;
     sub_kpis=[(label,value,trend,up)]; risks/opportunities=[str]; actions=[(label,js)]."""
     from datetime import datetime
-    hcol = "#3FD98B" if health >= 80 else ("#F5B14C" if health >= 60 else "#FF6B93")
+    hcol = "#16A34A" if health >= 80 else ("#D97706" if health >= 60 else "#DC2626")
     kpis = "".join(
-        f"<div class='mstat'><div class='msv' style='color:{('#3FD98B' if up else ('#FF6B93' if up is False else '#EDF1FB'))}'>{_esc(v)}</div>"
+        f"<div class='mstat'><div class='msv' style='color:{('#16A34A' if up else ('#DC2626' if up is False else '#111827'))}'>{_esc(v)}</div>"
         f"<div class='msl'>{_esc(l)}{(' ' + ('▲' if up else '▼') + ' ' + _esc(t)) if t else ''}</div></div>"
         for l, v, t, up in sub_kpis)
     def _lst(items, icon, col):
@@ -2529,8 +2533,8 @@ def _exec_briefing(name, health, sub_kpis, risks, opportunities, actions):
             f"<svg width='96' height='96' viewBox='0 0 96 96'><circle cx='48' cy='48' r='40' fill='none' stroke='#16223c' stroke-width='9'/>"
             f"<circle cx='48' cy='48' r='40' fill='none' stroke='{hcol}' stroke-width='9' stroke-linecap='round' "
             f"stroke-dasharray='{2*3.14159*40:.0f}' stroke-dashoffset='{2*3.14159*40*(1-health/100):.0f}' transform='rotate(-90 48 48)'/>"
-            f"<text x='48' y='45' text-anchor='middle' fill='#EDF1FB' font-size='24' font-weight='800'>{health}</text>"
-            f"<text x='48' y='63' text-anchor='middle' fill='#8E9BBE' font-size='9'>/ 100</text></svg></div>")
+            f"<text x='48' y='45' text-anchor='middle' fill='#111827' font-size='24' font-weight='800'>{health}</text>"
+            f"<text x='48' y='63' text-anchor='middle' fill='#4B5563' font-size='9'>/ 100</text></svg></div>")
     return (
         "<div class='card full' style='margin-bottom:14px;background:linear-gradient(135deg,rgba(139,124,255,.07),rgba(47,227,210,.05));border:1px solid var(--line)'>"
         "<div style='display:flex;gap:18px;align-items:center;flex-wrap:wrap'>" + ring
@@ -2539,8 +2543,8 @@ def _exec_briefing(name, health, sub_kpis, risks, opportunities, actions):
         f"<div class='dim'>Business health <b style='color:{hcol}'>{health}/100</b> — the AI brain read your whole engine and picked what matters.</div></div>"
         "<div class='mstats' style='flex:2 1 300px'>" + kpis + "</div></div>"
         "<div class='grid g3' style='margin-top:14px'>"
-        "<div><div class='ct' style='font-size:13px'>⚠️ Risks</div>" + _lst(risks, "🔻", "#FF6B93") + "</div>"
-        "<div><div class='ct' style='font-size:13px'>🚀 Opportunities</div>" + _lst(opportunities, "▹", "#3FD98B") + "</div>"
+        "<div><div class='ct' style='font-size:13px'>⚠️ Risks</div>" + _lst(risks, "🔻", "#DC2626") + "</div>"
+        "<div><div class='ct' style='font-size:13px'>🚀 Opportunities</div>" + _lst(opportunities, "▹", "#16A34A") + "</div>"
         "<div><div class='ct' style='font-size:13px'>⚡ Immediate actions</div>"
         + ("<div class='dim'>Nothing needs you right now.</div>" if not actions else act_btns) + "</div>"
         "</div></div>")
@@ -2569,12 +2573,12 @@ def _decision_strip(problems, opportunities, actions):
         return f"<div><div class='ct' style='font-size:12px;color:{col}'>{_esc(title)}</div>{body}</div>"
     act = ("".join(f"<button class='cbtn' style='margin:3px 4px 0 0' onclick=\"{js}\">{_esc(l)}</button>"
                    for l, js in actions) if actions else "<div class='dim'>No action needed.</div>")
-    return ("<div class='card full' style='margin-top:12px;border-left:4px solid #8B7CFF'>"
+    return ("<div class='card full' style='margin-top:12px;border-left:4px solid #7C3AED'>"
             "<p class='ct'>🧭 AI Decision Engine</p>"
             "<div class='grid g3'>"
-            + _col("Problems", "🔻", problems, "#FF6B93")
-            + _col("Opportunities", "🚀", opportunities, "#3FD98B")
-            + f"<div><div class='ct' style='font-size:12px;color:#4C8DFF'>Execute</div>{act}</div>"
+            + _col("Problems", "🔻", problems, "#DC2626")
+            + _col("Opportunities", "🚀", opportunities, "#16A34A")
+            + f"<div><div class='ct' style='font-size:12px;color:#2563EB'>Execute</div>{act}</div>"
             + "</div></div>")
 
 
@@ -2582,23 +2586,23 @@ def _decision_strip(problems, opportunities, actions):
 # ---- visualization + a decision strip. Real data only; honest empties else. ----
 def _mod_business(c):
     m = _master("📈", "Business Performance", "Revenue, pipeline and momentum in one view.",
-                [("Pipeline leads", c["leads_found"], "#EDF1FB"), ("Booked", c["booked"], "#F5B14C"),
-                 ("Customers", c["o_cust"], "#3FD98B"), ("Health", f"{c['health']}/100", "#8B7CFF")],
+                [("Pipeline leads", c["leads_found"], "#111827"), ("Booked", c["booked"], "#D97706"),
+                 ("Customers", c["o_cust"], "#16A34A"), ("Health", f"{c['health']}/100", "#7C3AED")],
                 _funnel(c["lead_rows"]) if any(v for _, v in c["lead_rows"]) else _empty("Fills as leads flow in."))
     rev = (_intel_card("Revenue", f"${c['o_rev']:.0f}", sub="recorded", dept="Finance", source="Outcomes",
-                       accent="#3FD98B", insight="Recorded from closed outcomes.",
+                       accent="#16A34A", insight="Recorded from closed outcomes.",
                        recommendation="Log every won deal to sharpen forecasting.", action_label="Open Finance", action="nav('finance')")
            if c["o_rev"] else _intel_card("Revenue", "", dept="Finance",
                        empty="Connect Stripe / QuickBooks / Xero to activate revenue, MRR and profit intelligence."))
     growth = _intel_card("Output momentum", str(c["published"]), sub="live pieces",
                          forecast=f"{c['proj']}/mo", confidence=("high" if c["made_month"] > 3 else "building"),
-                         dept="Growth", source="Content engine", accent="#4C8DFF",
+                         dept="Growth", source="Content engine", accent="#2563EB",
                          insight="Publishing cadence compounds SEO + authority over time.",
                          recommendation="Hold ≥2 pieces/day to keep the curve rising.",
                          action_label="Plan my week", action="nav('content')",
                          chart=CH.confband([max(1, x) for x in c["content_series"]] or [1, 2]))
     conv = _intel_card("Pipeline conversion", f"{c['reply_rate']}%", sub="reply rate", dept="Sales",
-                       source="Outreach", accent="#8B7CFF",
+                       source="Outreach", accent="#7C3AED",
                        insight=f"{c['leads_emailed']} emailed → {c['replied']} replied → {c['booked']} booked.",
                        recommendation="Tighten follow-ups to lift reply→booked.", action_label="Open Sales", action="nav('sales')")
     return (m + "<div class='grid g2'>" + rev + growth + conv
@@ -2610,11 +2614,11 @@ def _mod_business(c):
 def _mod_marketing(c):
     sess, topq, gsc = c["_sess"], c["_topq"], c["_gsc"]
     m = _master("📣", "Marketing Intelligence", "SEO · AEO · GEO · Ads — visibility to revenue.",
-                [("Sessions", sess or "—", "#4C8DFF"), ("Top queries", len(gsc), "#2FE3D2"),
-                 ("Content live", c["published"], "#3FD98B"), ("Segments", 7, "#8B7CFF")],
-                _sparkline(c["content_series"], "#4C8DFF") if c["content_jobs"] else _empty("Fills as content runs."))
+                [("Sessions", sess or "—", "#2563EB"), ("Top queries", len(gsc), "#2563EB"),
+                 ("Content live", c["published"], "#16A34A"), ("Segments", 7, "#7C3AED")],
+                _sparkline(c["content_series"], "#2563EB") if c["content_jobs"] else _empty("Fills as content runs."))
     seo = (_intel_card("SEO Intelligence", str(sess), sub="sessions", dept="Marketing", source="GA4 + GSC",
-                       accent="#4C8DFF", insight=(f"Strongest demand: “{topq}”." if topq else "Ranking signals building."),
+                       accent="#2563EB", insight=(f"Strongest demand: “{topq}”." if topq else "Ranking signals building."),
                        recommendation=(f"Publish for “{topq}”." if topq else "Keep publishing to earn rankings."),
                        action_label="Open SEO", action="nav('seo')")
            if sess else _intel_card("SEO Intelligence", "", dept="Marketing",
@@ -2648,11 +2652,11 @@ def _mod_marketing(c):
 
 def _mod_sales(c):
     m = _master("💼", "Sales Intelligence", "Lead → qualified → emailed → replied → booked → won.",
-                [("Leads", c["leads_found"], "#EDF1FB"), ("Emailed", c["leads_emailed"], "#4C8DFF"),
-                 ("Replied", c["replied"], "#8B7CFF"), ("Booked", c["booked"], "#3FD98B")],
+                [("Leads", c["leads_found"], "#111827"), ("Emailed", c["leads_emailed"], "#2563EB"),
+                 ("Replied", c["replied"], "#7C3AED"), ("Booked", c["booked"], "#16A34A")],
                 _funnel(c["lead_rows"]) if any(v for _, v in c["lead_rows"]) else _empty("Fills as leads flow in."))
     lead = _intel_card("Lead generation", str(c["leads_found"]), sub="sourced", dept="Sales", source="Prospeo + web",
-                       accent="#8B7CFF", insight=f"{c['qualified']} qualified · {c['leads_emailed']} emailed.",
+                       accent="#7C3AED", insight=f"{c['qualified']} qualified · {c['leads_emailed']} emailed.",
                        recommendation=(f"Email the {c['not_emailed']} qualified but un-contacted." if c["not_emailed"] else "Source a fresh batch."),
                        action_label="Open Lead Machine", action="nav('leads')")
     out = _intel_card("Outreach performance", f"{c['reply_rate']}%", sub="reply rate", dept="Sales", source="Workspace mail",
@@ -2660,7 +2664,7 @@ def _mod_sales(c):
                       recommendation=("Send today's ready follow-ups." if c["outbox_ready"] else "Warm up more leads."),
                       action_label="Open outbox", action="nav('email')")
     close = _intel_card("Consultations", str(c["booked"]), sub="booked", dept="Sales",
-                        source="Cal.com", accent="#3FD98B",
+                        source="Cal.com", accent="#16A34A",
                         insight=("Bookings are the money moment." if c["booked"] else "No consultations booked yet."),
                         recommendation="Make the booking CTA prominent in every email.", action_label="Open outreach", action="nav('email')")
     flows = []
@@ -2684,11 +2688,11 @@ def _mod_sales(c):
 
 def _mod_customer(c):
     m = _master("🫂", "Customer Intelligence", "Who's booking, buying and staying.",
-                [("Booked", c["booked"], "#F5B14C"), ("Customers", c["o_cust"], "#3FD98B"),
-                 ("Replies", c["replied"], "#8B7CFF"), ("Leads", c["leads_found"], "#EDF1FB")],
+                [("Booked", c["booked"], "#D97706"), ("Customers", c["o_cust"], "#16A34A"),
+                 ("Replies", c["replied"], "#7C3AED"), ("Leads", c["leads_found"], "#111827")],
                 _empty("Retention + LTV activate once a CRM / payments source is connected."))
     cust = (_intel_card("Customers won", str(c["o_cust"]), sub="recorded", dept="Customer", source="Outcomes",
-                        accent="#3FD98B", insight="Closed customers recorded from outcomes.",
+                        accent="#16A34A", insight="Closed customers recorded from outcomes.",
                         recommendation="Record each win to build LTV + cohorts.", action_label="Open Learning", action="nav('learn')")
             if c["o_cust"] else _intel_card("Customers", "", dept="Customer",
                         empty="Connect HubSpot / Salesforce / Stripe to activate customer, LTV and retention intelligence."))
@@ -2708,8 +2712,8 @@ def _mod_customer(c):
 def _mod_workforce(c):
     live = c["live_agents"]
     m = _master("🤖", "AI Workforce", "Your agents — running, healthy and productive.",
-                [("Jobs active", live, "#3FD98B"), ("Wires live", f"{c['live_conn']}/{c['total_conn']}", "#4C8DFF"),
-                 ("Waiting on you", c["waiting"], "#F5B14C"), ("Cost/piece", f"${(c['content_cost']/max(len(c['content_jobs']),1)):.2f}", "#8B7CFF")],
+                [("Jobs active", live, "#16A34A"), ("Wires live", f"{c['live_conn']}/{c['total_conn']}", "#2563EB"),
+                 ("Waiting on you", c["waiting"], "#D97706"), ("Cost/piece", f"${(c['content_cost']/max(len(c['content_jobs']),1)):.2f}", "#7C3AED")],
                 "")
     ok = c["healthy"]
     nodes = [("site", "Site analyst", ok), ("comp", "Competitor", ok), ("strat", "Strategist", ok),
@@ -2717,12 +2721,12 @@ def _mod_workforce(c):
              ("pub", "Publisher", ok), ("reply", "Reply agent", ok)]
     edges = [("site", "comp"), ("comp", "strat"), ("strat", "write"), ("write", "seo"), ("seo", "qa"), ("qa", "pub")]
     agents = _intel_card("Workforce status", str(live), sub="jobs active", dept="Operations", source="Orchestrator",
-                         accent=("#3FD98B" if ok else "#F5B14C"),
+                         accent=("#16A34A" if ok else "#D97706"),
                          insight=("All agents nominal." if ok else "A health check is needed on Agents & Health."),
                          recommendation=("Nothing to do — running normally." if ok else "Open Agents & Health to see the failing check."),
                          action_label="Open Agents", action="nav('agents')")
     eff = _intel_card("Cost efficiency", f"${(c['content_cost']/max(len(c['content_jobs']),1)):.2f}", sub="per piece",
-                      dept="Finance", source="API meters", accent="#4C8DFF",
+                      dept="Finance", source="API meters", accent="#2563EB",
                       insight=f"${c['content_cost']:.2f} spent making {len(c['content_jobs'])} pieces.",
                       recommendation="Cheap per piece — safe to scale the cadence.", action_label="Open budget", action="nav('budget')")
     return (m + "<div class='grid g2'>" + agents + eff
@@ -2736,9 +2740,9 @@ def _mod_workforce(c):
 
 def _mod_operations(c):
     m = _master("⚙️", "Operations", "Throughput, this week's schedule and the approval queue.",
-                [("Made / mo", c["made_month"], "#EDF1FB"), ("Published", c["published"], "#3FD98B"),
-                 ("In production", sum(c["pl"][0:4]), "#F5B14C"), ("On pace", c["proj"], "#8B7CFF")],
-                _sparkline(c["content_series"], "#4C8DFF") if c["content_jobs"] else _empty("Fills as pieces are made."))
+                [("Made / mo", c["made_month"], "#111827"), ("Published", c["published"], "#16A34A"),
+                 ("In production", sum(c["pl"][0:4]), "#D97706"), ("On pace", c["proj"], "#7C3AED")],
+                _sparkline(c["content_series"], "#2563EB") if c["content_jobs"] else _empty("Fills as pieces are made."))
     # gantt of this week's scheduled content (real publish_date)
     from datetime import date
     tasks = []
@@ -2753,12 +2757,12 @@ def _mod_operations(c):
             except Exception:
                 pass
     thr = _intel_card("Throughput", str(c["made_month"]), sub="this month", forecast=f"{c['proj']}/mo",
-                      dept="Operations", source="Content engine", accent="#2FE3D2",
+                      dept="Operations", source="Content engine", accent="#2563EB",
                       insight=f"{sum(c['pl'][0:4])} in production, {c['waiting']} awaiting approval.",
                       recommendation=("Clear the approval queue to keep flow." if c["waiting"] else "Cadence is healthy."),
                       action_label="Review approvals", action="nav('appr')")
     que = _intel_card("Approval queue", str(c["waiting"]), sub="waiting", dept="Operations", source="Pipeline",
-                      accent=("#F5B14C" if c["waiting"] else "#3FD98B"),
+                      accent=("#D97706" if c["waiting"] else "#16A34A"),
                       insight=("The pipeline pauses on you until these are approved." if c["waiting"] else "Queue is clear."),
                       recommendation=("Approve or decline with notes." if c["waiting"] else "Nothing waiting."),
                       action_label="Open Approvals", action="nav('appr')")
@@ -2774,16 +2778,16 @@ def _mod_operations(c):
 def _mod_finance(c):
     pct = c["pct"]
     m = _master("💰", "Finance", "Spend against the cap, and cost per outcome.",
-                [("Spent", f"${c['month_spent']:.0f}", c["bcol"]), ("Cap", f"${c['month_cap']:.0f}", "#8B7CFF"),
-                 ("Per piece", f"${(c['content_cost']/max(len(c['content_jobs']),1)):.2f}", "#4C8DFF"),
-                 ("Headroom", f"{max(0,100-pct)}%", "#3FD98B")],
-                _donut(max(0, 100 - pct), "#3FD98B"))
+                [("Spent", f"${c['month_spent']:.0f}", c["bcol"]), ("Cap", f"${c['month_cap']:.0f}", "#7C3AED"),
+                 ("Per piece", f"${(c['content_cost']/max(len(c['content_jobs']),1)):.2f}", "#2563EB"),
+                 ("Headroom", f"{max(0,100-pct)}%", "#16A34A")],
+                _donut(max(0, 100 - pct), "#16A34A"))
     spend = _intel_card("Monthly spend", f"${c['month_spent']:.0f}", sub=f"of ${c['month_cap']:.0f}",
                         goal=f"${c['month_cap']:.0f} cap", forecast=f"${(c['total_cost']/max(__import__('datetime').date.today().day,1)*30):.0f}/mo",
                         confidence=("high" if c["made_month"] > 3 else "building"), dept="Finance", source="API meters", accent=c["bcol"],
                         insight=f"{pct}% of the cap used.", recommendation=("Ease off — near the cap." if pct >= 85 else "Headroom is healthy."),
                         action_label="Open budget", action="nav('budget')")
-    rev = (_intel_card("Revenue", f"${c['o_rev']:.0f}", sub="recorded", dept="Finance", source="Outcomes", accent="#3FD98B",
+    rev = (_intel_card("Revenue", f"${c['o_rev']:.0f}", sub="recorded", dept="Finance", source="Outcomes", accent="#16A34A",
                        insight="From recorded outcomes.", recommendation="Log wins to compute profit + ROI.",
                        action_label="Open Learning", action="nav('learn')")
            if c["o_rev"] else _intel_card("Revenue & profit", "", dept="Finance",
@@ -2796,7 +2800,7 @@ def _mod_finance(c):
     return (m + "<div class='grid g2'>" + spend + rev
             + _chartpanel("Money flow", ("Revenue minus costs." if c["o_rev"] else "Where spend goes (connect revenue to see profit)."),
                    CH.waterfall(wf), "Fills as spend + revenue are recorded.")
-            + _chartpanel("Budget headroom", "How much of the cap remains.", _donut(max(0, 100 - pct), "#3FD98B"), "")
+            + _chartpanel("Budget headroom", "How much of the cap remains.", _donut(max(0, 100 - pct), "#16A34A"), "")
             + "</div>" + _decision_strip(
                 ([f"Spend at {pct}% of cap." for _ in [1] if pct >= 85]),
                 (["Per-piece cost is low; output is affordable to scale."]),
@@ -2807,17 +2811,17 @@ def _mod_infra(c):
     items = [(name, bool(c["st"].get(k)), "connected" if c["st"].get(k) else "not connected")
              for k, name, *_ in _DIAG]
     m = _master("🛰️", "Infrastructure", "Every connection, live or down.",
-                [("Wires live", f"{c['live_conn']}/{c['total_conn']}", "#4C8DFF"),
-                 ("Down", c["total_conn"] - c["live_conn"], "#FF6B93" if c["live_conn"] < c["total_conn"] else "#3FD98B"),
-                 ("System", "OK" if c["healthy"] else "Check", "#3FD98B" if c["healthy"] else "#F5B14C"),
-                 ("Uptime", "24/7", "#8B7CFF")], "")
+                [("Wires live", f"{c['live_conn']}/{c['total_conn']}", "#2563EB"),
+                 ("Down", c["total_conn"] - c["live_conn"], "#DC2626" if c["live_conn"] < c["total_conn"] else "#16A34A"),
+                 ("System", "OK" if c["healthy"] else "Check", "#16A34A" if c["healthy"] else "#D97706"),
+                 ("Uptime", "24/7", "#7C3AED")], "")
     conn = _intel_card("Connections", f"{c['live_conn']}/{c['total_conn']}", sub="live", dept="Infrastructure",
-                       source="System map", accent=("#3FD98B" if c["live_conn"] == c["total_conn"] else "#F5B14C"),
+                       source="System map", accent=("#16A34A" if c["live_conn"] == c["total_conn"] else "#D97706"),
                        insight=(f"{c['total_conn']-c['live_conn']} down — those intelligence centres stay greyed until fixed." if c["live_conn"] < c["total_conn"] else "All healthy."),
                        recommendation=("Fix the down wires to unlock more cards." if c["live_conn"] < c["total_conn"] else "Nothing to fix."),
                        action_label="Open System Map", action="nav('map')")
     sysh = _intel_card("System health", "OK" if c["healthy"] else "Check", dept="Infrastructure", source="Health probe",
-                       accent=("#3FD98B" if c["healthy"] else "#F5B14C"),
+                       accent=("#16A34A" if c["healthy"] else "#D97706"),
                        insight=("Claude API + database + connectors all responding." if c["healthy"] else "A component check is failing."),
                        recommendation=("Nothing to do." if c["healthy"] else "Open Agents & Health."), action_label="Open Agents", action="nav('agents')")
     return (m + "<div class='grid g2'>" + conn + sysh
@@ -2845,13 +2849,13 @@ def _mod_risk(c):
     if not items:
         items.append(("Deliverability", 1, 2))
     m = _master("⚠️", "Risk", "What could hurt the business, ranked.",
-                [("Risks tracked", len(items), "#F5B14C"), ("Critical", sum(1 for _, l, i in items if l * i >= 6), "#FF6B93"),
-                 ("System", "OK" if c["healthy"] else "Check", "#3FD98B" if c["healthy"] else "#F5B14C"),
-                 ("Headroom", f"{max(0,100-pct)}%", "#3FD98B")], "")
+                [("Risks tracked", len(items), "#D97706"), ("Critical", sum(1 for _, l, i in items if l * i >= 6), "#DC2626"),
+                 ("System", "OK" if c["healthy"] else "Check", "#16A34A" if c["healthy"] else "#D97706"),
+                 ("Headroom", f"{max(0,100-pct)}%", "#16A34A")], "")
     cards = ""
     for label, lk, im in items[:3]:
         sev = lk * im
-        col = "#FF6B93" if sev >= 6 else ("#F5B14C" if sev >= 3 else "#3FD98B")
+        col = "#DC2626" if sev >= 6 else ("#D97706" if sev >= 3 else "#16A34A")
         cards += _intel_card(label, ("Critical" if sev >= 6 else ("Elevated" if sev >= 3 else "Low")), sub="severity",
                              dept="Risk", accent=col, insight=f"Likelihood {lk}/3 · impact {im}/3.",
                              recommendation={"Budget cap": "Throttle spend as you approach the cap.",
@@ -2873,14 +2877,14 @@ def _mod_executive(c):
     board = "<div class='grid g4'>" + "".join(
         f"<div class='mstat'><div class='msv' style='color:{col}'>{_esc(v)}</div><div class='msl'>{_esc(l)}</div></div>"
         for l, v, col in [
-            ("Business health", f"{c['health']}/100", "#8B7CFF"),
-            ("Content live", c["published"], "#3FD98B"),
-            ("Pipeline leads", c["leads_found"], "#4C8DFF"),
-            ("Reply rate", f"{c['reply_rate']}%", "#2FE3D2"),
-            ("Booked", c["booked"], "#F5B14C"),
+            ("Business health", f"{c['health']}/100", "#7C3AED"),
+            ("Content live", c["published"], "#16A34A"),
+            ("Pipeline leads", c["leads_found"], "#2563EB"),
+            ("Reply rate", f"{c['reply_rate']}%", "#2563EB"),
+            ("Booked", c["booked"], "#D97706"),
             ("Spend", f"${c['month_spent']:.0f}/{c['month_cap']:.0f}", c["bcol"]),
             ("Wires", f"{c['live_conn']}/{c['total_conn']}", "#4C9AFF"),
-            ("Waiting", c["waiting"], "#F5B14C"),
+            ("Waiting", c["waiting"], "#D97706"),
         ]) + "</div>"
     return ("<div class='card full' style='margin-bottom:12px'><p class='ct'>🏛️ Executive Intelligence</p>"
             "<p class='cc'>The whole business on one screen — every module's headline, plus the decisions that move "
@@ -2898,7 +2902,7 @@ def _mod_executive(c):
 # ---------------------------------------------------------------------------
 # dashboard
 # ---------------------------------------------------------------------------
-def _insight_card(title, big, sub, body="", insight="", src="", accent="#4C8DFF"):
+def _insight_card(title, big, sub, body="", insight="", src="", accent="#2563EB"):
     """Google-grade metric card: big number + context + chart + a one-line
     qualitative read of what the number MEANS."""
     return ("<div class='card'>"
@@ -2908,7 +2912,7 @@ def _insight_card(title, big, sub, body="", insight="", src="", accent="#4C8DFF"
             f"<span class='dim'>{_esc(sub)}</span></div>"
             + (f"<div style='margin-top:8px;overflow-x:auto'>{body}</div>" if body else "")
             + (f"<div style='margin-top:8px;padding:7px 10px;border-radius:8px;background:rgba(139,124,255,.08);"
-               f"border-left:3px solid #8B7CFF;font-size:12px'>💡 {_esc(insight)}</div>" if insight else "")
+               f"border-left:3px solid #7C3AED;font-size:12px'>💡 {_esc(insight)}</div>" if insight else "")
             + (f"<div class='dim' style='font-size:10px;margin-top:7px'>🔌 {_esc(src)}</div>" if src else "")
             + "</div>")
 
@@ -2932,8 +2936,8 @@ def _gsc_board(gi):
                 f"#{best.get('position', 0)} (page {int((best.get('position', 99) - 1) // 10) + 1}). "
                 + ("Zero clicks so far is normal below page 1 — rankings must climb first." if clk == 0 else
                    f"{clk} clicks earned."))
-    trend = CH.lines([("Impressions", [r["impressions"] for r in daily] or [0], "#4C8DFF"),
-                      ("Clicks", [r["clicks"] for r in daily] or [0], "#3FD98B")]) if daily else ""
+    trend = CH.lines([("Impressions", [r["impressions"] for r in daily] or [0], "#2563EB"),
+                      ("Clicks", [r["clicks"] for r in daily] or [0], "#16A34A")]) if daily else ""
     qrows = "".join(
         f"<tr><td>{_esc(r['key'][:44])}</td><td class='tnum'>{r['impressions']}</td>"
         f"<td class='tnum'>{r['clicks']}</td><td class='tnum'>{r['ctr']}%</td>"
@@ -2944,7 +2948,7 @@ def _gsc_board(gi):
         f"<td class='tnum'>{r['clicks']}</td><td class='tnum'>#{r['position']}</td></tr>"
         for r in (gsc.get("pages") or [])[:10])
     dev = [(r["key"].title(), r["impressions"], c) for r, c in
-           zip(gsc.get("devices") or [], ["#4C8DFF", "#2FE3D2", "#8B7CFF", "#F5B14C", "#3FD98B"])]
+           zip(gsc.get("devices") or [], ["#2563EB", "#2563EB", "#7C3AED", "#D97706", "#16A34A"])]
     geo = [(r["key"].upper(), r["impressions"]) for r in (gsc.get("countries") or [])[:8]]
     return (
         "<div class='card full' style='margin-top:12px'><p class='ct'>🔍 Search Console — full replication</p>"
@@ -2954,10 +2958,10 @@ def _gsc_board(gi):
         + _insight_card("Impressions (28d)", imp, "times you appeared in Google", "",
                         f"Your site appeared {imp} times; impressions come mostly from the "
                         f"{'e-commerce monitoring' if any('monitor' in r['key'] for r in q) else 'automation'} cluster.",
-                        "Search Console API", "#4C8DFF")
-        + _insight_card("Clicks (28d)", clk, f"CTR {ctr}%", "", pos_read, "Search Console API", "#3FD98B")
+                        "Search Console API", "#2563EB")
+        + _insight_card("Clicks (28d)", clk, f"CTR {ctr}%", "", pos_read, "Search Console API", "#16A34A")
         + _insight_card("Average position", f"#{avgpos}", f"across {len(q)} queries", "",
-                        pos_read, "Search Console API", "#8B7CFF")
+                        pos_read, "Search Console API", "#7C3AED")
         + "</div><div class='grid g2' style='margin-top:8px'>"
         + _viz2("Impressions & clicks — 28-day trend", trend, "Fills day by day.")
         + _viz2("Devices", (CH.ring([(l, v, c) for l, v, c in dev], center=str(imp)) if dev else ""), "Device split appears with impressions.")
@@ -2986,10 +2990,10 @@ def _ga4_board(gi, title="📈 Analytics (GA4) — full replication"):
     eng = round(float(t.get("engagementRate", 0)) * 100)
     ch = ga4.get("channels") or []
     topch = max(ch, key=lambda r: r["sessions"])["sessionDefaultChannelGroup"] if ch else "—"
-    trend = CH.lines([("Sessions", [r.get("sessions", 0) for r in daily] or [0], "#2FE3D2"),
-                      ("Users", [r.get("totalUsers", 0) for r in daily] or [0], "#4C8DFF")]) if daily else ""
+    trend = CH.lines([("Sessions", [r.get("sessions", 0) for r in daily] or [0], "#2563EB"),
+                      ("Users", [r.get("totalUsers", 0) for r in daily] or [0], "#2563EB")]) if daily else ""
     chring = CH.ring([(r["sessionDefaultChannelGroup"][:12], r["sessions"], c) for r, c in
-                      zip(ch, ["#4C8DFF", "#2FE3D2", "#8B7CFF", "#F5B14C", "#3FD98B", "#FF6B93"])],
+                      zip(ch, ["#2563EB", "#2563EB", "#7C3AED", "#D97706", "#16A34A", "#DC2626"])],
                      center=str(sess)) if ch else ""
     prow = "".join(f"<div class='fe'><span class='mut'>{_esc(r['pagePath'][:40])}</span>"
                    f"<span class='tnum' style='margin-left:auto'>{int(r['sessions'])}</span></div>"
@@ -3002,14 +3006,14 @@ def _ga4_board(gi, title="📈 Analytics (GA4) — full replication"):
         + _insight_card("Sessions (28d)", sess, "visits", "",
                         f"Most visits arrive via {topch} — " +
                         ("young-site numbers; every published piece compounds this." if sess < 100 else "growing base."),
-                        "GA4 API", "#2FE3D2")
+                        "GA4 API", "#2563EB")
         + _insight_card("People", users, f"{new} new", "",
-                        f"{round(new / users * 100) if users else 0}% of visitors are first-timers.", "GA4 API", "#4C8DFF")
+                        f"{round(new / users * 100) if users else 0}% of visitors are first-timers.", "GA4 API", "#2563EB")
         + _insight_card("Engagement", f"{eng}%", "engaged sessions", "",
                         ("Healthy engagement — visitors read." if eng >= 50 else "Visitors bounce fast — landing content needs a hook."),
-                        "GA4 API", "#8B7CFF")
+                        "GA4 API", "#7C3AED")
         + _insight_card("Top channel", topch, "traffic source", "",
-                        "Organic growing = SEO engine working; Direct-heavy = brand/word-of-mouth.", "GA4 API", "#F5B14C")
+                        "Organic growing = SEO engine working; Direct-heavy = brand/word-of-mouth.", "GA4 API", "#D97706")
         + "</div><div class='grid g2' style='margin-top:8px'>"
         + _viz2("Sessions & users — 28-day trend", trend, "Fills day by day.")
         + _viz2("Traffic channels", chring, "Fills as sessions arrive.")
@@ -3033,7 +3037,7 @@ def _competitor_board(ci, serper_on):
     scanned = (ci or {}).get("scanned_at", "")[:16].replace("T", " ")
 
     def card(title, body, live=True, src=""):
-        col = "#3FD98B" if (live and body) else "#8E9BBE"
+        col = "#16A34A" if (live and body) else "#4B5563"
         return ("<div class='card'><div style='display:flex;align-items:center;gap:7px'>"
                 f"<span class='ct' style='margin:0'>{_esc(title)}</span>"
                 f"<span style='margin-left:auto;width:8px;height:8px;border-radius:50%;background:{col}'></span></div>"
@@ -3066,7 +3070,7 @@ def _competitor_board(ci, serper_on):
     def rival_block(c, inner):
         a = ai.get(c["domain"]) or {}
         thr = a.get("threat", "")
-        tcol = {"high": "#FF6B93", "medium": "#F5B14C", "low": "#3FD98B"}.get(thr, "#8E9BBE")
+        tcol = {"high": "#DC2626", "medium": "#D97706", "low": "#16A34A"}.get(thr, "#4B5563")
         return ("<div style='border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-top:7px'>"
                 f"<div style='display:flex;gap:8px;align-items:center'><b>{_esc(c['domain'][:26])}</b>"
                 + (f"<span class='pill' style='background:{tcol}22;color:{tcol};padding:1px 8px'>{_esc(thr)} threat</span>" if thr else "")
@@ -3094,25 +3098,25 @@ def _competitor_board(ci, serper_on):
             f"<div class='big tnum' style='font-size:24px'>{c.get('visibility_index', 0)}%</div>"
             f"<div class='dim'>appears in {len(c.get('seo_hits') or [])} of your {max(len(own_q),1)} query SERPs</div>"
             "<div class='prog' style='margin:6px 0 0'>"
-            f"<i style='width:{max(3, c.get('visibility_index', 0))}%;background:#8B7CFF'></i></div>"))
+            f"<i style='width:{max(3, c.get('visibility_index', 0))}%;background:#7C3AED'></i></div>"))
         geo_d = detail(lambda c: (
             f"<div style='font-size:16px'>{'★' * int(round(c['maps'].get('rating', 0)))}"
             f"<span class='dim'>{'☆' * (5 - int(round(c['maps'].get('rating', 0))))}</span> "
             f"<b>{c['maps'].get('rating', 0)}</b> · {c['maps'].get('reviews', 0)} reviews</div>"
             f"<div class='dim'>{_esc((c['maps'].get('address') or '')[:48])}</div>"
-            + ("<div style='color:#3FD98B;font-size:11.5px;margin-top:3px'>💡 weak social proof — attackable with review-rich comparison content</div>"
+            + ("<div style='color:#16A34A;font-size:11.5px;margin-top:3px'>💡 weak social proof — attackable with review-rich comparison content</div>"
                if c['maps'].get('rating', 5) <= 3.5 and c['maps'].get('reviews', 99) < 20 else "")) if c.get("maps") else "")
         prod_d = detail(lambda c: (
             f"<div><b>{_esc(((ai.get(c['domain']) or {}).get('products_guess') or (c.get('site') or {}).get('title') or '')[:70])}</b></div>"
             + (f"<div class='dim' style='margin-top:3px'>{_esc(((c.get('site') or {}).get('description') or '')[:110])}</div>"
                if (c.get('site') or {}).get('description') else "")))
         price_d = detail(lambda c: (" ".join(
-            f"<span class='pill' style='background:rgba(245,177,76,.14);color:#F5B14C;padding:2px 9px'>{_esc(p)}</span>"
+            f"<span class='pill' style='background:rgba(245,177,76,.14);color:#D97706;padding:2px 9px'>{_esc(p)}</span>"
             for p in (c.get("site") or {}).get("prices_seen") or []) or ""))
         promo_d = detail(lambda c: ("🏷️ promo/offer visible on their homepage right now"
                                     if (c.get("site") or {}).get("promo_on_site") else ""))
         tech_d = detail(lambda c: (" ".join(
-            f"<span class='pill' style='background:rgba(76,141,255,.14);color:#4C8DFF;padding:2px 9px'>{_esc(t)}</span>"
+            f"<span class='pill' style='background:rgba(76,141,255,.14);color:#2563EB;padding:2px 9px'>{_esc(t)}</span>"
             for t in (c.get("site") or {}).get("tech") or []) or ""))
         soc_d = detail(lambda c: (
             f"<div class='big tnum' style='font-size:22px'>{c.get('linkedin_followers', 0):,}</div>"
@@ -3137,7 +3141,7 @@ def _competitor_board(ci, serper_on):
             mx = max(aivis["mentions"].values()) or 1
             for d, n in sorted(aivis["mentions"].items(), key=lambda x: -x[1]):
                 aivis_d += (f"<div class='fe'><span class='mut'>{_esc(d[:26])}</span>"
-                            f"<div class='track' style='margin:0 8px;flex:1'><i style='width:{round(n/mx*100)}%;background:#8B7CFF'></i></div>"
+                            f"<div class='track' style='margin:0 8px;flex:1'><i style='width:{round(n/mx*100)}%;background:#7C3AED'></i></div>"
                             f"<span class='tnum'>{n}/{aivis.get('prompts_run', 0)}</span></div>")
             aivis_d = (f"<div class='dim' style='margin-bottom:4px'>Asked Claude {aivis.get('prompts_run', 0)} buyer-intent "
                        "questions with live web search — who got cited:</div>") + aivis_d
@@ -3189,7 +3193,7 @@ def _competitor_board(ci, serper_on):
                    live=True, src="not applicable to this market")
             + dossiers)
     return (
-        "<div class='card full' style='margin-top:12px;border-left:4px solid #8B7CFF'>"
+        "<div class='card full' style='margin-top:12px;border-left:4px solid #7C3AED'>"
         "<p class='ct'>🛰️ Competitive Intelligence — 22 signals</p>"
         "<p class='cc'>The machine discovers who ranks for <b>your</b> queries, then captures their SEO share, local "
         "reviews, tech stack, pricing, news (funding/partners/launches) and synthesizes health · risk · forecast · "
@@ -3209,6 +3213,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
                    content_plan=None, web_tracking=None, reply_drafts=None,
                    competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None,
+                   window_days=30,
                    system_ctx=None, risk_ctx=None, bi_ctx=None,
                    outreach_ctx=None, sga_ctx=None, factory_ctx=None,
                    cockpit_ctx=None, saved_keys=None):
@@ -3263,7 +3268,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     reply_rate = round(replied / leads_emailed * 100) if leads_emailed else 0
     waiting = sum(1 for j in jobs if j.get("status") == "AWAITING_APPROVAL")
     pct = round(month_spent / month_cap * 100) if month_cap else 0
-    bcol = "#3FD98B" if pct < 70 else ("#F5B14C" if pct < 90 else "#FF6B93")
+    bcol = "#16A34A" if pct < 70 else ("#D97706" if pct < 90 else "#DC2626")
     live_conn = sum(1 for k, name, *_ in _DIAG if st.get(k))
     total_conn = len(_DIAG)
     healthy = health.get("healthy")
@@ -3289,17 +3294,17 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         f"<div class='fe'><span>{_esc((j.get('payload',{}).get('content_producer',{}) or {}).get('title') or j.get('job_id'))}</span>"
         f"<span class='dim' style='margin-left:auto'>{_esc(j.get('status'))}</span></div>" for j in top)
     m_content = _master("📝", "Content — at a glance", "How much you're producing and shipping.",
-        [("Made / month", made_month, "#EDF1FB"), ("Published", published, "#3FD98B"),
-         ("In progress", sum(pl[0:4]), "#F5B14C"), ("On pace for", proj, "#8B7CFF")],
-        _sparkline(content_series, "#4C8DFF") if content_jobs else _empty("Fills as pieces are made."))
+        [("Made / month", made_month, "#111827"), ("Published", published, "#16A34A"),
+         ("In progress", sum(pl[0:4]), "#D97706"), ("On pace for", proj, "#7C3AED")],
+        _sparkline(content_series, "#2563EB") if content_jobs else _empty("Fills as pieces are made."))
     # ---- CONTENT PLAN (agent proposes -> you approve -> pieces get created) ----
     _pending = content_plan.get("status") == "pending" and content_plan.get("items")
     if _pending:
         from datetime import date, timedelta
         _chan_badge = {
             "linkedin": "<span class='pill' style='background:rgba(10,102,194,.16);color:#4C9AFF;padding:1px 8px'>in LinkedIn</span>",
-            "website": "<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>🌐 Website</span>",
-            "web": "<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>🌐 Website</span>",
+            "website": "<span class='pill' style='background:rgba(47,227,210,.14);color:#2563EB;padding:1px 8px'>🌐 Website</span>",
+            "web": "<span class='pill' style='background:rgba(47,227,210,.14);color:#2563EB;padding:1px 8px'>🌐 Website</span>",
         }
         seg_counts, chan_counts = {}, {}
         # flat review list (the WEEK CALENDAR above shows the day-by-day layout —
@@ -3314,18 +3319,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 c = "website" if c in ("web", "blog", "wordpress") else c
                 chan_counts[c] = chan_counts.get(c, 0) + 1
             d = int(it.get("day_offset", 0) or 0)
-            daypill = (f"<span class='pill' style='background:rgba(139,124,255,.16);color:#8B7CFF;padding:1px 8px'>"
+            daypill = (f"<span class='pill' style='background:rgba(139,124,255,.16);color:#7C3AED;padding:1px 8px'>"
                        f"📅 {(date.today() + timedelta(days=d)).strftime('%a')}</span>")
             chans = [str(c).lower() for c in (it.get("channels") or ["website"])]
             chan_html = " ".join(_chan_badge.get("website" if c in ("web", "blog", "wordpress") else c, "") for c in chans)
             tags = ""
             if seg or pil:
                 tags = ("<div style='margin-top:4px;display:flex;gap:6px;flex-wrap:wrap'>"
-                        + (f"<span class='pill' style='background:rgba(47,227,210,.14);color:#2FE3D2;padding:1px 8px'>👤 {_esc(seg)}</span>" if seg else "")
-                        + (f"<span class='pill' style='background:rgba(139,124,255,.14);color:#8B7CFF;padding:1px 8px'>🎯 {_esc(pil)}</span>" if pil else "")
+                        + (f"<span class='pill' style='background:rgba(47,227,210,.14);color:#2563EB;padding:1px 8px'>👤 {_esc(seg)}</span>" if seg else "")
+                        + (f"<span class='pill' style='background:rgba(139,124,255,.14);color:#7C3AED;padding:1px 8px'>🎯 {_esc(pil)}</span>" if pil else "")
                         + "</div>")
             rows += (
-                "<div style='padding:10px 0;border-top:1px solid rgba(255,255,255,.06)'>"
+                "<div style='padding:10px 0;border-top:1px solid rgba(17,24,39,.06)'>"
                 f"<div style='display:flex;gap:8px;align-items:baseline;flex-wrap:wrap'>"
                 f"<span class='tnum dim'>{i:02d}</span>{daypill}<b>{_esc(it.get('title',''))}</b>"
                 f"<span style='margin-left:auto;display:flex;gap:5px'>{chan_html}</span></div>"
@@ -3336,16 +3341,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         # coverage bar: how evenly the plan spans the 7 segments + which channels
         cov = ""
         if seg_counts:
-            chips = " ".join(f"<span class='pill' style='background:rgba(47,227,210,.12);color:#2FE3D2;padding:1px 8px'>"
+            chips = " ".join(f"<span class='pill' style='background:rgba(47,227,210,.12);color:#2563EB;padding:1px 8px'>"
                              f"{_esc(s)} ×{n}</span>" for s, n in sorted(seg_counts.items(), key=lambda x: -x[1]))
             li_n = chan_counts.get("linkedin", 0)
             web_n = chan_counts.get("website", 0)
             cov = (f"<div style='margin:8px 0 4px'><span class='dim'>Segment coverage:</span> "
                    f"<div style='margin-top:5px;display:flex;gap:6px;flex-wrap:wrap'>{chips}</div>"
-                   f"<div class='dim' style='margin-top:8px'>Channels: <b style='color:#2FE3D2'>{web_n} website</b> · "
+                   f"<div class='dim' style='margin-top:8px'>Channels: <b style='color:#2563EB'>{web_n} website</b> · "
                    f"<b style='color:#4C9AFF'>{li_n} LinkedIn</b></div></div>")
         plan_card = (
-            "<div class='card full' style='margin-bottom:12px;border-left:4px solid #4C8DFF'>"
+            "<div class='card full' style='margin-bottom:12px;border-left:4px solid #2563EB'>"
             f"<p class='ct'>✅ Review &amp; approve this week — {len(content_plan['items'])} pieces</p>"
             "<p class='cc'>The day-by-day layout is in the <b>calendar above</b>; this is the review list. Each piece is "
             "tagged with its day, channels, segment &amp; pillar. Approve to create them all (written, QA-checked, "
@@ -3369,9 +3374,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
 
     # ---- BRAND / CI + 1-CLICK AUTOPILOT ----
     _ci_has = bool(ci_text.strip())
-    ap_state = ("<span class='pill p-live'><span class='d' style='background:#3FD98B'></span>Autopilot ON — creating & publishing live</span>"
+    ap_state = ("<span class='pill p-live'><span class='d' style='background:#16A34A'></span>Autopilot ON — creating & publishing live</span>"
                 if autopilot_on else
-                "<span class='pill p-need'><span class='d' style='background:#F5B14C'></span>Autopilot off</span>")
+                "<span class='pill p-need'><span class='d' style='background:#D97706'></span>Autopilot off</span>")
     autopilot_card = (
         "<div class='card full' style='margin-bottom:12px'>"
         "<p class='ct'>🎨 Brand & Autopilot — feed your identity, publish on-brand in one click</p>"
@@ -3386,7 +3391,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "<span class='dim'>Design-inspiration Drive folder ID (images to echo): </span>"
         f"<input id='ci-drive' value='{_esc(ci_drive)}' placeholder='1AbC…' style='min-width:220px'>"
         "<button class='cbtn' onclick='saveCI()'>💾 Save brand</button></div>"
-        "<div class='ctrl' style='margin-top:14px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px'>"
+        "<div class='ctrl' style='margin-top:14px;border-top:1px solid rgba(17,24,39,.08);padding-top:14px'>"
         + ("<button class='sbtn' style='background:#F5788A' onclick='stopAutopilot()'>■ Stop autopilot</button>"
            if autopilot_on else
            "<button class='sbtn' onclick='runAutopilot()'>🚀 Autopilot: create &amp; publish on-brand (1 click)</button>")
@@ -3400,35 +3405,35 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Pipeline — where each piece is", "Idea → written → checked → your approval → live → measured.",
                _funnel(list(zip(_STAGES, pl))) if sum(pl) else _empty("No content jobs yet.")),
         _panel("Content by stage", "How many pieces sit at each stage right now.",
-               _bars([(k, v) for k, v in by_status.items()][:6], "#4C8DFF") if by_status else _empty("Nothing in production yet.")),
+               _bars([(k, v) for k, v in by_status.items()][:6], "#2563EB") if by_status else _empty("Nothing in production yet.")),
         _panel("Output & projection", "Target ≈ 60/month (2 blogs a day).",
-               (_sparkline(content_series, "#4C8DFF") + f"<div class='dim' style='margin-top:6px'>{made_month} made this month · on pace for <b style='color:var(--ink)'>{proj}</b></div>") if content_jobs else _empty("Fills as pieces are made.")),
+               (_sparkline(content_series, "#2563EB") + f"<div class='dim' style='margin-top:6px'>{made_month} made this month · on pace for <b style='color:var(--ink)'>{proj}</b></div>") if content_jobs else _empty("Fills as pieces are made.")),
         _panel("Published pieces", "What's live on your site.",
                top_html or _empty("Nothing published yet.")),
         _panel("Cost per piece", "Average AI spend to make one piece.",
                f"<div class='big tnum'>${(content_cost/max(len(content_jobs),1)):.3f}</div><div class='dim'>per piece · {len(content_jobs)} made</div>" if content_jobs else _empty("Fills as pieces are made.")),
         _panel("Live vs in progress", "How much is published vs still moving.",
-               _donut(round(published/max(len(content_jobs),1)*100), "#3FD98B") if content_jobs else _empty("Fills as pieces are made.")),
+               _donut(round(published/max(len(content_jobs),1)*100), "#16A34A") if content_jobs else _empty("Fills as pieces are made.")),
         _panel("Where pieces sit", "Count at each stage of the line.",
-               _bars(list(zip(_STAGES, pl)), "#4C8DFF") if sum(pl) else _empty("Nothing in production yet.")),
+               _bars(list(zip(_STAGES, pl)), "#2563EB") if sum(pl) else _empty("Nothing in production yet.")),
         _panel("Monthly pace", "Made so far vs projected by month-end.",
                f"<div class='big tnum'>{made_month}<small> / {proj}</small></div><div class='dim'>this month · projected</div>" if content_jobs else _empty("Fills as pieces are made."))))
 
     # ---- 2. LEAD MACHINE ----
     m_leads = _master("🧲", "Leads — at a glance", "Your pipeline from stranger to booked call.",
-        [("Found", leads_found, "#EDF1FB"), ("Emailed", leads_emailed, "#4C8DFF"),
-         ("Replied", lead_rows[4][1], "#8B7CFF"), ("Booked", lead_rows[5][1], "#3FD98B")],
+        [("Found", leads_found, "#111827"), ("Emailed", leads_emailed, "#2563EB"),
+         ("Replied", lead_rows[4][1], "#7C3AED"), ("Booked", lead_rows[5][1], "#16A34A")],
         _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("Fills as leads flow in."))
     # 🗺️ Maps lead sourcing: type a business type + city -> real local businesses
     # with verified emails land in the pipeline (qualify -> write -> YOUR approval).
     _serper_on = bool(st.get("serper_search"))
     maps_form = (
-        "<div class='card full' style='margin-bottom:12px;border-left:4px solid #2FE3D2'>"
+        "<div class='card full' style='margin-bottom:12px;border-left:4px solid #2563EB'>"
         "<p class='ct'>🗺️ Source local leads from Google Maps</p>"
         "<p class='cc'>Type who and where — the engine scrapes real local businesses (name, phone, website, rating), "
         "finds a <b>verified email</b> for each via Prospeo, and drops them into the normal pipeline: qualify → "
         "write → QA → <b>your approval</b> → capped send. Nothing is emailed by this button.</p>"
-        + ("" if _serper_on else "<p class='cc' style='color:#F5B14C'>⚠ Serper isn't connected — save SERPER_API_KEY on the System Map first.</p>")
+        + ("" if _serper_on else "<p class='cc' style='color:#D97706'>⚠ Serper isn't connected — save SERPER_API_KEY on the System Map first.</p>")
         + "<div class='cmd'>"
         "<input id='mv' placeholder='Business type — e.g. tax consultants, dentists, law firms'>"
         "<input id='mc' placeholder='City — e.g. Zurich, Munich, Manchester'>"
@@ -3442,20 +3447,20 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                _funnel(lead_rows) if any(v for _, v in lead_rows) else _empty("No leads yet — connect the lead finder.")),
         _panel("Leads by country — your 5 target markets",
                "Segmentation across USA · UK · Germany · Switzerland · Canada.",
-               _bars(_by_country(out_jobs), "#2FE3D2") if any(v for _, v in _by_country(out_jobs))
+               _bars(_by_country(out_jobs), "#2563EB") if any(v for _, v in _by_country(out_jobs))
                else _funnel_skeleton([("United States", 0, 100), ("United Kingdom", 0, 82),
                                       ("Germany", 0, 66), ("Switzerland", 0, 50), ("Canada", 0, 40)],
                                      "Fills as Prospeo leads arrive, split by country.")),
         _panel("Leads by source", "Where each lead came from (Prospeo / web).",
-               _bars([("Prospeo (LinkedIn)", 0), ("Web search", leads_found)], "#8B7CFF") if leads_found else _empty("No lead sources connected.")),
+               _bars([("Prospeo (LinkedIn)", 0), ("Web search", leads_found)], "#7C3AED") if leads_found else _empty("No lead sources connected.")),
         _panel("Leads over time · 14 days", "New lead-jobs per day.",
-               _sparkline(_daybuckets(out_jobs, lambda j: True, 14), "#8B7CFF") if out_jobs else _empty("Fills as the lead finder runs.")),
+               _sparkline(_daybuckets(out_jobs, lambda j: True, 14), "#7C3AED") if out_jobs else _empty("Fills as the lead finder runs.")),
         _panel("Leads by vertical", "Which professions your leads cluster in.",
-               _bars(_verticals(out_jobs), "#8B7CFF") if _verticals(out_jobs) else _empty("Fills as Prospeo leads arrive.")),
+               _bars(_verticals(out_jobs), "#7C3AED") if _verticals(out_jobs) else _empty("Fills as Prospeo leads arrive.")),
         _panel("Cost per lead", "What each verified lead costs you.",
                f"<div class='big tnum'>${(total_cost/max(leads_found,1)):.2f}</div><div class='dim'>per lead · {leads_found} found</div>" if leads_found else _empty("Fills as leads flow in.")),
         _panel("Email quality", "Prospeo returns only verified work emails.",
-               (_donut(100, "#3FD98B") + "<div class='dim' style='text-align:center'>verified deliverable</div>") if leads_found else _empty("Fills as leads flow in.")),
+               (_donut(100, "#16A34A") + "<div class='dim' style='text-align:center'>verified deliverable</div>") if leads_found else _empty("Fills as leads flow in.")),
         _panel("Reply & booking rate", "How many leads answer and book a call.",
                _funnel_skeleton([("Emailed", emails_sent, 100), ("Replied", lead_rows[4][1], 55), ("Booked", lead_rows[5][1], 28)], "Fills as replies land.")))
 
@@ -3466,13 +3471,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         f"<div class='chip'><span class='nm'>{p}</span><span class='dim'>from {a}</span></div>"
         for p, a in _routing)
     m_email = _master("✉️", "Outreach — at a glance", "Cold email → reply → booked → won.",
-        [("Emails sent", emails_sent, "#EDF1FB"), ("Replied", replied, "#8B7CFF"),
-         ("Booked", booked, "#F5B14C"), ("Won", o_cust, "#3FD98B")],
+        [("Emails sent", emails_sent, "#111827"), ("Replied", replied, "#7C3AED"),
+         ("Booked", booked, "#D97706"), ("Won", o_cust, "#16A34A")],
         _funnel_skeleton([("People emailed", leads_emailed, 100), ("Replied", replied, 62),
                           ("Booked", booked, 38), ("Won", o_cust, 20)], "Fills as replies land."))
     p_email = m_email + _outbox(jobs) + _replies_inbox(reply_drafts) + _leads_table(jobs) + grid(
         _panel("Sent vs replied", "Emails out, and customers who replied.",
-               _bars([("Emails sent", emails_sent), ("People emailed", leads_emailed), ("Replied", replied)], "#4C8DFF")
+               _bars([("Emails sent", emails_sent), ("People emailed", leads_emailed), ("Replied", replied)], "#2563EB")
                if emails_sent else _empty("No emails sent yet.")),
         _panel("Sent by purpose → address", "The loop: your agent sends each email type from the right alias — all from your one inbox.", route_html),
         _panel("Deal conversion — the money moment", "Email → reply → booked consultation → paying customer.",
@@ -3480,7 +3485,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                                  ("Consultation booked", booked, 38), ("Customer won", o_cust, 20)],
                                 "Booked consultations come live from Cal.com; replies + won come as outcomes are recorded.")),
         _panel("Send volume over time", "Emails actually sent per day (intro + follow-ups).",
-               _sparkline(_send_daybuckets(out_jobs, 14), "#4C8DFF")
+               _sparkline(_send_daybuckets(out_jobs, 14), "#2563EB")
                if emails_sent else _empty("Fills as outreach runs.")),
         _panel("Reply rate", "Share of emailed customers who reply.",
                f"<div class='big tnum'>{reply_rate}%</div><div class='dim'>{replied} of {leads_emailed} people emailed replied</div>"
@@ -3489,20 +3494,20 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                "<div class='dim' style='line-height:1.8'>✔️ Dead addresses drop automatically (bounce suppression)<br>✔️ Daily send cap ramps up as the domain warms<br>✔️ A suppressed address is never emailed again</div>"),
         _panel("Volume by sender alias", "Which address each email went out from.",
                _bars([("marketing@ (outreach)", emails_sent), ("customercare@ (replies)", replied),
-                      ("newsletter@", 0), ("contact@", 0)], "#8B7CFF") if emails_sent else _empty("Fills as outreach runs.")),
+                      ("newsletter@", 0), ("contact@", 0)], "#7C3AED") if emails_sent else _empty("Fills as outreach runs.")),
         _panel("Best subject lines", "Which openers win the most replies.",
                _empty("Ranks your subject lines once replies come in.")),
         _panel("Consultations booked (Cal.com)", "Real calls booked off your outreach.",
-               f"<div class='big tnum' style='color:#3FD98B'>{booked}</div><div class='dim'>consultations booked</div>"
+               f"<div class='big tnum' style='color:#16A34A'>{booked}</div><div class='dim'>consultations booked</div>"
                if st.get("calcom_bookings") else _empty("Connect Cal.com on the System Map to count booked calls.")))
 
     # ---- 4. SOCIAL MEDIA ----
     _social_live = sum(1 for k in ("social_linkedin", "social_twitter", "social_facebook",
                                     "social_instagram", "social_tiktok") if st.get(k))
     m_social = _master("📣", "Social — at a glance", "Posting across your channels.",
-        [("Channels live", f"{_social_live}/5", "#3FD98B" if _social_live else "#F5B14C"),
-         ("Posts", 0, "#EDF1FB"), ("Target / day", 15, "#8B7CFF")],
-        _bars([("LinkedIn", 0), ("X", 0), ("Facebook", 0), ("Instagram", 0), ("TikTok", 0)], "#8B7CFF"))
+        [("Channels live", f"{_social_live}/5", "#16A34A" if _social_live else "#D97706"),
+         ("Posts", 0, "#111827"), ("Target / day", 15, "#7C3AED")],
+        _bars([("LinkedIn", 0), ("X", 0), ("Facebook", 0), ("Instagram", 0), ("TikTok", 0)], "#7C3AED"))
     p_social = m_social + grid(
         _panel("Posts per channel", "Content pushed to each social channel.", _empty("Connect a social channel to post.")),
         _panel("Engagement", "Likes, comments, shares per channel.", _empty("Shows once posting is on.")),
@@ -3547,8 +3552,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "◆ <b>AEO:</b> answer real questions from your Search Console queries directly in H2s so AI engines quote you.",
     ])
     m_seo = _master("🔎", "SEO / AEO / GEO — at a glance", "Visibility across Google & AI answers (live from your Search Console + Analytics).",
-        [("Sessions (28d)", f"{sessions:,}", "#4C8DFF"), ("Search clicks", f"{total_clicks:,}", "#2FE3D2"),
-         ("Avg rank", avg_rank or "—", "#8B7CFF"), ("CTR", f"{ctr}%", "#3FD98B")], mfunnel)
+        [("Sessions (28d)", f"{sessions:,}", "#2563EB"), ("Search clicks", f"{total_clicks:,}", "#2563EB"),
+         ("Avg rank", avg_rank or "—", "#7C3AED"), ("CTR", f"{ctr}%", "#16A34A")], mfunnel)
     _grefresh = ("<div class='ctrl' style='margin-top:10px'><button class='cbtn' onclick='refreshInsights()'>"
                  "↻ Refresh Google data</button>"
                  + (f"<span class='dim' style='align-self:center'>cached {_esc(str(google_insights.get('at',''))[:16].replace('T',' '))} UTC · auto-refreshes hourly</span>"
@@ -3562,7 +3567,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _panel("Marketing funnel", "Impressions → clicks → sessions → rankings.", mfunnel),
         _panel("Keyword rankings (Search Console)", "The exact queries you show up for, your position + clicks.", kw_rows),
         _panel("Ranking spread", "How many queries rank 1-3 / 4-10 / 11+.",
-               _bars([("1-3 (page-one top)", r13), ("4-10 (page one)", r410), ("11+ (page 2+)", r11)], "#8B7CFF")
+               _bars([("1-3 (page-one top)", r13), ("4-10 (page one)", r410), ("11+ (page 2+)", r11)], "#7C3AED")
                if _gsc else _empty("Fills from Search Console.")),
         _panel("Top pages (Analytics)", "Which pages pull the most visits.", tp_rows),
         _panel("Click-through rate", "How often a ranking turns into a click.",
@@ -3577,22 +3582,22 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # ---- 6. ADS & GROWTH ----
     _ads_on = bool(ads)
     m_ads = _master("🎯", "Ads & growth — at a glance", "Paid campaigns, live from Google Ads.",
-        [("Spend · 30d", f"${ads.get('spend',0):,.0f}" if _ads_on else "—", "#EDF1FB"),
-         ("Clicks", ads.get('clicks', '—') if _ads_on else "—", "#4C8DFF"),
-         ("CPA", f"${ads.get('cpa',0):.2f}" if (_ads_on and ads.get('cpa')) else "—", "#8B7CFF"),
-         ("Conversions", ads.get('conversions', '—') if _ads_on else "—", "#3FD98B")],
-        _bars(ads.get('campaigns', []), "#4C8DFF", money=True) if (_ads_on and ads.get('campaigns'))
+        [("Spend · 30d", f"${ads.get('spend',0):,.0f}" if _ads_on else "—", "#111827"),
+         ("Clicks", ads.get('clicks', '—') if _ads_on else "—", "#2563EB"),
+         ("CPA", f"${ads.get('cpa',0):.2f}" if (_ads_on and ads.get('cpa')) else "—", "#7C3AED"),
+         ("Conversions", ads.get('conversions', '—') if _ads_on else "—", "#16A34A")],
+        _bars(ads.get('campaigns', []), "#2563EB", money=True) if (_ads_on and ads.get('campaigns'))
         else (_empty("Connect Google Ads on the System Map to fill this.") if not st.get("ads_api")
               else _empty("Campaign data appears once ads run.")))
     p_ads = m_ads + grid(
         _panel("Spend by campaign", "Where the ad budget goes.",
-               _bars(ads.get('campaigns', []), "#4C8DFF", money=True) if ads.get('campaigns')
+               _bars(ads.get('campaigns', []), "#2563EB", money=True) if ads.get('campaigns')
                else _empty("Connect Google Ads on the System Map.")),
         _panel("Cost per result (CPA/ROAS)", "Efficiency per campaign.", _empty("Shows with ad data.")),
         _panel("Budget reallocation", "Move money to what works.", _empty("The ads agent suggests moves here.")),
         _panel("SEO-informed keywords", "Winning keywords to pull into ads.", _empty("Fills from your SEO data.")),
         _panel("Impressions & clicks", "How much attention your ads get.",
-               _bars([("Impressions", ads.get('impressions', 0)), ("Clicks", ads.get('clicks', 0))], "#4C8DFF")
+               _bars([("Impressions", ads.get('impressions', 0)), ("Clicks", ads.get('clicks', 0))], "#2563EB")
                if ads else _empty("Connect Google Ads on the System Map.")),
         _panel("Conversion rate", "Clicks that turn into leads.", _empty("Shows once ads run.")),
         _panel("Budget pacing", "Are you on track for the month?", _empty("Shows once an ad budget is set.")),
@@ -3602,14 +3607,14 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     lead_cost = total_cost - content_cost
     spend_series = _daybuckets(jobs, lambda j: True, 14, valfn=lambda j: float(j.get("cost_so_far_usd", 0)))
     if o_rev or o_leads or o_cust:
-        roi_col = "#3FD98B" if o_rev >= total_cost else "#F5B14C"
+        roi_col = "#16A34A" if o_rev >= total_cost else "#D97706"
         cpl = f"${(total_cost/o_leads):.2f}" if o_leads else "—"
         cpc = f"${(total_cost/o_cust):.2f}" if o_cust else "—"
         roi_body = (f"<div class='big tnum' style='color:{roi_col}'>${o_rev:,.0f}</div>"
                     f"<div class='dim'>earned vs ${total_cost:.2f} spent</div>"
                     "<div class='bars' style='margin-top:10px'>"
-                    f"<div class='br'><span class='bl'>Cost / lead</span><div class='track'><i style='width:40%;background:#8B7CFF'></i></div><span class='bv'>{cpl}</span></div>"
-                    f"<div class='br'><span class='bl'>Cost / customer</span><div class='track'><i style='width:60%;background:#4C8DFF'></i></div><span class='bv'>{cpc}</span></div></div>")
+                    f"<div class='br'><span class='bl'>Cost / lead</span><div class='track'><i style='width:40%;background:#7C3AED'></i></div><span class='bv'>{cpl}</span></div>"
+                    f"<div class='br'><span class='bl'>Cost / customer</span><div class='track'><i style='width:60%;background:#2563EB'></i></div><span class='bv'>{cpc}</span></div></div>")
     else:
         roi_body = _empty("No results yet. Record leads/revenue per job (from your CRM or n8n → POST /jobs/{id}/outcome) to see ROI here.")
     # ---- API METERS: per-API spend vs your top-up cap, so nothing runs out silently ----
@@ -3624,13 +3629,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
 
     def _meter_row(icon, label, note, spent, cap, calls, api):
         p = round(100 * spent / cap) if cap else 0
-        col = "#3FD98B" if p < 70 else ("#F5B14C" if p < 90 else "#F5788A")
+        col = "#16A34A" if p < 70 else ("#D97706" if p < 90 else "#F5788A")
         state = ("✓ healthy" if p < 70 else ("⚠ getting low" if p < 90 else "⛔ nearly out — top up"))
         if cap and p >= 80:
             api_warnings.append(f"{label} at {p}% of its ${cap:.0f} cap")
         calls_txt = f" · {calls} calls" if calls not in (None, 0) else ""
         return (
-            "<div style='padding:12px 0;border-top:1px solid rgba(255,255,255,.06)'>"
+            "<div style='padding:12px 0;border-top:1px solid rgba(17,24,39,.06)'>"
             "<div style='display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap'>"
             f"<div><b>{icon} {_esc(label)}</b> <span class='dim'>· {_esc(note)}{calls_txt}</span></div>"
             f"<div class='tnum' style='color:{col};font-weight:700'>${spent:.2f} <span class='dim'>/ ${cap:.0f}</span></div></div>"
@@ -3671,8 +3676,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         + (meter_rows or _empty("No paid-API usage yet this month.")) + "</div>")
 
     m_budget = _master("💰", "Budget & cost — at a glance", "Every euro in and out, against your cap.",
-        [("Spent", f"${month_spent:.2f}", bcol), ("Cap", f"${month_cap:.0f}", "#8B7CFF"),
-         ("Today", f"${day_spent:.2f}", "#EDF1FB"), ("Earned", f"${o_rev:,.0f}", "#3FD98B")],
+        [("Spent", f"${month_spent:.2f}", bcol), ("Cap", f"${month_cap:.0f}", "#7C3AED"),
+         ("Today", f"${day_spent:.2f}", "#111827"), ("Earned", f"${o_rev:,.0f}", "#16A34A")],
         _sparkline(spend_series, bcol) if total_cost else _empty("Fills day by day."))
     p_budget = m_budget + meters_card + grid(
         _panel("This month vs $200 cap", "The engine pauses before it ever goes over.",
@@ -3680,17 +3685,17 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                f"<div><div class='dim'>Today</div><div class='big tnum'>${day_spent:.2f}</div><div class='dim'>of ${day_cap:.0f}/day</div></div></div>"),
         _panel("Return on investment (ROI)", "The number that matters: money in vs money out.", roi_body),
         _panel("Cost by activity", "What your AI spend is doing.",
-               _bars([("Content", content_cost), ("Leads/email", lead_cost)], "#8B7CFF", money=True) if total_cost else _empty("No spend yet.")),
+               _bars([("Content", content_cost), ("Leads/email", lead_cost)], "#7C3AED", money=True) if total_cost else _empty("No spend yet.")),
         _panel("Spend trend · 14 days", f"${total_cost:.2f} so far this month · ${(content_cost/max(len(content_jobs),1)):.3f} per piece.",
-               _sparkline(spend_series, "#3FD98B") if total_cost else _empty("Fills day by day.")),
+               _sparkline(spend_series, "#16A34A") if total_cost else _empty("Fills day by day.")),
         _panel("Cost per outcome", "What one blog, lead or customer costs.",
-               _bars([("Per piece", content_cost/max(len(content_jobs),1)), ("Per lead", total_cost/max(o_leads or leads_found, 1)), ("Per customer", total_cost/max(o_cust, 1))], "#8B7CFF", money=True) if total_cost else _empty("Fills as spend happens.")),
+               _bars([("Per piece", content_cost/max(len(content_jobs),1)), ("Per lead", total_cost/max(o_leads or leads_found, 1)), ("Per customer", total_cost/max(o_cust, 1))], "#7C3AED", money=True) if total_cost else _empty("Fills as spend happens.")),
         _panel("Daily burn", "Average spend per day, projected to month-end.",
                f"<div class='big tnum'>${(total_cost/max(date.today().day,1)):.2f}</div><div class='dim'>per day · projecting ${(total_cost/max(date.today().day,1))*30:.0f}/mo</div>" if total_cost else _empty("Fills day by day.")),
         _panel("Spend by area", "Content vs leads & email.",
-               _bars([("Claude · content", content_cost), ("Leads / email", lead_cost)], "#4C8DFF", money=True) if total_cost else _empty("Fills as spend happens.")),
+               _bars([("Claude · content", content_cost), ("Leads / email", lead_cost)], "#2563EB", money=True) if total_cost else _empty("Fills as spend happens.")),
         _panel("Headroom left", "How much of the cap remains this month.",
-               _donut(max(0, 100 - pct), "#3FD98B")))
+               _donut(max(0, 100 - pct), "#16A34A")))
 
     # ---- 8. AGENTS & HEALTH ----
     outcomes = {"running": 0, "done": 0, "failed": 0}
@@ -3703,7 +3708,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         else:
             outcomes["running"] += 1
     hrows = "".join(
-        f"<div class='chip'><span class='nm'><span class='d' style='background:{({'ok':'#3FD98B','fail':'#FF6B93'}.get((health.get(k) or {}).get('status'),'#8E9BBE'))}'></span>{lbl}</span><span class='dim'>{_esc((health.get(k) or {}).get('status','—'))}</span></div>"
+        f"<div class='chip'><span class='nm'><span class='d' style='background:{({'ok':'#16A34A','fail':'#DC2626'}.get((health.get(k) or {}).get('status'),'#4B5563'))}'></span>{lbl}</span><span class='dim'>{_esc((health.get(k) or {}).get('status','—'))}</span></div>"
         for k, lbl in [("anthropic", "Claude API"), ("postgres", "Database (memory)"), ("connectors", "Connectors")])
     errs = "".join(f"<div class='fe'><span class='tm'>{_esc(str(j.get('job_id',''))[:10])}</span><span class='mut'>{_esc(j.get('halt_reason') or j.get('status'))}</span></div>" for j in jobs if j.get("status") in ("failed", "halted_budget"))
     _AGENTS = [
@@ -3727,41 +3732,41 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
 
     def _agent_row(name, does, dep):
         live = (dep is None) or bool(st.get(dep))
-        col = "#3FD98B" if live else "#F5B14C"
+        col = "#16A34A" if live else "#D97706"
         return (f"<div class='chip'><span class='nm'><span class='d' style='background:{col}'></span>"
                 f"<b>{_esc(name)}</b> <span class='dim'>— {_esc(does)}</span></span>"
                 f"<span class='dim' style='color:{col}'>{'ready' if live else 'needs a wire'}</span></div>")
     agents_live = sum(1 for _, _, dep in _AGENTS if dep is None or st.get(dep))
     agents_html = "".join(_agent_row(*a) for a in _AGENTS)
     m_agents = _master("❤️", "Agents & health — at a glance", "Is the machine alive and working?",
-        [("Agents ready", f"{agents_live}/16", "#3FD98B" if agents_live else "#F5B14C"),
-         ("Wires live", f"{live_conn}/{total_conn}", "#4C8DFF"),
-         ("Jobs done", outcomes["done"], "#8B7CFF"), ("Errors", outcomes["failed"], "#FF6B93")],
+        [("Agents ready", f"{agents_live}/16", "#16A34A" if agents_live else "#D97706"),
+         ("Wires live", f"{live_conn}/{total_conn}", "#2563EB"),
+         ("Jobs done", outcomes["done"], "#7C3AED"), ("Errors", outcomes["failed"], "#DC2626")],
         _bars([("Running", outcomes["running"]), ("Done", outcomes["done"]),
-               ("Failed", outcomes["failed"])], "#4C8DFF") if jobs else _empty("No jobs yet."))
+               ("Failed", outcomes["failed"])], "#2563EB") if jobs else _empty("No jobs yet."))
     p_agents = m_agents + grid(
         _panel("Engine health", "Live checks on the core parts.", hrows),
         _panel(f"Your 16 agents — {agents_live} ready", "Each worker, what it does, and whether it can run right now.", agents_html),
         _panel("Job outcomes", "Running vs done vs failed.",
-               _bars([("Running", outcomes["running"]), ("Done", outcomes["done"]), ("Failed", outcomes["failed"])], "#4C8DFF") if jobs else _empty("No jobs yet.")),
+               _bars([("Running", outcomes["running"]), ("Done", outcomes["done"]), ("Failed", outcomes["failed"])], "#2563EB") if jobs else _empty("No jobs yet.")),
         _panel("Recent errors", "Anything that failed or paused.", errs or _empty("No errors — all clean.")),
         _panel("Jobs per day · 14 days", "How much the engine is processing.",
-               _sparkline(_daybuckets(jobs, lambda j: True, 14), "#4C8DFF") if jobs else _empty("Fills as the engine runs.")),
+               _sparkline(_daybuckets(jobs, lambda j: True, 14), "#2563EB") if jobs else _empty("Fills as the engine runs.")),
         _panel("Queue depth", "Jobs in progress right now.",
                f"<div class='big tnum'>{outcomes['running']}</div><div class='dim'>working now</div>" if jobs else _empty("No jobs queued.")),
         _panel("Model usage", "Cheap Haiku vs powerful Opus.", _empty("Shows once the writer runs.")),
         _panel("Engine uptime", "Is the worker alive and ticking?",
-               f"<div class='big tnum' style='color:{'#3FD98B' if healthy else '#F5B14C'}'>{'Live' if healthy else 'Check'}</div><div class='dim'>worker status</div>"))
+               f"<div class='big tnum' style='color:{'#16A34A' if healthy else '#D97706'}'>{'Live' if healthy else 'Check'}</div><div class='dim'>worker status</div>"))
 
     # ---- 9. GOOGLE HUB ----
     def ghub(k, name, what):
         on = st.get(k)
-        return f"<div class='chip'><span class='nm'><span class='d' style='background:{'#3FD98B' if on else '#F5B14C'}'></span>{name}</span><span class='pill {'p-live' if on else 'p-need'}'>{'live' if on else 'needs key'}</span></div><div class='dim' style='padding:0 0 8px'>{what}</div>"
+        return f"<div class='chip'><span class='nm'><span class='d' style='background:{'#16A34A' if on else '#D97706'}'></span>{name}</span><span class='pill {'p-live' if on else 'p-need'}'>{'live' if on else 'needs key'}</span></div><div class='dim' style='padding:0 0 8px'>{what}</div>"
     _hub_live = sum(1 for k in ("google_sheets", "google_drive", "email_send") if st.get(k))
     m_google = _master("☁️", "Google hub — at a glance", "Your Sheets, Drive & Gmail data hub.",
-        [("Hub parts live", f"{_hub_live}/3", "#3FD98B" if _hub_live else "#F5B14C"),
-         ("Rows", len(jobs), "#EDF1FB"), ("Files", published, "#4C8DFF"), ("Emails sent", emails_sent, "#8B7CFF")],
-        _bars([("Job rows", len(jobs)), ("Content files", published), ("Emails sent", emails_sent)], "#2FE3D2")
+        [("Hub parts live", f"{_hub_live}/3", "#16A34A" if _hub_live else "#D97706"),
+         ("Rows", len(jobs), "#111827"), ("Files", published, "#2563EB"), ("Emails sent", emails_sent, "#7C3AED")],
+        _bars([("Job rows", len(jobs)), ("Content files", published), ("Emails sent", emails_sent)], "#2563EB")
         if (jobs or emails_sent) else _empty("Fills as the hub connects + jobs run."))
     p_google = m_google + grid(
         _panel("Google Sheets — data hub", "Every job, lead & metric mirrors here as rows.",
@@ -3774,10 +3779,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                ghub("email_send", "Gmail", "contact@ · marketing@ · newsletter@ · customercare@")
                + f"<div class='dim'><b style='color:var(--ink)'>{emails_sent}</b> sent · replies read via IMAP</div>"),
         _panel("What's stored right now", "Live counts living in your Google hub.",
-               _bars([("Job rows", len(jobs)), ("Content files", published), ("Emails sent", emails_sent)], "#2FE3D2")
+               _bars([("Job rows", len(jobs)), ("Content files", published), ("Emails sent", emails_sent)], "#2563EB")
                if (jobs or emails_sent) else _empty("Counts appear once the hub is connected + jobs run.")),
         _panel("Rows by type", "What's mirrored to Sheets.",
-               _bars([("Content", len(content_jobs)), ("Leads", len(out_jobs))], "#2FE3D2") if jobs else _empty("Fills as jobs run.")),
+               _bars([("Content", len(content_jobs)), ("Leads", len(out_jobs))], "#2563EB") if jobs else _empty("Fills as jobs run.")),
         _panel("Storage used", "Drive space your content uses.", _empty("Shows once files are saved.")),
         _panel("Last sync", "When data last mirrored to Google.", _empty("Shows after the first mirror.")),
         _panel("Email quota", "Daily Gmail send headroom.", _empty("Tracks as email sends.")))
@@ -3813,7 +3818,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
             words = len(body.split())
             tax = p.get("taxonomy") or {}
             seg, pil = tax.get("segment", ""), tax.get("pillar", "")
-            cats_txt = (f" · <b style='color:#2FE3D2'>{_esc(pil)}</b> → <b>{_esc(seg)}</b>"
+            cats_txt = (f" · <b style='color:#2563EB'>{_esc(pil)}</b> → <b>{_esc(seg)}</b>"
                         if (seg or pil) else "")
             has_img = bool((cp.get("image_url") or p.get("image_url") or ""))
             img_txt = " · 🖼 on-brand image ready" if has_img else " · ⏳ image pending"
@@ -3840,17 +3845,17 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 sd = _blog_webview_srcdoc(title, body, ci_text=ci_text,
                                           hero_url=(img if isinstance(img, str) else ""), kicker=_kick)
                 webview = (
-                    "<details style='margin-top:6px'><summary style='cursor:pointer;color:#3FD98B;font-weight:600'>"
+                    "<details style='margin-top:6px'><summary style='cursor:pointer;color:#16A34A;font-weight:600'>"
                     "🌐 See the web view (how it looks on your site — headings, images, layout)</summary>"
                     f"<iframe srcdoc=\"{sd}\" style='width:100%;max-width:760px;height:620px;border:1px solid var(--line);"
-                    "border-radius:9px;background:#080B14;margin-top:8px'></iframe>"
+                    "border-radius:9px;background:#F3F4F6;margin-top:8px'></iframe>"
                     "<div class='dim' style='margin-top:4px'>Rendered in your live blog's real design "
                     "(dark theme, Sora headings, teal accents) — matched from anthropos-automation.com.</div></details>")
             preview = (
                 f"<div class='dim' style='margin-top:8px;line-height:1.55'>{_esc(teaser)}…</div>"
-                f"<details style='margin-top:6px'><summary style='cursor:pointer;color:#4C8DFF;font-weight:600'>"
+                f"<details style='margin-top:6px'><summary style='cursor:pointer;color:#2563EB;font-weight:600'>"
                 f"📖 Read the full {whatis} (raw text)</summary>"
-                "<div style='margin-top:8px;padding:13px 15px;border-radius:9px;background:var(--panel,rgba(255,255,255,.03));"
+                "<div style='margin-top:8px;padding:13px 15px;border-radius:9px;background:var(--panel,rgba(17,24,39,.03));"
                 "border:1px solid var(--line);max-height:460px;overflow:auto;white-space:pre-wrap;line-height:1.65;font-size:13.5px'>"
                 f"{_esc(body)}</div></details>" + webview)
             li = (p.get("content_producer", {}) or {}).get("linkedin_post")
@@ -3909,10 +3914,10 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
              "③ Approved work publishes / sends right away (cold email is capped &amp; bounce-protected).<br>"
              "④ Flip on <b>Autonomy</b> only when you trust it — then it approves the safe ones itself.</div>")
     m_appr = _master("✅", "Approvals — at a glance", "What needs you, right now.",
-        [("Waiting", len(waiting_jobs), "#F5B14C" if waiting_jobs else "#3FD98B"),
-         ("Rewrites", revs, "#8B7CFF"),
-         ("Autonomy", "ON" if autonomy else "OFF", "#3FD98B" if autonomy else "#59668A")],
-        _bars([("Waiting", len(waiting_jobs)), ("Rewrites", revs)], "#F5B14C")
+        [("Waiting", len(waiting_jobs), "#D97706" if waiting_jobs else "#16A34A"),
+         ("Rewrites", revs, "#7C3AED"),
+         ("Autonomy", "ON" if autonomy else "OFF", "#16A34A" if autonomy else "#6B7280")],
+        _bars([("Waiting", len(waiting_jobs)), ("Rewrites", revs)], "#D97706")
         if (waiting_jobs or revs) else _empty("All caught up — nothing needs you. 🎉"))
     p_appr = m_appr + _outbox_pointer(jobs) + _followups_due(jobs) + ("<div class='card full'><p class='ct'>✅ Waiting for your approval</p>"
               "<p class='cc'>Read the preview, then approve — nothing goes live without you.</p>" + ap_body + "</div>"
@@ -3923,7 +3928,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
               + _panel("How approval works", "The safety flow, in plain words.", howto)
               + _panel("Pending by type", "Articles vs cold emails awaiting you.",
                        _bars([("Articles", sum(1 for j in waiting_jobs if j.get('type') != 'outreach_campaign')),
-                              ("Cold emails", sum(1 for j in waiting_jobs if j.get('type') == 'outreach_campaign'))], "#F5B14C")
+                              ("Cold emails", sum(1 for j in waiting_jobs if j.get('type') == 'outreach_campaign'))], "#D97706")
                        if waiting_jobs else _empty("Nothing pending."))
               + _panel("Turnaround", "How much is queued for you.",
                        f"<div class='big tnum'>{len(waiting_jobs)}</div><div class='dim'>waiting right now</div>" if waiting_jobs else _empty("All caught up."))
@@ -3952,14 +3957,14 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                   or _empty("Rules appear as work flows through. Publish + send once, record outcomes, and the "
                             "engine starts learning across content, leads and email — automatically."))
     eff_body = ((_sparkline(_daybuckets(content_jobs, lambda j: True, 14,
-                                        valfn=lambda j: float(j.get("cost_so_far_usd", 0))), "#3FD98B")
+                                        valfn=lambda j: float(j.get("cost_so_far_usd", 0))), "#16A34A")
                  + f"<div class='dim' style='margin-top:6px'>${(content_cost/max(len(content_jobs),1)):.3f} avg per piece · "
                    "target: down over time as it learns</div>")
                 if content_jobs else _empty("Fills as pieces are made."))
     m_learn = _master("🧠", "Learning — at a glance", "What the engine has figured out so far.",
-        [("Rules learned", len(rules), "#EDF1FB"), ("Themes", len(themes), "#4C8DFF"),
-         ("Top market", (top_c[0] if top_c and top_c[1] else "—"), "#8B7CFF"), ("ROI", f"${o_rev:,.0f}", "#3FD98B")],
-        _bars(themes, "#4C8DFF") if themes else _empty("Fills as content is produced."))
+        [("Rules learned", len(rules), "#111827"), ("Themes", len(themes), "#2563EB"),
+         ("Top market", (top_c[0] if top_c and top_c[1] else "—"), "#7C3AED"), ("ROI", f"${o_rev:,.0f}", "#16A34A")],
+        _bars(themes, "#2563EB") if themes else _empty("Fills as content is produced."))
     # ---- S5 instruments: 3 drift needles + the eval runner ----
     def _needle(label, val, sub, col):
         return (f"<div class='card' style='flex:1;min-width:150px'><div class='dim'>{label}</div>"
@@ -3979,7 +3984,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         fail_html = ("".join(
             f"<div class='fe'><span class='mut'>✗ {_esc(c['name'])} — scored {c.get('score',0)}"
             + (f" · {_esc('; '.join(c.get('issues',[])[:2]))}" if c.get('issues') else "") + "</span></div>"
-            for c in fails[:6]) or "<div class='fe'><span class='mut' style='color:#3FD98B'>✓ every eval passed</span></div>")
+            for c in fails[:6]) or "<div class='fe'><span class='mut' style='color:#16A34A'>✓ every eval passed</span></div>")
     else:
         ev_line = "Never run yet. Click <b>Run evals</b> — grades the engine on ~7 real tasks with a cheap judge."
         fail_html = _empty("No eval results yet.")
@@ -3988,9 +3993,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "<p class='ct'>🔬 Instruments — is it actually working?</p>"
         "<p class='cc'>The three needles every serious system watches. “An agent without evals is a rumor.”</p>"
         "<div style='display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px'>"
-        + _needle("Task success", ts_txt, "eval pass-rate", "#3FD98B" if (ts or 0) >= 80 else "#F5B14C")
-        + _needle("Human takeover", f"{tk}%", "jobs you aborted/edited", "#3FD98B" if tk <= 20 else "#F5B14C")
-        + _needle("Cost per task", f"${cpt:.3f}", f"across {needles.get('jobs',0)} jobs", "#8B7CFF")
+        + _needle("Task success", ts_txt, "eval pass-rate", "#16A34A" if (ts or 0) >= 80 else "#D97706")
+        + _needle("Human takeover", f"{tk}%", "jobs you aborted/edited", "#16A34A" if tk <= 20 else "#D97706")
+        + _needle("Cost per task", f"${cpt:.3f}", f"across {needles.get('jobs',0)} jobs", "#7C3AED")
         + "</div>"
         f"<div class='dim' style='margin-bottom:6px'>{ev_line}</div>{fail_html}"
         "<div class='ctrl' style='margin-top:12px'>"
@@ -4000,9 +4005,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     p_learn = m_learn + instruments + grid(
         _panel("Playbook — what the engine has learned", "Rules it builds from your WHOLE business — content, leads and money.", rules_html),
         _panel("Top content themes", "The subjects your machine writes about most (its growing expertise).",
-               _bars(themes, "#4C8DFF") if themes else _empty("Fills as content is produced.")),
+               _bars(themes, "#2563EB") if themes else _empty("Fills as content is produced.")),
         _panel("Where your market really is", "Which professions your leads actually cluster in.",
-               _bars(verticals, "#2FE3D2") if verticals else _empty("Fills as leads flow in from Prospeo.")),
+               _bars(verticals, "#2563EB") if verticals else _empty("Fills as leads flow in from Prospeo.")),
         _panel("Getting more efficient", "Cost per piece over time — is the machine learning to do more for less?", eff_body),
         _panel("What converted", "Which topics / verticals brought results.", _empty("Fills once outcomes are recorded.")),
         _panel("Month over month", "Is each cycle smarter than the last?", _empty("Compares once a second month runs.")),
@@ -4034,9 +4039,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 "</div></td></tr>")
             continue
         if on:
-            diag_rows.append(f"<tr><td>{_esc(name)}</td><td><span class='pill p-live'><span class='d' style='background:#3FD98B'></span>Working</span></td><td class='dim'>—</td><td class='dim'>Fully connected.</td></tr>")
+            diag_rows.append(f"<tr><td>{_esc(name)}</td><td><span class='pill p-live'><span class='d' style='background:#16A34A'></span>Working</span></td><td class='dim'>—</td><td class='dim'>Fully connected.</td></tr>")
         else:
-            diag_rows.append(f"<tr><td>{_esc(name)}</td><td><span class='pill p-need'><span class='d' style='background:#F5B14C'></span>Not connected</span></td><td class='mut'>{_esc(why)}</td><td class='mut'>{_esc(effect)}<div class='dim' style='margin-top:3px'>Fix: add {_esc(fix)}</div></td></tr>")
+            diag_rows.append(f"<tr><td>{_esc(name)}</td><td><span class='pill p-need'><span class='d' style='background:#D97706'></span>Not connected</span></td><td class='mut'>{_esc(why)}</td><td class='mut'>{_esc(effect)}<div class='dim' style='margin-top:3px'>Fix: add {_esc(fix)}</div></td></tr>")
     diag = ("<div class='card full'><p class='ct'>Wiring diagnostic — what's down, why, and what it breaks</p>"
             "<p class='cc'>Every connection in plain English. Amber rows tell you exactly what to add and what you're missing until you do.</p>"
             "<div class='tbwrap'><table><thead><tr><th>Connection (wire)</th><th>Status</th><th>Why it's not working</th><th>What it breaks — and the fix</th></tr></thead><tbody>"
@@ -4048,7 +4053,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         if st.get(k):
             keys = ",".join(tok.split("=", 1)[0].strip() for tok in fix.split(" + "))
             conn_rows.append(
-                "<div class='cform'><div class='cflab'><span class='dot' style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#3FD98B;margin-right:6px'></span>"
+                "<div class='cform'><div class='cflab'><span class='dot' style='display:inline-block;width:8px;height:8px;border-radius:50%;background:#16A34A;margin-right:6px'></span>"
                 f"{_esc(name)}</div><span class='pill p-live'>connected</span>"
                 f"<button class='sbtn' style='background:transparent;border:1px solid #F5788A;color:#F5788A' "
                 f"onclick=\"disconnectWire('{_esc(keys)}')\">Disconnect</button></div>")
@@ -4075,8 +4080,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                     + _extra_keys_card(saved_keys))
     _wired = round(live_conn / total_conn * 100) if total_conn else 0
     m_map = _master("🗺️", "Wiring — at a glance", "How much of your machine is connected.",
-        [("Wires live", f"{live_conn}/{total_conn}", "#3FD98B"),
-         ("To connect", total_conn - live_conn, "#F5B14C"), ("Wired", f"{_wired}%", "#4C8DFF")],
+        [("Wires live", f"{live_conn}/{total_conn}", "#16A34A"),
+         ("To connect", total_conn - live_conn, "#D97706"), ("Wired", f"{_wired}%", "#2563EB")],
         f"<div class='prog' style='height:12px'><i style='width:{_wired}%'></i></div>"
         f"<div class='dim' style='margin-top:6px'>{_wired}% of your machine is connected</div>")
     _map_svgs = m_map + ("<div class='card full'><p class='ct'>🗺️ System blueprint — every connection in your machine</p>"
@@ -4168,7 +4173,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     def tile(nav, icon, label, val, sub, dot):
         return (f"<div class='tile' onclick=\"nav('{nav}')\"><div class='tl'><span class='d' style='width:8px;height:8px;border-radius:50%;background:{dot}'></span>{icon} {label}</div>"
                 f"<div class='tv tnum'>{val}</div><div class='tx'>{sub}</div></div>")
-    green, amber = "#3FD98B", "#F5B14C"
+    green, amber = "#16A34A", "#D97706"
     setup_missing = [(name, fix) for k, name, why, eff, fix in _DIAG if not st.get(k)]
     setup_done = total_conn - len(setup_missing)
     setup_pct = round(setup_done / total_conn * 100) if total_conn else 0
@@ -4193,9 +4198,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                   "</div>"
                   f"<div class='prog' style='margin-top:12px'><i style='width:{min(100,pct)}%;background:{bcol}'></i></div></div>")
     m_overview = _master("📊", "Your business — at a glance", "The whole funnel, content to cash.",
-        [("Published", published, "#3FD98B"), ("Leads", leads_found, "#4C8DFF"),
-         ("Emails", emails_sent, "#8B7CFF"), ("Customers", o_cust, "#2FE3D2"),
-         ("Revenue", f"${o_rev:,.0f}", "#3FD98B")],
+        [("Published", published, "#16A34A"), ("Leads", leads_found, "#2563EB"),
+         ("Emails", emails_sent, "#7C3AED"), ("Customers", o_cust, "#2563EB"),
+         ("Revenue", f"${o_rev:,.0f}", "#16A34A")],
         _funnel([("Content", published), ("Leads", leads_found), ("Emailed", emails_sent), ("Customers", o_cust)])
         if (published or leads_found or emails_sent) else _empty("Fills as the engine runs."))
     overview = (m_overview + setup_card + cost_meter + "<div class='ov'>"
@@ -4262,20 +4267,20 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
 
     # Intelligence cards — one business question + one decision each, real data only.
     _mkt = (_intel_card("Marketing / SEO Intelligence", str(_sess), sub="sessions", dept="Marketing",
-                        source="GA4 + Search Console", accent="#4C8DFF",
+                        source="GA4 + Search Console", accent="#2563EB",
                         insight=(f"Top search demand: “{_topq}”." if _topq else "Ranking data is flowing in."),
                         recommendation=(f"Commission a piece targeting “{_topq}”." if _topq else "Keep publishing to build ranking signals."),
                         action_label="Open SEO", action="nav('seo')")
             if _sess else _intel_card("Marketing / SEO Intelligence", "", dept="Marketing",
                         empty="Connect Google Analytics 4 + Search Console (System Map) to activate real SEO intelligence — sessions, rankings, top queries."))
     _content_card = _intel_card("Content Production", str(published), sub="live",
-                        goal="60/mo", forecast=f"{proj}/mo", dept="Content", source="Content engine", accent="#2FE3D2",
+                        goal="60/mo", forecast=f"{proj}/mo", dept="Content", source="Content engine", accent="#2563EB",
                         insight=(f"{sum(pl[0:4])} in production, {waiting} awaiting your approval." if content_jobs else "No pieces in the line yet."),
                         recommendation=("Clear the approval queue to keep the line moving." if waiting else "Plan next week to keep the cadence."),
                         action_label=("Review approvals" if waiting else "Plan my week"), action=("nav('appr')" if waiting else "nav('content')"),
-                        chart=(_sparkline(content_series, "#2FE3D2") if content_jobs else ""))
+                        chart=(_sparkline(content_series, "#2563EB") if content_jobs else ""))
     _lead_card = _intel_card("Lead Generation", str(leads_found), sub="sourced", dept="Sales",
-                        source="Prospeo + web", accent="#8B7CFF",
+                        source="Prospeo + web", accent="#7C3AED",
                         insight=(f"{_qualified} qualified · {leads_emailed} emailed · {replied} replied." if leads_found else "No leads sourced yet."),
                         recommendation=(f"Email the {_not_emailed} qualified lead(s) not yet contacted." if _not_emailed else "Source a fresh batch to refill the pipeline."),
                         action_label="Open Lead Machine", action="nav('leads')")
@@ -4292,12 +4297,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                         action_label="Open budget", action="nav('budget')")
     _live_agents = sum(1 for j in jobs if j.get("status") not in ("optimized", "failed", "halted_budget", "revision_needed"))
     _wf_card = _intel_card("AI Workforce", str(_live_agents), sub="jobs active", dept="Operations",
-                        source="Orchestrator", accent="#3FD98B",
+                        source="Orchestrator", accent="#16A34A",
                         insight=(f"System health: {'nominal' if healthy else 'check needed'} · {live_conn}/{total_conn} wires live."),
                         recommendation=("Investigate the health warning on Agents & Health." if not healthy else "Workforce is running normally."),
                         action_label="Open Agents", action="nav('agents')")
     _infra_card = _intel_card("Infrastructure", f"{live_conn}/{total_conn}", sub="wires live", dept="Infrastructure",
-                        source="System map", accent=("#3FD98B" if live_conn == total_conn else "#F5B14C"),
+                        source="System map", accent=("#16A34A" if live_conn == total_conn else "#D97706"),
                         insight=(f"{total_conn - live_conn} connection(s) need attention." if live_conn < total_conn else "All connections healthy."),
                         recommendation=("Fix the down wires to unblock those intelligence centres." if live_conn < total_conn else "Nothing to fix."),
                         action_label="Open System Map", action="nav('map')")
@@ -4462,7 +4467,17 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # and Budget & Cost — 41 cards that all read the same context dict.
     try:
         import content_engine_bi_boards as _BIB
-        _bi_all = _BIB.bi_section(bi_ctx or {})
+        # The three handlers that survived the BI rebuild but lost their
+        # buttons: log a deal, set the caps, start an experiment. All hit
+        # working endpoints; a handler nothing calls is an unreachable
+        # feature, which the orphan gate below refuses.
+        _bi_strip = (
+            "<div class='ctrl' style='margin-bottom:10px'>"
+            "<button class='cbtn' onclick='biDeal()'>💰 Log a won deal</button>"
+            "<button class='cbtn' onclick='setBudget()'>🎚 Set budget caps</button>"
+            "<button class='cbtn' onclick='startExperiment()'>🧪 Start an experiment</button>"
+            "</div>")
+        _bi_all = _bi_strip + _BIB.bi_section(bi_ctx or {})
     except Exception as _e5:
         log.exception("Business Intelligence boards failed to render - showing "
                       "the old six modules instead")
@@ -4522,37 +4537,52 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          "Agents, health, wiring and machines — merged. 214 cards across 12 boards.",
          _system_all),
     ]
-    nav = "".join(
-        f"<a class='navb{' act' if i==0 else ''}' id='nav-{pid}' href='#{pid}' "
-        f"onclick=\"return nav('{pid}')\"><span class='ic'>{icon}</span>{_esc(short)}"
-        # WHERE THE WORK IS, WITHOUT OPENING ANYTHING. Filled by fillCounts()
-        # from what the inspector actually found, so it is never a guess.
-        + f"<span class='navcount' id='navcount-{pid}'></span></a>"
-        for i, (pid, icon, short, title, sub, body) in enumerate(PAGES))
+    # THE GLOBAL NAV, grouped the way the cockpit spec groups the OS:
+    # Command / Growth / Intelligence / System. Same nine links, same ids,
+    # same nav() handler - only the order and the group labels are new.
+    _by_id = {pid: (icon, short) for pid, icon, short, _t, _s, _b in PAGES}
+    _NAV_GROUPS = (("Command", ("cockpit",)),
+                   ("Growth", ("content", "outreach", "media", "sga")),
+                   ("Intelligence", ("bi", "seo")),
+                   ("System", ("riskinfra", "system")))
+    _navp = []
+    for _glab, _gids in _NAV_GROUPS:
+        _navp.append(f"<span class='navgrp'>{_glab}</span>")
+        for pid in _gids:
+            icon, short = _by_id[pid]
+            _navp.append(
+                f"<a class='navb{' act' if pid == 'cockpit' else ''}' "
+                f"id='nav-{pid}' href='#{pid}' "
+                f"onclick=\"return nav('{pid}')\">"
+                f"<span class='ic'>{icon}</span>{_esc(short)}"
+                # WHERE THE WORK IS, WITHOUT OPENING ANYTHING. Filled by
+                # fillCounts() from what the inspector found, never a guess.
+                + f"<span class='navcount' id='navcount-{pid}'></span></a>")
+    nav = "".join(_navp)
     pages = "".join(
         f"<section class='page{' on' if i==0 else ''}' id='sec-{pid}'><h2 class='ph'>{_esc(title)}</h2><p class='psub'>{_esc(sub)}</p>{body}</section>"
         for i, (pid, icon, short, title, sub, body) in enumerate(PAGES))
 
-    warn = "" if has_password else "<div style='background:#2a1420;border:1px solid #FF6B93;border-radius:10px;padding:11px 14px;font-size:12.5px;color:#FFC3D4;margin-bottom:12px'>⚠ <b>No password set.</b> This dashboard has no login — set <b>DASHBOARD_PASSWORD</b> in deploy/.env and rebuild to lock it before sharing the link.</div>"
-    onboarding = warn + ("" if jobs else "<div style='background:#101d33;border:1px solid #26456f;border-radius:10px;padding:11px 14px;font-size:12.5px;color:var(--mut);margin-bottom:14px'><b style='color:var(--teal)'>Your control center is ready.</b> Numbers fill in as agents run and you connect keys — the <b>System Map</b> page lists exactly what to add.</div>")
+    warn = "" if has_password else "<div style='background:#FEF2F2;border:1px solid #DC2626;border-radius:10px;padding:11px 14px;font-size:12.5px;color:#991B1B;margin-bottom:12px'>⚠ <b>No password set.</b> This dashboard has no login — set <b>DASHBOARD_PASSWORD</b> in deploy/.env and rebuild to lock it before sharing the link.</div>"
+    onboarding = warn + ("" if jobs else "<div style='background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:11px 14px;font-size:12.5px;color:var(--mut);margin-bottom:14px'><b style='color:var(--teal)'>Your control center is ready.</b> Numbers fill in as agents run and you connect keys — the <b>System Map</b> page lists exactly what to add.</div>")
     # ---- attention center + control bar (always visible above the pages) ----
     failed = sum(1 for j in jobs if j.get("status") in ("failed", "halted_budget"))
     broken = total_conn - live_conn
     alerts = []
     if paused:
-        alerts.append(("#FF6B93", "⏸", "Everything is paused", ""))
+        alerts.append(("#DC2626", "⏸", "Everything is paused", ""))
     if waiting:
-        alerts.append(("#F5B14C", "⚠", f"{waiting} waiting for your approval", "appr"))
+        alerts.append(("#D97706", "⚠", f"{waiting} waiting for your approval", "appr"))
     if broken:
-        alerts.append(("#F5B14C", "🔌", f"{broken} connection(s) not wired", "map"))
+        alerts.append(("#D97706", "🔌", f"{broken} connection(s) not wired", "map"))
     if pct >= 80:
-        alerts.append(("#FF6B93" if pct >= 95 else "#F5B14C", "💰", f"Budget at {pct}% of ${month_cap:.0f}", "budget"))
+        alerts.append(("#DC2626" if pct >= 95 else "#D97706", "💰", f"Budget at {pct}% of ${month_cap:.0f}", "budget"))
     if api_warnings:
-        alerts.append(("#FF6B93", "🔌", f"API top-up: {api_warnings[0]}", "budget"))
+        alerts.append(("#DC2626", "🔌", f"API top-up: {api_warnings[0]}", "budget"))
     if failed:
-        alerts.append(("#FF6B93", "✕", f"{failed} job(s) failed or paused", "agents"))
+        alerts.append(("#DC2626", "✕", f"{failed} job(s) failed or paused", "agents"))
     if not alerts:
-        alerts.append(("#3FD98B", "✓", "All clear — nothing needs you right now", ""))
+        alerts.append(("#16A34A", "✓", "All clear — nothing needs you right now", ""))
     aparts = []
     for col, ic, msg, nid in alerts:
         oc = f" onclick=\"nav('{nid}')\"" if nid else ""
@@ -4566,9 +4596,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     if autopilot_on:
         master_switch = ("<button class='cbtn warn' style='font-size:15px;font-weight:700;padding:11px 24px' "
                          "onclick=\"if(confirm('Stop the machine? Nothing new is queued, run, published or drafted until you start it again.'))act('/system/stop')\">■ STOP the whole system</button>"
-                         "<span class='pill p-live' style='align-self:center'><span class='d' style='background:#3FD98B'></span>running</span>"
-                         + ("<span class='pill p-need' style='align-self:center;border-color:#FF6B93;color:#FF6B93'>"
-                            "<span class='d' style='background:#FF6B93'></span>AUTONOMOUS — publishes without you</span>"
+                         "<span class='pill p-live' style='align-self:center'><span class='d' style='background:#16A34A'></span>running</span>"
+                         + ("<span class='pill p-need' style='align-self:center;border-color:#DC2626;color:#DC2626'>"
+                            "<span class='d' style='background:#DC2626'></span>AUTONOMOUS — publishes without you</span>"
                             if autonomy else
                             "<span class='dim' style='align-self:center;font-size:11.5px'>"
                             "supervised · every publish waits for you</span>"))
@@ -4579,7 +4609,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         master_switch = ("<button class='cbtn on' style='font-size:15px;font-weight:700;padding:11px 24px' "
                          "onclick=\"if(confirm('Start the machine?\n\nIt will queue work daily, run the SEO engines on their cadence, and draft replies.\n\nEVERY piece still waits for your approval — nothing publishes or sends until you say so.'))"
                          "act('/system/start')\">▶ START — supervised</button>"
-                         "<span class='pill p-need' style='align-self:center'><span class='d' style='background:#F5B14C'></span>stopped</span>"
+                         "<span class='pill p-need' style='align-self:center'><span class='d' style='background:#D97706'></span>stopped</span>"
                          "<span class='dim' style='align-self:center;font-size:11.5px'>"
                          "Queues and drafts. Publishes nothing without you.</span>")
     ctrl_html = ("<div class='ctrl'>" + master_switch + "</div>"
@@ -4616,16 +4646,30 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "<style>" + CSS+ "</style></head><body>"
         "<div class='top'><div class='brand'><div class='logo'>A</div><div><h1>Anthropos — Control Center</h1><small>Your automation, in plain English</small></div></div>"
         "<div style='display:flex;gap:9px;align-items:center'>"
-        "<span title='Which build is live right now' style='font-size:11px;color:#59668A;"
+        # THE REPORTING WINDOW. Three real links, not decoration: the page
+        # re-renders with ?days and every section given the window follows
+        # it. Snapshot boards keep stating their own window on their face.
+        + "<span style='display:inline-flex;border:1px solid var(--line);"
+          "border-radius:99px;overflow:hidden' title='Reporting window for "
+          "sections that measure by day'>"
+        + "".join(
+            "<a href='javascript:void 0' onclick=\"setDays(" + str(_d) + ")\" "
+            "style='font-size:11px;padding:4px 10px;text-decoration:none;"
+            + ("background:var(--teal);color:#FFFFFF"
+               if _d == window_days else "color:var(--mut)")
+            + "'>" + str(_d) + "d</a>"
+            for _d in (7, 30, 90))
+        + "</span>"
+        "<span title='Which build is live right now' style='font-size:11px;color:#6B7280;"
         # STATE BEFORE STORY. This printed the whole BUILD_TAG - about 600
         # characters of changelog - as the first thing on the page, so the
         # opening screen was a narrative rather than what needs your attention.
         # The badge keeps the part that is actually load-bearing (it proves
         # which code is live); the story moves behind a disclosure.
-        "border:1px solid #1B2640;border-radius:7px;padding:3px 8px'>build "
+        "border:1px solid #E5E7EB;border-radius:7px;padding:3px 8px'>build "
         + _esc(CODE_STAMP) + "</span>"
         "<span class='status'><span class='d' style='background:"
-        + ("#3FD98B" if healthy else "#F5B14C") + "'></span>" + ("All systems nominal" if healthy else "Check health")
+        + ("#16A34A" if healthy else "#D97706") + "'></span>" + ("All systems nominal" if healthy else "Check health")
         + "</span>" + logout + "</div></div>"
         "<div class='shell'><div class='side'>" + nav + "</div><div class='main'>"
         + ctrl_html + attn_html + onboarding + pages + "</div></div>"
@@ -4726,6 +4770,9 @@ def dashboard_script(agent_counts: dict) -> str:
               "setTimeout(function(){t.style.transition='opacity .4s';"
               "t.style.opacity='0';setTimeout(function(){t.remove();},420);},7000);"
               "}catch(e){}}"
+              "function setDays(d){try{sessionStorage.setItem('_kp',"
+              "JSON.stringify({h:location.hash,y:window.scrollY||0}));}"
+              "catch(e){}location.href='?days='+d+location.hash;}"
               "function keepPlace(){try{sessionStorage.setItem('_kp',"
               "JSON.stringify({h:location.hash,y:window.scrollY||0}));}"
               "catch(e){}location.reload();}"
@@ -4762,10 +4809,10 @@ def dashboard_script(agent_counts: dict) -> str:
               "if(ok&&row&&u.indexOf('/approve')>-1){"
               "var pl=row.querySelector('.pill');"
               "if(pl){pl.textContent='approved \\u2713';"
-              "pl.style.color='#3FD98B';pl.style.borderColor='#3FD98B';}"
-              "row.style.borderLeft='3px solid #3FD98B';}"
+              "pl.style.color='#16A34A';pl.style.borderColor='#16A34A';}"
+              "row.style.borderLeft='3px solid #16A34A';}"
               "if(ok&&row&&u.indexOf('/seo/fix/')>-1){"
-              "row.style.borderLeft='3px solid #3FD98B';"
+              "row.style.borderLeft='3px solid #16A34A';"
               "row.style.opacity='.65';}"
               "}catch(e){actResult(card,b,false,'could not reach the engine \\u2014 nothing changed',lab);}}"
               "function actResult(card,b,ok,msg,lab){"
@@ -5019,7 +5066,7 @@ def dashboard_script(agent_counts: dict) -> str:
               "w.scrollIntoView({block:'center',behavior:'smooth'});"
               "el.focus();"
               "w.style.transition='box-shadow .3s';"
-              "w.style.boxShadow='0 0 0 2px #2FE3D2';"
+              "w.style.boxShadow='0 0 0 2px #2563EB';"
               "setTimeout(function(){w.style.boxShadow='';},2200);},160);}"
               "function goKeys(){nav('system');sysTab('sysconnect');"
               "setTimeout(function(){var e=document.getElementById('extrakeys');"
@@ -5262,7 +5309,37 @@ def dashboard_script(agent_counts: dict) -> str:
               "async function runSkill(){var sk=document.getElementById('sk').value,out=document.getElementById('out'),inp=document.getElementById('inp').value;"
               "out.textContent='Running '+sk+'…';try{var b=JSON.parse(inp||'{}');}catch(e){out.textContent='That input is not valid JSON.';return;}"
               "try{var r=await fetch('/skills/'+sk+'/taste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:b})});"
-              "out.textContent=JSON.stringify(await r.json(),null,2);}catch(e){out.textContent='Error: '+e;}}</script>")
+              "out.textContent=JSON.stringify(await r.json(),null,2);}catch(e){out.textContent='Error: '+e;}}"
+              # WHERE YOU WERE IS WHERE YOU RETURN. The URL already names the
+              # section (nav pushes #id); on load the page follows it, and
+              # with no hash it reopens the last section and its last open
+              # sub-tab from localStorage. Storage failures degrade to the
+              # default view, never an error.
+              "(function(){"
+              "var SEL='.stab,.sgrp,.mc-tab,.cf-nav a,.bi-nav a,.bi-nav button,"
+              ".sc-nav a,.sc-nav button,.os-navi';"
+              "document.addEventListener('click',function(ev){"
+              "var el=ev.target&&ev.target.closest?ev.target.closest(SEL):null;"
+              "if(!el)return;try{"
+              "var sec=window.CURSEC||'';"
+              "var all=[].slice.call(document.querySelectorAll(SEL));"
+              "var st=JSON.parse(localStorage.getItem('_tabs')||'{}');"
+              "st[sec]=all.indexOf(el);"
+              "localStorage.setItem('_tabs',JSON.stringify(st));"
+              "localStorage.setItem('_lastsec',sec);}catch(e){}});"
+              "var _n0=nav;nav=function(id,quiet){"
+              "try{localStorage.setItem('_lastsec',NAVALIAS[id]||id);}catch(e){}"
+              "return _n0(id,quiet);};"
+              "window.addEventListener('load',function(){try{"
+              "if(location.hash){routeFromHash(true);}"
+              "else{var ls=localStorage.getItem('_lastsec');if(ls)nav(ls,true);}"
+              "var st=JSON.parse(localStorage.getItem('_tabs')||'{}');"
+              "var sec=window.CURSEC||'';var i=st[sec];"
+              "if(typeof i==='number'&&i>=0){"
+              "var all=[].slice.call(document.querySelectorAll(SEL));"
+              "if(all[i])all[i].click();}"
+              "}catch(e){}});"
+              "})();</script>")
 
 
 if __name__ == "__main__":
@@ -5277,14 +5354,20 @@ if __name__ == "__main__":
                           health={"healthy": True, "anthropic": {"status": "ok"}, "postgres": {"status": "ok"}},
                           month_spent=63, month_cap=200, day_spent=4.2, day_cap=50,
                           taste_skills=["content_producer", "seo_optimizer"])
+    # The needs list asserts what the CURRENT page carries. The old BI
+    # four-questions boards and the lead-machine cards were replaced by
+    # the BI OS and the Engagement OS; asserting their strings would pin
+    # the page to boards that no longer exist.
     for need in ("Content Factory", "System Map", "Wiring diagnostic", "Automation Engine",
-                 "nav('leads')", "24/7 competitor", "What it breaks", "Not connected",
+                 "id='sec-outreach'", "waiting for your approval",
+                 "What it breaks", "Not connected",
                  # Risk & Infrastructure: the merged section and its four groups
                  "Risk &amp; Infrastructure", "WHAT COULD HURT", "WHO DOES THE WORK",
                  "WILL IT KEEP RUNNING", "ARE WE COVERED",
-                 # Business Intelligence: the merged section and its four groups
-                 "IS DEMAND THERE", "IS IT BECOMING PIPELINE",
-                 "IS IT BECOMING MONEY", "DOES THE MATH WORK"):
+                 # Business Intelligence: the nine-screen BI OS
+                 "id='sec-bi'", "bi-nav", "Executive",
+                 # the grouped global nav
+                 "navgrp"):
         assert need in html, need
     # ---- the inline JS must PARSE. A single bad string literal takes down
     # every handler on the page: nav() stops working, the sections stop
@@ -5292,7 +5375,12 @@ if __name__ == "__main__":
     # concatenated line, so a raw newline in it means a Python escape leaked
     # into a JS string.
     import re as _re
-    _js = max(_re.findall(r"<script[^>]*>(.*?)</script>", html, _re.S), key=len)
+    # The dashboard's OWN script is the one-concatenated-line block that
+    # defines nav(). Picking the longest block instead broke the moment a
+    # section legitimately shipped a bigger multi-line script of its own.
+    _js = next(b for b in
+               _re.findall(r"<script[^>]*>(.*?)</script>", html, _re.S)
+               if "function nav(" in b)
     for _bad, _name in ((chr(10), "newline"), (chr(13), "carriage return")):
         if _bad in _js:
             _at = _js.index(_bad)
@@ -5314,6 +5402,11 @@ if __name__ == "__main__":
     # which is exactly as alive in a browser. The contract is "defined
     # somewhere on the page", and that is what gets checked.
     _defined = set(_re.findall(r"function\s+([A-Za-z_]\w*)\s*\(", html))
+    # window.f = function(){} and f = function(){} are exactly as alive
+    # in a browser as a declaration; the workbench defines its whole
+    # toolbar that way.
+    _defined |= set(_re.findall(
+        r"(?:window\.)?([A-Za-z_]\w*)\s*=\s*(?:async\s+)?function", html))
     _missing = sorted(c for c in _called
                       if c not in _defined and c not in _JS_KEYWORDS
                       and c not in ("window", "location", "alert", "confirm"))
@@ -5349,9 +5442,11 @@ if __name__ == "__main__":
     for _fn in ("biDeal()", "biEcon()", "biTargets()"):
         assert _fn in html, f"{_fn} handler missing"
     assert "AI Cockpit" in html, "the cockpit page must exist"
-    for _g in ("DECIDE", "APPROVE", "CONTROL", "RUN &amp; LEARN"):
-        assert _g in html, f"cockpit group {_g} missing"
-    for _m in ("Business Intelligence", "AI Workforce", "Executive brief"):
+    # The cockpit is the command canvas now; assert its own landmarks,
+    # not the four groups of the sixteen-tab cockpit it replaced.
+    for _g in ("Commander", "Approvals", "Decision"):
+        assert _g in html, f"cockpit landmark {_g} missing"
+    for _m in ("Business Intelligence", "AI Workforce"):
         assert _m in html, _m
     # the three merged-away sections must not come back as pages, and every old
     # nav id must still land somewhere real
@@ -5443,24 +5538,36 @@ if __name__ == "__main__":
     _styled = set(_re2.findall(r"[.#]([A-Za-z][\w-]*)", _allcss))
     _used = set()
     for _attr in _re2.findall(r"class='([^']+)'", html):
-        _used.update(_attr.split())
+        # class attributes built inside JS strings ("wb-sev-"+x+"...")
+        # are not class names; only proper tokens count.
+        _used.update(t for t in _attr.split()
+                     if _re2.fullmatch(r"[A-Za-z][\w-]*", t))
     _LAYOUT = {c for c in _used
                if c.startswith(("s", "g", "c", "n", "b", "m", "p", "t", "w", "f"))}
     # Verified inert: each of these either carries its own inline styles or is a
     # default state that deliberately inherits (.sev-ok / .sev-info keep the
     # normal card border; only critical and warn recolour it).
-    _INERT = {"mlog", "sev-ok", "sev-info", "spanels", "subsec"}
+    _INERT = {"mlog", "sev-ok", "sev-info", "spanels", "subsec",
+              # JS hooks: selected by querySelectorAll, styled by their
+              # element rules; a CSS rule would be an empty promise.
+              "wb-nav", "wb-rep-d", "wb-rep-m",
+              # the default button state deliberately inherits
+              "so-btn-default"}
     _unstyled = sorted(c for c in _LAYOUT if c not in _styled and c not in _INERT)
     assert not _unstyled, (
         "these classes are used in the markup but no CSS rule defines them, so "
         f"they render as unstyled blocks: {_unstyled}")
-    # the rails that actually carry the sub-section buttons must be horizontal
+    # Every section carries ITS OWN navigation rail now (the redesign made
+    # them vertical); assert each rail is present and styled rather than
+    # pinning the page to the old nine horizontal strips.
     for _rail in ("stabs", "sgroups"):
         assert f"class='{_rail}'" in html, f"{_rail} rail missing from the page"
-        assert f".{_rail}{{display:flex" in _allcss, f".{_rail} must lay out as a flex row"
-    assert html.count("class='stabs'") >= 9, (
-        "every section with sub-boards needs the styled horizontal tab rail; "
+        assert f".{_rail}{{display:flex" in _allcss, f".{_rail} must lay out as flex"
+    assert html.count("class='stabs'") >= 3, (
+        "the stabs rail belongs to SEO, SGA and Risk & Infrastructure; "
         f"found {html.count(chr(39).join(['class=', 'stabs', '']))}")
+    for _rail2 in ("bi-nav", "cf-nav", "sc-nav", "mc-tabs", "seo-rail"):
+        assert _rail2 in html, f"{_rail2} rail missing from its section"
     print("OK — 9 pages. Risk + AI Workforce + Infrastructure now render as ONE "
           "Risk & Infrastructure section (208 cards) and six more render as ONE "
           "Business Intelligence section (268 cards, 15 boards, Executive "

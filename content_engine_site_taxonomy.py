@@ -200,8 +200,8 @@ def wp_ao_type(kind: str) -> str:
 
 # On-brand image style — matched to the live site (dark navy, cyan/violet, modern).
 IMAGE_STYLE = (
-    "Modern minimal editorial tech illustration, 16:9 hero. Deep navy #080B14 background, "
-    "cyan #2FE3D2 and violet #7C6BFF accents, subtle abstract automation motifs "
+    "Modern minimal editorial tech illustration, 16:9 hero. Deep navy #F3F4F6 background, "
+    "cyan #2563EB and violet #7C6BFF accents, subtle abstract automation motifs "
     "(connected nodes, flowing lines, a clean dashboard), premium and calm, lots of negative "
     "space, soft glow. No text, no words, no logos, no watermarks, no human faces."
 )

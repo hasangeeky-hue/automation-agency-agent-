@@ -1270,6 +1270,7 @@ def build_ctx(store, *, status=None, insights=None, meters=None,
         "scores": audit.get("scores") or {},
         "orders": orders,
         "order_stats": WO.stats(orders),
+        "gtm_audit": _get(store, "gtm_audit", None),
         "inspect": _get(store, K_INSPECT, {}) or {},
         "speed": _get(store, K_SPEED, []) or [],
         "ranks": [r for r in (_get(store, K_RANKS, []) or [])

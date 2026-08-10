@@ -116,6 +116,20 @@ function cfGo(id){
   document.querySelectorAll('.cf-nav a').forEach(function(a){
     a.classList.toggle('on', a.dataset.cf === id); });
 }
+
+/* Buttons the screens emit whose actions wait on the wiring
+   round. Silent dead buttons read as broken; these say so. */
+function uiNotWired(n){var m=n+': the button is real, its wire is not connected yet. It goes live in the wiring round.';if(window.toast)toast(m);else alert(m);}
+function cfAdd(a){uiNotWired('cfAdd')}
+function cfAnalyzeInbox(a){uiNotWired('cfAnalyzeInbox')}
+function cfCreate(a){uiNotWired('cfCreate')}
+function cfDist(a){uiNotWired('cfDist')}
+function cfGenImage(a){uiNotWired('cfGenImage')}
+function cfInboxTab(a){uiNotWired('cfInboxTab')}
+function cfLib(a){uiNotWired('cfLib')}
+function cfPlanMode(a){uiNotWired('cfPlanMode')}
+function cfPlanWeek(a){uiNotWired('cfPlanWeek')}
+function cfUpload(a){uiNotWired('cfUpload')}
 </script>"""
 
 

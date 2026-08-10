@@ -158,6 +158,11 @@ def search_totals(ctx) -> Optional[dict]:
     # which is a different and much worse claim than "not measured".
     out["conversions"] = None
     out["revenue"] = None
+    # the same daily rows the totals were summed from, so the screen
+    # can draw clicks per day without a second source of truth
+    out["daily"] = [{"date": str(r.get("date") or r.get("keys") or ""),
+                     "clicks": _f(r.get("clicks"))}
+                    for r in _l(_gsc(ctx).get("daily"))]
     return out
 
 

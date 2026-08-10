@@ -498,6 +498,58 @@ ZONES = (("Business Pulse", business_pulse),
          ("Data Health", data_health_bar))
 
 
+def decision_log_zone(ctx) -> str:
+    """Every decision that LANDED, dated: approvals, budget changes,
+    publishes. Suggestions live in the queue; deeds live here."""
+    lg = _d(_d(ctx).get("log"))
+    head = "<div class='ck-card'><p class='ck-h'>Decision Log</p>"
+    if not lg.get("has_data"):
+        return (head + empty("No decision recorded yet. Approve, set a "
+                             "budget or publish and it lands here, "
+                             "dated.") + "</div>")
+    rows = ""
+    for r in _l(lg.get("rows"))[:8]:
+        d = _d(r)
+        rows += ("<div class='ck-row'><span class='ck-meta'>"
+                 + e(_s(d.get("at"))[:16].replace("T", " ")) + "</span> "
+                 + "<b>" + e(_s(d.get("action"))) + "</b> "
+                 + e(_s(d.get("title"))[:60])
+                 + ("<span class='ck-meta'> " + e(_s(d.get("outcome"))[:40])
+                    + "</span>" if d.get("outcome") else "")
+                 + "</div>")
+    spark = ""
+    try:
+        import content_engine_ui_kit as UK
+        if _l(lg.get("series")):
+            spark = UK.sparkline(_l(lg.get("series")),
+                                 source="decision log")
+    except Exception:                                 # noqa: BLE001
+        spark = ""
+    return (head + spark + rows + "<p class='ck-meta'>"
+            + _s(lg.get("total")) + " recorded in total</p></div>")
+
+
+def connections_zone(ctx) -> str:
+    """Which wires are live, from the same connector status map the
+    Control Plane reads. Presence only; a value never renders here."""
+    w = _d(_d(ctx).get("wires"))
+    head = "<div class='ck-card'><p class='ck-h'>Connections</p>"
+    if not w:
+        return (head + empty("No wire status supplied on this render. "
+                             "The Control Plane's Connections screen is "
+                             "the full view.") + "</div>")
+    on = sorted(k for k, v in w.items() if v)
+    off = sorted(k for k, v in w.items() if not v)
+    body = ("<p><b>" + str(len(on)) + "</b> live &middot; <b>"
+            + str(len(off)) + "</b> not connected</p>"
+            + ("<p class='ck-meta'>not connected: "
+               + e(", ".join(k.replace("_", " ") for k in off[:6]))
+               + ("&hellip;" if len(off) > 6 else "") + "</p>"
+               if off else "<p class='ck-meta'>every wire is live</p>")
+            + deep_link("Connections", "system"))
+    return head + body + "</div>"
+
+
 def cockpit_section(ctx=None) -> str:
     """The one screen. A failing zone reports inside its own card."""
     c = _d(ctx)
@@ -532,12 +584,17 @@ def cockpit_section(ctx=None) -> str:
             + "<div>" + z(initiatives) + "</div></div>"
             + "<div class='ck-grid'><div>" + z(cost_pulse) + "</div>"
             + "<div>" + z(data_health_bar) + "</div></div>"
+            + "<div class='ck-grid'><div>" + z(decision_log_zone) + "</div>"
+            + "<div>" + z(connections_zone) + "</div></div>"
             + "</div>")
     return (CSS + "<div class='ck-root'>"
             + incident_strip(c) + bar
             + "<div class='ck-wrap'>" + left
             + z(commander_panel) + "</div>"
-            + "</div><script>function ckOpen(t){}</script>")
+            + "</div><script>function ckOpen(t){"
+              "var m={incident:'system'};var id=m[t]||t;"
+              "if(window.nav){nav(id);}else{location.hash='#'+id;}}"
+              "</script>")
 
 
 def cockpit_pages(ctx=None) -> Dict[str, str]:
@@ -568,6 +625,8 @@ def enrich(ctx) -> Dict[str, Any]:
                     sick[_s(d.get("name"))] = {"status":
                                                _d(st).get("status"),
                                                "why": _d(st).get("why")}
+            if "wires" not in c and reg.get("wires"):
+                c["wires"] = reg.get("wires")
             if sick:
                 c["machine"] = sick
             else:

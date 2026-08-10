@@ -158,7 +158,8 @@ def header(ctx=None) -> str:
                        if wf.get("state") == "OK" else None)
             + "</span><span class='bi-pill'>AI and tools "
             + S._money(tools) + "</span></div>"
-            + "<span class='bi-pill bi-pill-" + tone + "'>Cost health "
+            + "<span class='bi-pill"
+            + ((" bi-pill-" + tone) if tone else "") + "'>Cost health "
             + e(st) + "</span></div>")
 
 

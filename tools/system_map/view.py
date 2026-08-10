@@ -43,9 +43,9 @@ missing = [x for x in ("place_laptop", "place_vps", "place_wordpress",
            if not get(x)]
 
 CSS = """
-:root{--bg:#080B14;--s1:#0F1626;--s2:#0B111F;--line:#1B2640;--ink:#EDF1FB;
---mut:#8E9BBE;--dim:#59668A;--teal:#2FE3D2;--violet:#8B7CFF;--good:#3FD98B;
---warn:#F5B14C;--blue:#4C8DFF}
+:root{--bg:#F3F4F6;--s1:#FFFFFF;--s2:#F9FAFB;--line:#E5E7EB;--ink:#111827;
+--mut:#4B5563;--dim:#6B7280;--teal:#2563EB;--violet:#7C3AED;--good:#16A34A;
+--warn:#D97706;--blue:#2563EB}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
 font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;padding:26px}
@@ -70,7 +70,7 @@ padding:7px 12px;font-size:12.5px}
 .e b{font-size:12.5px}
 .e code{display:block;color:var(--dim);font-size:11px;margin-top:4px;
 word-break:break-all;font-family:ui-monospace,Consolas,monospace}
-.triage{background:linear-gradient(180deg,#141d33,#0F1626);
+.triage{background:linear-gradient(180deg,#141d33,#FFFFFF);
 border:1px solid var(--violet);border-radius:13px;padding:16px 18px;margin-top:8px}
 .triage p{color:var(--ink);font-size:13px;margin:0}
 .trap{border-left:3px solid var(--warn);padding-left:12px;margin:12px 0;
@@ -87,7 +87,7 @@ parts = [f"<style>{CSS}</style>",
          f"({len(NODES):,} nodes) — nothing here is hand-typed.</p>"]
 
 if missing:
-    parts.append("<div class='triage' style='border-color:#FF6B93'><p>"
+    parts.append("<div class='triage' style='border-color:#DC2626'><p>"
                  "<b>Incomplete.</b> These topology nodes are not in the graph, "
                  "so the map below is missing part of the picture: "
                  + esc(", ".join(missing)) +

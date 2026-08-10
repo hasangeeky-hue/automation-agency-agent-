@@ -393,7 +393,19 @@ def log_decision(store, title, action, system="", outcome="") -> dict:
 
 
 def decision_log(store, days=14) -> dict:
-    rows = _L(_get(store, DECISION_LOG_KEY, []))[::-1]
+    rows = list(_L(_get(store, DECISION_LOG_KEY, [])))
+    # THE OTHER STREAM. The API endpoints record the decisions that
+    # actually land (approve, budget, gtm draft/publish...) under
+    # "decision_log"; this screen read only its own key, so the log
+    # showed suggestions and never the deeds. One screen, both streams.
+    for _r in _L(_get(store, "decision_log", [])):
+        _d2 = _D(_r)
+        rows.append({"at": _d2.get("at"),
+                     "title": _s(_d2.get("what")),
+                     "action": _s(_d2.get("action")),
+                     "system": "api",
+                     "outcome": _s(_d2.get("detail"))})
+    rows = sorted(rows, key=lambda r: _s(_D(r).get("at")))[::-1]
     per_day = {}
     for r in rows:
         d = _day(_D(r).get("at"))

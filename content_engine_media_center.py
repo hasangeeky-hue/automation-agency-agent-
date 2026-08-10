@@ -106,11 +106,15 @@ def kpi(label, value, of="") -> str:
             + (f"<i>{e(of)}</i>" if of else "") + "</div>")
 
 
-def chart(series, *, h=110, w=640, color="#4C8DFF", title="") -> str:
-    """A dependency-free SVG line chart with an area fill.
+def chart(series, *, h=110, w=640, color="#2563EB", title="",
+          source="platform daily rollups") -> str:
+    """The kit's line chart, in media's frame.
 
-    Refuses to draw fewer than two real points: a chart of one number is
-    decoration pretending to be information."""
+    The local SVG this replaces filtered None out of the series, which
+    quietly bridged measurement gaps; the kit breaks the polyline at a
+    gap and says so in the footer. Refusing below two real points is
+    kept here because the callers rely on the wording."""
+    import content_engine_ui_kit as UK
     pts = [(str(b), float(v)) for b, v in series
            if v is not None and str(v) != ""]
     if len(pts) < 2:
@@ -119,29 +123,12 @@ def chart(series, *, h=110, w=640, color="#4C8DFF", title="") -> str:
                 f"when there are at least two days of data.</p>")
     vals = [v for _b, v in pts]
     lo, hi = min(vals), max(vals)
-    span = (hi - lo) or 1.0
-    pad, bh = 14, h - 28
-    step = (w - 2 * pad) / (len(pts) - 1)
-    xy = [(pad + i * step, pad + bh - (v - lo) / span * bh)
-          for i, (_b, v) in enumerate(pts)]
-    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in xy)
-    area = (f"{xy[0][0]:.1f},{pad + bh} " + line
-            + f" {xy[-1][0]:.1f},{pad + bh}")
-    lx, ly = xy[-1]
-    return (
-        f"<div class='mc-chart'><span class='mc-chtitle'>{e(title)}</span>"
-        f"<svg viewBox='0 0 {w} {h}' preserveAspectRatio='none' "
-        f"role='img' aria-label='{e(title)}'>"
-        f"<line x1='{pad}' y1='{pad + bh}' x2='{w - pad}' y2='{pad + bh}' "
-        f"stroke='rgba(143,160,200,.25)' stroke-width='1'/>"
-        f"<polygon points='{area}' fill='{color}' opacity='0.12'/>"
-        f"<polyline points='{line}' fill='none' stroke='{color}' "
-        f"stroke-width='2'/>"
-        f"<circle cx='{lx:.1f}' cy='{ly:.1f}' r='3.5' fill='{color}'/>"
-        f"</svg><span class='mc-chmeta'>{e(pts[0][0])} to {e(pts[-1][0])} "
-        f"&middot; low {lo:,.0f} &middot; high {hi:,.0f} &middot; "
-        f"latest {vals[-1]:,.0f}</span></div>")
-
+    return (f"<div class='mc-chart'>"
+            + UK.line([(float(v) if v is not None and str(v) != "" else None)
+                       for _b, v in series], title=title, source=source)
+            + f"<span class='mc-chmeta'>{e(pts[0][0])} to {e(pts[-1][0])} "
+            f"&middot; low {lo:,.0f} &middot; high {hi:,.0f} &middot; "
+            f"latest {vals[-1]:,.0f}</span></div>")
 
 def chart_bars(rows, *, title="", color="#4C8DFF", unit="") -> str:
     """Horizontal bars, scaled to the biggest value. Same refusal rule."""
@@ -323,9 +310,11 @@ def s_cmd(r, ctx) -> str:
         biz = {}
     # THE BIG FIGURES, spec section 32: revenue, spend, blended ROAS,
     # blended CPA, conversions. Denominator under each, absence as absence.
+    wdays = ctx.get("window_days")
+    wdays = wdays if wdays in (7, 30, 90) else 30
     ro30 = {}
     try:
-        ro30 = MF.rollup(r, days=30)["totals"]
+        ro30 = MF.rollup(r, days=wdays)["totals"]
     except Exception:
         pass
 
@@ -335,7 +324,7 @@ def s_cmd(r, ctx) -> str:
                 + "</b><span class='mc-bigs'>" + e(sub) + "</span></div>")
 
     figures = ("<div class='mc-bigs30'>MEDIA COMMAND CENTER &middot; last "
-               "30 days</div><div class='mc-bigrow'>"
+               + str(wdays) + " days</div><div class='mc-bigrow'>"
                + big("Revenue", ro30.get("conversion_value"),
                      "tracked conversion value")
                + big("Spend", sm.get("spend"), "")
@@ -353,7 +342,7 @@ def s_cmd(r, ctx) -> str:
     # The spend and conversion trend, drawn, not tabled.
     daily = {}
     try:
-        for row in MF.rollup(r, days=30)["rows"]:
+        for row in MF.rollup(r, days=wdays)["rows"]:
             d = daily.setdefault(row["bucket"], {"spend": 0.0, "conv": 0.0})
             d["spend"] += float(row["spend"] or 0)
             d["conv"] += float(row["conversions"] or 0)

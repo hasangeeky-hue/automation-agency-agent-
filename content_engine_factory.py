@@ -321,14 +321,14 @@ def image_status(status=None, image_key=None, provider=None, model=None) -> dict
 # ======================================================================
 #  ③ PREVIEWS — styled mockups, from the piece that actually publishes
 # ======================================================================
-def _shell(inner, width=520, bg="#0F1626", pad=14, radius=12,
+def _shell(inner, width=520, bg="#FFFFFF", pad=14, radius=12,
            font="-apple-system,Segoe UI,Roboto,sans-serif"):
     """A platform's chrome. `font` and `bg` exist so the WEBSITE preview can use
     the site's OWN page background (--void) and body face (Instrument Sans)
     instead of a panel colour and the system font — the two things that made a
     preview of your article look like a generic card."""
     return (f"<div style='max-width:{width}px;background:{bg};border:1px solid "
-            f"#1B2640;border-radius:{radius}px;padding:{pad}px;margin:6px auto;"
+            f"#E5E7EB;border-radius:{radius}px;padding:{pad}px;margin:6px auto;"
             f"font-family:{font}'>{inner}</div>")
 
 
@@ -351,7 +351,7 @@ def _img_box(url, w, h, label=""):
                 f"display:block'>")
     return (f"<div style='width:100%;aspect-ratio:{w}/{h};border-radius:8px;"
             f"background:repeating-linear-gradient(45deg,#131B2E,#131B2E 10px,"
-            f"#0F1626 10px,#0F1626 20px);display:flex;align-items:center;"
+            f"#FFFFFF 10px,#FFFFFF 20px);display:flex;align-items:center;"
             f"justify-content:center;color:#F5788A;font-size:12px;"
             f"border:1px dashed #F5788A;text-align:center;padding:8px'>"
             f"no image · {w}×{h} needed"
@@ -412,7 +412,7 @@ def preview_website(piece=None, ci_text="", site="anthropos-automation.com") -> 
     # brand and nothing like the page, which is why it read as a mock-up of
     # unfinished work rather than the article.
     # Sizes are scaled ~0.78 for the 560px card; every colour is verbatim.
-    INK, MUTED, FLOW = "#EAF0FF", "#9AA6C6", "#2FE3D2"
+    INK, MUTED, FLOW = "#EAF0FF", "#9AA6C6", "#2563EB"
     DISP = "'Sora',system-ui,sans-serif"
     parts = []
     for kind, text in blocks[:14]:
@@ -462,7 +462,7 @@ def preview_website(piece=None, ci_text="", site="anthropos-automation.com") -> 
              f"margin:10px 0 12px\">{_e(title)}</h1>"
              + _img_box(img, 1200, 630)
              + "".join(parts) + cta)
-    return {"html": _shell(inner, 560, bg="#080B14", pad=18,
+    return {"html": _shell(inner, 560, bg="#F3F4F6", pad=18,
                            font="'Instrument Sans',system-ui,sans-serif"),
             "checks": [("Hero image", bool(img),
                         "present" if img else "missing — the article publishes flat"),
@@ -608,7 +608,7 @@ def preview_linkedin(piece=None) -> dict:
         # author row
         f"<div style='display:flex;gap:8px;align-items:center;padding:12px 12px 0'>"
         f"<div style='width:44px;height:44px;border-radius:50%;flex:0 0 44px;"
-        f"background:linear-gradient(135deg,#2FE3D2,#7C6BFF)'></div>"
+        f"background:linear-gradient(135deg,#2563EB,#7C6BFF)'></div>"
         f"<div style='min-width:0'>"
         f"<div style='color:{ink};font-size:14px;font-weight:600'>"
         f"Anthropos Automation</div>"
@@ -654,11 +654,11 @@ def preview_instagram(piece=None) -> dict:
     img = _s(p.get("image_url"))
     tags = re.findall(r"#\w+", text)
     inner = (_img_box(img, 1080, 1080, "REQUIRED")
-             + "<div style='display:flex;gap:12px;margin:8px 0;color:#EDF1FB'>"
+             + "<div style='display:flex;gap:12px;margin:8px 0;color:#111827'>"
                "<span>♡</span><span>💬</span><span>➤</span></div>"
              + f"<p style='color:#C7D0E8;font-size:12px;line-height:1.5'>"
-               f"<b style='color:#EDF1FB'>anthropos</b> {_e(vis)}"
-             + (f"<span style='color:#59668A'> … more</span>" if hidden else "")
+               f"<b style='color:#111827'>anthropos</b> {_e(vis)}"
+             + (f"<span style='color:#6B7280'> … more</span>" if hidden else "")
              + "</p>")
     return {"html": _shell(inner, 400),
             "cut_at": PLATFORMS["instagram"]["cut"], "hidden_chars": len(hidden),
@@ -679,9 +679,9 @@ def preview_x(piece=None) -> dict:
     img = _s(p.get("image_url"))
     thread = [text[i:i + 275] for i in range(0, len(text), 275)] if over else [text]
     inner = ("<div style='display:flex;gap:8px'>"
-             "<div style='width:32px;height:32px;border-radius:50%;background:#8B7CFF'></div>"
-             "<div style='flex:1'><div style='color:#EDF1FB;font-size:12px'>"
-             "<b>Anthropos</b> <span style='color:#8E9BBE'>@anthropos · now</span></div>"
+             "<div style='width:32px;height:32px;border-radius:50%;background:#7C3AED'></div>"
+             "<div style='flex:1'><div style='color:#111827;font-size:12px'>"
+             "<b>Anthropos</b> <span style='color:#4B5563'>@anthropos · now</span></div>"
              f"<p style='color:#C7D0E8;font-size:12.5px;line-height:1.5;margin:6px 0'>"
              f"{_e(thread[0])}</p>" + _img_box(img, 1200, 675) + "</div></div>")
     return {"html": _shell(inner, 460),
@@ -701,12 +701,12 @@ def preview_facebook(piece=None, site="anthropos-automation.com") -> dict:
     img = _s(p.get("image_url"))
     title = _s(p.get("title"))
     inner = (f"<p style='color:#C7D0E8;font-size:12.5px;line-height:1.5'>{_e(vis)}"
-             + ("<span style='color:#59668A'>… See more</span>" if hidden else "")
+             + ("<span style='color:#6B7280'>… See more</span>" if hidden else "")
              + "</p>" + _img_box(img, 1200, 630)
-             + f"<div style='background:#0B111F;border:1px solid #1B2640;"
+             + f"<div style='background:#F9FAFB;border:1px solid #E5E7EB;"
                f"border-top:0;padding:8px;border-radius:0 0 8px 8px'>"
-               f"<div style='color:#59668A;font-size:10px;text-transform:uppercase'>"
-               f"{_e(site)}</div><div style='color:#EDF1FB;font-size:13px;"
+               f"<div style='color:#6B7280;font-size:10px;text-transform:uppercase'>"
+               f"{_e(site)}</div><div style='color:#111827;font-size:13px;"
                f"font-weight:700'>{_e(title[:80])}</div></div>")
     return {"html": _shell(inner, 470),
             "checks": [("Link card renders", bool(title), "title present"),
@@ -723,9 +723,9 @@ def preview_youtube(piece=None) -> dict:
     vis, hidden = _cut(desc, PLATFORMS["youtube"]["cut"])
     thumb = _s(p.get("thumbnail_url") or p.get("image_url"))
     inner = (_img_box(thumb, 1280, 720, "thumbnail")
-             + f"<div style='color:#EDF1FB;font-size:14px;font-weight:700;"
+             + f"<div style='color:#111827;font-size:14px;font-weight:700;"
                f"margin-top:8px;line-height:1.3'>{_e(title[:70])}</div>"
-               f"<div style='color:#8E9BBE;font-size:11px;margin:4px 0'>"
+               f"<div style='color:#4B5563;font-size:11px;margin:4px 0'>"
                f"Anthropos · 0 views · now</div>"
                f"<p style='color:#C7D0E8;font-size:11.5px;line-height:1.5'>{_e(vis)}"
              + ("<span style='color:#4C9AFF'> …more</span>" if hidden else "")
@@ -752,11 +752,11 @@ def preview_serp(piece=None, site="anthropos-automation.com", keyword="") -> dic
     t_show = title if len(title) <= SERP_TITLE_MAX else title[:SERP_TITLE_MAX - 1] + "…"
     m_show = meta if len(meta) <= SERP_META_MAX else meta[:SERP_META_MAX - 1] + "…"
     kw = _s(keyword).lower()
-    inner = (f"<div style='color:#8E9BBE;font-size:11px'>{_e(site)} › {_e(slug[:28])}</div>"
+    inner = (f"<div style='color:#4B5563;font-size:11px'>{_e(site)} › {_e(slug[:28])}</div>"
              f"<div style='color:#8AB4F8;font-size:16px;line-height:1.3;margin:2px 0'>"
              f"{_e(t_show)}</div>"
              f"<div style='color:#BDC1C6;font-size:12px;line-height:1.5'>{_e(m_show)}</div>")
-    return {"html": _shell(inner, 520, bg="#0B111F"),
+    return {"html": _shell(inner, 520, bg="#F9FAFB"),
             "checks": [("Title ≤60 chars", len(title) <= SERP_TITLE_MAX,
                         f"{len(title)} chars"
                         + (" · truncated in results" if len(title) > SERP_TITLE_MAX else "")),
