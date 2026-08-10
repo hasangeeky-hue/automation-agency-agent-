@@ -952,6 +952,56 @@ try:
 except Exception as exc:                              # noqa: BLE001
     check("rounds 2-4 rendered", False, repr(exc)[:110])
 
+# --------------------------------------------------- the wiring round
+head("17. THE ENGINE SWITCHES, AND THE LINES THEY CANNOT CROSS")
+try:
+    import content_engine_scheduler as SC17
+    from content_engine_api import get_store as _gs17
+    _st17 = _gs17()
+
+    def _g17(k):
+        try:
+            return _st17.get_setting(k, None)
+        except Exception:                             # noqa: BLE001
+            return None
+
+    _sw = {k: _g17(k) for k in ("paused", "cadence_on", "autonomy",
+                                "media_auto_level", "seo_autofix",
+                                "WP_STATUS")}
+    check("every switch holds a value its reader understands",
+          _sw["media_auto_level"] in (None, "off", "observe", "propose")
+          and _sw["seo_autofix"] in (None, "off", "safe", "all")
+          and _sw["WP_STATUS"] in (None, "draft", "publish"),
+          str(_sw))
+    check("AUTONOMY IS OFF: every piece waits for a named human",
+          not _sw["autonomy"])
+
+    _src17 = open("content_engine_scheduler.py", encoding="utf-8").read()
+    check("the scheduler forces reply auto_send OFF, in code",
+          "auto_send=False" in _src17)
+    check("and does at most ONE due task per call",
+          "One task per call" in _src17)
+
+    class _Paused:
+        def get_setting(self, k, d=None):
+            return True if k == "paused" else d
+        def set_setting(self, k, v):
+            raise AssertionError("paused engine must not write")
+    check("PAUSED MEANS PAUSED: run_due_work refuses to act",
+          (SC17.run_due_work(_Paused()) or {}).get("skipped") == "paused")
+
+    check("the default unattended level never touches visitor copy",
+          SC17.seo_auto_level(_st17) in ("off", "safe", "all"))
+    _due17 = SC17.seo_due(_st17)
+    _on = (not _sw["paused"]) and bool(_sw["cadence_on"])
+    print("       engine: " + ("ON, supervised" if _on else "OFF")
+          + " | media agent: " + str(_sw["media_auto_level"] or "not set")
+          + " | seo unattended: "
+          + str(SC17.seo_auto_level(_st17))
+          + " | engines due: " + str(len(_due17)))
+except Exception as exc:                              # noqa: BLE001
+    check("the wiring switches read back", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:
