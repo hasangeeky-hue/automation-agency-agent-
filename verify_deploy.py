@@ -37,7 +37,7 @@ def head(t):
 
 
 print("=" * 74)
-print("SEARCH + FACTORY + BI + CONTROL PLANE + COCKPIT - DEPLOY VERIFICATION")
+print("FIVE OS + UI KIT - DEPLOY VERIFICATION")
 print("=" * 74)
 
 # ---------------------------------------------------------------- modules
@@ -766,6 +766,68 @@ try:
                  if _std.get("why") else ""))
 except Exception as exc:                              # noqa: BLE001
     check("the Command Cockpit loaded", False, repr(exc)[:110])
+
+# ------------------------------------------------------------ ui kit
+head("14. THE UI KIT AND DEMO MODE")
+try:
+    import content_engine_demo as DM
+    import content_engine_ui_kit as UK2
+
+    check("the kit and demo modules are in this image", True)
+    check("every KIT_EXPORTS name is callable",
+          all(callable(getattr(UK2, x, None)) for x in UK2.KIT_EXPORTS))
+
+    _kln = UK2.line([1, 2, 3, None, None, 6, 7, 8], title="T",
+                    source="SRC")
+    check("A GAP BREAKS THE POLYLINE INTO TWO SEGMENTS",
+          _kln.count("<polyline") == 2,
+          str(_kln.count("<polyline")))
+    check("and the footer says gaps are gaps, not zeros",
+          "gap(s) shown as gaps" in _kln)
+    check("a chart with no source refuses to draw axes",
+          "<svg" not in UK2.line([1, 2], title="T", source=""))
+    check("nothing measured draws no axis over nothing",
+          "<svg" not in UK2.line([None, None], title="T", source="S"))
+    _kwf = UK2.waterfall("Revenue", 100,
+                         [("A", 30), ("B", None), ("C", 20)],
+                         title="T", source="S", end_label="Left")
+    check("waterfall: end equals start minus the KNOWN steps",
+          ">50<" in _kwf)
+    check("and a missing step is NAMED, never deducted as zero",
+          "not supplied and not deducted: B" in _kwf)
+    check("hbar leaves unmeasured rows out and counts them",
+          "1 unmeasured row(s) left out" in
+          UK2.hbar([("A", 10), ("B", None)], title="T", source="S"))
+    check("polarity is the caller's verdict: CAC down renders green",
+          "uk-ok" in UK2.kpi("CAC", "114", delta=-3, verdict="GOOD"))
+    check("absence is a word, never a zero",
+          UK2.n(None) == "not measured" and UK2.n(0) == "0")
+    check("status is icon plus word, never colour alone",
+          "▲ Degraded" in UK2.status("DEGRADED"))
+    check("the lecture is a tooltip, not a paragraph",
+          "title=" in UK2.note("why") and "<p" not in UK2.note("why"))
+    check("the 11px floor holds in the kit stylesheet",
+          "font-size:10px" not in UK2.CSS)
+
+    _kg = DM.gallery()
+    check("the demo gallery renders every chart type",
+          _kg.count("<svg") >= 10, str(_kg.count("<svg")))
+    check("AND ADMITS IT IS SAMPLE DATA on its face",
+          "SAMPLE DATA" in _kg
+          and "Nothing here is the business" in _kg)
+    check("no old dark palette leaks into the gallery",
+          not [c for c in ("#0A0E1A", "#2FE3D2", "#121A2E")
+               if c in _kg])
+    check("no while loop in the kit",
+          not [x for x in ast.walk(ast.parse(open(
+              "content_engine_ui_kit.py",
+              encoding="utf-8").read()))
+               if isinstance(x, ast.While)])
+    print("       gallery: " + str(len(_kg)) + " chars, "
+          + str(_kg.count("<svg")) + " charts, kit CSS "
+          + str(len(UK2.CSS)) + " bytes shipped once")
+except Exception as exc:                              # noqa: BLE001
+    check("the UI kit loaded", False, repr(exc)[:110])
 
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
