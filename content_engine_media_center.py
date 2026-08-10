@@ -1641,11 +1641,11 @@ def s_adman(r, ctx) -> str:
     here, upload content here, send the agent from here, monitor here."""
     import content_engine_media_platforms as MPL
     ads = ctx.get("ads") or {}
-    bridge = ("<style>.mc-a3{--pap:var(--s2,#0A0F1E);--card:var(--s1,#0E1526);"
-              "--ln:var(--line,#1B2640);--tx:var(--ink,#E8EEFF);"
-              "--dm:var(--mut,#8FA0C8);--ft:var(--dim,#5A6A8F);"
-              "--ac:var(--blue,#4C8DFF);--warnc:var(--warn,#F5B14C);"
-              "--okc:var(--good,#3FD98B);--badbg:rgba(255,107,147,.09);"
+    bridge = ("<style>.mc-a3{--pap:#F9FAFB;--card:#FFFFFF;"
+              "--ln:#E5E7EB;--tx:#111827;"
+              "--dm:#4B5563;--ft:#6B7280;"
+              "--ac:#2563EB;--warnc:#D97706;"
+              "--okc:#16A34A;--badbg:rgba(255,107,147,.09);"
               "--warnbg:rgba(245,177,76,.09);--okbg:rgba(63,217,139,.09);"
               "--hov:rgba(76,141,255,.07)}" + MPL.CSS + "</style>")
     # the module's own pane loop, with the ops strip INSIDE each room so
@@ -1907,16 +1907,25 @@ def section(ctx) -> str:
 
 
 CSS = """<style>
-.mc-root{--mc-ln:var(--line,#1B2640);--mc-mut:var(--mut,#8FA0C8);
---mc-ink:var(--ink,#E8EEFF);--mc-card:var(--s1,#0E1526);
---mc-go:var(--blue,#4C8DFF);font-size:13px}
-.mc-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
+.mc-root{--mc-ln:#E5E7EB;--mc-mut:#4B5563;
+--mc-ink:#111827;--mc-card:#FFFFFF;
+--mc-go:#2563EB;font-size:13px;color:#111827;
+--pap:#F7F8FA;--card:#FFFFFF;--ln:#E5E7EB;--tx:#111827;--dm:#4B5563;
+--ft:#6B7280;--ac:#2563EB;--okc:#16A34A;--warnc:#D97706;--bad:#DC2626}
+.mc-root{display:grid;grid-template-columns:236px 1fr;gap:14px;
+align-items:start;background:#F7F8FA;border-radius:12px;padding:14px}
+.mc-tabs{display:flex;flex-direction:column;gap:5px;margin:0;
+position:sticky;top:8px;background:#FFFFFF;border:1px solid #E5E7EB;
+border-radius:10px;padding:8px}
+@media (max-width:900px){.mc-root{grid-template-columns:1fr}
+.mc-tabs{position:static;flex-direction:row;flex-wrap:wrap}}
 .mc-tab{display:flex;flex-direction:column;align-items:flex-start;gap:2px;
-background:var(--mc-card);border:1px solid var(--mc-ln);border-radius:9px;
-padding:7px 11px;color:var(--mc-mut);cursor:pointer;min-width:120px;
-text-align:left}
+background:transparent;border:1px solid transparent;border-radius:8px;
+padding:7px 11px;color:var(--mc-mut);cursor:pointer;width:100%;
+text-align:left;font:inherit;font-size:13px}
+.mc-tab:hover{background:#F9FAFB}
 .mc-tab i{font-style:normal;font-size:10px;opacity:.65}
-.mc-tab.mc-on{color:var(--mc-ink);border-color:var(--mc-go)}
+.mc-tab.mc-on{color:var(--mc-go);background:rgba(37,99,235,.08);border-color:transparent;font-weight:600}
 .mc-panel{display:none}.mc-panel.mc-on{display:block}
 .mc-card{background:var(--mc-card);border:1px solid var(--mc-ln);
 border-radius:11px;padding:13px 15px;margin:0 0 12px}
@@ -2061,12 +2070,34 @@ margin:0 0 6px}
 font-variant-numeric:tabular-nums}
 .mc-hbar p{width:100%;margin:0 0 0 159px;color:var(--mc-mut);font-size:10px}
 .mc-hbtrack{flex:1;min-width:110px;height:9px;border-radius:5px;
-background:rgba(255,255,255,.06);overflow:hidden}
+background:rgba(17,24,39,.08);overflow:hidden}
 .mc-hbtrack span{display:block;height:100%;background:var(--mc-go)}
 .mc-roomops{border:1px solid var(--mc-ln);border-top:2px solid var(--mc-go);
 border-radius:11px;padding:12px 15px;margin:12px 0;
 background:var(--mc-card)}
 .mc-roomops input[type=file]{border:none;background:none;padding:4px 0}
+/* the agent command band: markup shared with the SEO section, styles local */
+.mc-root .s3band{display:flex;gap:16px;align-items:center;flex-wrap:wrap;
+padding:13px 16px;border:1px solid #E5E7EB;border-left:3px solid #2563EB;
+border-radius:11px;background:#FFFFFF;margin:0 0 14px}
+.mc-root .s3who{flex:1;min-width:240px}
+.mc-root .s3k{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;
+letter-spacing:.13em;text-transform:uppercase;color:#6B7280;margin:0 0 4px}
+.mc-root .s3state{margin:0;font-size:13px}
+.mc-root .s3sub{margin:3px 0 0;font-size:11.5px;color:#6B7280;
+line-height:1.5;max-width:52ch}
+.mc-root .s3cmds{display:flex;gap:8px;flex-wrap:wrap}
+.mc-root button.cta{display:inline-flex;align-items:center;gap:5px;
+background:#FFFFFF;border:1px solid #E5E7EB;color:#111827;border-radius:9px;
+padding:7px 13px;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.mc-root button.cta:hover{border-color:#2563EB}
+.mc-root .cta.s3go{background:#2563EB;color:#FFFFFF;border-color:#2563EB}
+.mc-root .s3ladder{display:flex;border:1px solid #E5E7EB;border-radius:8px;
+overflow:hidden}
+.mc-root .s3lvl{font-family:ui-monospace,Menlo,monospace;font-size:11px;
+font-weight:700;padding:7px 12px;border:0;background:#FFFFFF;color:#6B7280;
+cursor:pointer}
+.mc-root .s3lvl.s3on{background:#2563EB;color:#FFFFFF}
 </style>"""
 
 

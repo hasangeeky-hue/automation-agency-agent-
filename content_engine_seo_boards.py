@@ -220,7 +220,7 @@ def _donut(pct, label="", color=None, danger_low=True):
     CH = _CH()
     pct = max(0, min(100, float(pct or 0)))
     col = color or (_pct_color(pct) if danger_low else TEAL)
-    return CH.ring([(label or "yes", pct, col), ("", 100 - pct, "#1B2640")],
+    return CH.ring([(label or "yes", pct, col), ("", 100 - pct, "#E5E7EB")],
                    center=f"{pct:.0f}%")
 
 
@@ -291,9 +291,9 @@ def _score_gauge(value, target=80, label=""):
     v = max(0, min(100, float(value or 0)))
     col = _pct_color(v)
     W, HGT = 240, 54
-    bands = (f"<rect x='0' y='16' width='{W}' height='14' rx='7' fill='#141d31'/>"
-             f"<rect x='0' y='16' width='{W*0.5:.0f}' height='14' fill='#2a1420' opacity='.5'/>"
-             f"<rect x='{W*0.5:.0f}' y='16' width='{W*0.3:.0f}' height='14' fill='#2a2414' opacity='.5'/>")
+    bands = (f"<rect x='0' y='16' width='{W}' height='14' rx='7' fill='#E5E7EB'/>"
+             f"<rect x='0' y='16' width='{W*0.5:.0f}' height='14' fill='#FCA5A5' opacity='.5'/>"
+             f"<rect x='{W*0.5:.0f}' y='16' width='{W*0.3:.0f}' height='14' fill='#FCD34D' opacity='.5'/>")
     bar = f"<rect x='0' y='18' width='{W*v/100:.1f}' height='10' rx='5' fill='{col}'/>"
     tgt = (f"<line x1='{W*target/100:.1f}' y1='12' x2='{W*target/100:.1f}' y2='34' "
            f"stroke='#EDF1FB' stroke-width='2'/>"
@@ -2795,92 +2795,123 @@ GROUPS = [
      ["seoanalytics", "seosrc", "seodata", "seosystem", "seorules"]),
 ]
 
-# THE TAB CHROME, in the section's own palette. _TAB_CSS below still
-# carries the old dashboard's teal and near-black; this block is appended
-# AFTER it so it wins the cascade without deleting rules other things may
-# depend on. Scoped to .seoscr so nothing outside the SEO section moves.
+# THE TAB CHROME, in the section's own palette. _TAB_CSS is light now
+# too; this block stays appended AFTER it and is scoped to .seoscr so
+# nothing outside the SEO section moves.
 _TAB_SKIN = """<style>
 /* The tab bar is position:sticky. Making it transparent let the page
    scroll THROUGH it and the headings underneath showed against the
    chips. It keeps the section's own ground, just not the old teal. */
 .seoscr .stabs{border-bottom:1px solid rgba(148,163,184,.22);
-background:var(--pap,#0c0f14);padding:7px 0 9px}
+background:#FFFFFF;padding:7px 0 9px}
 .seoscr .stab{background:transparent;border:1px solid rgba(148,163,184,.22);
-color:var(--dm,#93a0b4);border-radius:8px;padding:7px 12px;font-size:12px;
+color:#4B5563;border-radius:8px;padding:7px 12px;font-size:12px;
 font-weight:500}
-.seoscr .stab:hover{color:var(--tx,#e6ebf2);border-color:var(--ac,#4C8DFF)}
-.seoscr .stab.on{background:transparent;color:var(--tx,#e6ebf2);
-border-color:var(--ac,#4C8DFF);box-shadow:inset 0 -2px 0 var(--ac,#4C8DFF)}
-.seoscr .stab .n{background:rgba(148,163,184,.18);color:var(--dm,#93a0b4);
+.seoscr .stab:hover{color:#111827;border-color:#2563EB}
+.seoscr .stab.on{background:transparent;color:#111827;
+border-color:#2563EB;box-shadow:inset 0 -2px 0 #2563EB}
+.seoscr .stab .n{background:rgba(148,163,184,.18);color:#4B5563;
 font-size:10px;padding:1px 6px;border-radius:9px;margin-left:6px}
 .seoscr .sgrp{background:transparent;border:1px solid rgba(148,163,184,.22);
 border-radius:9px}
-.seoscr .sgrp.on{border-color:var(--ac,#4C8DFF);background:transparent}
-.seoscr .sgrp b{color:var(--tx,#e6ebf2)}
-.seoscr .sgrp .gq{color:var(--dm,#93a0b4)}
+.seoscr .sgrp.on{border-color:#2563EB;background:transparent}
+.seoscr .sgrp b{color:#111827}
+.seoscr .sgrp .gq{color:#4B5563}
+.seoscr .shint{color:#4B5563}
+.seoscr .shint b{color:#2563EB}
+.seoscr .cinput{background:#FFFFFF;border:1px solid #E5E7EB;color:#111827}
+.seoscr .cinput:focus{border-color:#2563EB}
+.seoscr .cbtn.ghost{border-color:#E5E7EB;color:#4B5563}
+.seoscr button.cta,.seoscr a.cta{background:#2563EB;border-color:#2563EB;
+color:#FFFFFF}
+.seoscr button.cta:hover,.seoscr a.cta:hover{border-color:#1D4ED8}
+.seoscr button.goto,.seoscr a.goto{color:#4B5563;
+border-bottom-color:#D1D5DB}
+.seoscr button.goto:hover,.seoscr a.goto:hover{color:#2563EB;
+border-bottom-color:#2563EB}
+.seoscr .subchip{background:#FFFFFF;border:1px solid #E5E7EB;
+color:#4B5563}
+.seoscr .subchip:hover{border-color:#2563EB;color:#111827}
+.seoscr .hero{background:#FFFFFF;border-color:#2563EB !important}
 </style>"""
 
 
+
+# The vertical rail. Appended after the skin so it wins the cascade.
+_TAB_VERT = """<style>
+.seo-cols{display:grid;grid-template-columns:240px 1fr;gap:14px;
+align-items:start}
+.seo-rail{position:sticky;top:8px;background:#FFFFFF;
+border:1px solid #E5E7EB;border-radius:10px;padding:8px}
+.seoscr .sgroups{display:flex;flex-direction:column;gap:5px;margin:0}
+.seoscr .sgrp{width:100%;text-align:left;background:transparent}
+.seoscr .stabs{flex-direction:column;align-items:stretch;gap:4px;
+border-bottom:0;position:static;background:transparent;
+padding:8px 0 0;margin:8px 0 0;border-top:1px solid #E5E7EB}
+.seoscr .stab{width:100%;justify-content:flex-start}
+@media (max-width:900px){.seo-cols{grid-template-columns:1fr}
+.seo-rail{position:static}}
+</style>"""
+
 _TAB_CSS = """<style>
-.shint{font-size:12px;color:#8FA0BF;margin:14px 0 6px;display:flex;align-items:center;gap:7px}
-.shint b{color:#2FE3D2}
+.shint{font-size:12px;color:#4B5563;margin:14px 0 6px;display:flex;align-items:center;gap:7px}
+.shint b{color:#2563EB}
 .stabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 4px;padding:8px 0 10px;
-  border-bottom:2px solid #2FE3D2;position:sticky;top:0;z-index:20;background:#0A0E1A}
-.stab{background:#121A2E;border:1px solid #26456f;color:#B9C6DE;border-radius:9px;
+  border-bottom:1px solid #E5E7EB;position:sticky;top:0;z-index:20;background:#FFFFFF}
+.stab{background:transparent;border:1px solid #E5E7EB;color:#4B5563;border-radius:9px;
   padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;
   display:flex;align-items:center;gap:6px;transition:all .15s}
-.stab:hover{border-color:#2FE3D2;color:#EDF1FB;transform:translateY(-1px)}
-.stab.on{background:linear-gradient(180deg,#1d3f63,#121A2E);border-color:#2FE3D2;
-  color:#FFFFFF;box-shadow:0 0 0 1px #2FE3D2 inset}
-.stab .n{background:#0A0E1A;border-radius:20px;padding:1px 7px;font-size:10.5px;color:#2FE3D2}
+.stab:hover{border-color:#2563EB;color:#111827;transform:translateY(-1px)}
+.stab.on{background:rgba(37,99,235,.08);border-color:#2563EB;
+  color:#111827;box-shadow:none}
+.stab .n{background:#F3F4F6;border-radius:20px;padding:1px 7px;font-size:10.5px;color:#4B5563}
 .spanel{display:none}.spanel.on{display:block}
 .sgroups{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 10px}
-.sgrp{background:#101d33;border:1px solid #26456f;color:#B9C6DE;border-radius:11px;
+.sgrp{background:transparent;border:1px solid #E5E7EB;color:#4B5563;border-radius:11px;
   padding:9px 14px;cursor:pointer;font-family:inherit;text-align:left;line-height:1.25}
 .sgrp b{display:block;font-size:12px;letter-spacing:.04em}
-.sgrp .gq{font-size:10.5px;color:#8FA0BF}
-.sgrp.on{background:linear-gradient(180deg,#1d3f63,#101d33);border-color:#8B7CFF;color:#fff}
-.sgrp.on .gq{color:#CFC7FF}
+.sgrp .gq{font-size:10.5px;color:#6B7280}
+.sgrp.on{background:rgba(37,99,235,.08);border-color:#2563EB;color:#111827}
+.sgrp.on .gq{color:#2563EB}
 .stools{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:10px 0 2px}
-.cinput{background:#0A0E1A;border:1px solid #26456f;color:#EDF1FB;border-radius:9px;
+.cinput{background:#FFFFFF;border:1px solid #E5E7EB;color:#111827;border-radius:9px;
   padding:8px 12px;font-family:inherit;font-size:12.5px;min-width:230px;flex:1}
-.cinput:focus{outline:none;border-color:#2FE3D2}
+.cinput:focus{outline:none;border-color:#2563EB}
 .cbtn.sm{padding:5px 10px;font-size:11.5px}
-.cbtn.ghost{background:transparent;border-color:#26456f;color:#8FA0BF;text-decoration:none}
+.cbtn.ghost{background:transparent;border-color:#E5E7EB;color:#4B5563;text-decoration:none}
 .card{position:relative}
 .sevbadge{font-size:9.5px;font-weight:800;letter-spacing:.05em;margin-bottom:5px}
-.s-critical{color:#FF6B93}.s-warn{color:#F5B14C}.s-ok{color:#3FD98B}
-.card.sev-critical{border-color:#FF6B93}
-.card.sev-warn{border-color:#F5B14C}
+.s-critical{color:#DC2626}.s-warn{color:#D97706}.s-ok{color:#16A34A}
+.card.sev-critical{border-color:#DC2626}
+.card.sev-warn{border-color:#D97706}
 .cta{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
 /* `.cta` was ONLY ever a flex container. 206 card buttons also carry the class,
    so they inherited display:flex and NOTHING else - rendering as raw browser
-   buttons: light grey on a dark theme with a black border. They looked broken
-   because they were unstyled. A button and its container cannot share a class. */
+   buttons. A button and its container cannot share a class. */
 button.cta,a.cta{display:inline-flex;align-items:center;gap:5px;
-  background:linear-gradient(180deg,#1d3f63,#121A2E);
-  border:1px solid #2FE3D2;color:#EDF1FB;border-radius:9px;padding:7px 13px;
+  background:#2563EB;
+  border:1px solid #2563EB;color:#FFFFFF;border-radius:9px;padding:7px 13px;
   font:inherit;font-size:12px;font-weight:650;cursor:pointer;text-decoration:none;
   transition:transform .12s,border-color .12s}
-button.cta:hover,a.cta:hover{transform:translateY(-1px);border-color:#8B7CFF}
+button.cta:hover,a.cta:hover{transform:translateY(-1px);border-color:#1D4ED8}
 /* NAVIGATION is not an action. A button that only moves you now reads as a
    quiet link, so a filled button always means "this does something". */
 button.goto,a.goto{display:inline-flex;align-items:center;gap:4px;background:none;
-  border:0;border-bottom:1px dashed #3a4b6d;
-  color:#8FA0BF;padding:2px 0;margin-top:8px;font:inherit;font-size:11.5px;
+  border:0;border-bottom:1px dashed #D1D5DB;
+  color:#4B5563;padding:2px 0;margin-top:8px;font:inherit;font-size:11.5px;
   cursor:pointer;text-decoration:none}
-button.goto:hover,a.goto:hover{color:#2FE3D2;border-bottom-color:#2FE3D2}
-button.goto::after,a.goto::after{content:'97';font-size:10px;opacity:.75}
+button.goto:hover,a.goto:hover{color:#2563EB;border-bottom-color:#2563EB}
+button.goto::after,a.goto::after{content:'97';font-size:10px;opacity:.75}
 .card.hidecard{display:none}
 .card.overflowcard{display:none}
 .cardgrid.expanded .card.overflowcard{display:block}
 .morewrap{margin-top:10px;text-align:center}
 .subnav{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 2px}
-.subchip{background:#101d33;border:1px solid #26456f;color:#B9C6DE;border-radius:20px;
+.subchip{background:#FFFFFF;border:1px solid #E5E7EB;color:#4B5563;border-radius:20px;
   padding:5px 13px;font-size:11.5px;cursor:pointer;font-family:inherit}
-.subchip:hover{border-color:#2FE3D2;color:#EDF1FB}
-.hero{grid-column:1/-1;border-color:#8B7CFF !important;
-  background:linear-gradient(135deg,#151d33,#121A2E)}
+.subchip:hover{border-color:#2563EB;color:#111827}
+.hero{grid-column:1/-1;border-color:#2563EB !important;
+  background:#FFFFFF}
 .hero .ct{font-size:15px}
 @media(max-width:600px){
   .grid.g3,.grid.g2{grid-template-columns:1fr}
@@ -3048,12 +3079,13 @@ def seo_section(ctx, legacy_html: str = "") -> str:
     # own dark palette, so the screens wear this dashboard's clothes instead
     # of bringing their own. Scoped to .seoscr: nothing outside the SEO
     # section can be repainted by it.
-    bridge = ("<style>.seoscr{--pap:var(--s2);--card:var(--s1);"
-              "--ln:var(--line);--tx:var(--ink);--dm:var(--mut);"
-              "--ft:var(--dim);--ac:var(--blue);--warnc:var(--warn);"
-              "--okc:var(--good);--badbg:rgba(255,107,147,.09);"
-              "--warnbg:rgba(245,177,76,.09);--okbg:rgba(63,217,139,.09);"
-              "--hov:rgba(76,141,255,.07)}"
+    bridge = ("<style>.seoscr{background:#F7F8FA;border-radius:12px;"
+              "padding:14px;--pap:#F7F8FA;--card:#FFFFFF;"
+              "--ln:#E5E7EB;--tx:#111827;--dm:#4B5563;"
+              "--ft:#6B7280;--ac:#2563EB;--warnc:#D97706;"
+              "--okc:#16A34A;--badbg:rgba(220,38,38,.07);"
+              "--warnbg:rgba(217,119,6,.08);--okbg:rgba(22,163,74,.08);"
+              "--hov:rgba(37,99,235,.06)}"
               + SCR.CSS + "</style>")
     import content_engine_search_screens as _SS
     _shell = (_SS.CSS + "<div class='ss-root'>"
@@ -3065,9 +3097,12 @@ def seo_section(ctx, legacy_html: str = "") -> str:
                   "attention": ctx.get("attention"),
               }) + "</div>")
     return ("<div class='seoscr'>" + bridge + SCR.JS
-            + _TAB_CSS + _TAB_SKIN + _shell + runbar + hint
+            + _TAB_CSS + _TAB_SKIN + _TAB_VERT + _shell + runbar + hint
+            + "<div class='seo-cols'><div class='seo-rail'>"
             + f"<div class='sgroups'>{grouprail}</div>"
-            + f"<div class='stabs'>{bar}</div>" + tools + body + sources_panel
+            + f"<div class='stabs'>{bar}</div></div>"
+            + "<div class='seo-main'>" + tools + body + sources_panel
+            + "</div></div>"
             + "</div>")
 
 

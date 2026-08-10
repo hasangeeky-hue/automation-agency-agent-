@@ -37,7 +37,7 @@ def head(t):
 
 
 print("=" * 74)
-print("FIVE OS + UI KIT - DEPLOY VERIFICATION")
+print("FIVE OS + UI KIT + LIGHT SECTIONS - DEPLOY VERIFICATION")
 print("=" * 74)
 
 # ---------------------------------------------------------------- modules
@@ -828,6 +828,49 @@ try:
           + str(len(UK2.CSS)) + " bytes shipped once")
 except Exception as exc:                              # noqa: BLE001
     check("the UI kit loaded", False, repr(exc)[:110])
+
+# ------------------------------------------- the three aligned sections
+head("15. SEO, MEDIA AND LEADS WEAR THE LIGHT DESIGN")
+try:
+    import content_engine_media_center as MC15
+    import content_engine_seo_boards as SB15
+
+    _DARK = ("#0A0E1A", "#0E1526", "#0A0F1E", "#121A2E", "#101d33",
+             "#1B2640", "#12161c", "#171c24", "#2FE3D2",
+             "var(--s1)", "var(--s2)", "var(--s1,", "var(--s2,")
+    _seo = SB15.seo_section({"site": "x"}, legacy_html="<i>L</i>")
+    check("the SEO section renders as a rail column",
+          "seo-cols" in _seo and "seo-rail" in _seo
+          and _seo.index("seo-rail") < _seo.index("seo-main"))
+    check("its group rail sits above the vertical tabs",
+          _seo.index("class='sgroups'") < _seo.index("class='stabs'"))
+    check("and no dark-shell colour survives in it",
+          not [c for c in _DARK if c in _seo],
+          str([c for c in _DARK if c in _seo]))
+    check("the SEO section paints its own light ground",
+          "background:#F7F8FA" in _seo)
+
+    _mc = MC15.section({})
+    check("the Media rail is a vertical sticky column",
+          "grid-template-columns:236px 1fr" in _mc
+          and "flex-direction:column" in _mc)
+    check("no dark-shell colour survives in Media",
+          not [c for c in _DARK if c in _mc],
+          str([c for c in _DARK if c in _mc]))
+    check("the media agent band is styled locally",
+          ".mc-root .s3band" in _mc)
+
+    _os = open("content_engine_os_screens.py",
+               encoding="utf-8").read()
+    check("Leads & Outreach declares the light palette",
+          "--osbg:#FFFFFF" in _os and "background:#F7F8FA" in _os)
+    check("and carries no dark fallback",
+          not [c for c in _DARK if c in _os],
+          str([c for c in _DARK if c in _os]))
+    print("       seo " + str(len(_seo)) + " chars, media "
+          + str(len(_mc)) + " chars, both on their own light ground")
+except Exception as exc:                              # noqa: BLE001
+    check("the three aligned sections rendered", False, repr(exc)[:110])
 
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)

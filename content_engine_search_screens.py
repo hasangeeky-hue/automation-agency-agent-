@@ -311,7 +311,7 @@ def command_center(r, *, totals=None, source="Google Search Console",
             + f"<p class='ss-note'>{e(b['message'])}</p>")
 
 
-CSS = TK.css() + """<style>
+CSS = TK.css(dark=False) + """<style>
 .ss-h{font-size:11px;letter-spacing:1.4px;color:var(--so-text2);
 font-weight:700;margin:16px 0 6px}
 .ss-note{color:var(--so-text2);font-size:11px;margin:4px 0}
@@ -354,7 +354,7 @@ padding:5px 10px;margin:5px 0}
 color:var(--so-text2)}
 .ss-before p,.ss-after p{margin:2px 0;font-size:13px;color:var(--so-text)}
 .ss-diffcta{display:flex;gap:7px;margin-top:9px}
-.ss-empty,.ss-error{border:1px solid var(--so-border);border-radius:
+.ss-empty,.ss-error{color:var(--so-text);border:1px solid var(--so-border);border-radius:
 var(--so-radius-card);padding:13px 16px;background:var(--so-surface)}
 .ss-error{border-color:var(--so-danger-main)}
 .ss-empty b,.ss-error b{display:block;font-size:13px;margin-bottom:4px}
@@ -1771,21 +1771,21 @@ def component_library(r) -> str:
 CSS += """<style>
 .ss-shell{display:flex;justify-content:space-between;align-items:center;
 gap:12px;flex-wrap:wrap;padding:11px 14px;border-radius:10px;
-border:1px solid var(--so-line);background:var(--so-surface);margin:0 0 9px}
+border:1px solid var(--so-border);background:var(--so-surface);margin:0 0 9px}
 .ss-shell-deg{border-color:var(--so-warning-main)}
 .ss-shell-id b{font-size:12px;letter-spacing:.09em;color:var(--so-text)}
 .ss-shell-id span{margin-left:9px;font-size:12px;color:var(--so-text2)}
 .ss-shell-meta{display:flex;gap:14px;font-size:10px;color:var(--so-text2);
 letter-spacing:.05em}
 .ss-shell-meta b{color:var(--so-text);font-weight:600}
-.ss-bar{padding:9px 13px;border-radius:9px;border:1px solid var(--so-line);
+.ss-bar{padding:9px 13px;border-radius:9px;border:1px solid var(--so-border);color:var(--so-text2);
 background:var(--so-surface);margin:0 0 9px}
 .ss-bar>p{margin:0;font-size:11px;color:var(--so-text2);line-height:1.55}
 .ss-bar-warn{border-color:var(--so-warning-main)}
-.ss-bar-ok{border-color:var(--so-line)}
+.ss-bar-ok{border-color:var(--so-border)}
 .ss-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .ss-chip{display:inline-flex;gap:6px;align-items:center;font-size:10px;
-padding:3px 8px;border-radius:20px;border:1px solid var(--so-line);
+padding:3px 8px;border-radius:20px;border:1px solid var(--so-border);
 color:var(--so-text2)}
 .ss-chip b{font-weight:600;letter-spacing:.04em}
 .ss-chip-ok{border-color:var(--so-success-main);color:var(--so-success-main)}
@@ -1793,7 +1793,7 @@ color:var(--so-text2)}
 .ss-chip-bad{border-color:var(--so-danger-main);color:var(--so-danger-main)}
 .ss-chip-off{opacity:.72}
 .ss-att{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
-padding:7px 0;border-top:1px solid var(--so-line);margin-top:7px}
+padding:7px 0;border-top:1px solid var(--so-border);margin-top:7px}
 .ss-att-k{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
 color:var(--so-text2);min-width:112px}
 .ss-att b{font-size:12px;color:var(--so-text);font-weight:600}
@@ -1806,10 +1806,10 @@ flex-wrap:wrap}
 .ss-navg>p span{font-size:10px;color:var(--so-text2)}
 .ss-navg>div{display:flex;flex-wrap:wrap;gap:6px}
 .ss-navb{font-size:11px;padding:5px 10px;border-radius:7px;cursor:pointer;
-border:1px solid var(--so-line);background:transparent;color:var(--so-text2)}
+border:1px solid var(--so-border);background:transparent;color:var(--so-text2)}
 .ss-navb:hover{color:var(--so-text);border-color:var(--so-primary-main)}
 .ss-lib{display:flex;flex-wrap:wrap;gap:8px;align-items:center;
-padding:11px;border-radius:9px;border:1px solid var(--so-line);
+padding:11px;border-radius:9px;border:1px solid var(--so-border);
 background:var(--so-surface);margin:0 0 7px}
 .ss-h2{margin:14px 0 6px;font-size:10px;letter-spacing:.09em;
 text-transform:uppercase;color:var(--so-text2)}
@@ -1997,7 +1997,7 @@ CSS += """<style>
 .ss-ul li{font-size:11px;color:var(--so-text2);line-height:1.6;
 margin:0 0 4px}
 .ss-ul-warn li{color:var(--so-warning-main)}
-.ss-cms{padding:10px 12px;border-radius:9px;border:1px solid var(--so-line);
+.ss-cms{padding:10px 12px;border-radius:9px;border:1px solid var(--so-border);
 margin:0 0 7px}
 .ss-cms.on{border-color:var(--so-primary-main)}
 .ss-cms>p{margin:0 0 5px;font-size:12px;color:var(--so-text)}
@@ -2005,7 +2005,7 @@ margin:0 0 7px}
 letter-spacing:.08em;text-transform:uppercase;color:var(--so-primary-main)}
 .ss-caps{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 6px}
 .ss-cap{font-size:10px;padding:2px 7px;border-radius:5px;
-border:1px solid var(--so-line);color:var(--so-text2)}
+border:1px solid var(--so-border);color:var(--so-text2)}
 .ss-cap-y{border-color:var(--so-success-main);color:var(--so-success-main)}
 .ss-cap-n{border-color:var(--so-danger-main);color:var(--so-danger-main);
 text-decoration:line-through}
@@ -2127,7 +2127,7 @@ def command_palette(r, query=None) -> str:
 
 
 CSS += """<style>
-.ss-loop{padding:12px 13px;border-radius:10px;border:1px solid var(--so-line);
+.ss-loop{padding:12px 13px;border-radius:10px;border:1px solid var(--so-border);
 margin:0 0 9px}
 .ss-loop-h{display:flex;justify-content:space-between;align-items:baseline;
 gap:10px;margin:0 0 3px}
@@ -2135,7 +2135,7 @@ gap:10px;margin:0 0 3px}
 .ss-loop-h span{font-size:10px;letter-spacing:.07em}
 .ss-stgs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 .ss-stg{display:flex;gap:6px;align-items:center;font-size:10px;
-padding:4px 9px;border-radius:7px;border:1px solid var(--so-line);
+padding:4px 9px;border-radius:7px;border:1px solid var(--so-border);
 color:var(--so-text2)}
 .ss-stg span{width:15px;height:15px;border-radius:50%;display:grid;
 place-items:center;font-size:8px;background:rgba(148,163,184,.2)}
@@ -2143,10 +2143,10 @@ place-items:center;font-size:8px;background:rgba(148,163,184,.2)}
 .ss-stg i{font-style:normal;opacity:.7}
 .ss-srch{display:flex;gap:7px;margin:0 0 8px}
 .ss-in{flex:1;padding:7px 11px;border-radius:8px;font-size:12px;
-border:1px solid var(--so-line);background:var(--so-surface);
+border:1px solid var(--so-border);background:var(--so-surface);
 color:var(--so-text)}
 .ss-cmd{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
-padding:7px 11px;border-radius:8px;border:1px solid var(--so-line);
+padding:7px 11px;border-radius:8px;border:1px solid var(--so-border);
 margin:0 0 5px}
 .ss-cmd b{font-size:12px;color:var(--so-text);min-width:170px}
 .ss-cmd i{flex:1;min-width:170px;font-style:normal;font-size:10px}

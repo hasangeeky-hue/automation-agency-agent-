@@ -1181,9 +1181,9 @@ var W=760,H=40+rep.rows.length*22;
 var lines=[rep.heads.join('   ')].concat(rep.rows.map(function(r){
 return r.map(function(c){return c===null?'--':String(c);}).join('   ');}));
 var svg="<svg xmlns='http://www.w3.org/2000/svg' width='"+W+"' height='"
-+H+"'><rect width='100%' height='100%' fill='#0E1526'/>"
++H+"'><rect width='100%' height='100%' fill='#FFFFFF'/>"
 +lines.map(function(l,i){return "<text x='12' y='"+(24+i*22)
-+"' fill='#E8EEFF' font-family='monospace' font-size='12'>"
++"' fill='#111827' font-family='monospace' font-size='12'>"
 +l.replace(/[<>&]/g,'')+"</text>";}).join('')+"</svg>";
 var img=new Image();
 img.onload=function(){var cv=document.createElement('canvas');

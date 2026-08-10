@@ -1958,10 +1958,11 @@ def build(ctx, live=None) -> str:
 
 
 CSS = """
-.osx{--osbg:var(--s1,#12161c);--os2:var(--s2,#171c24);--osln:var(--line,#252c37);
- --ostx:var(--ink,#e8ecf1);--osmut:var(--mut,#98a2b0);--osdim:var(--dim,#6b7481);
- --osac:var(--blue,#4c8dff);--osok:var(--good,#3fd98b);--oswarn:var(--warn,#f5b14c);
- --osbad:#ff6b93;font-size:14px;color:var(--ostx)}
+.osx{--osbg:#FFFFFF;--os2:#F9FAFB;--osln:#E5E7EB;
+ --ostx:#111827;--osmut:#4B5563;--osdim:#9CA3AF;
+ --osac:#2563EB;--osok:#16A34A;--oswarn:#D97706;
+ --osbad:#DC2626;font-size:14px;color:var(--ostx);
+ background:#F7F8FA;border-radius:12px;padding:14px}
 .osx *{box-sizing:border-box}
 .os-band{display:flex;gap:20px;justify-content:space-between;align-items:flex-start;
  flex-wrap:wrap;background:var(--os2);border:1px solid var(--osln);

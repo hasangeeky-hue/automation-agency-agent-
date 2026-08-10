@@ -213,38 +213,38 @@ def section(r) -> str:
 
 
 CSS = """<style>
-.sl-root{font-size:13px;color:var(--ink,#E8EEFF)}
-.sl-h{font-size:11px;letter-spacing:1.4px;color:var(--mut,#8FA0C8);
+.sl-root{font-size:13px;color:#111827}
+.sl-h{font-size:11px;letter-spacing:1.4px;color:#4B5563;
 font-weight:700;margin:16px 0 6px}
-.sl-note{color:var(--mut,#8FA0C8);font-size:11px;margin:5px 0}
-.sl-empty{color:var(--mut,#8FA0C8);font-size:12px;margin:6px 0}
+.sl-note{color:#4B5563;font-size:11px;margin:5px 0}
+.sl-empty{color:#4B5563;font-size:12px;margin:6px 0}
 .sl-board{display:flex;gap:9px;overflow-x:auto;padding-bottom:6px}
-.sl-col{min-width:165px;flex:1;border:1px solid var(--line,#1B2640);
-border-radius:10px;padding:9px 10px;background:var(--s1,#0E1526)}
+.sl-col{min-width:165px;flex:1;border:1px solid #E5E7EB;
+border-radius:10px;padding:9px 10px;background:#FFFFFF}
 .sl-colh{margin:0;font-size:12px;font-weight:700;display:flex;
 justify-content:space-between}
-.sl-colh i{font-style:normal;color:var(--mut,#8FA0C8)}
-.sl-card{border:1px solid var(--line,#1B2640);border-left-width:3px;
+.sl-colh i{font-style:normal;color:#4B5563}
+.sl-card{border:1px solid #E5E7EB;border-left-width:3px;
 border-radius:8px;padding:7px 9px;margin:6px 0;display:flex;
 flex-direction:column;gap:2px}
 .sl-card b{font-size:12px}
-.sl-card span{font-size:10px;color:var(--mut,#8FA0C8)}
+.sl-card span{font-size:10px;color:#4B5563}
 .sl-ok{border-left-color:#16A34A}.sl-warn{border-left-color:#D97706}
 .sl-bad{border-left-color:#DC2626}.sl-flat{border-left-color:#4B5563}
 td.sl-ok,span.sl-ok{color:#3FD98B}td.sl-warn,span.sl-warn{color:#F5B14C}
 td.sl-bad,span.sl-bad,p.sl-bad{color:#FF6B93}
 .sl-scroll{overflow-x:auto}
 .sl-tbl{border-collapse:collapse;width:100%;font-size:12px}
-.sl-tbl th{color:var(--mut,#8FA0C8);text-transform:uppercase;
+.sl-tbl th{color:#4B5563;text-transform:uppercase;
 font-size:10px;letter-spacing:.4px;text-align:left;padding:5px 8px;
-border-bottom:1px solid var(--line,#1B2640)}
-.sl-tbl td{padding:5px 8px;border-bottom:1px solid var(--line,#1B2640);
+border-bottom:1px solid #E5E7EB}
+.sl-tbl td{padding:5px 8px;border-bottom:1px solid #E5E7EB;
 font-variant-numeric:tabular-nums}
 .sl-timeline{display:flex;flex-direction:column;gap:3px;margin:6px 0}
 .sl-step{display:flex;gap:9px;align-items:baseline;font-size:11px}
-.sl-step b{min-width:110px;color:var(--mut,#8FA0C8);font-weight:400}
+.sl-step b{min-width:110px;color:#4B5563;font-weight:400}
 .sl-hs{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:5px 0}
-.sl-hs span{border:1px solid var(--line,#1B2640);border-radius:7px;
-padding:2px 9px;font-size:10px;color:var(--mut,#8FA0C8)}
-.sl-score b{font-size:18px;color:var(--ink,#E8EEFF)}
+.sl-hs span{border:1px solid #E5E7EB;border-radius:7px;
+padding:2px 9px;font-size:10px;color:#4B5563}
+.sl-score b{font-size:18px;color:#111827}
 </style>"""
