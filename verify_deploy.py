@@ -1360,6 +1360,36 @@ try:
     import content_engine_scheduler as SC19
     check("the factory agents are on the cadence, not waiting on a click",
           "factory" in SC19.SEO_CADENCE)
+
+    # NO BROWSER PROMPT ON THE APPROVAL ROW. A prompt() steals the
+    # window and throws away what you typed on a misclick; this codebase
+    # fought that once and my own reject button reintroduced it.
+    _rv19 = FB18.factory_section(FD18.merge(
+        {}, FD18.factory(_st18, jobs=_jobs18),
+        FD18.chrome(_st18, jobs=_jobs18), FD18.interaction()))
+    _row19 = _rv19[max(0, _rv19.find("Approve and publish") - 400):
+                   _rv19.find("Approve and publish") + 2500]
+    check("THE APPROVAL ROW USES AN INLINE NOTE, never a browser prompt",
+          "prompt(" not in _row19 and "cf-notetext-" in _rv19)
+    # SGA RETIRED, ITS SCREENS REHOMED - not left unreachable
+    import content_engine_factory_ui as FUI19
+    check("Social found a home in the Factory when SGA retired",
+          any(x[0] == "cfsocial" for x in FUI19.SCREENS)
+          and FUI19.check_screens()["ok"])
+    # F11: a screen rendered twice reads as two different findings
+    import content_engine_bi_boards as BB19
+    _bi19 = BB19.bi_section(FD18.merge({}, FD18.bi(_st18),
+                                       FD18.chrome(_st18)))
+    # COUNT PANEL HEADINGS, NOT NAME MENTIONS. The first version of this
+    # check counted every ">AI Decisions<" and flagged five screens,
+    # because each name legitimately appears twice: once in the nav and
+    # once as its panel heading. A gate that cries wolf gets ignored,
+    # which is worse than no gate.
+    _dupes19 = [t for t in ("AI Decisions", "Agent Economics", "Executive",
+                            "Growth", "Funnel", "Initiatives")
+                if _bi19.count("<p class='bi-h1'>" + t + "</p>") > 1]
+    check("NO BI SCREEN PANEL IS RENDERED TWICE ON ONE PAGE",
+          not _dupes19, str(_dupes19))
     check("a report names what it could NOT report on",
           _sr19["ok"] and isinstance(_sr19["report"]["not_reported"], list))
     print("       agents wired: " + str(len(_w19)) + "/" + str(len(_w19)))

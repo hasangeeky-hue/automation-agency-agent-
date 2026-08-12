@@ -52,9 +52,11 @@ SCREENS: Tuple[Tuple[str, str, str, Callable, str], ...] = (
      "Is this good enough to go out?"),
     ("cfdist", "07", "Distribution", S.distribution,
      "Where did it go, and did the destination take it?"),
-    ("cfperf", "08", "Performance", S.performance,
+    ("cfsocial", "08", "Social", S.social,
+     "What goes out on social, and how did it land?"),
+    ("cfperf", "09", "Performance", S.performance,
      "What worked, and what should we make more of?"),
-    ("cfset", "09", "Settings", S.settings,
+    ("cfset", "10", "Settings", S.settings,
      "How is the brand, the tooling and the workflow configured?"),
 )
 
@@ -74,8 +76,10 @@ def check_screens() -> Dict[str, Any]:
     dupes = sorted({x for x in ids if ids.count(x) > 1})
     if dupes:
         problems.append("duplicate screen id: " + ", ".join(dupes))
-    if len(SCREENS) > 9:
-        problems.append("more than nine screens; section 5 sets the cap")
+    if len(SCREENS) > 10:
+        problems.append("more than ten screens; the cap moved from nine "
+                        "to ten when SGA retired and Social came here "
+                        "rather than becoming unreachable code")
     return {"ok": not problems, "problems": problems,
             "count": len(SCREENS),
             "why": ("nine screens, each with a renderer and a contract"
@@ -144,10 +148,39 @@ function cfApprove(id,btn){cfPost('/jobs/'+encodeURIComponent(id)+'/approve',{},
   'Approve this piece? It publishes to your site.');}
 function cfApproveSend(id,btn){cfPost('/jobs/'+encodeURIComponent(id)+'/approve',{},btn,
   'Approve this piece? Anything addressed to people still waits for a separate send.');}
-function cfReject(id,btn){var n=prompt('Why are you rejecting it? (recorded so the engine learns)');
-  if(n===null)return;cfPost('/jobs/'+encodeURIComponent(id)+'/decline',{note:n},btn);}
-function cfRequestChanges(id,btn){var n=prompt('What should change?');
-  if(!n)return;cfPost('/proposal',{job_id:id,accept:false,note:n},btn);}
+/* THE NOTE IS AN INLINE FIELD, not a browser prompt. A prompt() steals
+   the window, cannot be corrected once dismissed, and throws away what
+   you typed on a misclick. The approval row keeps its note beside the
+   words it refers to. */
+var CF_NOTE_KIND={};
+function cfNoteOpen(id,kind){
+  CF_NOTE_KIND[id]=kind;
+  var box=document.getElementById('cf-note-'+id);
+  var why=document.getElementById('cf-notewhy-'+id);
+  if(!box)return;
+  if(why)why.textContent=(kind==='reject'
+    ?'Why are you rejecting it? Recorded so the engine learns.'
+    :kind==='variant'
+      ?'What should the variant do differently?'
+      :'What should change? This goes back as a revision request.');
+  box.style.display='block';
+  var t=document.getElementById('cf-notetext-'+id);if(t)t.focus();
+}
+function cfNoteClose(id){var b=document.getElementById('cf-note-'+id);
+  if(b)b.style.display='none';}
+function cfNoteSend(id,btn){
+  var t=document.getElementById('cf-notetext-'+id);
+  var note=t?t.value.trim():'';
+  var kind=CF_NOTE_KIND[id]||'changes';
+  if(!note){if(window.toast)toast('Write the reason first: it is recorded and the engine learns from it.');
+    if(t)t.focus();return;}
+  if(kind==='reject')cfPost('/jobs/'+encodeURIComponent(id)+'/decline',{note:note},btn);
+  else if(kind==='variant')cfPost('/content/variant',{job_id:id,note:note},btn);
+  else cfPost('/proposal',{job_id:id,accept:false,note:note},btn);
+}
+/* kept for callers elsewhere: they open the same inline field */
+function cfReject(id){cfNoteOpen(id,'reject');}
+function cfRequestChanges(id){cfNoteOpen(id,'changes');}
 /* Production */
 function cfCreate(a,btn){var t=prompt('What should it be about?');if(!t)return;
   cfPost('/jobs',{type:'content_piece',payload:{config:{topic:t,type:'blog'}}},btn);}
@@ -223,8 +256,7 @@ function cfAct(id,what){
 }
 function cfRestore(id,btn){cfPost('/content/restore',{job_id:id},btn,
   'Put back the text as it was before the last edit?');}
-function cfVary(id,btn){var n=prompt('What should the variant do differently?');
-  if(n===null)return;cfPost('/content/variant',{job_id:id,note:n},btn);}
+function cfVary(id){cfNoteOpen(id,'variant');}
 function cfVariants(id,btn){cfVary(id,btn);}
 function cfCompare(id){cfTab('piece',id);}
 function cfDismiss(id,btn){var w=prompt('Why dismiss this signal? (recorded)');

@@ -118,11 +118,15 @@ t("the same input twice yields the same id",
 # ---------------------------------------------------------------- L3
 head("L3  NINE SCREENS AND THEIR CONTRACTS (spec 5, 100)")
 _chk = UI.check_screens()
-t("there are exactly nine screens", len(UI.SCREENS) == 9,
+# TEN, not nine: Social came here when SGA retired rather than becoming
+# unreachable code. The cap is still a cap - it exists to stop the
+# section sprawling - it just moved by one, deliberately, once.
+t("there are exactly ten screens", len(UI.SCREENS) == 10,
   str(len(UI.SCREENS)))
 t("EVERY SCREEN HAS A RENDERER AND A CONTRACT FILE",
   _chk["ok"], str(_chk["problems"]))
-t("no duplicate screen id", len({x[0] for x in UI.SCREENS}) == 9)
+t("no duplicate screen id",
+  len({x[0] for x in UI.SCREENS}) == len(UI.SCREENS))
 _req = ("Purpose", "User question", "Layout", "Components", "Data",
         "Data source", "Actions", "CTA", "AI actions", "Loading",
         "Empty", "Error", "Permissions", "State transitions")

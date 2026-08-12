@@ -811,6 +811,42 @@ def library(ctx=None) -> str:
 # ===========================================================================
 # SCREEN 06 - REVIEW (sections 50-54, 104)
 # ===========================================================================
+def social(ctx=None) -> str:
+    """SOCIAL, REHOMED. SGA held these screens and SGA is retired; the
+    system that decides what goes out on social is this one, so its
+    channels, engagement, audience and posts land here rather than
+    becoming unreachable code. The Google hub went to Search and paid
+    went to Media Buying, which already own those questions."""
+    c = _d(ctx)
+    try:
+        import content_engine_sga_screens as SG
+    except Exception as exc:                          # noqa: BLE001
+        return ("<p class='cf-h1'>Social</p>"
+                + empty("The social screens did not load",
+                        "They moved here when SGA was retired. Reason: "
+                        + _s(type(exc).__name__)))
+    out = ["<p class='cf-h1'>Social</p>",
+           "<p class='cf-note'>These moved here when the SGA section was "
+           "retired: the system that decides what goes out on social is "
+           "this one. The Google hub is in Search, paid is in Media "
+           "Buying.</p>"]
+    for label, fn in (("Channels", "channels_screen"),
+                      ("Engagement", "engagement_screen"),
+                      ("Audience", "audience_screen"),
+                      ("Posts", "posts_screen")):
+        f = getattr(SG, fn, None)
+        if not callable(f):
+            continue
+        out.append("<p class='cf-h2'>" + e(label) + "</p>")
+        try:
+            out.append(f(c))
+        except Exception as exc:                      # noqa: BLE001
+            out.append("<p class='cf-note cf-wa'>" + e(label)
+                       + " could not render: " + e(type(exc).__name__)
+                       + ". The other screens are unaffected.</p>")
+    return "".join(out)
+
+
 def review(ctx=None) -> str:
     """Three columns, section 50. A reviewer never opens the Studio."""
     c = _d(ctx)
@@ -894,16 +930,38 @@ def review(ctx=None) -> str:
         # applies to. The endpoint is the same one the queue has always
         # used; nothing here can approve on your behalf.
         _jid2 = e(_s(current.get("job_id")))
+        # NO BROWSER PROMPTS ON THE APPROVAL ROW. A prompt() steals the
+        # window, cannot be corrected once dismissed, and loses what you
+        # typed if you misclick - this codebase already fought that fight
+        # once and the rule outlived the fix. The note is an inline field
+        # that stays on the page with the words it refers to.
         out.append("<div class='cf-row' style='margin-top:10px;gap:6px'>"
                    "<span><button class='cf-btn cf-btn-human' "
                    "onclick=\"cfApprove('" + _jid2 + "',this)\">"
                    "Approve and publish</button> "
-                   "<button class='cf-btn' onclick=\"cfRequestChanges('"
-                   + _jid2 + "',this)\">Request changes</button> "
-                   "<button class='cf-btn' onclick=\"cfReject('"
-                   + _jid2 + "',this)\">Reject</button></span>"
+                   "<button class='cf-btn' onclick=\"cfNoteOpen('"
+                   + _jid2 + "','changes')\">Request changes</button> "
+                   "<button class='cf-btn' onclick=\"cfNoteOpen('"
+                   + _jid2 + "','reject')\">Reject</button> "
+                   "<button class='cf-btn' onclick=\"cfNoteOpen('"
+                   + _jid2 + "','variant')\">Make a variant</button></span>"
                    "<span class='cf-meta'>publishes to your site; "
-                   "nothing is sent without this click</span></div>")
+                   "nothing is sent without this click</span></div>"
+                   "<div class='cf-card' id='cf-note-" + _jid2 + "' "
+                   "style='display:none;margin-top:8px'>"
+                   "<p class='cf-meta' id='cf-notewhy-" + _jid2 + "'></p>"
+                   "<textarea id='cf-notetext-" + _jid2 + "' rows='3' "
+                   "style='width:100%;font:inherit;font-size:12px;"
+                   "border:1px solid var(--bd);border-radius:8px;"
+                   "padding:8px'></textarea>"
+                   "<div class='cf-row' style='margin-top:6px'>"
+                   "<span><button class='cf-btn cf-btn-human' "
+                   "onclick=\"cfNoteSend('" + _jid2 + "',this)\">"
+                   "Send</button> "
+                   "<button class='cf-btn' onclick=\"cfNoteClose('"
+                   + _jid2 + "')\">Cancel</button></span>"
+                   "<span class='cf-meta'>recorded, so the engine learns "
+                   "from it</span></div></div>")
     out.append("</div></div>")
 
     out.append("<div><p class='cf-h2'>Checks</p><div class='cf-card'>")
