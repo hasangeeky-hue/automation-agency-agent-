@@ -292,6 +292,12 @@ def apply_cache_control(system_blocks: list, model: str) -> list:
     return blocks
 
 
+def _is_credit_exhaustion(msg: str) -> bool:
+    """The API reports an empty wallet as a 400 invalid_request_error;
+    the phrase is the contract this classifier keys on."""
+    return "credit balance is too low" in str(msg).lower()
+
+
 def build_prompt(skill_name: str, job: dict) -> PromptSpec:
     """Assemble the cached prefix + uncached payload for one skill call."""
     skill_prompt = SKILL_PROMPTS.get(skill_name)
@@ -615,6 +621,19 @@ def anthropic_call(model: str, spec: PromptSpec) -> SkillResult:
         # (never its content, never a key) so the next retry tells us what
         # the API disliked instead of repeating the mystery.
         if type(e).__name__ == "BadRequestError":
+            # AN EMPTY WALLET IS NOT SIXTY BROKEN JOBS. The API reports an
+            # exhausted credit balance as a 400, and one night of it turned
+            # every queued piece into a separate needs-human corpse. It is
+            # the daily-cap class: halted_budget, one revive when money
+            # returns, nothing re-bought.
+            if _is_credit_exhaustion(str(e)):
+                from content_engine_orchestrator import BudgetExceeded
+                raise BudgetExceeded(
+                    f"{spec.skill_name}: the Anthropic account is out of "
+                    "credits (the API refused with 'credit balance is too "
+                    "low'). Top up at console.anthropic.com Plans & "
+                    "Billing; revive resumes every halted piece from its "
+                    "last completed step.") from e
             _blocks = kwargs.get("system") or []
             def _btext(b):
                 return str((b.get("text") if isinstance(b, dict)

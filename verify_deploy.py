@@ -1033,6 +1033,21 @@ try:
     check("AN EMPTY BUDGET VAR MEANS DEFAULT, NEVER A DEAD WORKER",
           _r17.returncode == 0 and "200.0" in _r17.stdout,
           (_r17.stderr or "")[-110:])
+
+    # AN EMPTY WALLET IS ONE HALT, NOT SIXTY CORPSES. The API reports
+    # exhausted credits as a 400; one night of it killed every queued
+    # piece as a separate needs-human failure. The classifier routes it
+    # to halted_budget - the daily-cap class, revived in one command.
+    import content_engine_providers as PV17
+    check("a credit-exhaustion 400 is recognised for what it is",
+          PV17._is_credit_exhaustion("'message': 'Your credit balance "
+                                     "is too low to access...'")
+          and not PV17._is_credit_exhaustion("max_tokens must be "
+                                             "positive"))
+    _pvsrc = open("content_engine_providers.py", encoding="utf-8").read()
+    check("and it raises BudgetExceeded, never a job-killing error",
+          "_is_credit_exhaustion(str(e))" in _pvsrc
+          and "raise BudgetExceeded(" in _pvsrc)
     _due17 = SC17.seo_due(_st17)
     _on = (not _sw["paused"]) and bool(_sw["cadence_on"])
     print("       engine: " + ("ON, supervised" if _on else "OFF")
