@@ -50,7 +50,6 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-DROP INDEX IF EXISTS jobs_claimable_idx;
 CREATE INDEX IF NOT EXISTS jobs_claimable_idx
     ON jobs (status) WHERE status NOT IN
     ('optimized','revision_needed','halted_budget','failed','discarded');
@@ -198,10 +197,34 @@ class PgJobStore:
         self._conn.close()
 
 
+_CLAIMABLE_IDX_SQL = """CREATE INDEX IF NOT EXISTS jobs_claimable_idx
+    ON jobs (status) WHERE status NOT IN
+    ('optimized','revision_needed','halted_budget','failed','discarded')"""
+
+
 def init_db(store: PgJobStore) -> None:
     with store._conn.cursor() as cur:
         cur.execute(DDL)
     store._conn.commit()
+    # ONE-TIME index migration. A DROP INDEX in the DDL ran on every
+    # start-up and takes AccessExclusiveLock, which deadlocked against
+    # the worker's row locks the moment both were alive. Now: touch the
+    # index only if its predicate is stale, under a lock timeout, and
+    # treat failure as "try again next boot" - the index is performance,
+    # never correctness (_CLAIM_SQL filters by status regardless).
+    try:
+        with store._conn.cursor() as cur:
+            cur.execute("SELECT indexdef FROM pg_indexes "
+                        "WHERE indexname = 'jobs_claimable_idx'")
+            row = cur.fetchone()
+            if row and "'discarded'" not in str(row[0] or ""):
+                cur.execute("SET lock_timeout = '3s'")
+                cur.execute("DROP INDEX jobs_claimable_idx")
+                cur.execute(_CLAIMABLE_IDX_SQL)
+                cur.execute("SET lock_timeout = DEFAULT")
+        store._conn.commit()
+    except Exception:
+        store._conn.rollback()
 
 
 if __name__ == "__main__":

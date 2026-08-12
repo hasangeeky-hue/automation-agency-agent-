@@ -48,6 +48,12 @@ def main() -> int:
     for jid, typ, why in cur.fetchall():
         print(f"  {jid} | {typ}\n      {why}")
 
+    print("\n--- the two freshest corpses, FULL reason ---")
+    cur.execute("SELECT job_id, data->>'halt_reason' FROM jobs "
+                "WHERE status='failed' ORDER BY updated_at DESC LIMIT 2")
+    for jid, why in cur.fetchall():
+        print(f"  {jid}:\n    {why}")
+
     print("\n--- waiting for YOUR approval right now ---")
     cur.execute("SELECT job_id, type, updated_at FROM jobs "
                 "WHERE status='AWAITING_APPROVAL' ORDER BY updated_at")

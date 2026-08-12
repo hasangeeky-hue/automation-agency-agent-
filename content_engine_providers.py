@@ -309,6 +309,13 @@ def build_prompt(skill_name: str, job: dict) -> PromptSpec:
          "cache_control": {"type": "ephemeral"}},
     ]
 
+    # The API refuses a system block whose text is empty (400), and one
+    # empty block kills the whole call. A block with nothing to say is
+    # dropped; the skill block always survives (guarded non-empty above),
+    # so the cache_control marker on it survives too.
+    system_blocks = [b for b in system_blocks
+                     if str(b.get("text") or "").strip()]
+
     # Uncached user turn = only the tiny per-job INPUT.
     user_content = "INPUT:\n" + json.dumps(payload, ensure_ascii=False)
 
