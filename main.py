@@ -60,8 +60,8 @@ def make_store():
 
 
 def run(store) -> None:
-    idle = float(os.getenv("POLL_IDLE_SECS", "2.0"))
-    busy = float(os.getenv("POLL_BUSY_SECS", "0.1"))
+    idle = float((os.getenv("POLL_IDLE_SECS") or "").strip() or "2.0")
+    busy = float((os.getenv("POLL_BUSY_SECS") or "").strip() or "0.1")
     run_once = os.getenv("RUN_ONCE") == "1"
 
     loops = 0

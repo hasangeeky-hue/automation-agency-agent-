@@ -33,8 +33,8 @@ from content_engine_learning import get_playbook
 # Each image costs about EUR 0.04, so four is roughly EUR 0.16 a piece — 4x
 # what a single hero cost. Env-overridable rather than hard-coded, because
 # that multiplier belongs to whoever pays the monthly cap.
-_IMAGES_PER_PIECE = max(1, int(os.getenv("IMAGES_PER_PIECE", "4")))
-_SECTIONS_PER_PIECE = max(1, int(os.getenv("SECTIONS_PER_PIECE", "4")))
+_IMAGES_PER_PIECE = max(1, int((os.getenv("IMAGES_PER_PIECE") or "").strip() or "4"))
+_SECTIONS_PER_PIECE = max(1, int((os.getenv("SECTIONS_PER_PIECE") or "").strip() or "4"))
 _MIN_WORDS = {"blog": 650, "guide": 900, "service": 500}
 
 _LENGTH_BY_TYPE = {

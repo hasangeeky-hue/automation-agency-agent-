@@ -1012,6 +1012,27 @@ try:
           OR17.advance(_j17, _mst) == "failed"
           and "no step for status" in _j17.get("halt_reason", "")
           and _j17.get("needs_human") is True)
+
+    # A budget var that is PRESENT BUT EMPTY in .env means "not set",
+    # never "crash at import". The founder blanked the caps to decide
+    # later and the worker refused to start: float('') at line one.
+    import subprocess as _sp17
+    import os as _os17
+    _env17 = dict(_os17.environ)
+    for _k in ("PER_JOB_BUDGET_USD", "PER_DAY_BUDGET_USD",
+               "PER_MONTH_BUDGET_USD", "MEASURE_AFTER_DAYS",
+               "AUTONOMY_GRACE_HOURS", "POLL_IDLE_SECS",
+               "LLM_TIMEOUT_S", "IMAGES_PER_PIECE"):
+        _env17[_k] = ""
+    _r17 = _sp17.run(
+        ["python", "-c",
+         "import content_engine_orchestrator as o, "
+         "content_engine_providers, content_engine_prep; "
+         "print(o.PER_MONTH_BUDGET_USD)"],
+        capture_output=True, text=True, env=_env17, timeout=120)
+    check("AN EMPTY BUDGET VAR MEANS DEFAULT, NEVER A DEAD WORKER",
+          _r17.returncode == 0 and "200.0" in _r17.stdout,
+          (_r17.stderr or "")[-110:])
     _due17 = SC17.seo_due(_st17)
     _on = (not _sw["paused"]) and bool(_sw["cadence_on"])
     print("       engine: " + ("ON, supervised" if _on else "OFF")

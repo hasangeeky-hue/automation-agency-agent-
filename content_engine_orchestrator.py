@@ -133,9 +133,13 @@ ROUTES = {
 # budget_caps() on every check so a change in the dashboard takes effect on the
 # worker's next loop without a restart — the same settings-first path every
 # credential uses.
-PER_JOB_BUDGET_USD = float(os.getenv("PER_JOB_BUDGET_USD", "0.50"))
-PER_DAY_BUDGET_USD = float(os.getenv("PER_DAY_BUDGET_USD", "50.00"))
-PER_MONTH_BUDGET_USD = float(os.getenv("PER_MONTH_BUDGET_USD", "200.00"))
+# A var that is PRESENT BUT EMPTY in deploy/.env means "not set".
+# float("") took the whole worker down at import: the founder
+# blanked the budget lines to decide caps later, and the engine
+# answered by refusing to start. Empty falls back to the default.
+PER_JOB_BUDGET_USD = float((os.getenv("PER_JOB_BUDGET_USD") or "").strip() or "0.50")
+PER_DAY_BUDGET_USD = float((os.getenv("PER_DAY_BUDGET_USD") or "").strip() or "50.00")
+PER_MONTH_BUDGET_USD = float((os.getenv("PER_MONTH_BUDGET_USD") or "").strip() or "200.00")
 BUDGET_KEY = "engine_budget_caps"
 BUDGET_LOG_KEY = "engine_budget_log"
 
@@ -217,7 +221,7 @@ def budget_log(store) -> list:
 # How long a published piece / sent campaign collects real traffic BEFORE the
 # measurement gate opens automatically. This makes "wait N days" a real elapsed
 # time, independent of how often the cron/worker ticks.
-MEASURE_AFTER_DAYS = float(os.getenv("MEASURE_AFTER_DAYS", "7"))
+MEASURE_AFTER_DAYS = float((os.getenv("MEASURE_AFTER_DAYS") or "").strip() or "7")
 # ...but a page and an email do not answer on the same schedule. An email is
 # opened within days; a page has to be indexed and start ranking before its
 # numbers mean anything, so measuring content at 7 days mostly measures how
@@ -1031,7 +1035,7 @@ def approve(job_id: str, store: JobStore) -> None:
 
 # How long a piece waits for a human before autonomy releases it (Phase 2:
 # "if I don't respond, the agent runs the plan on its own").
-AUTONOMY_GRACE_HOURS = float(os.getenv("AUTONOMY_GRACE_HOURS", "24"))
+AUTONOMY_GRACE_HOURS = float((os.getenv("AUTONOMY_GRACE_HOURS") or "").strip() or "24")
 
 
 def auto_approve_stale(store: JobStore) -> int:

@@ -67,14 +67,14 @@ from typing import Optional
 log = logging.getLogger("connectors")
 
 # Sensible timeouts so a slow endpoint never hangs the worker.
-_HTTP_TIMEOUT = float(os.getenv("CONNECTOR_HTTP_TIMEOUT", "20"))
+_HTTP_TIMEOUT = float((os.getenv("CONNECTOR_HTTP_TIMEOUT") or "").strip() or "20")
 # Image GENERATION is not an API lookup. gpt-image-1 routinely takes 30-90
 # seconds to draw a picture, and the 20-second connector timeout above was
 # applied to it unchanged - so the call could never have succeeded, whatever
 # key was in the slot. A timeout is a claim about how long the work takes;
 # using one number for a status check and for drawing an image was that claim
 # being wrong by a factor of four.
-_IMAGE_TIMEOUT = float(os.getenv("IMAGE_TIMEOUT_S", "180"))
+_IMAGE_TIMEOUT = float((os.getenv("IMAGE_TIMEOUT_S") or "").strip() or "180")
 _UA = "AnthroposContentEngine/1.0 (+https://anthropos-automation.com)"
 
 

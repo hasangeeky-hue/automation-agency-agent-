@@ -406,7 +406,7 @@ _anthropic_client = None
 # output at all - indistinguishable from a crash, and the reason a probe run
 # looks frozen. The orchestrator already retries once and falls back to a second
 # model, so failing fast is strictly better than waiting.
-LLM_TIMEOUT_S = float(os.getenv("LLM_TIMEOUT_S", "240"))
+LLM_TIMEOUT_S = float((os.getenv("LLM_TIMEOUT_S") or "").strip() or "240")
 
 
 def _get_anthropic():
