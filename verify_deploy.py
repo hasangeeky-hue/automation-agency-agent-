@@ -1048,6 +1048,29 @@ try:
     check("and it raises BudgetExceeded, never a job-killing error",
           "_is_credit_exhaustion(str(e))" in _pvsrc
           and "raise BudgetExceeded(" in _pvsrc)
+
+    # A READ MUST NOT HOLD THE TABLE. Every read left its transaction
+    # open, so an api process that had merely looked at a job sat idle
+    # in transaction holding a lock: init_db's DDL deadlocked against
+    # it and the dashboard hung on a page that never rendered.
+    import inspect as _insp17
+    import content_engine_store_pg as PG17b
+    _leaks = [n for n in ("get", "list_jobs", "get_setting",
+                          "daily_cost", "monthly_cost")
+              if "_end_read()" not in
+              _insp17.getsource(getattr(PG17b.PgJobStore, n))]
+    check("EVERY READ CLOSES ITS TRANSACTION (no idle-in-transaction)",
+          not _leaks, str(_leaks))
+    check("and claim_next still keeps its row lock until save",
+          "_end_read()" not in
+          _insp17.getsource(PG17b.PgJobStore.claim_next))
+    if _st17 is not None and hasattr(_st17, "_conn"):
+        _st17.get_setting("paused", None)
+        check("a live read leaves the connection IDLE, not in a "
+              "transaction",
+              int(_st17._conn.info.transaction_status) == 0,
+              "transaction_status="
+              + str(_st17._conn.info.transaction_status))
     _due17 = SC17.seo_due(_st17)
     _on = (not _sw["paused"]) and bool(_sw["cadence_on"])
     print("       engine: " + ("ON, supervised" if _on else "OFF")

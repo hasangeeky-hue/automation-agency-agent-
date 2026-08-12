@@ -28,9 +28,39 @@ def main() -> int:
             else:
                 refused.append(str(r.get("message"))[:100])
 
+    # A REVIVAL THAT REPORTS SUCCESS MUST PROVE IT. The first run said
+    # 60 and the next read showed the same 60 dead - a claim nobody had
+    # checked. Now the script re-reads one revived job on a FRESH
+    # connection and prints what the database actually holds.
+    proof = ""
+    if revived:
+        jid = revived[0][0]
+        try:
+            import os
+
+            import psycopg
+            dsn = getattr(store, "_dsn", None) or os.environ["DATABASE_URL"]
+            with psycopg.connect(dsn) as c2:
+                with c2.cursor() as c2c:
+                    c2c.execute("SELECT status, updated_at FROM jobs "
+                                "WHERE job_id = %s", (jid,))
+                    row = c2c.fetchone()
+            if row and str(row[0]) not in ("failed", "halted_budget"):
+                proof = (f"PERSISTED: {jid} now reads '{row[0]}' in the "
+                         f"database (updated {row[1]}).")
+            else:
+                proof = (f"NOT PERSISTED: {jid} still reads "
+                         f"'{row[0] if row else 'missing'}'. The revival "
+                         "did not reach the database - do not trust the "
+                         "count above.")
+        except Exception as exc:                      # noqa: BLE001
+            proof = "could not verify: " + repr(exc)[:120]
+
     print("=" * 70)
     print(f"REVIVED {len(revived)} job(s); the worker picks them up "
           "within seconds.")
+    if proof:
+        print(proof)
     for jid, at in revived[:15]:
         print(f"  {jid} resumes at '{at}'")
     if len(revived) > 15:

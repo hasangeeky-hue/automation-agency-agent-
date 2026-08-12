@@ -126,10 +126,26 @@ class PgJobStore:
         self._conn.commit()
 
     # -- read ----------------------------------------------------------------
+    def _end_read(self) -> None:
+        """CLOSE THE TRANSACTION A READ OPENED.
+
+        psycopg opens a transaction on the first statement and holds it
+        until commit or rollback. Every read below used to end without
+        either, so an api process that had merely LOOKED at a job sat
+        'idle in transaction' forever, holding a lock on the table. That
+        is what deadlocked init_db's DDL, and what left the dashboard
+        hanging on a page that never rendered. A read has nothing to
+        commit, so it rolls back."""
+        try:
+            self._conn.rollback()
+        except Exception:                             # noqa: BLE001
+            pass
+
     def get(self, job_id: str) -> dict:
         with self._conn.cursor() as cur:
             cur.execute("SELECT data FROM jobs WHERE job_id = %s", (job_id,))
             row = cur.fetchone()
+        self._end_read()
         if row is None:
             raise KeyError(job_id)
         return row[0]
@@ -154,6 +170,7 @@ class PgJobStore:
                 cur.execute("SELECT data FROM jobs WHERE status = %s "
                             "ORDER BY updated_at DESC LIMIT 500", (status,))
             rows = cur.fetchall()
+        self._end_read()
         return [r[0] for r in rows]
 
     # -- budget --------------------------------------------------------------
@@ -166,6 +183,7 @@ class PgJobStore:
         with self._conn.cursor() as cur:
             cur.execute("SELECT cost FROM daily_cost WHERE day = %s", (date.today(),))
             row = cur.fetchone()
+        self._end_read()
         return float(row[0]) if row else 0.0
 
     def monthly_cost(self) -> float:
@@ -176,6 +194,7 @@ class PgJobStore:
             cur.execute("SELECT COALESCE(SUM(cost), 0) FROM daily_cost WHERE day >= %s",
                         (first,))
             row = cur.fetchone()
+        self._end_read()
         return float(row[0]) if row else 0.0
 
     def get_setting(self, key: str, default=None):
@@ -183,6 +202,7 @@ class PgJobStore:
         with self._conn.cursor() as cur:
             cur.execute("SELECT value FROM settings WHERE key = %s", (key,))
             row = cur.fetchone()
+        self._end_read()
         return row[0] if row else default
 
     def set_setting(self, key: str, value) -> None:
