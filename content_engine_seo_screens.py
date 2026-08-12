@@ -1279,7 +1279,7 @@ JS = ("<script>"
       "function ssDecay(a,btn){ssPost('/seo/crawl',{},btn,"
       "'Re-crawl to see what has decayed?');}"
       # nothing serves these yet - each says so instead of failing quietly
-      "function ssReport(a){uiNotWired('Build a report')}"
+      "function ssReport(a,btn){ssPost('/seo/report',{},btn);}"
       "function ssBriefFill(a){uiNotWired('Generate the missing brief parts')}"
       # /seo/brief exists now, so these save for real
       "function ssBrief(k){var t=prompt('The brief for '+(k||'this page')+':');"

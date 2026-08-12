@@ -715,13 +715,33 @@ t("A PAGE WITH FEWER CLICKS AND MORE CONVERSIONS RANKS HIGHER",
   _bf.index("/small") < _bf.index("/big"))
 t("and a page with no conversion data says so instead of showing zero",
   "no conversions joined" in _bf)
-t("the agent centre lists agents that are declared but not wired",
-  "declared, not wired" in SS8.agent_centre(_r12))
+# THE ROSTER IS ASKED, NOT TYPED. This used to assert that some agents
+# read "declared, not wired" - true when a hand-written tuple of four
+# names decided it, and false the moment the roster was derived from
+# what actually imports. What must hold is the HONESTY, not the count:
+# every agent names the function behind it, and one whose module is
+# missing must say so rather than be quietly counted as wired.
+_wiring8 = SS8.agent_wiring()
+t("every declared agent resolves to real, callable code",
+  all(v[0] == "wired" for v in _wiring8.values()),
+  str([k for k, v in _wiring8.items() if v[0] != "wired"]))
+t("and each agent names the function that backs it",
+  all("(" in v[1] for v in _wiring8.values()))
+t("an agent pointing at a missing module is NOT counted as wired",
+  SS8.AGENT_IMPL and (lambda saved: (
+      SS8.AGENT_IMPL.__setitem__("RankAgent", ("no_such_module_xyz", "f")),
+      SS8.agent_wiring()["RankAgent"][0] != "wired",
+      SS8.AGENT_IMPL.__setitem__("RankAgent", saved))[1])(
+          SS8.AGENT_IMPL["RankAgent"]))
 t("and the wired count is stated honestly",
   str(len(SS8.AGENTS_WIRED)) + " of " + str(len(SS8.AGENTS))
   in SS8.agent_centre(_r12))
-t("fewer agents are wired than declared, and the screen admits it",
-  len(SS8.AGENTS_WIRED) < len(SS8.AGENTS))
+# This asserted that the roster must be INCOMPLETE, which stopped being
+# a virtue the moment every agent resolved. What still matters is that
+# the screen states the count rather than implying completeness.
+t("the screen states how many of the declared agents are wired",
+  str(len(SS8.AGENTS_WIRED)) + " of " + str(len(SS8.AGENTS))
+  in SS8.agent_centre(_r12))
 _sec12 = SEO6.seo_section({"search_totals": {"clicks": 900}})
 _pp12 = _Panels()
 _pp12.feed(_sec12)

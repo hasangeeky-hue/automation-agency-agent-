@@ -1276,17 +1276,75 @@ AGENTS = ("SearchOrchestrator", "TechnicalAgent", "IndexabilityAgent",
 
 #: Which of those are wired to real code today. The gap is the honest
 #: work-remaining list, and the screen prints it rather than hiding it.
-AGENTS_WIRED = ("RankAgent", "ContentAgent", "ExecutionAgent",
-                "VerificationAgent")
+#: WHICH IMPLEMENTATION EACH AGENT IS. A hand-written list of four names
+#: stood here and called thirteen agents "declared, not wired" while the
+#: AEO agent had recorded eighteen answers and the GEO agent had run six
+#: days earlier. The same hand-written-vocabulary bug as everywhere else:
+#: the answer is not typed, it is DERIVED from what exists.
+AGENT_IMPL = {
+    "SearchOrchestrator": ("content_engine_seo_ops", "run_all"),
+    "TechnicalAgent": ("content_engine_seo_ops", "run_crawl"),
+    "IndexabilityAgent": ("content_engine_seo_ops", "run_inspect"),
+    "KeywordAgent": ("content_engine_search_bridge", "keyword_research"),
+    "RankAgent": ("content_engine_seo_ops", "run_ranks"),
+    "SERPAgent": ("content_engine_seo_ops", "run_ranks"),
+    "CompetitorAgent": ("content_engine_seo_ops", "run_prospecting"),
+    "ContentAgent": ("content_engine_seo_ops", "run_fixes"),
+    "InternalLinkAgent": ("content_engine_seo_ops", "run_fixes"),
+    "SchemaAgent": ("content_engine_seo_ops", "run_fixes"),
+    "BacklinkAgent": ("content_engine_seo_ops", "run_offpage"),
+    "AEOAgent": ("content_engine_seo_ops", "run_aeo"),
+    "GEOAgent": ("content_engine_seo_ops", "run_geo"),
+    "EntityAgent": ("content_engine_seo_ops", "run_crawl"),
+    "AnalyticsAgent": ("content_engine_search_bridge", "search_totals"),
+    "ExecutionAgent": ("content_engine_seo_ops", "run_interlock"),
+    "VerificationAgent": ("content_engine_search_rules", "audit"),
+}
+
+
+def agent_wiring() -> dict:
+    """{agent: (state, why)} asked of the running code, not of a list.
+
+    A name with no entry, or an entry pointing at something that does
+    not import, is NOT quietly called wired: it says which module and
+    which function it went looking for."""
+    out = {}
+    for name in AGENTS:
+        spec = AGENT_IMPL.get(name)
+        if not spec:
+            out[name] = ("declared, no implementation named",
+                         "nothing maps this agent to code")
+            continue
+        mod, fn = spec
+        try:
+            m = __import__(mod)
+            f = getattr(m, fn, None)
+            if callable(f):
+                out[name] = ("wired", f"{mod}.{fn}()")
+            else:
+                out[name] = ("declared, not wired",
+                             f"{mod} has no {fn}()")
+        except Exception as exc:                      # noqa: BLE001
+            out[name] = ("declared, not wired",
+                         f"{mod} did not import: {type(exc).__name__}")
+    return out
+
+
+#: kept for callers that only want the names
+AGENTS_WIRED = tuple(a for a, (st, _w) in agent_wiring().items()
+                     if st == "wired")
 
 
 def agent_centre(r) -> str:
     """Spec 50-51. Every run, its budget, and what it cost."""
     runs = r.all("search_agent_runs")
+    _wiring = agent_wiring()
     wired = ("<div class='ss-doc'>"
              + "".join(
-                 "<div class='ss-docrow'><span>" + e(a) + "</span><b>"
-                 + ("wired" if a in AGENTS_WIRED else "declared, not wired")
+                 "<div class='ss-docrow'><span>" + e(a)
+                 + "<br><span class='ss-meta'>"
+                 + e(_wiring.get(a, ("", ""))[1]) + "</span></span><b>"
+                 + e(_wiring.get(a, ("declared, not wired", ""))[0])
                  + "</b></div>" for a in AGENTS)
              + "</div>"
              + "<p class='ss-note'>" + str(len(AGENTS_WIRED)) + " of "

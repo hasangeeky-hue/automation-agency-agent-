@@ -183,6 +183,84 @@ def edit_plan(store, row_id: str, field: str, value: str) -> Dict[str, Any]:
                                    f"'{value}'"}
 
 
+def build_report(store, window_days: int = 30) -> Dict[str, Any]:
+    """A search report from what was actually measured.
+
+    THE REPORT IS NOT A NARRATIVE. It carries the numbers with their
+    sources, the engines that ran with when they last ran, and a list of
+    what it could NOT report on. A report that quietly omits its gaps
+    reads as completeness, which is the one thing it must never do."""
+    ins = _d(_get(store, "google_insights", {}))
+    runs = _d(_get(store, "seo_engine_runs", {}))
+    sections, missing = [], []
+
+    try:
+        import content_engine_search_bridge as BR
+        ctx = {"insights": ins}
+        totals = _d(BR.search_totals(ctx))
+        if totals:
+            sections.append({
+                "title": "Search performance",
+                "source": "Google Search Console (clicks, impressions, "
+                          "position) and GA4 (sessions)",
+                "rows": [
+                    {"metric": "Clicks", "value": totals.get("clicks")},
+                    {"metric": "Impressions",
+                     "value": totals.get("impressions")},
+                    {"metric": "CTR %", "value": totals.get("ctr")},
+                    {"metric": "Average position (impression-weighted)",
+                     "value": totals.get("position")},
+                    {"metric": "Organic sessions",
+                     "value": totals.get("sessions"),
+                     "note": _s(totals.get("sessions_note"))},
+                ]})
+        else:
+            missing.append("search performance: no Search Console pull has "
+                           "landed yet")
+    except Exception as exc:                          # noqa: BLE001
+        missing.append(f"search performance: {type(exc).__name__}")
+
+    if runs:
+        sections.append({
+            "title": "Engines that ran",
+            "source": "this engine's own run stamps",
+            "rows": [{"metric": k, "value": _s(v)[:16]}
+                     for k, v in sorted(runs.items())]})
+    else:
+        missing.append("engine history: nothing has run yet")
+
+    aeo = _d(_get(store, "aeo_visibility", {}))
+    if aeo:
+        sections.append({
+            "title": "AI answer visibility",
+            "source": "prompts asked of the connected AI engines",
+            "rows": [{"metric": k, "value": v}
+                     for k, v in list(aeo.items())[:8]
+                     if not isinstance(v, (dict, list))]})
+    else:
+        missing.append("AI visibility: no probe has been recorded")
+
+    bt = _d(_get(store, "business_type", {}))
+    if bt.get("type"):
+        sections.append({
+            "title": "What this business is",
+            "source": "the CMS catalogue and search intent",
+            "rows": [{"metric": "Type", "value": _s(bt.get("type"))},
+                     {"metric": "Confidence",
+                      "value": _s(bt.get("confidence"))},
+                     {"metric": "Because", "value": _s(bt.get("why"))}]})
+
+    report = {"at": _now(), "window_days": int(window_days),
+              "sections": sections,
+              "not_reported": missing,
+              "why": ("every figure names its source; what could not be "
+                      "measured is listed rather than left out")}
+    _set(store, "seo_report", report)
+    return {"ok": True, "report": report,
+            "message": (f"report built: {len(sections)} section(s), "
+                        f"{len(missing)} thing(s) it could not report on")}
+
+
 # ==========================================================================
 # QUOTAS - a free API still stops answering
 # ==========================================================================

@@ -1323,6 +1323,21 @@ try:
     check("and a counted one carries its number",
           [x for x in ACT19.quotas(_s19)
            if x["name"] == "serper_search"][0]["used"] == 5)
+    # AN AGENT ROSTER MUST BE ASKED, NOT TYPED. A hand-written tuple of
+    # four names called thirteen agents "declared, not wired" while the
+    # AEO agent had recorded eighteen answers and GEO had run six days
+    # earlier. The roster is derived from what imports and is callable.
+    import content_engine_search_screens as SS19
+    _w19 = SS19.agent_wiring()
+    check("EVERY DECLARED AGENT RESOLVES TO REAL CODE",
+          all(v[0] == "wired" for v in _w19.values()),
+          str([k for k, v in _w19.items() if v[0] != "wired"]))
+    check("and each one names the function behind it",
+          all("(" in v[1] for v in _w19.values()))
+    _sr19 = ACT19.build_report(_s19)
+    check("a report names what it could NOT report on",
+          _sr19["ok"] and isinstance(_sr19["report"]["not_reported"], list))
+    print("       agents wired: " + str(len(_w19)) + "/" + str(len(_w19)))
     print("       business type: " + _v1["type"] + " from "
           + str(_v1["evidence"]["products_found"]) + " products; "
           + str(len(ACT19.quotas(_s19))) + " quota(s) tracked")

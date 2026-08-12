@@ -2948,6 +2948,13 @@ def build_app():
         return ACT.edit_plan(get_store(), b.get("id"), b.get("field"),
                              b.get("value") or "")
 
+    @app.post("/seo/report")
+    def seo_report():
+        """Build a search report from what was actually measured, and
+        list what it could not report on."""
+        import content_engine_actions as ACT
+        return ACT.build_report(get_store())
+
     @app.post("/factory/run")
     def factory_run():
         """Run the Content Factory's own agents once. They draft and
