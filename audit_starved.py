@@ -45,6 +45,9 @@ SCREENS = [
 
 #: modules that BUILD context (supply side)
 BUILDERS = [
+    # the module written to answer this audit: it supplies the keys the
+    # rebuilt boards read and the old builders never wrote
+    "content_engine_feeds.py",
     "content_engine_seo_ops.py",
     "content_engine_os.py",
     "content_engine_search_bridge.py",

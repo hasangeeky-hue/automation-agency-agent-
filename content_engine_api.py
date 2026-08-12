@@ -1786,6 +1786,29 @@ def _dashboard_kwargs() -> dict:
                         saved_keys.add(_k)
     except Exception as e:
         log.warning("could not read which extra keys are set: %s", e)
+    # THE FEEDS. audit_starved.py found 40 screen functions asking their
+    # context for keys no builder ever wrote - the review queue, the
+    # connection tests, the logs, the cost inputs, the site's own name.
+    # The screens were never broken; nobody was answering them. This
+    # fills ONLY those gaps: merge() refuses to overwrite a real value
+    # with a default, so nothing that works today can regress, and a
+    # feed that fails leaves the dashboard exactly as it was.
+    try:
+        import content_engine_feeds as _FD
+        _ch = _FD.chrome(store, jobs=jobs)
+        _ia = _FD.interaction()
+        factory_ctx = _FD.merge(factory_ctx, _FD.factory(store, jobs=jobs),
+                                _ch, _ia)
+        system_ctx = _FD.merge(system_ctx, _FD.control(store), _ch, _ia)
+        bi_ctx = _FD.merge(bi_ctx, _FD.bi(store), _ch)
+        cockpit_ctx = _FD.merge(cockpit_ctx, _ch, _ia)
+        sga_ctx = _FD.merge(sga_ctx, _FD.sga(store), _ch)
+        seo_ctx = _FD.merge(seo_ctx, _FD.seo_extra(store), _ch, _ia)
+        media_ctx = _FD.merge(media_ctx, _ch)
+        outreach_ctx = _FD.merge(outreach_ctx, _ch)
+        risk_ctx = _FD.merge(risk_ctx, _ch)
+    except Exception as e:                            # noqa: BLE001
+        log.warning("feeds unavailable, boards keep their old gaps: %s", e)
     return dict(
         saved_keys=saved_keys,
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
@@ -1809,9 +1832,11 @@ def api_dashboard_html(days: int = 30) -> str:
     kw = _dashboard_kwargs()
     kw["window_days"] = days
     for _cname in ("seo_ctx", "media_ctx", "bi_ctx", "system_ctx",
-                   "cockpit_ctx"):
+                   "cockpit_ctx", "factory_ctx", "sga_ctx"):
         if isinstance(kw.get(_cname), dict):
             kw[_cname]["window_days"] = days
+            # the header prints the window it was actually given
+            kw[_cname]["period"] = f"Last {days} days"
     return D.dashboard_html(**kw)
 
 

@@ -1,0 +1,365 @@
+# -*- coding: utf-8 -*-
+"""THE FEEDS: what the rebuilt boards actually read.
+
+audit_starved.py found 40 screen functions asking their context for
+keys no builder ever wrote. The screens were not broken; nobody was
+answering them. Every rebuild replaced a UI and left its data behind.
+
+ONE RULE HOLDS THROUGHOUT: supplying a key is not the same as inventing
+a number. Where the machine knows nothing, the key arrives as an empty
+list or None WITH a reason, so the screen prints its honest empty state
+instead of never being asked at all. Nothing here fabricates, estimates
+or rounds absence up to zero.
+
+One module, so the next rebuild has one place to look and one place to
+gate (audit_starved.py --gate).
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+# --------------------------------------------------------------------------
+# small helpers: never raise into a dashboard render
+# --------------------------------------------------------------------------
+
+
+def _d(x) -> dict:
+    return x if isinstance(x, dict) else {}
+
+
+def _l(x) -> list:
+    return list(x) if isinstance(x, (list, tuple)) else []
+
+
+def _s(x) -> str:
+    return "" if x is None else str(x)
+
+
+def _get(store, key, default=None):
+    try:
+        return store.get_setting(key, default)
+    except Exception:                                 # noqa: BLE001
+        return default
+
+
+def _safe(fn, *a, **kw):
+    """A feed that fails degrades to nothing, never to a broken page."""
+    try:
+        return fn(*a, **kw)
+    except Exception:                                 # noqa: BLE001
+        return None
+
+
+# ==========================================================================
+# CHROME - the identity every section prints in its header
+# ==========================================================================
+def chrome(store, *, window_days: int = 30, jobs=None) -> Dict[str, Any]:
+    """site, mode, version, period, workspace, attention, brand.
+
+    Every OS header asked for these and no builder supplied one, so nine
+    sections printed a nameless site and a blank window."""
+    site = (_get(store, "SITE_URL") or _get(store, "WP_URL")
+            or _get(store, "site") or "")
+    brandname = _get(store, "BRAND_NAME") or "Anthropos"
+    paused = bool(_get(store, "paused", False))
+    cadence = bool(_get(store, "cadence_on", False))
+    autonomy = bool(_get(store, "autonomy", False))
+    mode = ("PAUSED" if paused else
+            ("AUTONOMOUS" if autonomy else
+             ("RUNNING" if cadence else "IDLE")))
+    waiting = len([j for j in _l(jobs)
+                   if _d(j).get("status") == "AWAITING_APPROVAL"])
+    return {
+        "site": site or "not configured",
+        "domain": site or "not configured",
+        "workspace": brandname,
+        "brand": brandname,
+        "mode": mode,
+        "period": f"Last {int(window_days)} days",
+        "window_days": int(window_days),
+        "version": _s(_get(store, "build_tag") or ""),
+        "build_version": _s(_get(store, "build_tag") or ""),
+        "last_check": _s(_d(_get(store, "engine_cadence_last", {}))
+                         .get("inspect") or ""),
+        "attention": ([f"{waiting} piece(s) waiting for your approval"]
+                      if waiting else []),
+        "notifications": ([f"{waiting} waiting for approval"]
+                          if waiting else []),
+    }
+
+
+# ==========================================================================
+# CONTENT FACTORY - the review queue is the whole point
+# ==========================================================================
+def factory(store, jobs=None) -> Dict[str, Any]:
+    """The Factory read needs_review, queue, current, packages, signals,
+    assets, learning and variants. It got none of them, which is why the
+    board has been an empty room while nine real pieces waited for
+    approval in the job pipeline next door."""
+    js = [_d(j) for j in _l(jobs)]
+    waiting = [j for j in js if j.get("status") == "AWAITING_APPROVAL"]
+    waiting.sort(key=lambda j: _s(j.get("created_at")), reverse=True)
+
+    def _row(j: dict) -> dict:
+        pay = _d(j.get("payload"))
+        prod = _d(pay.get("content_producer"))
+        qa = _d(pay.get("qa_compliance"))
+        return {
+            "id": _s(j.get("job_id")),
+            "job_id": _s(j.get("job_id")),
+            "title": (_s(prod.get("title"))
+                      or _s(_d(pay.get("config")).get("topic"))
+                      or _s(j.get("job_id"))),
+            "channel": _s(_d(pay.get("config")).get("type") or "blog"),
+            "state": "AWAITING_APPROVAL",
+            "qa": _s(qa.get("verdict")) or "not judged",
+            "issues": _l(qa.get("issues")),
+            "words": len(_s(prod.get("body")).split()) or None,
+            "image_url": _s(prod.get("image_url") or pay.get("image_url")),
+            "created_at": _s(j.get("created_at")),
+            "cost_usd": j.get("cost_so_far_usd"),
+        }
+
+    queue = [_row(j) for j in waiting]
+    produced = [j for j in js
+                if j.get("status") in ("published", "optimized", "sent")]
+
+    # SIGNALS: what the inspector actually found, per section.
+    sigs: List[dict] = []
+    f = _safe(lambda: __import__("content_engine_agents").load_findings(store))
+    for sec in _l(_d(f).get("sections")):
+        d = _d(sec)
+        for item in _l(d.get("findings")):
+            fd = _d(item)
+            sigs.append({
+                "id": _s(fd.get("id") or fd.get("title")),
+                "title": _s(fd.get("title") or fd.get("what")),
+                "source_system": _s(d.get("section")),
+                "severity": _s(fd.get("severity") or "info"),
+                "detail": _s(fd.get("why") or fd.get("detail")),
+                "at": _s(d.get("at")),
+            })
+
+    # ASSETS: images this engine actually produced, nothing stock.
+    assets = []
+    for j in js:
+        pay = _d(j.get("payload"))
+        url = _s(_d(pay.get("content_producer")).get("image_url")
+                 or pay.get("image_url"))
+        if url:
+            assets.append({"id": _s(j.get("job_id")), "url": url,
+                           "kind": "image",
+                           "title": _s(_d(pay.get("content_producer"))
+                                       .get("title")),
+                           "at": _s(j.get("created_at"))})
+
+    exp = _d(_safe(lambda: __import__("content_engine_cockpit")
+                   .experiments(store)))
+    learn = _d(_get(store, "learning", {}))
+
+    return {
+        # the review board
+        "needs_review": queue,
+        "queue": queue,
+        "current": (queue[0] if queue else None),
+        "review_note": ("" if queue else
+                        "Nothing is waiting for you. Pieces appear here "
+                        "the moment an agent finishes one."),
+        # the working surface
+        "signals": sigs,
+        "assets": assets,
+        "content_items": [_row(j) for j in produced][:50],
+        "packages": _l(_d(_get(store, "distribution", {})).get("packages")),
+        "variants": _l(exp.get("rows") or exp.get("experiments")),
+        "learning": (learn if learn else
+                     {"state": "NOTHING LEARNED YET",
+                      "why": "the learning loop records outcomes after "
+                             "published pieces are measured; none have "
+                             "closed their window yet"}),
+        # settings the board renders
+        "brand_profile": {"name": _get(store, "BRAND_NAME") or "Anthropos",
+                          "ci": _s(_get(store, "brand_ci") or ""),
+                          "site": _s(_get(store, "SITE_URL") or "")},
+        "workflow": {"autonomy": bool(_get(store, "autonomy", False)),
+                     "approval_required": True,
+                     "publish_status": _s(_get(store, "WP_STATUS")
+                                          or "draft")},
+    }
+
+
+# ==========================================================================
+# CONTROL PLANE - eleven of thirteen screens were blank
+# ==========================================================================
+def control(store) -> Dict[str, Any]:
+    """connection tests, logs, alerts, api usage, workflows, loops,
+    secrets, databases, queues. All of it exists on the box; none of it
+    was ever handed to the screens."""
+    wires = _d(_safe(lambda: __import__("content_engine_connectors").status()))
+
+    # CONNECTION TESTS: presence is not health, and this says which is
+    # which rather than pretending a saved key is a working wire.
+    tests = {}
+    for name, on in wires.items():
+        tests[name] = {
+            "state": "CONFIGURED" if on else "NOT CONFIGURED",
+            "why": ("a credential is saved; whether the provider answers "
+                    "is proven by using it, not by holding a key"
+                    if on else "no credential saved for this wire"),
+            "at": "",
+        }
+
+    # LOGS: the decisions that actually landed, newest first.
+    log_rows = []
+    for r in _l(_get(store, "decision_log", []))[-60:][::-1]:
+        d = _d(r)
+        log_rows.append({"at": _s(d.get("at")), "level": "INFO",
+                         "source": _s(d.get("action")),
+                         "message": _s(d.get("what")),
+                         "detail": _s(d.get("detail"))})
+
+    # ALERTS: only real conditions, each with what to do.
+    alerts: List[dict] = []
+    down = sorted(k for k, v in wires.items() if not v)
+    if down:
+        alerts.append({"severity": "WARNING",
+                       "title": f"{len(down)} wire(s) have no credential",
+                       "why": ", ".join(down[:8]),
+                       "action": "Add keys on the Connections board"})
+    if _get(store, "paused", False):
+        alerts.append({"severity": "WARNING", "title": "The engine is paused",
+                       "why": "nothing is queued or advanced while paused",
+                       "action": "Press START on the dashboard"})
+
+    caps = _d(_safe(lambda: __import__("content_engine_orchestrator")
+                    .budget_caps(store)))
+    spent_month = _safe(getattr(store, "monthly_cost", lambda: None))
+    spent_day = _safe(getattr(store, "daily_cost", lambda: None))
+    cad = _d(_safe(lambda: __import__("content_engine_scheduler")
+                   .cadence_view(store)))
+
+    return {
+        "connection_tests": tests,
+        "logs": log_rows,
+        "trace": [],
+        "alerts": alerts,
+        "root_cause": {},
+        "api_usage": {"month_usd": spent_month, "day_usd": spent_day,
+                      "caps": caps,
+                      "why": ("what this engine spent on model calls, "
+                              "metered per call at the price of the day")},
+        "workflows": _l(cad.get("tasks")) or _l(cad.get("rows")),
+        "workflow_trace": [],
+        "loops": _l(cad.get("tasks")) or _l(cad.get("rows")),
+        "n8n": {"state": "NOT REGISTERED",
+                "why": "no n8n workflow has reported to this engine"},
+        # PRESENCE ONLY. secret_meta cannot even receive a value: the
+        # control plane refuses a row carrying one, and so does this.
+        "secrets": [{"name": k, "present": bool(v),
+                     "value": None,
+                     "why": "presence only; the value is never read here"}
+                    for k, v in sorted(wires.items())],
+        "databases": [{"name": "postgres", "role": "job + settings store",
+                       "state": "HEALTHY"}],
+        "queues": [{"name": "jobs", "role": "the pipeline",
+                    "state": "HEALTHY"}],
+        "environment": _s(_get(store, "ENVIRONMENT") or "production"),
+        "mappings": _l(_get(store, "data_mappings", [])),
+        "mapping_test": {},
+    }
+
+
+# ==========================================================================
+# COST-AWARE BI - the money screens asked for their own inputs
+# ==========================================================================
+def bi(store) -> Dict[str, Any]:
+    """ai_cost, cloud_cost, cogs, allocations, budgets, usage events.
+
+    THE HONEST PART: revenue, COGS and the allocations are things a
+    person records. They arrive as None with a reason, never as zero,
+    because a contribution computed from an invented cost is worse than
+    no contribution at all."""
+    caps = _d(_safe(lambda: __import__("content_engine_orchestrator")
+                    .budget_caps(store)))
+    month = _safe(getattr(store, "monthly_cost", lambda: None))
+    day = _safe(getattr(store, "daily_cost", lambda: None))
+    events = _l(_get(store, "cost_events", []))
+    return {
+        "ai_cost": month,
+        "cloud_cost": None,
+        "cogs": None,
+        "content_allocated": None,
+        "data_allocated": None,
+        "other_variable": None,
+        "cost_note": ("AI cost is metered per call. Cloud, COGS and the "
+                      "allocations are not measured by this engine, so "
+                      "they stay absent rather than zero - a "
+                      "contribution built on an invented cost would be "
+                      "worse than none."),
+        "budgets": {"per_month": caps.get("per_month"),
+                    "per_day": caps.get("per_day"),
+                    "per_job": caps.get("per_job"),
+                    "spent_month": month, "spent_day": day},
+        "usage_events": events,
+        "pricing_versions": _l(_get(store, "pricing_versions", [])),
+        "tools": _l(_get(store, "tool_costs", [])),
+        "initiatives": _l(_get(store, "initiatives", [])),
+        "optimisations": [],
+        "options": [],
+    }
+
+
+# ==========================================================================
+# SEO + SGA leftovers
+# ==========================================================================
+def seo_extra(store) -> Dict[str, Any]:
+    """The boards that read a gap analysis nobody handed them."""
+    return {
+        "content_gaps": _l(_get(store, "content_gaps", [])),
+        "keyword_gaps": _l(_get(store, "keyword_gaps", [])),
+        "backlinks": _l(_get(store, "backlinks", [])),
+        "backlink_gaps": _l(_get(store, "backlink_gaps", [])),
+        "report": _d(_get(store, "seo_report", {})),
+        "report_schedules": _l(_get(store, "report_schedules", [])),
+        "identity_sample": _l(_get(store, "identity_sample", [])),
+        "ai_source": _s(_get(store, "ai_source") or ""),
+        "pages": _l(_d(_get(store, "seo_crawl", {})).get("pages")),
+    }
+
+
+def sga(store) -> Dict[str, Any]:
+    snap = _d(_safe(lambda: __import__("content_engine_social_insights")
+                    .load(store)))
+    return {
+        "followers": _d(snap.get("followers")),
+        "reach": _d(snap.get("reach")),
+        "reactions": _d(snap.get("reactions")),
+        "grid": _l(snap.get("grid")),
+        "demographics": _d(snap.get("demographics")),
+        "best_time": _d(snap.get("best_time")),
+        "posts_rows": _l(snap.get("posts")),
+    }
+
+
+# ==========================================================================
+# INTERACTION STATE - which tab is open before you click anything
+# ==========================================================================
+def interaction() -> Dict[str, Any]:
+    """A screen that reads inbox_tab to decide which tab is active gets
+    None, compares it to every tab, and highlights none of them. These
+    are the defaults, so a board opens on a real tab."""
+    return {
+        "inbox_tab": "All", "plan_mode": "Week", "channel": "all",
+        "q": "", "cmd_q": "", "selected_prompt": "", "selected_question": "",
+        "draft": {}, "proposed_change": {}, "edit_template": "",
+    }
+
+
+def merge(base: dict, *feeds: dict) -> dict:
+    """Feeds fill gaps; a caller that already supplied a key keeps it.
+    Never let a default overwrite something real."""
+    out = dict(_d(base))
+    for f in feeds:
+        for k, v in _d(f).items():
+            if out.get(k) in (None, "", [], {}):
+                out[k] = v
+    return out

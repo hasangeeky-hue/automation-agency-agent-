@@ -502,7 +502,7 @@ def decision_log_zone(ctx) -> str:
     """Every decision that LANDED, dated: approvals, budget changes,
     publishes. Suggestions live in the queue; deeds live here."""
     lg = _d(_d(ctx).get("log"))
-    head = "<div class='ck-card'><p class='ck-h'>Decision Log</p>"
+    head = "<div class='ck-card'><p class='ck-h1'>Decision Log</p>"
     if not lg.get("has_data"):
         return (head + empty("No decision recorded yet. Approve, set a "
                              "budget or publish and it lands here, "
@@ -533,7 +533,7 @@ def connections_zone(ctx) -> str:
     """Which wires are live, from the same connector status map the
     Control Plane reads. Presence only; a value never renders here."""
     w = _d(_d(ctx).get("wires"))
-    head = "<div class='ck-card'><p class='ck-h'>Connections</p>"
+    head = "<div class='ck-card'><p class='ck-h1'>Connections</p>"
     if not w:
         return (head + empty("No wire status supplied on this render. "
                              "The Control Plane's Connections screen is "

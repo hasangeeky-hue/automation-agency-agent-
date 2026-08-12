@@ -1081,6 +1081,58 @@ try:
 except Exception as exc:                              # noqa: BLE001
     check("the wiring switches read back", False, repr(exc)[:110])
 
+# ------------------------------------------------ the starved boards
+head("18. EVERY BOARD IS FED (AND NOTHING WAS INVENTED)")
+try:
+    import subprocess as _sp18
+    import content_engine_feeds as FD18
+    import content_engine_orchestrator as OR18
+    import content_engine_factory_boards as FB18
+
+    _st18 = OR18.InMemoryJobStore()
+    _jobs18 = [{"job_id": "probe_piece", "type": "content_piece",
+                "status": "AWAITING_APPROVAL",
+                "created_at": "2026-01-01T00:00:00",
+                "payload": {"content_producer": {"title": "A REAL TITLE",
+                                                 "body": "a b c"},
+                            "qa_compliance": {"verdict": "pass"},
+                            "config": {"type": "blog"}}}]
+    _f18 = FD18.factory(_st18, jobs=_jobs18)
+    check("THE REVIEW QUEUE CARRIES THE PIECES WAITING FOR YOU",
+          len(_f18["needs_review"]) == 1
+          and _f18["current"]["title"] == "A REAL TITLE")
+    _sec18 = FB18.factory_section(FD18.merge(
+        {}, _f18, FD18.chrome(_st18, jobs=_jobs18), FD18.interaction()))
+    check("and the Content Factory RENDERS it, not an empty room",
+          "A REAL TITLE" in _sec18)
+
+    _b18 = FD18.bi(_st18)
+    check("an unmeasured cost stays ABSENT, never zero",
+          _b18["cogs"] is None and _b18["cloud_cost"] is None
+          and "invented cost" in _b18["cost_note"])
+    _c18 = FD18.control(_st18)
+    check("a secret travels as PRESENCE, never as a value",
+          all(s.get("value") is None for s in _c18["secrets"]))
+    check("configured is not the same word as working",
+          all(t["state"] in ("CONFIGURED", "NOT CONFIGURED")
+              for t in _c18["connection_tests"].values()))
+    check("a real value always beats a feed default",
+          FD18.merge({"site": "mine.com"},
+                     {"site": "not configured"})["site"] == "mine.com")
+
+    _r18 = _sp18.run(["python", "audit_starved.py"],
+                     capture_output=True, text=True, timeout=180)
+    _last = [x for x in (_r18.stdout or "").splitlines()
+             if "screen functions read" in x]
+    _n18 = int(_last[0].split(" of ")[0]) if _last else -1
+    check("NO SCREEN READS A KEY NOTHING SUPPLIES",
+          _n18 == 0, (_last[0] if _last else "audit did not report"))
+    print("       " + (_last[0] if _last else "audit silent")
+          + " | factory queue: "
+          + str(len(_f18["needs_review"])) + " piece(s)")
+except Exception as exc:                              # noqa: BLE001
+    check("the feeds answered", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:
