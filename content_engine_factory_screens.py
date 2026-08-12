@@ -850,6 +850,40 @@ def review(ctx=None) -> str:
                       "was not recorded."
                       if current else "Select an item to preview it.")
                    + "</p>")
+    # THE PIECE AS IT WILL LOOK, per channel. previews() has rendered a
+    # blog page, a LinkedIn card and the rest on every load for months
+    # and no screen ever read it, so a reviewer approved a table of raw
+    # text instead of the thing that goes out.
+    _pv = _d(c.get("previews"))
+    _byp = _d(_pv.get("by_platform"))
+    if _byp:
+        out.append("<p class='cf-meta'>How it will look</p>")
+        for _plat, _data in _byp.items():
+            _pd = _d(_data)
+            _html = _s(_pd.get("html"))
+            if not _html:
+                continue
+            _fails = [x for x in _l(_pd.get("checks"))
+                      if isinstance(x, (list, tuple)) and len(x) > 1
+                      and not x[1]]
+            out.append("<div class='cf-blk'><header><b>"
+                       + e(_s(_plat).title()) + "</b> "
+                       + "<span class='cf-meta'>"
+                       + (str(_pd.get("words")) + " words"
+                          if _pd.get("words") else "")
+                       + (" &middot; " + str(len(_fails)) + " check(s) not met"
+                          if _fails else " &middot; every check met")
+                       + "</span></header><div>" + _html + "</div>")
+            for _ch in _fails[:4]:
+                out.append("<p class='cf-note cf-wa'>" + e(_s(_ch[0])) + ": "
+                           + e(_s(_ch[2] if len(_ch) > 2 else "")) + "</p>")
+            out.append("</div>")
+        if _pv.get("blocked"):
+            out.append("<p class='cf-note cf-wa'>Not previewable here: "
+                       + e(", ".join(_s(b) for b in _l(_pv.get("blocked"))))
+                       + " &mdash; those channels need media this piece "
+                         "does not carry.</p>")
+        out.append("<p class='cf-meta'>The words themselves</p>")
     for b in blocks:
         _txt = _s(b.get("text"))
         out.append("<div class='cf-blk'><header><b>" + e(b.get("type"))

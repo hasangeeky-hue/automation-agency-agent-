@@ -180,8 +180,26 @@ function cfRejectDiff(id,btn){var n=prompt('Why? (recorded so the engine learns)
 /* opening a piece is a URL, so the view survives a reload */
 function cfPreview(id){cfTab('piece',id);}
 function cfToReview(id){cfTab('piece',id);}
-/* no endpoint serves these yet - each names itself instead of failing quietly */
-function cfUpload(a){uiNotWired('Upload an asset');}
+/* A REAL FILE PICKER. /os/upload/image takes multipart, so this opens
+   the OS dialog and posts the file itself rather than describing one. */
+function cfUpload(a){
+  var i=document.createElement('input');i.type='file';
+  i.accept='image/png,image/jpeg,image/webp,image/gif';
+  i.onchange=function(){
+    var f=i.files&&i.files[0];if(!f)return;
+    if(f.size>8*1024*1024){if(window.toast)toast('That file is larger than 8 MB.');return;}
+    var fd=new FormData();fd.append('file',f,f.name);
+    if(window.toast)toast('Uploading '+f.name+'…');
+    fetch('/os/upload/image',{method:'POST',body:fd})
+      .then(function(r){return r.json().catch(function(){return {};});})
+      .then(function(j){
+        var ok=(j.ok!==false)&&!j.error;
+        if(window.toast)toast(ok?('Uploaded: '+(j.url||f.name)):('Upload failed: '+(j.error||'unknown')));
+        if(ok&&window.keepPlace)keepPlace();})
+      .catch(function(e){if(window.toast)toast('Upload failed: '+e);});};
+  i.click();
+}
+/* no endpoint serves this yet - it names itself instead of failing quietly */
 function cfAnalyzeInbox(a){uiNotWired('Analyze the inbox');}
 function cfAct(a){uiNotWired('That card action');}
 function cfBlock(a){uiNotWired('Edit a block');}

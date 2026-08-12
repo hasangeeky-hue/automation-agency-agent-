@@ -201,6 +201,25 @@ def factory(store, jobs=None, piece_id: str = "") -> Dict[str, Any]:
                                        .get("title")),
                            "at": _s(j.get("created_at"))})
 
+    # HOW THE PIECE WILL ACTUALLY LOOK. previews() renders the piece per
+    # channel - a blog page, a LinkedIn card, an email - and has been
+    # computed on every render for months with NO screen reading it. The
+    # reviewer got a table of raw text instead of the thing they are
+    # approving.
+    _cur = chosen or (queue[0] if queue else None)
+    previews = {}
+    if _cur:
+        _cj = next((j for j in js
+                    if _s(j.get("job_id")) == _s(_cur.get("job_id"))), {})
+        _prod = _d(_d(_cj.get("payload")).get("content_producer"))
+        _chan = [_s(_cur.get("channel") or "website")]
+        if "blog" in _chan or "guide" in _chan:
+            _chan = ["website"]
+        previews = _d(_safe(
+            lambda: __import__("content_engine_factory").previews(
+                _prod, _chan + ["linkedin"],
+                keyword=_s(_prod.get("target_keyword")))))
+
     exp = _d(_safe(lambda: __import__("content_engine_cockpit")
                    .experiments(store)))
     learn = _d(_get(store, "learning", {}))
@@ -209,7 +228,8 @@ def factory(store, jobs=None, piece_id: str = "") -> Dict[str, Any]:
         # the review board
         "needs_review": queue,
         "queue": queue,
-        "current": (chosen or (queue[0] if queue else None)),
+        "current": _cur,
+        "previews": previews,
         "review_note": ("" if queue else
                         "Nothing is waiting for you. Pieces appear here "
                         "the moment an agent finishes one."),
@@ -311,7 +331,44 @@ def control(store) -> Dict[str, Any]:
         "queues": [{"name": "jobs", "role": "the pipeline",
                     "state": "HEALTHY"}],
         "environment": _s(_get(store, "ENVIRONMENT") or "production"),
-        "mappings": _l(_get(store, "data_mappings", [])),
+        # DECLARED, because section 113 forbids a black box. These are
+        # the joins this engine actually performs; anything not listed
+        # here is a field it does not read.
+        "mappings": _l(_get(store, "data_mappings", [])) or [
+            {"provider": "Google Search Console", "provider_field": "clicks",
+             "transformation": "DIRECT", "internal_field": "search.clicks",
+             "used_by": ["Search Analytics", "Command Center"],
+             "required": True},
+            {"provider": "Google Search Console",
+             "provider_field": "position",
+             "transformation": "WEIGHTED BY IMPRESSIONS",
+             "internal_field": "search.position",
+             "used_by": ["Search Analytics", "Position Tracking"],
+             "required": True},
+            {"provider": "Google Search Console", "provider_field": "keys[0]",
+             "transformation": "EXACT MATCH ON QUERY",
+             "internal_field": "search.query",
+             "used_by": ["Keyword Explorer"], "required": True},
+            {"provider": "GA4",
+             "provider_field": "sessionDefaultChannelGroup",
+             "transformation": "EXACT MATCH 'Organic Search'",
+             "internal_field": "search.organic_sessions",
+             "used_by": ["Search Funnel"], "required": False},
+            {"provider": "Anthropic API", "provider_field": "usage.*_tokens",
+             "transformation": "PRICED AT THE MONTH'S RATE",
+             "internal_field": "cost.event", "used_by": ["Costs",
+                                                         "Agent Economics"],
+             "required": True},
+            {"provider": "Google Ads", "provider_field": "metrics.costMicros",
+             "transformation": "MICROS / 1e6",
+             "internal_field": "media.spend",
+             "used_by": ["Media Command Center", "Executive"],
+             "required": False},
+            {"provider": "WordPress", "provider_field": "link",
+             "transformation": "DIRECT", "internal_field": "piece.url",
+             "used_by": ["Content Factory", "Post-publish"],
+             "required": False},
+        ],
         "mapping_test": {},
     }
 
@@ -331,7 +388,31 @@ def bi(store) -> Dict[str, Any]:
     month = _safe(getattr(store, "monthly_cost", lambda: None))
     day = _safe(getattr(store, "daily_cost", lambda: None))
     events = _l(_get(store, "cost_events", []))
+    # DATA AND TOOL HEALTH were printing NOT CHECKED while the answers
+    # existed: the search bridge computes source freshness on every
+    # render and connectors.status() knows which providers are
+    # configured. Neither was ever handed to BI.
+    sources = _l(_safe(lambda: __import__("content_engine_search_bridge")
+                       .source_state(
+                           _d(_get(store, "google_insights", {}))))) or []
+    wires = _d(_safe(lambda: __import__("content_engine_connectors").status()))
+    tools = [{"name": k, "state": ("CONFIGURED" if v else "NOT CONFIGURED"),
+              "why": ("a credential is saved; only using it proves the "
+                      "provider answers" if v else "no credential saved")}
+             for k, v in sorted(wires.items())]
     return {
+        "data_health": ({"sources": sources,
+                         "state": "REPORTED",
+                         "why": (str(len(sources)) + " source(s) reported "
+                                 "their freshness")}
+                        if sources else {}),
+        "tool_health": ({"tools": tools, "state": "REPORTED",
+                         "why": (str(sum(1 for t in tools
+                                         if t["state"] == "CONFIGURED"))
+                                 + " of " + str(len(tools))
+                                 + " wires hold a credential")}
+                        if tools else {}),
+        "sources": sources,
         "ai_cost": month,
         "cloud_cost": None,
         "cogs": None,

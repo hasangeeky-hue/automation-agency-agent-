@@ -584,10 +584,34 @@ def over_budget(job: dict, store: JobStore) -> Optional[str]:
     return None
 
 
-def log_cost(job: dict, model: str, cost: float, store: JobStore) -> None:
+def log_cost(job: dict, model: str, cost: float, store: JobStore,
+             skill: str = "") -> None:
     job["cost_so_far_usd"] = round(job.get("cost_so_far_usd", 0.0) + cost, 6)
     job.setdefault("model_log", []).append({"model": model, "cost_usd": cost})
     store.add_daily_cost(cost)
+    # A DAILY TOTAL CANNOT ANSWER "WHICH AGENT COST THAT". Spend was
+    # metered as one running number, so Costs, Agent Economics and Cost
+    # Health had nothing to read and said "no usage events yet" while
+    # the engine was busy spending. Each call now leaves an event.
+    try:
+        _set = getattr(store, "set_setting", None)
+        _get = getattr(store, "get_setting", None)
+        if callable(_set) and callable(_get):
+            from datetime import datetime, timezone
+            rows = list(_get("cost_events", []) or [])
+            rows.append({
+                "at": datetime.now(timezone.utc).isoformat(),
+                "model": str(model),
+                "skill": str(skill or job.get("_current_skill") or ""),
+                "job_id": str(job.get("job_id") or ""),
+                "job_type": str(job.get("type") or ""),
+                "cost": round(float(cost or 0.0), 6),
+                "quality": "MEASURED",
+                "metadata": {"category": "AI"},
+            })
+            _set("cost_events", rows[-500:])
+    except Exception:                                 # noqa: BLE001
+        pass
     try:                                   # per-API meter: Claude/Anthropic spend
         import content_engine_connectors as _C
         _C.record_api_spend("anthropic", cost)
@@ -837,7 +861,8 @@ def advance(job: dict, store: JobStore) -> str:
                 if reason:
                     raise BudgetExceeded(f"{job['job_id']}: {reason}")
                 data, cost = _LLM_HOOK(job, step.skill, store)
-                log_cost(job, ROUTES[step.skill]["engine"], cost, store)
+                log_cost(job, ROUTES[step.skill]["engine"], cost, store,
+                         skill=step.skill)
                 job["payload"][step.skill] = data
                 if step.verdict_routed:                # qa_compliance
                     if data.get("verdict") == "pass":

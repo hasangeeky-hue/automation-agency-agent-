@@ -1143,6 +1143,27 @@ try:
           "function ssRerun(" in _ss18 and "/aeo/probe" in _ss18)
     print("       " + (_tot[0] if _tot else "button audit silent"))
 
+    # A REVIEWER APPROVES A THING, NOT A TABLE. previews() renders the
+    # piece per channel and had been computed on every load for months
+    # with no screen reading it.
+    _pv18 = _d18 = _f18.get("previews") or {}
+    check("THE REVIEW BOARD SHOWS THE PIECE AS IT WILL LOOK",
+          bool((_pv18.get("by_platform") or {}))
+          and "How it will look" in _sec18)
+    # a daily total cannot answer "which agent cost that"
+    _j18 = {"job_id": "probe_cost", "type": "content_piece", "payload": {}}
+    OR18.log_cost(_j18, "claude-haiku-4-5", 0.0101, _st18,
+                  skill="content_producer")
+    _ev18 = _st18.get_setting("cost_events", [])
+    check("EVERY MODEL CALL LEAVES A COST EVENT, not just a daily total",
+          bool(_ev18) and _ev18[-1]["skill"] == "content_producer"
+          and _ev18[-1]["cost"] == 0.0101)
+    _bi18 = FD18.bi(_st18)
+    check("Data and Tool Health are answered, not NOT CHECKED",
+          bool(_bi18.get("tool_health")) and bool(_bi18.get("usage_events")))
+    check("and the data mapping is declared, not a black box",
+          len(FD18.control(_st18).get("mappings") or []) >= 5)
+
     _b18 = FD18.bi(_st18)
     check("an unmeasured cost stays ABSENT, never zero",
           _b18["cogs"] is None and _b18["cloud_cost"] is None
