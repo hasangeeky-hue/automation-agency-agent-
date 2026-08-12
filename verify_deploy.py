@@ -1194,6 +1194,28 @@ try:
     check("and the build carries its stamp",
           bool(_ch18.get("version")))
 
+    # A REFUSED CREDENTIAL IS NOT A LIVE WIRE. Google refused the Ads
+    # OAuth client every hour ("the OAuth client was not found") while
+    # the board counted that wire among the twenty live ones. The engine
+    # recorded the refusal all along; nothing showed it.
+    import content_engine_connectors as CN18
+    CN18.note_auth("ads_api", False, 401, "probe: the provider refused")
+    _ct18 = FD18.control(_st18).get("connection_tests") or {}
+    check("A REFUSED CREDENTIAL READS AS REJECTED, NOT CONFIGURED",
+          (_ct18.get("ads_api") or {}).get("state") == "REJECTED",
+          str((_ct18.get("ads_api") or {}).get("state")))
+    check("and it carries the provider's own reason",
+          "refused" in ((_ct18.get("ads_api") or {}).get("why") or ""))
+
+    # a dict is not a sentence
+    import content_engine_media_center as MC18
+    _mk18 = MC18.section({"markets": [
+        {"market": "Germany", "verdict": "paid is the only way",
+         "language": "de", "organic_pages": 0, "organic_impressions": 2,
+         "paid_is_only_lever": True}]})
+    check("MARKET RECORDS RENDER AS A TABLE, never as raw Python",
+          "{'market'" not in _mk18 and "Germany" in _mk18)
+
     _b18 = FD18.bi(_st18)
     check("an unmeasured cost stays ABSENT, never zero",
           _b18["cogs"] is None and _b18["cloud_cost"] is None
@@ -1201,9 +1223,15 @@ try:
     _c18 = FD18.control(_st18)
     check("a secret travels as PRESENCE, never as a value",
           all(s.get("value") is None for s in _c18["secrets"]))
-    check("configured is not the same word as working",
-          all(t["state"] in ("CONFIGURED", "NOT CONFIGURED")
-              for t in _c18["connection_tests"].values()))
+    # THREE WORDS, NOT TWO. A wire the provider actually refused is
+    # neither configured nor unconfigured: it is rejected, and saying so
+    # is the whole point (Google was refusing the Ads client hourly
+    # while the board counted it live).
+    check("configured, not configured, and REJECTED are distinct",
+          all(t["state"] in ("CONFIGURED", "NOT CONFIGURED", "REJECTED")
+              for t in _c18["connection_tests"].values()),
+          str(sorted({t["state"]
+                      for t in _c18["connection_tests"].values()})))
     check("a real value always beats a feed default",
           FD18.merge({"site": "mine.com"},
                      {"site": "not configured"})["site"] == "mine.com")

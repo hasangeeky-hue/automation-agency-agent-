@@ -298,17 +298,29 @@ def control(store) -> Dict[str, Any]:
     was ever handed to the screens."""
     wires = _d(_safe(lambda: __import__("content_engine_connectors").status()))
 
-    # CONNECTION TESTS: presence is not health, and this says which is
-    # which rather than pretending a saved key is a working wire.
+    # CONNECTION TESTS. A SAVED KEY IS NOT A WORKING WIRE, and the
+    # engine already knows the difference: every real call records what
+    # the provider said, and auth_reasons() carries the refusals in
+    # plain English. Google was refusing the Ads OAuth client every hour
+    # ("the OAuth client was not found") while this board counted that
+    # wire among the twenty live ones.
+    refused = _d(_safe(lambda: __import__("content_engine_connectors")
+                       .auth_reasons()))
     tests = {}
     for name, on in wires.items():
-        tests[name] = {
-            "state": "CONFIGURED" if on else "NOT CONFIGURED",
-            "why": ("a credential is saved; whether the provider answers "
-                    "is proven by using it, not by holding a key"
-                    if on else "no credential saved for this wire"),
-            "at": "",
-        }
+        why = _s(refused.get(name))
+        if why:
+            tests[name] = {"state": "REJECTED", "why": why, "at": ""}
+        elif on:
+            tests[name] = {
+                "state": "CONFIGURED",
+                "why": ("a credential is saved and nothing has refused it; "
+                        "using it is what proves it"),
+                "at": ""}
+        else:
+            tests[name] = {"state": "NOT CONFIGURED",
+                           "why": "no credential saved for this wire",
+                           "at": ""}
 
     # LOGS: the decisions that actually landed, newest first.
     log_rows = []

@@ -1805,10 +1805,34 @@ def s_comp(r, ctx) -> str:
             if grows else
             "<p class='mc-empty'>no GEO market audit yet</p>")
     mk = _L(ctx.get("markets"))
-    mtab = ("<p class='mc-note'>markets in play: "
-            + e(", ".join(str(m) for m in mk[:10])) + "</p>"
-            if mk else "<p class='mc-empty'>no markets recorded in the "
-                       "cross-channel snapshot</p>")
+    # A DICT IS NOT A SENTENCE. This printed str(m) over a list of market
+    # records, so the board showed raw Python - {'market': 'Germany',
+    # 'verdict': ...} - over the most useful judgement in the section:
+    # which markets you can reach organically and which are paid-only.
+    if mk and all(isinstance(m, dict) for m in mk):
+        mtab = table(
+            ("market", "language", "organic pages", "impressions",
+             "what that means"),
+            [(e(str(m.get("market") or m.get("name") or "")),
+              e(str(m.get("language") or "")),
+              _n(m.get("organic_pages")),
+              _n(m.get("organic_impressions")),
+              e(str(m.get("verdict") or m.get("note") or "")[:120]))
+             for m in mk[:12]],
+            "no markets recorded in the cross-channel snapshot")
+        _paid_only = [str(m.get("market") or "") for m in mk
+                      if m.get("paid_is_only_lever")]
+        if _paid_only:
+            mtab += ("<p class='mc-note'>Paid is the only lever in "
+                     + e(", ".join(_paid_only))
+                     + ": there is no content in that language yet, so "
+                       "organic cannot reach those buyers today.</p>")
+    elif mk:
+        mtab = ("<p class='mc-note'>markets in play: "
+                + e(", ".join(str(m) for m in mk[:10])) + "</p>")
+    else:
+        mtab = ("<p class='mc-empty'>no markets recorded in the "
+                "cross-channel snapshot</p>")
     recs_d = _D(ctx.get("recs"))
     recs = _L(recs_d.get("recommendations"))
     rtab = (table(("google recommends", "note"),
