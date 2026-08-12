@@ -859,10 +859,15 @@ def review(ctx=None) -> str:
         # APPROVING IS A HUMAN ACTION, and it belongs beside the words it
         # applies to. The endpoint is the same one the queue has always
         # used; nothing here can approve on your behalf.
-        out.append("<div class='cf-row' style='margin-top:10px'>"
-                   "<button class='cf-btn cf-btn-human' onclick=\"act('/jobs/"
-                   + e(_s(current.get("job_id"))) + "/approve')\">"
-                   "Approve and publish</button>"
+        _jid2 = e(_s(current.get("job_id")))
+        out.append("<div class='cf-row' style='margin-top:10px;gap:6px'>"
+                   "<span><button class='cf-btn cf-btn-human' "
+                   "onclick=\"cfApprove('" + _jid2 + "',this)\">"
+                   "Approve and publish</button> "
+                   "<button class='cf-btn' onclick=\"cfRequestChanges('"
+                   + _jid2 + "',this)\">Request changes</button> "
+                   "<button class='cf-btn' onclick=\"cfReject('"
+                   + _jid2 + "',this)\">Reject</button></span>"
                    "<span class='cf-meta'>publishes to your site; "
                    "nothing is sent without this click</span></div>")
     out.append("</div></div>")

@@ -1119,6 +1119,30 @@ try:
           "Approve and publish" in _sec18
           and "/approve" in _sec18)
 
+    # A BUTTON THAT DOES NOTHING SILENTLY. The founder clicked one and
+    # got a promise ("goes live in the wiring round") while /aeo/probe
+    # had been serving the whole time. Worse: the Review board's own
+    # Approve, Reject and Request-changes handlers were defined NOWHERE,
+    # so the one screen where decisions are made ate every click.
+    _rb18 = _sp18.run(["python", "audit_buttons.py"],
+                      capture_output=True, text=True, timeout=180)
+    _tot = [x for x in (_rb18.stdout or "").splitlines()
+            if "broken," in x and "wired," in x]
+    _nb = int(_tot[0].split(" broken")[0]) if _tot else -1
+    _nu = int(_tot[0].split(",")[2].strip().split(" ")[0]) if _tot else -1
+    check("NO BUTTON CALLS AN ENDPOINT THAT DOES NOT EXIST",
+          _nb == 0, (_tot[0] if _tot else "audit did not report"))
+    check("AND NO BUTTON IS SILENTLY UNDEFINED",
+          _nu == 0, (_tot[0] if _tot else ""))
+    _fu18 = open("content_engine_factory_ui.py", encoding="utf-8").read()
+    check("approving is a named human click on a real endpoint",
+          "function cfApprove(" in _fu18
+          and "/approve" in _fu18 and "confirm(" in _fu18)
+    _ss18 = open("content_engine_seo_screens.py", encoding="utf-8").read()
+    check("and the AI-visibility re-run reaches /aeo/probe",
+          "function ssRerun(" in _ss18 and "/aeo/probe" in _ss18)
+    print("       " + (_tot[0] if _tot else "button audit silent"))
+
     _b18 = FD18.bi(_st18)
     check("an unmeasured cost stays ABSENT, never zero",
           _b18["cogs"] is None and _b18["cloud_cost"] is None

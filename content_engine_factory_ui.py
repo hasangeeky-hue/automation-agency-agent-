@@ -117,19 +117,82 @@ function cfGo(id){
     a.classList.toggle('on', a.dataset.cf === id); });
 }
 
-/* Buttons the screens emit whose actions wait on the wiring
-   round. Silent dead buttons read as broken; these say so. */
-function uiNotWired(n){var m=n+': the button is real, its wire is not connected yet. It goes live in the wiring round.';if(window.toast)toast(m);else alert(m);}
-function cfAdd(a){uiNotWired('cfAdd')}
-function cfAnalyzeInbox(a){uiNotWired('cfAnalyzeInbox')}
-function cfCreate(a){uiNotWired('cfCreate')}
-function cfDist(a){uiNotWired('cfDist')}
-function cfGenImage(a){uiNotWired('cfGenImage')}
-function cfInboxTab(a){uiNotWired('cfInboxTab')}
-function cfLib(a){uiNotWired('cfLib')}
-function cfPlanMode(a){uiNotWired('cfPlanMode')}
-function cfPlanWeek(a){uiNotWired('cfPlanWeek')}
-function cfUpload(a){uiNotWired('cfUpload')}
+/* THE WIRING ROUND ARRIVED, so these stopped being promises. Each one
+   posts to an endpoint this API already serves; the two that have no
+   endpoint still say so rather than pretending. */
+function uiNotWired(n){var m=n+': there is no endpoint for this yet. It is on the build list, not silently broken.';if(window.toast)toast(m);else alert(m);}
+function cfPost(u,body,btn,ask){
+  if(ask&&!confirm(ask))return;
+  var b=btn||(window.event&&window.event.target)||null;
+  if(b&&b.tagName!=='BUTTON'&&b.closest)b=b.closest('button');
+  var old=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Working…';}
+  fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},
+           body:JSON.stringify(body||{})})
+    .then(function(r){return r.json().catch(function(){return {};});})
+    .then(function(j){
+      var ok=(j.ok!==false)&&!j.error;
+      if(window.toast)toast(ok?(j.message||'Done.'):('Failed: '+(j.error||'unknown')));
+      if(ok&&window.keepPlace)keepPlace();
+      else if(b){b.disabled=false;b.textContent=old;}})
+    .catch(function(e){if(window.toast)toast('Failed: '+e);
+      if(b){b.disabled=false;b.textContent=old;}});
+}
+/* A DECISION IS A HUMAN ACTION and it needs a named human. These three
+   were called by the Review board and defined NOWHERE: clicking Approve
+   did absolutely nothing, silently, on the one screen where you decide. */
+function cfApprove(id,btn){cfPost('/jobs/'+encodeURIComponent(id)+'/approve',{},btn,
+  'Approve this piece? It publishes to your site.');}
+function cfApproveSend(id,btn){cfPost('/jobs/'+encodeURIComponent(id)+'/approve',{},btn,
+  'Approve this piece? Anything addressed to people still waits for a separate send.');}
+function cfReject(id,btn){var n=prompt('Why are you rejecting it? (recorded so the engine learns)');
+  if(n===null)return;cfPost('/jobs/'+encodeURIComponent(id)+'/decline',{note:n},btn);}
+function cfRequestChanges(id,btn){var n=prompt('What should change?');
+  if(!n)return;cfPost('/proposal',{job_id:id,accept:false,note:n},btn);}
+/* Production */
+function cfCreate(a,btn){var t=prompt('What should it be about?');if(!t)return;
+  cfPost('/jobs',{type:'content_piece',payload:{config:{topic:t,type:'blog'}}},btn);}
+function cfAdd(a,btn){cfCreate(a,btn);}
+function cfPlanWeek(a,btn){cfPost('/plan/content',{},btn,
+  'Plan a week of content? It costs one LLM call and writes nothing until you approve.');}
+function cfGenImage(a,btn){cfPost('/content/test-image',{},btn,
+  'Generate one image? It costs about EUR 0.04.');}
+/* Local tab switches: a URL, so the tab survives a reload */
+function cfTab(param,v){try{var u=new URL(window.location.href);
+  u.searchParams.set(param,v);window.location.href=u.toString();}catch(e){}}
+function cfInboxTab(t){cfTab('inbox_tab',t);}
+function cfPlanMode(m){cfTab('plan_mode',m);}
+function cfLib(t){cfTab('lib_tab',t);}
+function cfDist(t){cfTab('dist_tab',t);}
+/* THE ORPHANS. Eighteen handlers were called by these screens and
+   defined nowhere: every click was a silent no-op. Wired where the
+   endpoint is unambiguous; where it is not, the button SAYS so, because
+   a button wired to the wrong endpoint is worse than a dead one. */
+function cfPlan(a,btn){cfPost('/plan/content',{},btn,
+  'Plan content now? It costs one LLM call and writes nothing until you approve.');}
+function cfAcceptAll(a,btn){cfPost('/plan/approve',{},btn,
+  'Approve the whole plan?');}
+function cfRejectPlan(a,btn){cfPost('/plan/clear',{},btn,
+  'Clear the current plan?');}
+function cfAcceptDiff(id,btn){cfPost('/proposal',{job_id:id,accept:true},btn);}
+function cfAcceptSel(id,btn){cfPost('/proposal',{job_id:id,accept:true},btn);}
+function cfRejectDiff(id,btn){var n=prompt('Why? (recorded so the engine learns)');
+  if(n===null)return;cfPost('/proposal',{job_id:id,accept:false,note:n},btn);}
+/* opening a piece is a URL, so the view survives a reload */
+function cfPreview(id){cfTab('piece',id);}
+function cfToReview(id){cfTab('piece',id);}
+/* no endpoint serves these yet - each names itself instead of failing quietly */
+function cfUpload(a){uiNotWired('Upload an asset');}
+function cfAnalyzeInbox(a){uiNotWired('Analyze the inbox');}
+function cfAct(a){uiNotWired('That card action');}
+function cfBlock(a){uiNotWired('Edit a block');}
+function cfSave(a){uiNotWired('Save an edited piece');}
+function cfEditDiff(a){uiNotWired('Edit this change');}
+function cfEditPlan(a){uiNotWired('Edit the plan');}
+function cfCompare(a){uiNotWired('Compare variants');}
+function cfVariants(a){uiNotWired('Variants');}
+function cfVary(a){uiNotWired('Make a variant');}
+function cfDismiss(a){uiNotWired('Dismiss a signal');}
+function cfRestore(a){uiNotWired('Restore a version');}
 </script>"""
 
 
