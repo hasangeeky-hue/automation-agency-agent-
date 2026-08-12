@@ -503,23 +503,48 @@ def cms(ctx) -> str:
     return "manual"
 
 
+def _age_hours(at: str):
+    """Hours since a pull, or None when nothing was ever pulled."""
+    if not at:
+        return None
+    try:
+        from datetime import datetime, timezone
+        t = datetime.fromisoformat(str(at).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - t).total_seconds()
+                   / 3600.0)
+    except Exception:                                 # noqa: BLE001
+        return None
+
+
 def source_state(ctx) -> list:
-    """What is connected, for the freshness bar and the report caveat."""
+    """What is connected, for the freshness bar and the report caveat.
+
+    THE SHAPE IS THE CONTRACT. The freshness bar does not print this
+    verdict - it RE-DERIVES it from `connected` and `age_hours` through
+    its own resolver of the same name. This function emitted `state`
+    and neither field, so the bar saw no credential and declared three
+    live sources NEVER CONNECTED while Search Console was handing over
+    fourteen queries across twenty-two days. Two functions, one name,
+    incompatible shapes: the oldest bug in this codebase.
+    """
     ins = _d(_d(ctx).get("insights"))
-    at = str(ins.get("at") or "")[:16]
+    at = str(ins.get("at") or "")[:19]
     out = []
     if _gsc(ctx):
-        out.append({"name": GSC, "state": "FRESH" if at else "UNKNOWN",
-                    "at": at})
+        out.append({"name": GSC, "connected": True, "at": at,
+                    "age_hours": _age_hours(at)})
     if _ga4(ctx):
-        out.append({"name": GA4, "state": "FRESH" if at else "UNKNOWN",
-                    "at": at})
+        out.append({"name": GA4, "connected": True, "at": at,
+                    "age_hours": _age_hours(at)})
     off = _d(_d(ctx).get("offpage"))
     if off:
+        _oat = str(off.get("at") or "")[:19]
         out.append({"name": "Backlink provider",
-                    "state": "FRESH" if off.get("connected") else "ERROR",
-                    "at": off.get("at"),
-                    "reason": off.get("reason")})
+                    "connected": bool(off.get("connected")),
+                    "at": _oat, "age_hours": _age_hours(_oat),
+                    "error": off.get("reason")})
     return out
 
 

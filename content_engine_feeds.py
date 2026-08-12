@@ -42,6 +42,19 @@ def _get(store, key, default=None):
         return default
 
 
+def _stamp(store) -> str:
+    """The build stamp this dashboard already carries."""
+    v = _s(_get(store, "build_tag") or "")
+    if v:
+        return v[:40]
+    try:
+        import content_engine_dashboard as _D2
+        return _s(getattr(_D2, "CODE_STAMP", "")
+                  or getattr(_D2, "BUILD_TAG", ""))[:40]
+    except Exception:                                 # noqa: BLE001
+        return ""
+
+
 def _safe(fn, *a, **kw):
     """A feed that fails degrades to nothing, never to a broken page."""
     try:
@@ -58,9 +71,19 @@ def chrome(store, *, window_days: int = 30, jobs=None) -> Dict[str, Any]:
 
     Every OS header asked for these and no builder supplied one, so nine
     sections printed a nameless site and a blank window."""
-    site = (_get(store, "SITE_URL") or _get(store, "WP_URL")
-            or _get(store, "site") or "")
-    brandname = _get(store, "BRAND_NAME") or "Anthropos"
+    # THE SITE HAS A NAME. The header printed "not configured" for a
+    # machine that publishes to that very site all day: this looked in
+    # two settings keys and the address lives under others, or in the
+    # environment the connectors read.
+    import os as _os
+    site = ""
+    for _k in ("SITE_URL", "WP_URL", "WORDPRESS_URL", "WP_SITE_URL",
+               "site", "domain", "PUBLIC_BASE_URL"):
+        site = _s(_get(store, _k) or _os.getenv(_k, "")).strip()
+        if site:
+            break
+    brandname = _get(store, "BRAND_NAME") or _os.getenv("BRAND_NAME") \
+        or "Anthropos"
     paused = bool(_get(store, "paused", False))
     cadence = bool(_get(store, "cadence_on", False))
     autonomy = bool(_get(store, "autonomy", False))
@@ -77,11 +100,22 @@ def chrome(store, *, window_days: int = 30, jobs=None) -> Dict[str, Any]:
         "mode": mode,
         "period": f"Last {int(window_days)} days",
         "window_days": int(window_days),
-        "version": _s(_get(store, "build_tag") or ""),
-        "build_version": _s(_get(store, "build_tag") or ""),
+        # "build not stamped" while the dashboard has carried a stamp
+        # all along. Section 6 forbids an unstamped result; the stamp
+        # existed and nothing passed it here.
+        "version": _stamp(store),
+        "build_version": _stamp(store),
         "last_check": _s(_d(_get(store, "engine_cadence_last", {}))
                          .get("inspect") or ""),
-        "attention": ([f"{waiting} piece(s) waiting for your approval"]
+        # THE BAND WANTS A REASON, NOT A SENTENCE. It prints kind and
+        # why from each row; plain strings gave it neither, so a real
+        # queue rendered as "needs a decision / None / no reason
+        # recorded" - an alarm that names nothing.
+        "attention": ([{"kind": "waiting for approval",
+                        "name": f"{waiting} piece(s)",
+                        "why": ("each one publishes only when you "
+                                "approve it; open Content Factory to "
+                                "read them")}]
                       if waiting else []),
         "notifications": ([f"{waiting} waiting for approval"]
                           if waiting else []),

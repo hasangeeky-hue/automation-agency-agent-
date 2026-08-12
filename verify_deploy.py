@@ -1164,6 +1164,36 @@ try:
     check("and the data mapping is declared, not a black box",
           len(FD18.control(_st18).get("mappings") or []) >= 5)
 
+    # A LIVE SOURCE MUST NOT READ "NEVER CONNECTED". Two functions were
+    # named source_state: the bridge emitted {state}, the freshness bar
+    # RE-DERIVES from {connected, age_hours}. Seeing neither field it
+    # called three working sources unconnected while Search Console was
+    # handing over fourteen queries.
+    from datetime import datetime as _dt18, timezone as _tz18
+    import content_engine_search_bridge as BR18
+    import content_engine_search_screens as SS18
+    _now18 = _dt18.now(_tz18.utc).isoformat()
+    _rows18 = BR18.source_state({"insights": {
+        "at": _now18,
+        "gsc": {"daily": [{"date": "d", "clicks": 1, "impressions": 9,
+                           "position": 3}]},
+        "ga4": {"totals": {"sessions": 5}}}})
+    check("the bridge emits the shape the freshness bar reads",
+          bool(_rows18)
+          and all("connected" in r and "age_hours" in r for r in _rows18))
+    _v18 = [SS18.source_state(r) for r in _rows18]
+    check("A CONNECTED SOURCE IS NEVER CALLED 'NEVER CONNECTED'",
+          bool(_v18)
+          and all(v["state"] != "NEVER CONNECTED" for v in _v18),
+          str([(v["name"], v["state"]) for v in _v18]))
+    _ch18 = FD18.chrome(_st18, jobs=_jobs18)
+    check("the attention band names what waits and why",
+          bool(_ch18["attention"])
+          and isinstance(_ch18["attention"][0], dict)
+          and _ch18["attention"][0].get("why"))
+    check("and the build carries its stamp",
+          bool(_ch18.get("version")))
+
     _b18 = FD18.bi(_st18)
     check("an unmeasured cost stays ABSENT, never zero",
           _b18["cogs"] is None and _b18["cloud_cost"] is None
