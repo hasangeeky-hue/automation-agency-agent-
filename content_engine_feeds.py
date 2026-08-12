@@ -376,6 +376,11 @@ def control(store) -> Dict[str, Any]:
                        "state": "HEALTHY"}],
         "queues": [{"name": "jobs", "role": "the pipeline",
                     "state": "HEALTHY"}],
+        # A FREE API STILL STOPS ANSWERING at its limit, and that halts
+        # the work exactly as hard as an unpaid one. Quota is tracked
+        # apart from cost for that reason.
+        "quotas": _l(_safe(lambda: __import__("content_engine_actions")
+                           .quotas(store))),
         "environment": _s(_get(store, "ENVIRONMENT") or "production"),
         # DECLARED, because section 113 forbids a black box. These are
         # the joins this engine actually performs; anything not listed
@@ -478,6 +483,11 @@ def bi(store) -> Dict[str, Any]:
         "pricing_versions": _l(_get(store, "pricing_versions", [])),
         "tools": _l(_get(store, "tool_costs", [])),
         "initiatives": _l(_get(store, "initiatives", [])),
+        # CHANNELS: each OS owns its own numbers, so this reports what
+        # was actually recorded and names the channels that reported
+        # nothing rather than drawing them at zero.
+        "channels": _l(_get(store, "channel_performance", [])),
+        "agents": _l(_get(store, "agent_runs", [])),
         "optimisations": [],
         "options": [],
     }

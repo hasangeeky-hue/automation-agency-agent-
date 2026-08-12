@@ -479,6 +479,17 @@ CONNECTOR_ENV_KEYS = [
     "VIDEO_PROVIDER", "VIDEO_API_KEY", "VIDEO_API_URL",
     "REPLY_OUR_OFFER", "REPLY_SENDER_NAME", "REPLY_CONTEXT", "REPLY_AUTO_SEND",
     "CI_JSON",
+    # --- APPENDED 2026-08-12: the CMS layer. A key the endpoint will not
+    # accept is a key the browser cannot save, and the whole Commerce and
+    # CMS section would have been a form that silently dropped what you
+    # typed. Read-only scopes: this engine reads a catalogue and never
+    # changes a product, a price or a page.
+    "SHOPIFY_SHOP_DOMAIN", "SHOPIFY_ADMIN_TOKEN",
+    "WOO_SITE_URL", "WOO_CONSUMER_KEY", "WOO_CONSUMER_SECRET",
+    # WP_URL was never on this list: WordPress publishing has always read
+    # it from the environment, so the browser could never set the address
+    # of the very site it publishes to.
+    "WP_URL", "WP_USER", "WP_APP_PASSWORD",
 ]
 
 # Which alias each email PURPOSE goes out from (localpart @ your domain). This is

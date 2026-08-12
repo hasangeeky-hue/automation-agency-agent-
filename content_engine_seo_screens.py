@@ -1281,7 +1281,13 @@ JS = ("<script>"
       # nothing serves these yet - each says so instead of failing quietly
       "function ssReport(a){uiNotWired('Build a report')}"
       "function ssBriefFill(a){uiNotWired('Generate the missing brief parts')}"
-      "function ssBrief(a){uiNotWired('Open the brief editor')}"
-      "function ssBriefSave(a){uiNotWired('Save the brief')}"
-      "function ssSave(a){uiNotWired('Save this edit')}"
+      # /seo/brief exists now, so these save for real
+      "function ssBrief(k){var t=prompt('The brief for '+(k||'this page')+':');"
+      "if(t===null)return;ssPost('/seo/brief',{key:k||'default',text:t});}"
+      "function ssBriefSave(k,btn){var el=document.getElementById('ss-brief');"
+      "if(!el){ssBrief(k);return;}"
+      "ssPost('/seo/brief',{key:k||'default',text:el.value},btn);}"
+      "function ssSave(id,btn){var el=document.getElementById('ss-edit');"
+      "if(!el){if(window.toast)toast('nothing to save on this screen');return;}"
+      "ssPost('/content/save',{job_id:id,field:'body',text:el.value},btn);}"
       "</script>")

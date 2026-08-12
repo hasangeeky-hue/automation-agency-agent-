@@ -3213,7 +3213,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    meters=None, api_limits=None, ci_text="", ci_drive="", autopilot_on=False,
                    content_plan=None, web_tracking=None, reply_drafts=None,
                    competitor_intel=None, google_insights=None, seo_ctx=None, media_ctx=None,
-                   window_days=30,
+                   window_days=30, cms_ctx=None,
                    system_ctx=None, risk_ctx=None, bi_ctx=None,
                    outreach_ctx=None, sga_ctx=None, factory_ctx=None,
                    cockpit_ctx=None, saved_keys=None):
@@ -4422,17 +4422,19 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # Growth — 27 cards between them, ZERO charts, and 19 panels that were
     # literally _empty(). Scope is social (paid + unpaid) plus the Google data
     # hub; Google Ads keeps its own Media Buying section.
+    # THE SLOT SGA HELD now answers a question nothing else could. Its
+    # own screens are not deleted from the codebase, they are simply no
+    # longer the section: social belongs to Content Factory, the Google
+    # hub to Search, paid to Media Buying.
     try:
-        import content_engine_sga_boards as _SGAB
-        _sga_all = _SGAB.sga_section(sga_ctx or {})
+        import content_engine_cms_screen as _CMS
+        _cms_all = _CMS.section(cms_ctx or {})
     except Exception as _e7:
-        log.exception("SGA boards failed to render - showing the old three "
-                      "modules instead")
-        _sga_all = ("<div class='card full' style='border-color:#F5788A'>"
-                    "<p class='ct'>SGA boards failed to render</p>"
-                    f"<p class='cc'>Showing the older modules below. Reason: "
-                    f"{_esc(type(_e7).__name__)}: {_esc(str(_e7))[:300]}</p></div>"
-                    + p_social + p_google + p_ads)
+        log.exception("the Commerce and CMS section failed to render")
+        _cms_all = ("<div class='card full' style='border-color:#DC2626'>"
+                    "<p class='ct'>Commerce and CMS failed to render</p>"
+                    f"<p class='cc'>Reason: {_esc(type(_e7).__name__)}: "
+                    f"{_esc(str(_e7))[:300]}</p></div>")
 
     # ---- Leads & Outreach: ONE section replacing Lead Machine and Email &
     # Outreach. Unlike the other merges these two carry a working launch pad —
@@ -4521,9 +4523,17 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("outreach", "📮", "Leads & Outreach", "Leads & Outreach",
          "Find them, write to them, track what came back. 240 cards "
          "across 14 boards.", _outreach_all),
-        ("sga", "🚀", "SGA", "SGA — Social, Growth & Ads",
-         "Paid and unpaid social, campaign planning, content push and "
-         "your Google hub. 250 cards across 14 boards.", _sga_all),
+        # SGA IS RETIRED. It answered "how are the social channels
+        # doing", and the systems that own those channels answer it
+        # better: social sits with Content Factory, the Google hub with
+        # Search, paid with Media Buying. Its slot now holds the
+        # question nothing else could answer - what does this site
+        # sell, and therefore what should we be making? The old nav ids
+        # (sga, social, google, ads) still resolve, so no link dies.
+        ("sga", "🛍", "Commerce & CMS", "Commerce and CMS",
+         "Connect Shopify, WooCommerce or WordPress. The machine reads "
+         "what is there, decides whether this is a shop or a service, "
+         "and every content agent writes for that.", _cms_all),
         ("seo", "🔎", "SEO / AEO / GEO", "SEO · AEO · GEO",
          "Search, AI-answer and geo visibility — every SEO board in one place.", _seo_all),
         ("media", "🛒", "Media Buying", "Media Buying · Google Ads",
@@ -5563,9 +5573,15 @@ if __name__ == "__main__":
     for _rail in ("stabs", "sgroups"):
         assert f"class='{_rail}'" in html, f"{_rail} rail missing from the page"
         assert f".{_rail}{{display:flex" in _allcss, f".{_rail} must lay out as flex"
-    assert html.count("class='stabs'") >= 3, (
-        "the stabs rail belongs to SEO, SGA and Risk & Infrastructure; "
+    # SGA is retired, so its rail went with it: SEO and Risk keep theirs.
+    assert html.count("class='stabs'") >= 2, (
+        "the stabs rail belongs to SEO and Risk & Infrastructure; "
         f"found {html.count(chr(39).join(['class=', 'stabs', '']))}")
+    # the section that took SGA's slot must actually be on the page, and
+    # every old nav id must still resolve to it
+    assert "Commerce and CMS" in html, "the CMS section did not render"
+    for _old in ("social", "google", "ads"):
+        assert f"{_old}:'sga'" in html, f"nav alias {_old} -> sga missing"
     for _rail2 in ("bi-nav", "cf-nav", "sc-nav", "mc-tabs", "seo-rail"):
         assert _rail2 in html, f"{_rail2} rail missing from its section"
     print("OK — 9 pages. Risk + AI Workforce + Infrastructure now render as ONE "

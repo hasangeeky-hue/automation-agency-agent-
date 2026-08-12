@@ -200,17 +200,41 @@ function cfUpload(a){
   i.click();
 }
 /* no endpoint serves this yet - it names itself instead of failing quietly */
-function cfAnalyzeInbox(a){uiNotWired('Analyze the inbox');}
-function cfAct(a){uiNotWired('That card action');}
-function cfBlock(a){uiNotWired('Edit a block');}
-function cfSave(a){uiNotWired('Save an edited piece');}
-function cfEditDiff(a){uiNotWired('Edit this change');}
-function cfEditPlan(a){uiNotWired('Edit the plan');}
-function cfCompare(a){uiNotWired('Compare variants');}
-function cfVariants(a){uiNotWired('Variants');}
-function cfVary(a){uiNotWired('Make a variant');}
-function cfDismiss(a){uiNotWired('Dismiss a signal');}
-function cfRestore(a){uiNotWired('Restore a version');}
+/* THE ENDPOINTS EXIST NOW, so these stopped being promises too. Editing
+   keeps the previous text, which is what makes Restore a real button. */
+function cfEdit(id,field){
+  var cur=document.getElementById('cfblk-'+field);
+  var was=cur?(cur.innerText||''):'';
+  var t=prompt('Edit the '+field.replace('_',' ')+':',was);
+  if(t===null)return;
+  cfPost('/content/save',{job_id:id,field:field,text:t});
+}
+function cfSave(id,field,btn){
+  var el=document.getElementById('cfedit-'+(field||'body'));
+  if(!el){cfEdit(id,field||'body');return;}
+  cfPost('/content/save',{job_id:id,field:field||'body',text:el.value},btn);
+}
+function cfBlock(id,field){cfEdit(id,field||'body');}
+function cfEditDiff(id,field){cfEdit(id,field||'body');}
+function cfAct(id,what){
+  if(what==='approve')return cfApprove(id);
+  if(what==='reject')return cfReject(id);
+  cfEdit(id,'body');
+}
+function cfRestore(id,btn){cfPost('/content/restore',{job_id:id},btn,
+  'Put back the text as it was before the last edit?');}
+function cfVary(id,btn){var n=prompt('What should the variant do differently?');
+  if(n===null)return;cfPost('/content/variant',{job_id:id,note:n},btn);}
+function cfVariants(id,btn){cfVary(id,btn);}
+function cfCompare(id){cfTab('piece',id);}
+function cfDismiss(id,btn){var w=prompt('Why dismiss this signal? (recorded)');
+  if(w===null)return;cfPost('/signal/dismiss',{id:id,why:w},btn);}
+function cfEditPlan(id,btn){
+  var f=prompt('Which field? title / type / market / date / keyword','title');
+  if(!f)return;var v=prompt('New value for '+f);if(v===null)return;
+  cfPost('/plan/edit',{id:id,field:f,value:v},btn);}
+function cfAnalyzeInbox(a,btn){cfPost('/factory/run',{},btn,
+  'Run the factory agents over the signals now? They draft and escalate; they cannot publish.');}
 </script>"""
 
 

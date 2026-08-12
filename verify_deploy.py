@@ -1249,6 +1249,86 @@ try:
 except Exception as exc:                              # noqa: BLE001
     check("the feeds answered", False, repr(exc)[:110])
 
+# ------------------------------------------- commerce, cms and the actions
+head("19. WHAT THIS SITE SELLS, AND THE BUTTONS THAT FOLLOW")
+try:
+    import content_engine_actions as ACT19
+    import content_engine_cms_screen as CMS19
+    import content_engine_commerce as CM19
+
+    class _S19:
+        def __init__(self):
+            self.d, self.j = {}, {}
+
+        def get_setting(self, k, default=None):
+            return self.d.get(k, default)
+
+        def set_setting(self, k, v):
+            self.d[k] = v
+
+        def get(self, jid):
+            if jid not in self.j:
+                raise KeyError(jid)
+            return self.j[jid]
+
+        def save(self, job):
+            self.j[job["job_id"]] = job
+
+    _s19 = _S19()
+    check("the CMS layer offers Shopify, WooCommerce and WordPress",
+          set(CM19.PLATFORMS) == {"shopify", "woocommerce", "wordpress"})
+    check("and every key it needs is on the /connect allow-list",
+          all(k in CN18.CONNECTOR_ENV_KEYS for k in CM19.connector_keys()),
+          str([k for k in CM19.connector_keys()
+               if k not in CN18.CONNECTOR_ENV_KEYS]))
+    _v0 = CM19.detect_business_type(_s19)
+    check("WITH NOTHING READ, THE BUSINESS TYPE IS UNKNOWN",
+          _v0["type"] == "UNKNOWN" and _v0["confidence"] == "NONE")
+    check("and an unknown business gets NO content recommendation",
+          CM19.content_policy(verdict=_v0)["types"] == ())
+    _s19.d["cms_catalogue"] = {"platform": "shopify", "at": "x", "items": [
+        {"id": str(i), "title": "P", "type": "shirt"} for i in range(12)]}
+    _v1 = CM19.detect_business_type(_s19)
+    check("A CATALOGUE MAKES IT A SHOP, with the count as the evidence",
+          _v1["type"] == "ECOMMERCE"
+          and _v1["evidence"]["products_found"] == 12)
+    check("and a shop is told to write product and category pages",
+          "product page" in CM19.content_policy(verdict=_v1)["types"])
+    _v2 = CM19.detect_business_type(
+        _S19(), queries=["seo agency munich", "hire a consultant",
+                         "marketing strategy audit"])
+    check("HIRING QUERIES MAKE IT A SERVICE",
+          _v2["type"] == "SERVICE")
+    check("and a service is told to write guides and case studies",
+          "case study" in CM19.content_policy(verdict=_v2)["types"])
+    check("the section renders in every state",
+          CMS19.check()["ok"], str(CMS19.check()["problems"]))
+
+    # the buttons that had nowhere to go
+    _s19.j["p1"] = {"job_id": "p1", "type": "content_piece",
+                    "payload": {"content_producer": {"body": "one"}}}
+    check("an edit keeps the text it replaced",
+          ACT19.save_piece(_s19, "p1", "body", "two")["ok"]
+          and ACT19.restore_piece(_s19, "p1")["ok"]
+          and _s19.j["p1"]["payload"]["content_producer"]["body"] == "one")
+    check("and only real fields are editable",
+          not ACT19.save_piece(_s19, "p1", "price", "9")["ok"])
+    _var = ACT19.make_variant(_s19, "p1", "shorter")
+    check("A VARIANT ENTERS AS A DRAFT, never as a publish",
+          _var["ok"] and _s19.j[_var["job_id"]]["status"] == "created")
+    _q = ACT19.quotas(_s19)
+    check("an uncounted quota says NOT MEASURED, never zero",
+          bool(_q) and all(x["state"] == "NOT MEASURED" for x in _q))
+    ACT19.record_usage(_s19, "serper_search", 5)
+    check("and a counted one carries its number",
+          [x for x in ACT19.quotas(_s19)
+           if x["name"] == "serper_search"][0]["used"] == 5)
+    print("       business type: " + _v1["type"] + " from "
+          + str(_v1["evidence"]["products_found"]) + " products; "
+          + str(len(ACT19.quotas(_s19))) + " quota(s) tracked")
+except Exception as exc:                              # noqa: BLE001
+    check("the commerce and CMS layer answered", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

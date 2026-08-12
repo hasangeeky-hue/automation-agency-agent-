@@ -1793,6 +1793,7 @@ def _dashboard_kwargs(piece: str = "") -> dict:
     # fills ONLY those gaps: merge() refuses to overwrite a real value
     # with a default, so nothing that works today can regress, and a
     # feed that fails leaves the dashboard exactly as it was.
+    cms_ctx = {}
     try:
         import content_engine_feeds as _FD
         _ch = _FD.chrome(store, jobs=jobs)
@@ -1807,6 +1808,14 @@ def _dashboard_kwargs(piece: str = "") -> dict:
         sga_ctx = _FD.merge(sga_ctx, _FD.sga(store), _ch)
         seo_ctx = _FD.merge(seo_ctx, _FD.seo_extra(store), _ch, _ia)
         media_ctx = _FD.merge(media_ctx, _ch)
+        # the section that replaced SGA reads the CMS layer
+        import content_engine_commerce as _CMx
+        cms_ctx = _FD.merge({}, {
+            "cms_platforms": _CMx.status(store),
+            "business_type": store.get_setting("business_type", {}) or {},
+            "content_policy": _CMx.content_policy(store),
+            "cms_catalogue": store.get_setting("cms_catalogue", {}) or {},
+        }, _ch)
         outreach_ctx = _FD.merge(outreach_ctx, _ch)
         risk_ctx = _FD.merge(risk_ctx, _ch)
     except Exception as e:                            # noqa: BLE001
@@ -1816,6 +1825,7 @@ def _dashboard_kwargs(piece: str = "") -> dict:
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
         risk_ctx=risk_ctx, bi_ctx=bi_ctx, outreach_ctx=outreach_ctx,
         sga_ctx=sga_ctx, factory_ctx=factory_ctx, cockpit_ctx=cockpit_ctx,
+        cms_ctx=cms_ctx,
         jobs=jobs, st=st, health=health, month_spent=month_spent, month_cap=month_cap,
         day_spent=day_spent, day_cap=day_cap, taste_skills=sorted(_TASTEABLE),
         has_password=bool(_dash_password()), paused=settings["paused"],
@@ -2867,6 +2877,106 @@ def build_app():
     @app.post("/plan/clear")
     def plan_clear():
         return api_clear_plan()
+
+    # ---- the endpoints fourteen buttons were waiting for ----------------
+    # Each one existed as a promise in the UI and nowhere else. They are
+    # ordinary POSTs behind the same auth as everything else; none of
+    # them publishes, sends or spends.
+    @app.post("/content/save")
+    async def content_save(request: Request):
+        try:
+            b = await request.json()
+        except Exception:
+            b = {}
+        import content_engine_actions as ACT
+        r = ACT.save_piece(get_store(), b.get("job_id"), b.get("field"),
+                           b.get("text"), who=b.get("who") or "")
+        if r.get("ok"):
+            _log_decision(get_store(), "edit_piece", b.get("job_id"),
+                          str(b.get("field")))
+        return r
+
+    @app.post("/content/restore")
+    async def content_restore(request: Request):
+        try:
+            b = await request.json()
+        except Exception:
+            b = {}
+        import content_engine_actions as ACT
+        return ACT.restore_piece(get_store(), b.get("job_id"))
+
+    @app.post("/content/variant")
+    async def content_variant(request: Request):
+        try:
+            b = await request.json()
+        except Exception:
+            b = {}
+        import content_engine_actions as ACT
+        r = ACT.make_variant(get_store(), b.get("job_id"),
+                             b.get("note") or "")
+        if r.get("ok"):
+            _log_decision(get_store(), "make_variant", b.get("job_id"),
+                          str(b.get("note") or "")[:80])
+        return r
+
+    @app.post("/signal/dismiss")
+    async def signal_dismiss(request: Request):
+        try:
+            b = await request.json()
+        except Exception:
+            b = {}
+        import content_engine_actions as ACT
+        return ACT.dismiss_signal(get_store(), b.get("id"),
+                                  b.get("why") or "")
+
+    @app.post("/seo/brief")
+    async def seo_brief(request: Request):
+        try:
+            b = await request.json()
+        except Exception:
+            b = {}
+        import content_engine_actions as ACT
+        return ACT.save_brief(get_store(), b.get("key"), b.get("text") or "")
+
+    @app.post("/plan/edit")
+    async def plan_edit(request: Request):
+        try:
+            b = await request.json()
+        except Exception:
+            b = {}
+        import content_engine_actions as ACT
+        return ACT.edit_plan(get_store(), b.get("id"), b.get("field"),
+                             b.get("value") or "")
+
+    @app.post("/factory/run")
+    def factory_run():
+        """Run the Content Factory's own agents once. They draft and
+        escalate; they cannot approve, distribute or publish."""
+        import content_engine_actions as ACT
+        r = ACT.run_factory_agents(get_store())
+        _log_decision(get_store(), "factory_run", "content factory",
+                      str(r.get("message") or r.get("error"))[:120])
+        return r
+
+    # ---- the CMS layer: connect, read, decide -------------------------
+    @app.post("/cms/refresh")
+    def cms_refresh():
+        """Read the connected CMS and decide the business type from what
+        is actually there. Read only: it cannot change a shop."""
+        import content_engine_commerce as CM
+        r = CM.refresh(get_store())
+        _log_decision(get_store(), "cms_refresh",
+                      str(r.get("business_type")),
+                      str(r.get("why"))[:120])
+        return r
+
+    @app.get("/cms/status")
+    def cms_status():
+        import content_engine_commerce as CM
+        st = get_store()
+        return {"platforms": CM.status(st),
+                "business_type": st.get_setting("business_type", {}) or {},
+                "policy": CM.content_policy(st)}
 
     @app.post("/autopilot/run")
     def autopilot_run():
