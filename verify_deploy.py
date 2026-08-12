@@ -327,7 +327,7 @@ try:
 
     check("the four factory modules are in this image", True)
     _cs = CFU.check_screens()
-    check("nine screens, each with a renderer and a contract",
+    check("every screen has a renderer AND a contract",
           _cs["ok"], str(_cs["problems"]))
     check("the old boards module is a shim over the new OS",
           "content_engine_factory_ui" in
@@ -353,7 +353,7 @@ try:
         _txt = re.sub(r"<[^>]+>", " ", _m.group(1)) if _m else ""
         if len(" ".join(_txt.split())) < 100:
             _fempty.append(_sid)
-    check("every one of the nine panels renders real content",
+    check("every declared panel renders real content",
           not _fempty, str(_fempty))
     check("no factory screen raised into its panel",
           "could not render" not in _fsec)
