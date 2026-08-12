@@ -151,12 +151,33 @@ def plan_today(store, force: bool = False) -> dict:
               "raw_leads": [], "category": "other", "lead": {},
               "buckets": [], "_scheduled": True})
 
-    # 2) BLOGS to the website.
+    # WHAT KIND OF BUSINESS IS THIS? The CMS layer decides ECOMMERCE or
+    # SERVICE from evidence, and the planner used to ignore it: two blogs
+    # a day for a shop and a consultancy alike. The verdict now picks the
+    # type of the piece. UNKNOWN keeps the old behaviour on purpose - a
+    # planner that guesses is worse than one that keeps writing blogs.
+    _btype, _wanted = "UNKNOWN", []
+    try:
+        import content_engine_commerce as _CM
+        _bv = dict(getset("business_type", {}) or {}) if callable(getset) else {}
+        _btype = str(_bv.get("type") or "UNKNOWN").upper()
+        _wanted = list(_CM.content_policy(verdict=_bv).get("types") or ())
+    except Exception:                                 # noqa: BLE001
+        _btype, _wanted = "UNKNOWN", []
+
+    # 2) THE MAIN PIECES. Their TYPE comes from the policy: a shop gets
+    # product and category pages, a service gets guides and case studies.
     for i in range(_isval(getset, "SCHED_BLOGS_PER_DAY", 2)):
+        _cfg = {"business_goal": "awareness", "produce_index": 0,
+                "deploy_channels": ["wordpress"], "pieces_this_week": 14}
+        if _wanted:
+            _cfg["requested_type"] = _wanted[i % len(_wanted)]
+            _cfg["business_type"] = _btype
+            _cfg["type_chosen_because"] = (
+                "the CMS layer decided this business is " + _btype)
         make("content_piece", f"blog_{i}",
-             {"config": {"business_goal": "awareness", "produce_index": 0,
-                         "deploy_channels": ["wordpress"], "pieces_this_week": 14},
-              "audit": {}, "competitors": [], "_scheduled": True})
+             {"config": _cfg, "audit": {}, "competitors": [],
+              "_scheduled": True})
 
     # 2b) GUIDES to the website. The founder's spec is 2 blogs + 2 GUIDES
     # per day and the planner could only make blogs - "guide" existed in the
@@ -222,6 +243,12 @@ SEO_CADENCE = {
     "media_sync":  {"every_days": 1, "cost": "free"},
     "offline":     {"every_days": 1, "cost": "free"},
     "social":      {"every_days": 1, "cost": "free"},
+    # THE FACTORY'S OWN AGENTS. They were built, gated and never called:
+    # the prover has read "factory loop: NEVER RUN" since the day they
+    # shipped. A button existed but a machine that only works when
+    # someone clicks is not automation. They draft and escalate; they
+    # cannot approve, distribute or publish.
+    "factory":     {"every_days": 1, "cost": "cheap"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }
@@ -642,6 +669,18 @@ def run_due_work(store, now=None) -> dict:
         except Exception as e:
             log.exception("cadence: run_seo_due failed")
             return {"ran": "seo", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "factory", now):
+        _stamp(store, state, "factory", now)
+        try:
+            import content_engine_actions as _ACT
+            r = _ACT.run_factory_agents(store)
+            if r.get("ok"):
+                log.info("cadence: the factory agents ran")
+            return {"ran": "factory", "result": r}
+        except Exception as e:
+            log.exception("cadence: the factory agents failed")
+            return {"ran": "factory", "error": f"{type(e).__name__}: {e}"}
 
     if _due(state, "replies", now):
         _stamp(store, state, "replies", now)

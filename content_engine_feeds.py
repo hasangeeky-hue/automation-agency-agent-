@@ -486,7 +486,7 @@ def bi(store) -> Dict[str, Any]:
         # CHANNELS: each OS owns its own numbers, so this reports what
         # was actually recorded and names the channels that reported
         # nothing rather than drawing them at zero.
-        "channels": _l(_get(store, "channel_performance", [])),
+        "channels": channels(store),
         "agents": _l(_get(store, "agent_runs", [])),
         "optimisations": [],
         "options": [],
@@ -496,6 +496,71 @@ def bi(store) -> Dict[str, Any]:
 # ==========================================================================
 # SEO + SGA leftovers
 # ==========================================================================
+def channels(store) -> List[dict]:
+    """One row per channel, from whatever each OS actually recorded.
+
+    Growth and the Funnel were blank because a `channels` key was read
+    and nothing wrote it: a pipe with no water. Rather than ask every OS
+    to start reporting (and wait), this READS what each already stored
+    and says NOT MEASURED where nothing did. A channel that reported
+    nothing is named as unmeasured, never drawn at zero, because a zero
+    would rank a working channel below a silent one."""
+    out: List[dict] = []
+
+    def row(name, source, **kv):
+        r = {"channel": name, "source": source}
+        r.update(kv)
+        if all(v is None for k, v in kv.items()):
+            r["state"] = "NOT MEASURED"
+            r["why"] = (source + " has recorded nothing for this window; "
+                        "that is not the same as nothing happening")
+        else:
+            r["state"] = "MEASURED"
+        out.append(r)
+
+    # ORGANIC SEARCH: the bridge already sums it, so this cannot
+    # disagree with the Search OS by construction.
+    tot = {}
+    try:
+        import content_engine_search_bridge as BR
+        tot = _d(BR.search_totals({"insights":
+                                   _d(_get(store, "google_insights", {}))}))
+    except Exception:                                 # noqa: BLE001
+        tot = {}
+    row("Organic search", "Google Search Console + GA4",
+        clicks=tot.get("clicks"), sessions=tot.get("sessions"),
+        conversions=tot.get("conversions"), revenue=tot.get("revenue"))
+
+    # EMAIL: what the outreach OS recorded, never an estimate.
+    eo = _d(_get(store, "outreach_rollup", {}))
+    row("Email and outreach", "the Engagement OS",
+        sent=eo.get("sent"), replies=eo.get("replies"),
+        conversions=eo.get("meetings"), revenue=eo.get("revenue"))
+
+    # SOCIAL: the insights snapshot, if one was ever pulled.
+    si = {}
+    try:
+        import content_engine_social_insights as SI
+        si = _d(SI.load(store))
+    except Exception:                                 # noqa: BLE001
+        si = {}
+    row("Social", "the connected social accounts",
+        reach=_d(si.get("reach")).get("total") if si.get("reach") else None,
+        posts=len(_l(si.get("posts"))) or None,
+        conversions=None, revenue=None)
+
+    # PAID: the media rollup. Empty while Google refuses the credential,
+    # and that refusal is stated on the Connections board rather than
+    # implied by a zero here.
+    md = _d(_get(store, "media_rollup", {}))
+    row("Paid media", "the Media Buying OS",
+        spend=md.get("spend"), clicks=md.get("clicks"),
+        conversions=md.get("conversions"),
+        revenue=md.get("conversion_value"))
+
+    return out
+
+
 def seo_extra(store) -> Dict[str, Any]:
     """The boards that read a gap analysis nobody handed them."""
     return {

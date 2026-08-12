@@ -1335,6 +1335,31 @@ try:
     check("and each one names the function behind it",
           all("(" in v[1] for v in _w19.values()))
     _sr19 = ACT19.build_report(_s19)
+    # THE POLICY IS WIRED, not merely displayed. The business type was
+    # computed and read by nobody: every writer produced the same
+    # generic post for a shop and a consultancy alike.
+    import content_engine_providers as PV19
+    _bs = PV19._render_brand({"payload": {}, "business_type": {
+        "type": "SERVICE", "confidence": "HIGH", "why": "no products"}})
+    check("THE BUSINESS TYPE REACHES THE WRITER'S PROMPT",
+          "Type: SERVICE" in _bs and "case study" in _bs)
+    _be = PV19._render_brand({"payload": {}, "business_type": {
+        "type": "ECOMMERCE", "confidence": "HIGH", "why": "12 products"}})
+    check("and a shop is told to write product pages, not blogs",
+          "product page" in _be and "add to cart" in _be)
+    check("an UNKNOWN business tells the writer to assume NOTHING",
+          "do NOT assume products exist" in PV19._render_brand(
+              {"payload": {}, "business_type": {"type": "UNKNOWN"}}))
+    import content_engine_feeds as FD19b
+    _chs = FD19b.channels(_st18)
+    check("every channel is reported or named as NOT MEASURED",
+          bool(_chs) and all(c.get("state") in ("MEASURED", "NOT MEASURED")
+                             for c in _chs)
+          and all(c.get("why") for c in _chs
+                  if c["state"] == "NOT MEASURED"))
+    import content_engine_scheduler as SC19
+    check("the factory agents are on the cadence, not waiting on a click",
+          "factory" in SC19.SEO_CADENCE)
     check("a report names what it could NOT report on",
           _sr19["ok"] and isinstance(_sr19["report"]["not_reported"], list))
     print("       agents wired: " + str(len(_w19)) + "/" + str(len(_w19)))

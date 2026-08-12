@@ -245,7 +245,58 @@ def _render_brand(job: dict) -> str:
             text += "\n\n" + ci
     except Exception:
         pass
+    # WHAT THIS BUSINESS ACTUALLY IS. The CMS layer decides ECOMMERCE or
+    # SERVICE from evidence, and until now that verdict was computed,
+    # displayed, and read by nobody: every writer still produced the same
+    # generic post for a shop and a consultancy alike. This is the wire.
+    # It is APPENDED to the brand block, so it reaches every content
+    # skill at once and costs nothing extra - the block is cached.
+    text += "\n\n" + _business_block(job)
     return text
+
+
+def _business_block(job: dict) -> str:
+    """The business type and its content policy, as prompt text.
+
+    UNKNOWN is passed through as UNKNOWN. A writer told nothing is
+    better than a writer told a guess: it will ask the brief instead of
+    confidently writing product pages for a consultancy."""
+    v = {}
+    try:
+        v = dict((job.get("business_type") or {}))
+    except Exception:                                 # noqa: BLE001
+        v = {}
+    if not v:
+        try:
+            import content_engine_api as _A
+            _st = _A.get_store()
+            v = dict(_st.get_setting("business_type", {}) or {})
+        except Exception:                             # noqa: BLE001
+            v = {}
+    btype = str((v or {}).get("type") or "UNKNOWN").upper()
+    try:
+        import content_engine_commerce as _CM
+        pol = _CM.content_policy(verdict=v or {"type": btype})
+    except Exception:                                 # noqa: BLE001
+        pol = {"types": (), "avoid": (), "why": "", "cta": ""}
+    if btype == "UNKNOWN" or not pol.get("types"):
+        return ("THIS BUSINESS\n- Type: NOT ESTABLISHED. Nothing has been "
+                "read from a CMS and search intent has not separated a "
+                "shop from a service.\n- Therefore: follow the brief you "
+                "were given and do NOT assume products exist. Do not "
+                "invent a catalogue, a price or a checkout.")
+    lines = [
+        "THIS BUSINESS",
+        "- Type: " + btype + " (confidence "
+        + str(v.get("confidence") or "UNKNOWN") + ")",
+        "- Decided because: " + str(v.get("why") or "")[:200],
+        "- Content that fits: " + ", ".join(pol.get("types") or ()),
+        "- The call to action is: " + str(pol.get("cta") or ""),
+    ]
+    if pol.get("avoid"):
+        lines.append("- Do not write: " + ", ".join(pol.get("avoid")))
+    lines.append("- Why this matters: " + str(pol.get("why") or ""))
+    return "\n".join(lines)
 
 
 # Anthropic silently IGNORES cache_control when the prefix is shorter than the

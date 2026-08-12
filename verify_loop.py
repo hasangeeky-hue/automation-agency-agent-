@@ -137,7 +137,10 @@ import content_engine_cockpit_boards as CKB
 
 pv = CK.proposals(st3)
 chk(pv["count"] == 1, "the cockpit context carries it", str(pv["count"]))
-page = CKB.cockpit_pages({"proposals": pv})["ckcontent"]
+# The cockpit is ONE canvas now, not sixteen tabs: "ckcontent" was a
+# page id the rebuild removed. Read whatever page it actually returns.
+_pages = CKB.cockpit_pages({"proposals": pv})
+page = _pages.get("ckcmd") or next(iter(_pages.values()), "")
 chk("Rewrite proposals" in page, "the approval board shows the count")
 chk("measured poor" in page or "measured-poor" in page,
     "it is labelled as measured, so it cannot be read as a guess")

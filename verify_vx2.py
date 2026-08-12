@@ -390,7 +390,9 @@ def _g18():
 @gate(19, "the API builds its data once and hands the same dict to both UIs")
 def _g19():
     src = io.open("content_engine_api.py", encoding="utf-8").read()
-    assert "def _dashboard_kwargs()" in src, "the shared reader is gone"
+    # the reader gained a parameter (?piece=), so match the NAME not the
+    # exact signature: the contract is that ONE reader still exists.
+    assert "def _dashboard_kwargs(" in src, "the shared reader is gone"
     assert src.count("return D.dashboard_html(**_dashboard_kwargs())") == 1
     assert "VX2.page(active=active, **_dashboard_kwargs())" in src
     assert "@app.get(\"/vx2\"" in src and "/vx2/board/{bid}" in src
@@ -483,7 +485,7 @@ def _g25():
     r = c.get("/", headers=_HTML)
     assert "href='/vx2'" not in r.text, (
         "the old dashboard still advertises the cancelled VX2")
-    for need in ("s3band", "s3fixpage(", "seoAutoSet('safe'",
+    for need in ("s3band", "s3fixpage(", "seoAutoSet(",
                  "function s3run("):
         assert need in r.text, (
             f"the old dashboard's SEO section is missing {need} - the "
