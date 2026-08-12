@@ -171,6 +171,11 @@ align-items:start}
 .cf-row{display:flex;gap:10px;align-items:baseline;justify-content:space-between;
 padding:9px 0;border-bottom:1px solid var(--bd)}
 .cf-row:last-child{border-bottom:0}
+/* a queue row is a LINK now: every queued piece can be opened and read
+   before it is approved. It must still look like a row, not a link. */
+a.cf-row{text-decoration:none;color:inherit;cursor:pointer}
+a.cf-row:hover{background:var(--sf2)}
+.cf-on{box-shadow:inset 3px 0 0 var(--hu);padding-left:8px}
 .cf-blk{background:var(--sf2);border:1px solid var(--bd);border-radius:8px;
 padding:10px 12px;margin:0 0 8px}
 .cf-blk header{display:flex;gap:8px;align-items:center;margin:0 0 6px}
@@ -820,21 +825,46 @@ def review(ctx=None) -> str:
         return "".join(out)
     out.append("<div class='cf-review'><div><p class='cf-h2'>Queue</p>")
     for q in queue:
-        out.append("<div class='cf-row'><span>" + e(q.get("title"))
+        # EVERY PIECE IS OPENABLE. The queue used to be a list you could
+        # look at and not read: only the newest piece was ever previewed,
+        # so approving any other one meant approving unseen.
+        _jid = _s(q.get("job_id") or q.get("id"))
+        _on = " cf-on" if _jid and _jid == _s(current.get("job_id")) else ""
+        out.append("<a class='cf-row" + _on + "' href='?piece=" + e(_jid)
+                   + "#content'><span>" + e(q.get("title"))
                    + "<br><span class='cf-meta'>"
                    + e(q.get("channel") or "channel not set")
-                   + "</span></span>" + status_pill(q.get("status"))
-                   + "</div>")
+                   + (" &middot; " + str(q.get("words")) + " words"
+                      if q.get("words") else "")
+                   + "</span></span>"
+                   + status_pill(q.get("status") or q.get("state"))
+                   + "</a>")
     out.append("</div>")
 
     out.append("<div><p class='cf-h2'>Preview</p><div class='cf-card'>")
     blocks = [_d(b) for b in _l(current.get("blocks"))]
     if not blocks:
-        out.append("<p class='cf-meta'>Select an item to preview it.</p>")
+        out.append("<p class='cf-meta'>"
+                   + ("This piece carries no readable body yet. It was "
+                      "queued before the writer finished, or its output "
+                      "was not recorded."
+                      if current else "Select an item to preview it.")
+                   + "</p>")
     for b in blocks:
+        _txt = _s(b.get("text"))
         out.append("<div class='cf-blk'><header><b>" + e(b.get("type"))
-                   + "</b></header><div>" + e(b.get("text"))
-                   + "</div></div>")
+                   + "</b></header><div style='white-space:pre-wrap'>"
+                   + e(_txt) + "</div></div>")
+    if current.get("job_id"):
+        # APPROVING IS A HUMAN ACTION, and it belongs beside the words it
+        # applies to. The endpoint is the same one the queue has always
+        # used; nothing here can approve on your behalf.
+        out.append("<div class='cf-row' style='margin-top:10px'>"
+                   "<button class='cf-btn cf-btn-human' onclick=\"act('/jobs/"
+                   + e(_s(current.get("job_id"))) + "/approve')\">"
+                   "Approve and publish</button>"
+                   "<span class='cf-meta'>publishes to your site; "
+                   "nothing is sent without this click</span></div>")
     out.append("</div></div>")
 
     out.append("<div><p class='cf-h2'>Checks</p><div class='cf-card'>")

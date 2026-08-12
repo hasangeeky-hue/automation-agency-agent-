@@ -1608,7 +1608,7 @@ def _bi_bookings():
         return []
 
 
-def _dashboard_kwargs() -> dict:
+def _dashboard_kwargs(piece: str = "") -> dict:
     """Gather live engine data ONCE, for whichever UI is asking.
 
     This used to be the first 180 lines of api_dashboard_html(). It was split
@@ -1797,7 +1797,9 @@ def _dashboard_kwargs() -> dict:
         import content_engine_feeds as _FD
         _ch = _FD.chrome(store, jobs=jobs)
         _ia = _FD.interaction()
-        factory_ctx = _FD.merge(factory_ctx, _FD.factory(store, jobs=jobs),
+        factory_ctx = _FD.merge(factory_ctx,
+                                _FD.factory(store, jobs=jobs,
+                                            piece_id=piece),
                                 _ch, _ia)
         system_ctx = _FD.merge(system_ctx, _FD.control(store), _ch, _ia)
         bi_ctx = _FD.merge(bi_ctx, _FD.bi(store), _ch)
@@ -1826,10 +1828,10 @@ def _dashboard_kwargs() -> dict:
         google_insights=_safe_google_insights())
 
 
-def api_dashboard_html(days: int = 30) -> str:
+def api_dashboard_html(days: int = 30, piece: str = "") -> str:
     """Render the Business Control Center: the original nine-board layout."""
     import content_engine_dashboard as D
-    kw = _dashboard_kwargs()
+    kw = _dashboard_kwargs(piece=piece)
     kw["window_days"] = days
     for _cname in ("seo_ctx", "media_ctx", "bi_ctx", "system_ctx",
                    "cockpit_ctx", "factory_ctx", "sga_ctx"):
@@ -2008,7 +2010,11 @@ def build_app():
             _days = 30
         if _days not in (7, 30, 90):
             _days = 30
-        return HTMLResponse(api_dashboard_html(days=_days),
+        # ?piece=<job_id>: which queued piece the Review board opens.
+        # Without it the board could only ever preview the newest one,
+        # so approving any other meant approving unread.
+        _piece = str(request.query_params.get("piece") or "")[:80]
+        return HTMLResponse(api_dashboard_html(days=_days, piece=_piece),
                             headers=_NO_CACHE)
 
     # VX2 - the new layout, served BESIDE the old one. Same login, same data,

@@ -91,7 +91,47 @@ def chrome(store, *, window_days: int = 30, jobs=None) -> Dict[str, Any]:
 # ==========================================================================
 # CONTENT FACTORY - the review queue is the whole point
 # ==========================================================================
-def factory(store, jobs=None) -> Dict[str, Any]:
+def _blocks(prod: dict, pay: dict) -> List[dict]:
+    """The piece, as the reviewer's screen reads it.
+
+    A KEY IS NOT A SHAPE. The Review board does not want a row, it
+    wants blocks it can print: supplying `current` as a flat record
+    left the preview pane saying 'Select an item to preview it' with an
+    item already selected. You cannot approve what you cannot read."""
+    out = []
+    for label, text in (("Title", prod.get("title")),
+                        ("Meta title", prod.get("meta_title")),
+                        ("Meta description", prod.get("meta_description")),
+                        ("Body", prod.get("body")),
+                        ("Call to action", prod.get("cta_text"))):
+        if _s(text).strip():
+            out.append({"type": label, "text": _s(text)})
+    tags = [t for t in _l(prod.get("hashtags")) if _s(t).strip()]
+    if tags:
+        out.append({"type": "Hashtags", "text": " ".join(_s(t) for t in tags)})
+    img = _s(prod.get("image_url") or pay.get("image_url"))
+    if img:
+        out.append({"type": "Image", "text": img})
+    return out
+
+
+def _qa_checks(pay: dict) -> dict:
+    """QA's verdict as the checks the board prints, not a bare word."""
+    qa = _d(pay.get("qa_compliance"))
+    if not qa:
+        return {}
+    checks = [{"check": "qa_compliance",
+               "state": ("PASS" if _s(qa.get("verdict")) == "pass"
+                         else "WARNING"),
+               "why": _s(qa.get("verdict")) or "not judged"}]
+    for it in _l(qa.get("issues")):
+        d = _d(it)
+        checks.append({"check": _s(d.get("issue"))[:80] or "issue",
+                       "state": "WARNING", "why": _s(d.get("fix"))})
+    return {"verdict": _s(qa.get("verdict")), "checks": checks}
+
+
+def factory(store, jobs=None, piece_id: str = "") -> Dict[str, Any]:
     """The Factory read needs_review, queue, current, packages, signals,
     assets, learning and variants. It got none of them, which is why the
     board has been an empty room while nine real pieces waited for
@@ -111,8 +151,12 @@ def factory(store, jobs=None) -> Dict[str, Any]:
                       or _s(_d(pay.get("config")).get("topic"))
                       or _s(j.get("job_id"))),
             "channel": _s(_d(pay.get("config")).get("type") or "blog"),
+            # the board pills on "status"; the model calls it state.
+            # It reads both rather than showing a blank chip.
             "state": "AWAITING_APPROVAL",
-            "qa": _s(qa.get("verdict")) or "not judged",
+            "status": "AWAITING_APPROVAL",
+            "qa": _qa_checks(pay) or {"verdict": "not judged", "checks": []},
+            "blocks": _blocks(prod, pay),
             "issues": _l(qa.get("issues")),
             "words": len(_s(prod.get("body")).split()) or None,
             "image_url": _s(prod.get("image_url") or pay.get("image_url")),
@@ -121,6 +165,10 @@ def factory(store, jobs=None) -> Dict[str, Any]:
         }
 
     queue = [_row(j) for j in waiting]
+    # WHICH PIECE IS OPEN. Without this the board could only ever show
+    # the newest one, so every other piece was unreadable and therefore
+    # unapprovable. ?piece=<job_id> selects; the newest is the default.
+    chosen = next((r for r in queue if r["job_id"] == _s(piece_id)), None)
     produced = [j for j in js
                 if j.get("status") in ("published", "optimized", "sent")]
 
@@ -161,7 +209,7 @@ def factory(store, jobs=None) -> Dict[str, Any]:
         # the review board
         "needs_review": queue,
         "queue": queue,
-        "current": (queue[0] if queue else None),
+        "current": (chosen or (queue[0] if queue else None)),
         "review_note": ("" if queue else
                         "Nothing is waiting for you. Pieces appear here "
                         "the moment an agent finishes one."),

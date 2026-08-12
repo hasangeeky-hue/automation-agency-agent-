@@ -1106,6 +1106,19 @@ try:
     check("and the Content Factory RENDERS it, not an empty room",
           "A REAL TITLE" in _sec18)
 
+    # A KEY IS NOT A SHAPE. The audit proved `current` was supplied and
+    # the board still said "Select an item to preview it", because it
+    # wanted blocks to print, not a row. You cannot approve what you
+    # cannot read, so the words themselves are the gate.
+    check("YOU CAN READ THE PIECE BEFORE YOU APPROVE IT",
+          "a b c" in _sec18
+          and "Select an item to preview it." not in _sec18)
+    check("and every queued piece is openable, not just the newest",
+          "?piece=" in _sec18)
+    check("the approve button sits beside the words it applies to",
+          "Approve and publish" in _sec18
+          and "/approve" in _sec18)
+
     _b18 = FD18.bi(_st18)
     check("an unmeasured cost stays ABSENT, never zero",
           _b18["cogs"] is None and _b18["cloud_cost"] is None
