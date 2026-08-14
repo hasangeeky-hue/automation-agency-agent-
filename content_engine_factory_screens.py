@@ -825,7 +825,16 @@ def social(ctx=None) -> str:
                 + empty("The social screens did not load",
                         "They moved here when SGA was retired. Reason: "
                         + _s(type(exc).__name__)))
-    out = ["<p class='cf-h1'>Social</p>",
+    # THE SCREEN TRAVELS WHOLE: markup, stylesheet AND handlers. Moving
+    # the markup alone left fourteen unstyled classes and two dead
+    # buttons; the gates caught both, which is exactly why they exist.
+    # SG.CSS is RAW rules, not a stylesheet: emitted bare it is just text
+    # on the page, which is why fourteen classes still read as unstyled
+    # after the first fix. The boards module wrapped it; so must this.
+    _sgcss = getattr(SG, "CSS", "")
+    out = [("<style>" + _sgcss + "</style>") if _sgcss else "",
+           getattr(SG, "JS", ""),
+           "<p class='cf-h1'>Social</p>",
            "<p class='cf-note'>These moved here when the SGA section was "
            "retired: the system that decides what goes out on social is "
            "this one. The Google hub is in Search, paid is in Media "

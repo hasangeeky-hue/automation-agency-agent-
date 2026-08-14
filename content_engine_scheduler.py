@@ -249,6 +249,11 @@ SEO_CADENCE = {
     # someone clicks is not automation. They draft and escalate; they
     # cannot approve, distribute or publish.
     "factory":     {"every_days": 1, "cost": "cheap"},
+    # THE NIGHTLY ARCHIVE. Without it "what did you do TUESDAY" has no
+    # answer; with it, an employee's day survives the day. Idempotent
+    # per date (10.3), so the internal cadence and an n8n cron may both
+    # fire it and it writes once.
+    "snapshot":    {"every_days": 1, "cost": "free"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }
@@ -669,6 +674,16 @@ def run_due_work(store, now=None) -> dict:
         except Exception as e:
             log.exception("cadence: run_seo_due failed")
             return {"ran": "seo", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "snapshot", now):
+        _stamp(store, state, "snapshot", now)
+        try:
+            import content_engine_report as _RP
+            r = _RP.snapshot(store)
+            return {"ran": "snapshot", "result": r}
+        except Exception as e:
+            log.exception("cadence: the report snapshot failed")
+            return {"ran": "snapshot", "error": f"{type(e).__name__}: {e}"}
 
     if _due(state, "factory", now):
         _stamp(store, state, "factory", now)

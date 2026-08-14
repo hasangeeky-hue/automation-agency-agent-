@@ -92,6 +92,10 @@ def get_store():
                 _C.set_cost_recorder(_STORE.add_daily_cost)   # external spend -> the cap
             if hasattr(_STORE, "set_setting"):
                 _C.set_settings_writer(_STORE.set_setting)     # suppression + send caps
+            if hasattr(_STORE, "get_setting"):
+                # without the reader, a restart still forgets every
+                # rejection: note_auth cannot merge into what it cannot see
+                _C.set_settings_reader(_STORE.get_setting)
         except Exception:
             pass
         try:   # dashboard-saved brand CI feeds every content agent
@@ -2976,6 +2980,55 @@ def build_app():
                       str(r.get("business_type")),
                       str(r.get("why"))[:120])
         return r
+
+    @app.get("/connectors/health")
+    def connectors_health():
+        """Every wire in the four honest states. Green requires a real
+        accepted call AND its timestamp; creds-present is amber."""
+        import content_engine_connectors as _CN
+        rows = _CN.health()
+        return {"connectors": rows,
+                "counts": {st: sum(1 for r in rows if r["status"] == st)
+                           for st in ("verified", "present", "rejected",
+                                      "empty")}}
+
+    @app.get("/agents")
+    def agents_all():
+        """Every employee as the agent card: badge, slots, cap, report,
+        what it has learned."""
+        import content_engine_report as _RP
+        import content_engine_roster as _RS
+        return {"agents": _RP.agent_cards(get_store()),
+                "staffing": _RS.staffing_all()}
+
+    @app.get("/agents/{agent_id}/report")
+    def agent_report(agent_id: str, day: str = ""):
+        import content_engine_report as _RP
+        st = get_store()
+        if day:
+            return _RP.report_on(st, day, agent_id)
+        return {"ok": True, "agent": agent_id,
+                "report": _RP.report_today(st, agent_id)}
+
+    @app.get("/agents/{agent_id}/learned")
+    def agent_learned(agent_id: str):
+        import content_engine_report as _RP
+        return {"ok": True, "agent": agent_id,
+                "learned": _RP.learned_lines(get_store(), agent_id)}
+
+    @app.get("/company/today")
+    def company_today_ep(day: str = ""):
+        """The cockpit rollup. It is the SUM of the cards by
+        construction, so the headline cannot disagree with the table."""
+        import content_engine_report as _RP
+        return _RP.company_today(get_store(), day)
+
+    @app.post("/company/snapshot")
+    def company_snapshot():
+        """Nightly archive. Idempotent per (agent, date): the scheduler
+        and an n8n cron may both fire it, and it writes once."""
+        import content_engine_report as _RP
+        return _RP.snapshot(get_store())
 
     @app.get("/cms/status")
     def cms_status():

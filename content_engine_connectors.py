@@ -204,6 +204,7 @@ def shadowed() -> dict:
 # ---------------------------------------------------------------------------
 _COST_RECORDER = None   # -> store.add_daily_cost
 _SETTINGS_SET = None    # -> store.set_setting (persists suppression + counters)
+_SETTINGS_GET = None    # -> store.get_setting (so a verdict survives a restart)
 
 
 def set_cost_recorder(fn) -> None:
@@ -214,6 +215,13 @@ def set_cost_recorder(fn) -> None:
 def set_settings_writer(fn) -> None:
     global _SETTINGS_SET
     _SETTINGS_SET = fn
+
+
+def set_settings_reader(fn) -> None:
+    """The other half of persistence: without a reader, a restart still
+    forgets, because note_auth cannot merge into what it cannot see."""
+    global _SETTINGS_GET
+    _SETTINGS_GET = fn
 
 
 def _record_cost(usd: float, kind: str = "") -> None:
@@ -526,11 +534,37 @@ VERIFIABLE = ("ads_api", "google_gsc_ga4", "google_sheets", "google_drive",
 
 def note_auth(wire: str, ok: bool, code: int = 0, reason: str = "") -> None:
     """Record what the API actually said. Called from the real call paths, so
-    verification costs nothing extra."""
+    verification costs nothing extra.
+
+    AND IT SURVIVES A RESTART. _AUTH_STATE is process memory: every
+    deploy forgot every rejection, so a wire Google had refused for a
+    week came back green until the next call happened to fail again.
+    The verdict now also lands in the settings store, which is the same
+    Postgres this engine already trusts with its switches. Best-effort:
+    a store hiccup must never break a live call path."""
     if not wire:
         return
     _AUTH_STATE[wire] = {"ok": bool(ok), "code": int(code or 0),
                          "reason": str(reason or ""), "at": _time.time()}
+    try:
+        if _SETTINGS_SET and _SETTINGS_GET:
+            from datetime import datetime, timezone
+            rows = dict(_SETTINGS_GET("connector_health", {}) or {})
+            now = datetime.now(timezone.utc).isoformat()
+            prev = dict(rows.get(wire) or {})
+            rows[wire] = {
+                "status": "verified" if ok else "rejected",
+                # GREEN NEEDS A TIMESTAMP. A rejection keeps the last
+                # good one so a screen can say "worked at 09:12, refused
+                # since 14:40" instead of pretending it never worked.
+                "last_verified": now if ok else prev.get("last_verified"),
+                "code": int(code or 0),
+                "reason": "" if ok else str(reason or ""),
+                "checked_at": now,
+            }
+            _SETTINGS_SET("connector_health", rows)
+    except Exception:                                 # noqa: BLE001
+        pass
 
 
 def _rejected(wire: str) -> bool:
@@ -558,6 +592,81 @@ def auth_reasons() -> dict:
         if _rejected(wire):
             out[wire] = st.get("reason") or f"rejected with HTTP {st.get('code')}"
     return out
+
+
+def health() -> list:
+    """Every wire as CONNECTOR_HEALTH. The four states, exactly.
+
+    verified  a real call was accepted AND we hold the timestamp
+    rejected  a real call was refused, with the provider's own reason
+    present   a credential exists and nothing has ever verified it
+    empty     no credential at all
+
+    'present' is the amber that this whole phase exists for: it is what
+    the old status() reported as green."""
+    import content_engine_contracts as _C
+    stored = {}
+    try:
+        if _SETTINGS_GET:
+            stored = dict(_SETTINGS_GET("connector_health", {}) or {})
+    except Exception:                                 # noqa: BLE001
+        stored = {}
+    live = status()
+    out = []
+    for wire in sorted(set(list(live) + list(stored))):
+        rec = dict(stored.get(wire) or {})
+        mem = _AUTH_STATE.get(wire) or {}
+        present = bool(live.get(wire))
+        st, why, at = "empty", "", None
+        if rec.get("status") == "rejected" or (mem and not mem.get("ok")):
+            st = "rejected"
+            why = rec.get("reason") or mem.get("reason") or "the provider refused"
+            at = rec.get("last_verified")
+        elif rec.get("status") == "verified" and rec.get("last_verified"):
+            st = "verified"
+            at = rec.get("last_verified")
+        elif present:
+            st = "present"
+            why = ("a credential is saved and no call has verified it yet; "
+                   "using it is what turns this green")
+        else:
+            why = "no credential saved for this wire"
+        out.append(_C.connector_health(
+            wire, group=_group_of(wire), status=st, last_verified=at,
+            reason=why,
+            aliased_from=(KEY_ALIASES.get(wire) if isinstance(
+                KEY_ALIASES, dict) else None),
+            feeds=_FEEDS.get(wire, [])))
+    return out
+
+
+#: which module a wire serves, for the registry rows
+_FEEDS = {
+    "claude_api": ["content", "seo", "outreach"],
+    "wordpress_publish": ["content"], "image_gen": ["content"],
+    "email_send": ["outreach"], "email_reply_inbound": ["outreach"],
+    "google_gsc_ga4": ["seo", "bi"], "seo_crawler": ["seo"],
+    "seo_pagespeed": ["seo"], "seo_rank_tracker": ["seo"],
+    "seo_index_inspect": ["seo"], "ads_api": ["media"],
+    "social_linkedin": ["sga"], "shopify": ["commerce"],
+    "woocommerce": ["commerce"], "google_drive": ["system"],
+    "google_sheets": ["system"],
+}
+
+
+def _group_of(wire: str) -> str:
+    w = str(wire)
+    if w.startswith("google") or w in ("ads_api",):
+        return "google"
+    if w.startswith("seo"):
+        return "seo"
+    if w.startswith("social") or w.startswith("ads_"):
+        return "channels"
+    if w.startswith("email"):
+        return "email"
+    if w in ("shopify", "woocommerce"):
+        return "commerce"
+    return "other"
 
 
 def _classify(e, wire: str, what: str) -> tuple:
