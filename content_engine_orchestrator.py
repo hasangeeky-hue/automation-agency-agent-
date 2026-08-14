@@ -404,6 +404,17 @@ FLOW_OUTREACH = {
 
 FLOWS = {"content_piece": FLOW_CONTENT, "outreach_campaign": FLOW_OUTREACH}
 
+# PHASE 2: which learning lane a finished job teaches. This is the sixth
+# time two hand-written lists had to agree, so it is not trusted: a job
+# type with no lane is caught at import, here, instead of silently filing
+# an outreach lesson in the writer's playbook a month from now.
+LANE_OF_JOB = {"content_piece": "content", "outreach_campaign": "outreach"}
+_missing_lane = sorted(set(FLOWS) - set(LANE_OF_JOB))
+if _missing_lane:
+    raise RuntimeError(
+        "every flow must name the lane it teaches; missing: %s"
+        % ", ".join(_missing_lane))
+
 # Terminal / halted statuses the poller must not pick up.
 # "discarded" is a HUMAN decision and therefore terminal. It was in no
 # list at all: not here, not in the pg store's copy, not in the DDL
@@ -818,7 +829,13 @@ def advance(job: dict, store: JobStore) -> str:
                 log.info("job %s reached learn with nothing measured: %s",
                          job.get("job_id"), job["learned_nothing"])
             else:
-                record_cycle(job.get("client_id", ""), _opt)
+                # PHASE 2: into the lane that ran, not into one shared
+                # playbook. An outreach campaign's lesson used to be filed
+                # where the blog writer reads, so each lane was quietly
+                # taught the other's conclusions.
+                record_cycle(job.get("client_id", ""), _opt,
+                             lane=LANE_OF_JOB.get(
+                                 str(job.get("type") or ""), "content"))
                 # A MEASURED-poor piece earns a proposal in the approval queue.
                 # Deliberately a proposal and not a rewrite: rewriting spends
                 # money and republishes to a live site, and both stay behind the

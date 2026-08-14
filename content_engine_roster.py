@@ -118,10 +118,11 @@ ROSTER: List[Dict[str, Any]] = [
      "why": "measures what shipped; there is no production lane here yet, "
             "and a fake insights writer would be worse than none"},
     {"id": "system.integrations", "name": "🔌 Integrations Engineer",
-     "module": "system", "badge": "inspector", "cap_key": "PER_DAY_BUDGET_USD",
+     "module": "system", "badge": "live", "cap_key": "PER_DAY_BUDGET_USD",
      "slots": [],
-     "why": "records what every real call learns about a wire; it becomes "
-            "a live lane when it runs its own self-tests on a clock"},
+     "why": "runs a free daily wire check on the cadence: newly-rejected, "
+            "shadowed keys, half-configured groups and stale green; it "
+            "proposes fixes and may never mark a wire verified itself"},
     {"id": "risk.sentinel", "name": "🩺 Risk Sentinel",
      "module": "risk", "badge": "inspector", "cap_key": "PER_DAY_BUDGET_USD",
      "slots": [],
@@ -153,6 +154,30 @@ def roster() -> List[Dict[str, Any]]:
 
 def agent(agent_id: str) -> Dict[str, Any]:
     return dict(BY_ID.get(str(agent_id)) or {})
+
+
+# PHASE 2: which playbook an employee reads and writes. Derived from the
+# desk it sits at, so adding an employee cannot forget to add a lane.
+LANE_OF_MODULE: Dict[str, str] = {
+    "mkt": "content",
+    "leads": "outreach",
+    "seo": "seo",
+    "system": "system",
+    "risk": "risk",
+    "bi": "bi",
+    "media": "media",
+    "commerce": "commerce",
+    "sga": "sga",
+}
+
+
+def lane_of(agent_id: str) -> str:
+    """The learning lane this employee writes to. Unknown desks fall back
+    to 'content' ONLY if the id has no prefix at all; a real desk with no
+    lane is caught by check(), because an employee whose lessons go into
+    someone else's playbook is worse than one that learns nothing."""
+    head = str(agent_id).split(".")[0]
+    return LANE_OF_MODULE.get(head, "content")
 
 
 def owner_of(skill: str) -> str:
@@ -205,6 +230,24 @@ def check() -> Dict[str, Any]:
             problems.append(r["id"] + ": invalid badge")
         if not str(r.get("why") or "").strip():
             problems.append(r["id"] + ": a badge with no justification")
+    # PHASE 2: every desk must own a lane, and every lane must be one the
+    # learning store actually accepts. Two lists that must agree, checked
+    # instead of typed twice.
+    try:
+        import content_engine_learning as L
+        for r in ROSTER:
+            head = str(r["id"]).split(".")[0]
+            if head not in LANE_OF_MODULE:
+                problems.append(r["id"] + ": no learning lane for this desk")
+            elif LANE_OF_MODULE[head] not in L.LANES:
+                problems.append(r["id"] + ": lane '%s' is not a real lane"
+                                % LANE_OF_MODULE[head])
+        for kind, lane in getattr(L, "_OUTCOME_LANE", {}).items():
+            if lane not in L.LANES:
+                problems.append("outcome '%s' files into unknown lane '%s'"
+                                % (kind, lane))
+    except Exception as exc:                              # noqa: BLE001
+        problems.append(f"could not read the lanes: {type(exc).__name__}")
     return {"ok": not problems, "problems": problems,
             "agents": len(ROSTER), "attributed": len(ATTRIBUTION)}
 

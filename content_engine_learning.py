@@ -38,6 +38,10 @@ def _empty_playbook() -> dict:
         # S2 — the money agents now learn too:
         "winning_email_subjects": [],   # subject lines that booked calls
         "winning_campaign_themes": [],  # ad campaign themes that hit CPA
+        # PHASE 2 - what a lane OBSERVED. Insights only ever reached the
+        # history, which nothing reads, so a lane could record thirty
+        # cycles and still have nothing to say for itself.
+        "observations": [],
     }
 
 
@@ -73,6 +77,8 @@ def _apply_optimizer(record: dict, optimizer_output: dict, at: Optional[str]) ->
         pb["winning_topics"],
         list(nxt.get("topic_priorities", [])) + optimizer_output.get("double_down", []))
     pb["avoid"] = _merge_list(pb["avoid"], optimizer_output.get("reduce_or_cut", []))
+    pb["observations"] = _merge_list(pb.get("observations", []),
+                                     optimizer_output.get("insights", []))
 
     record["cycles"] += 1
     record["history"].append({
@@ -94,6 +100,16 @@ _OUTCOME_FIELD = {
     # learning loop only listened to measurements that arrive 21 days later.
     "approved_piece": "winning_piece_titles",
     "rejected_piece": "piece_rejection_notes",
+}
+
+# Which lane owns each outcome. Same shape rule as ATTRIBUTION in the
+# roster: the two lists must agree, so the gate checks them against each
+# other rather than trusting that both were typed correctly.
+_OUTCOME_LANE = {
+    "email_subject": "outreach",
+    "campaign_theme": "media",
+    "approved_piece": "content",
+    "rejected_piece": "content",
 }
 
 
@@ -216,21 +232,89 @@ def set_store(store) -> None:
     ACTIVE = store
 
 
-def get_playbook(client_id: str) -> dict:
-    return ACTIVE.snapshot(client_id or "")
+# --- PHASE 2: one playbook per LANE, not one per company ------------------
+# Before this, every lane wrote into a single shared playbook, so the SEO
+# lane's lesson could only be read as if the content writer had learned it,
+# and lanes that are cadence tasks rather than job pipelines never wrote at
+# all. Memory that only one worker can write is not memory, it is a log.
+#
+# 'content' deliberately keeps the BARE client_id as its key: every playbook
+# already stored on the VPS was written by the content lane, and renaming
+# the key would quietly hand the writer an empty playbook and call it a
+# fresh start.
+LANES = ("content", "outreach", "seo", "system", "risk", "bi", "media",
+         "commerce", "sga")
 
 
-def record_cycle(client_id: str, optimizer_output: dict, at: Optional[str] = None) -> dict:
-    return ACTIVE.record_cycle(client_id or "", optimizer_output, at)
+def _lane_key(client_id: str, lane: str) -> str:
+    lane = (lane or "content").strip().lower()
+    if lane not in LANES:
+        raise ValueError(
+            "unknown learning lane %r (known: %s)" % (lane, ", ".join(LANES)))
+    cid = client_id or ""
+    return cid if lane == "content" else "%s#%s" % (cid, lane)
+
+
+def get_playbook(client_id: str, lane: str = "content") -> dict:
+    return ACTIVE.snapshot(_lane_key(client_id, lane))
+
+
+def record_cycle(client_id: str, optimizer_output: dict,
+                 at: Optional[str] = None, lane: str = "content") -> dict:
+    return ACTIVE.record_cycle(_lane_key(client_id, lane), optimizer_output, at)
+
+
+def record_lane_cycle(client_id: str, lane: str, *,
+                      learned=None, double_down=None, avoid=None,
+                      at: Optional[str] = None) -> dict:
+    """The door for lanes that are NOT job pipelines.
+
+    The Integrations Engineer, the Sentinel and the BI analyst run on the
+    cadence and never reach the orchestrator's learn edge, so they had no
+    way to remember anything between runs. They hand plain sentences in
+    here and get the same durable playbook the writer has.
+
+    Nothing measured means nothing recorded: an empty call raises rather
+    than incrementing the cycle count, because a playbook that counts empty
+    cycles reports thirty days of training and knows nothing.
+    """
+    learned = [s for s in (learned or []) if str(s).strip()]
+    double_down = [s for s in (double_down or []) if str(s).strip()]
+    avoid = [s for s in (avoid or []) if str(s).strip()]
+    if not (learned or double_down or avoid):
+        raise ValueError(
+            "record_lane_cycle(%r) was given nothing learned; silence is "
+            "not a cycle" % lane)
+    return record_cycle(client_id, {
+        "insights": [{"finding": s} for s in learned],
+        "double_down": list(double_down),
+        "reduce_or_cut": list(avoid),
+        "measured": True,
+    }, at, lane=lane)
+
+
+def lanes_learned(client_id: str) -> dict:
+    """{lane: cycles} across every lane, for the report and the gate."""
+    out = {}
+    for lane in LANES:
+        try:
+            out[lane] = int(get_playbook(client_id, lane).get("cycles") or 0)
+        except Exception:                                     # noqa: BLE001
+            out[lane] = 0
+    return out
 
 
 def record_outcome(client_id: str, kind: str, item: str, at: Optional[str] = None) -> dict:
     """kind: 'email_subject' (a subject that booked a call) or 'campaign_theme'
-    (a campaign that performed). Feeds outreach_copy + media_buyer next time."""
+    (a campaign that performed). Feeds outreach_copy + media_buyer next time.
+
+    The outcome lands in the lane that OWNS it: a subject line that booked a
+    call is the outreach writer's lesson, not the blog writer's."""
     fn = getattr(ACTIVE, "record_outcome", None)
     if fn is None:
         return {}
-    return fn(client_id or "", kind, item, at)
+    return fn(_lane_key(client_id or "", _OUTCOME_LANE.get(kind, "content")),
+              kind, item, at)
 
 
 if __name__ == "__main__":

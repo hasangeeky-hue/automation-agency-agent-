@@ -50,7 +50,11 @@ print("=" * 74)
 print("PHASE 1 - THE DAILY REPORT")
 print("=" * 74)
 
-TODAY = date.today().isoformat()
+# The company's day, not this machine's local one. This line used to read
+# date.today(): when the two disagreed, jobs stamped "today" were invisible
+# to a report reading a different date, which is the same off-by-one the
+# Integrations Engineer hit on its first run.
+TODAY = C.today()
 s = Store()
 s.j = [
     {"job_id": "done1", "status": "published", "updated_at": TODAY,

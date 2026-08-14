@@ -39,6 +39,19 @@ BADGE_MARK = {"live": "●", "inspector": "◐", "architected": "○",
 CONNECTOR_STATES = ("verified", "present", "rejected", "empty")
 
 
+def today() -> str:
+    """THE company's day, defined once.
+
+    A worker stamped its day in UTC while the report read the local date.
+    Nothing errored: for the hours the two disagreed, an employee that had
+    worked showed a blank card, and the founder would have been told
+    nobody did anything. A date is a shared vocabulary like any other, so
+    everything that says "today" says it from here.
+    """
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).date().isoformat()
+
+
 def connector_health(wire: str, *, group: str = "", status: str = "empty",
                      last_verified=None, reason: str = "",
                      aliased_from=None, shadowed=None,

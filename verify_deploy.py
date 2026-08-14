@@ -1399,6 +1399,61 @@ try:
 except Exception as exc:                              # noqa: BLE001
     check("the commerce and CMS layer answered", False, repr(exc)[:110])
 
+# --- 20. PHASE 2 + LANE 3a: memory per lane, and an employee on the wires --
+print("\n20. THE LANES REMEMBER, AND THE WIRES HAVE AN OWNER")
+try:
+    import content_engine_contracts as C20
+    import content_engine_integrations as INT20
+    import content_engine_learning as L20
+    import content_engine_orchestrator as O20
+    import content_engine_report as RP20
+    import content_engine_roster as R20
+    import content_engine_scheduler as SC20
+
+    check("every job flow names the lane it teaches",
+          set(O20.FLOWS) <= set(O20.LANE_OF_JOB),
+          str(len(O20.LANE_OF_JOB)) + " flow(s) mapped")
+    check("every lane a flow teaches is a real lane",
+          set(O20.LANE_OF_JOB.values()) <= set(L20.LANES))
+    check("every employee's desk maps to a real learning lane",
+          all(R20.lane_of(a["id"]) in L20.LANES for a in R20.roster()),
+          str(len(L20.LANES)) + " lanes")
+    check("every outcome kind files into a real lane",
+          set(L20._OUTCOME_LANE.values()) <= set(L20.LANES))
+    check("the content lane still reads the key already on this box",
+          L20._lane_key("acme", "content") == "acme")
+    check("and another lane cannot collide with it",
+          L20._lane_key("acme", "seo") == "acme#seo")
+
+    # the company's day is defined once
+    check("there is ONE definition of the company's day",
+          RP20._today() == C20.today(), C20.today())
+
+    # the Integrations Engineer
+    _ichk = INT20.check()
+    check("the Integrations Engineer watches wires that exist",
+          _ichk["ok"], str(_ichk["problems"])[:110])
+    check("it has a working day on the cadence",
+          "integrations" in SC20.SEO_CADENCE)
+    check("and that day is free, because it makes no calls",
+          SC20.SEO_CADENCE["integrations"]["cost"] == "free")
+    _src20 = open(SC20.__file__, encoding="utf-8").read()
+    check("it runs BEFORE the nightly archive, or its day is frozen empty",
+          _src20.index('_due(state, "integrations"')
+          < _src20.index('_due(state, "snapshot"'))
+    check("its badge is live and says what makes it live",
+          R20.agent("system.integrations")["badge"] == "live"
+          and bool(R20.agent("system.integrations")["why"].strip()))
+    _isrc = open(INT20.__file__, encoding="utf-8").read()
+    check("IT CANNOT MARK A WIRE VERIFIED (Phase 0 stays honest)",
+          "note_auth" not in _isrc,
+          "no path from a free self-test to a green light")
+    check("its asks reach a person as proposals",
+          "pending" in _isrc and "/connect#" in _isrc)
+except Exception as exc:                                  # noqa: BLE001
+    check("the learning lanes and the Integrations Engineer answered",
+          False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

@@ -254,6 +254,11 @@ SEO_CADENCE = {
     # per date (10.3), so the internal cadence and an n8n cron may both
     # fire it and it writes once.
     "snapshot":    {"every_days": 1, "cost": "free"},
+    # LANE 3a. The Integrations Engineer's working day. Free by
+    # construction: it reads config and compares it with yesterday. It
+    # cannot call a provider, so it cannot cost anything and cannot mark
+    # anything verified.
+    "integrations": {"every_days": 1, "cost": "free"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }
@@ -674,6 +679,24 @@ def run_due_work(store, now=None) -> dict:
         except Exception as e:
             log.exception("cadence: run_seo_due failed")
             return {"ran": "seo", "error": f"{type(e).__name__}: {e}"}
+
+    # LANE 3a, DELIBERATELY BEFORE THE SNAPSHOT. The archive freezes the
+    # day; an employee that works after it is archived shows a blank
+    # Tuesday forever.
+    if _due(state, "integrations", now):
+        _stamp(store, state, "integrations", now)
+        try:
+            import content_engine_integrations as _INT
+            r = _INT.run(store)
+            log.info("cadence: integrations checked %d wires, %d finding(s)",
+                     r.get("checked", 0), len(r.get("findings") or []))
+            return {"ran": "integrations", "result": {
+                "checked": r.get("checked", 0),
+                "findings": len(r.get("findings") or []),
+                "proposals": len(r.get("proposals") or [])}}
+        except Exception as e:
+            log.exception("cadence: the integrations engineer failed")
+            return {"ran": "integrations", "error": f"{type(e).__name__}: {e}"}
 
     if _due(state, "snapshot", now):
         _stamp(store, state, "snapshot", now)

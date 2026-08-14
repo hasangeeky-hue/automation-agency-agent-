@@ -37,7 +37,10 @@ def _s(x) -> str:
 
 
 def _today() -> str:
-    return _date.today().isoformat()
+    # One definition of the company's day (C.today). This used to be the
+    # LOCAL date while the workers stamped UTC, so for part of every day
+    # the report and the worker were looking at different dates.
+    return C.today()
 
 
 def _get(store, k, d=None):
@@ -123,6 +126,24 @@ def report_today(store, agent_id: str = "", day: str = "") -> Dict[str, Any]:
     except Exception:                                 # noqa: BLE001
         pass
 
+    # LANES THAT ARE NOT JOB PIPELINES still have to answer. The
+    # Integrations Engineer runs on the cadence and produces no jobs, so
+    # reading only the job table would print an empty day for an employee
+    # that worked - which is precisely the silence this whole phase is
+    # meant to end.
+    lane_day = _d(_d(_get(store, "lane_log", {})).get(day))
+    mine = _d(lane_day.get(who)) if who else {}
+    if not who:
+        for _aid, entry in sorted(lane_day.items()):
+            e = _d(entry)
+            finished += _l(e.get("finished"))
+            couldnt += _l(e.get("couldnt"))
+            needs += _l(e.get("needs"))
+    else:
+        finished += _l(mine.get("finished"))
+        couldnt += _l(mine.get("couldnt"))
+        needs += _l(mine.get("needs"))
+
     return C.daily_report(day, finished=finished, couldnt=couldnt,
                           needs=needs)
 
@@ -136,12 +157,18 @@ def learned_lines(store, agent_id: str) -> List[str]:
     pb = {}
     try:
         import content_engine_learning as L
-        pb = _d(L.get_playbook(_s(_get(store, "BRAND_NAME", "")) or "default"))
+        import content_engine_roster as R
+        # PHASE 2: this employee's OWN lane. Reading the shared playbook
+        # made every card recite the writer's lessons, so an employee that
+        # had learned nothing looked as experienced as one that had.
+        pb = _d(L.get_playbook(_s(_get(store, "BRAND_NAME", "")) or "default",
+                               R.lane_of(agent_id)))
     except Exception:                                 # noqa: BLE001
         pb = {}
     lines: List[str] = []
     for key, prefix in (("winning_topics", "winning: "),
                         ("double_down", "do more: "),
+                        ("observations", "noted: "),
                         ("avoid", "avoid: ")):
         for v in _l(pb.get(key))[:2]:
             lines.append(prefix + _s(v)[:70])

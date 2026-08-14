@@ -2992,6 +2992,28 @@ def build_app():
                            for st in ("verified", "present", "rejected",
                                       "empty")}}
 
+    @app.get("/integrations")
+    def integrations_desk():
+        """The Integrations Engineer's desk: what it found and what it is
+        asking a person to fix."""
+        import content_engine_integrations as _INT
+        st = get_store()
+        res = _INT.self_tests(st)
+        return {"ok": True, "checked": res["checked"],
+                "findings": res["findings"],
+                "proposals": _INT.proposals(st)}
+
+    @app.post("/integrations/run")
+    def integrations_run():
+        """Run its working day now. Free by construction: it reads config
+        and compares it with yesterday, and it cannot mark a wire
+        verified - only a real accepted call does that."""
+        import content_engine_integrations as _INT
+        r = _INT.run(get_store())
+        return {"ok": True, "checked": r["checked"],
+                "findings": len(r["findings"]),
+                "proposals": len(r["proposals"]), "report": r["report"]}
+
     @app.get("/agents")
     def agents_all():
         """Every employee as the agent card: badge, slots, cap, report,
