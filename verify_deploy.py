@@ -1505,6 +1505,17 @@ try:
           len(_all21) == 51, str(len(_all21)))
     check("and NO screen is rendered twice",
           not [s for s in _all21 if _h21.count("id='os-%s'" % s) > 1])
+    check("THE AGENT OS IS THE DASHBOARD (first nav group, opens first)",
+          ">Agent OS<" in _h21
+          and _h21.find(">Agent OS<") < _h21.find(">Deep tools<")
+          and "class='page on' id='sec-oscockpit'" in _h21)
+    _old21 = ("cockpit", "bi", "riskinfra", "content", "outreach", "sga",
+              "seo", "media", "system")
+    check("and NO deep tool was deleted: every old page still resolves",
+          all(("id='sec-%s'" % p) in _h21 for p in _old21),
+          str([p for p in _old21 if ("id='sec-%s'" % p) not in _h21]))
+    check("media states it has no Agent OS replacement",
+          "no Agent OS view of this department" in _h21)
     check("every Agent OS page is reachable from the nav",
           all(("id='nav-%s'" % p) in _h21
               for p in ("oscockpit", "oscore", "osmkt", "osseo",

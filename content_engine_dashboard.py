@@ -4601,16 +4601,60 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
          "Agents, health, wiring and machines — merged. 214 cards across 12 boards.",
          _system_all),
     ]
+    # EACH DEEP PAGE POINTS AT ITS AGENT OS VIEW. A reader who lands on
+    # the old Content Factory should be told, on the page, where the new
+    # Marketing department is. "None" is stated too: media has no Agent
+    # OS screens, and saying so is better than implying one exists.
+    _OS_VIEW = {
+        "cockpit": ("oscockpit", "Cockpit"),
+        "content": ("osmkt", "Marketing"),
+        "outreach": ("osleads", "Leads"),
+        "sga": ("oscom", "Commerce"),
+        "seo": ("osseo", "Search"),
+        "system": ("oscore", "Web and Data Core"),
+        "riskinfra": ("oscore", "Web and Data Core"),
+        "bi": ("oscore", "Web and Data Core"),
+        "media": ("", ""),
+    }
+
+    def _deep_note(pid):
+        dest, label = _OS_VIEW.get(pid, ("", ""))
+        if dest:
+            where = ("The Agent OS view of this department is "
+                     "<a href='#%s' onclick=\"return nav('%s')\">"
+                     "<b>%s</b></a>." % (dest, dest, _esc(label)))
+        else:
+            where = ("There is <b>no Agent OS view of this department</b>: "
+                     "the wireframe draws no Media Buying screens. This "
+                     "page is the only one there is.")
+        return ("<div style='background:#e9e9ea;border:1px solid #d4d4d7;"
+                "padding:9px 13px;margin-bottom:12px;font-size:12.5px;"
+                "color:#5d5d60'><b style='color:#1d1f20'>Deep tool.</b> "
+                + where + "</div>")
+
+    PAGES = [(pid, icon, short, title, sub,
+              (_deep_note(pid) + body) if pid in _OS_VIEW else body)
+             for pid, icon, short, title, sub, body in PAGES]
+
     # THE GLOBAL NAV, grouped the way the cockpit spec groups the OS:
     # Command / Growth / Intelligence / System. Same nine links, same ids,
     # same nav() handler - only the order and the group labels are new.
     _by_id = {pid: (icon, short) for pid, icon, short, _t, _s, _b in PAGES}
+    # THE AGENT OS IS THE DASHBOARD NOW. The wireframe's six departments
+    # come first and the OS cockpit is what opens.
+    #
+    # The deep modules are NOT deleted. Two of them have no Agent OS
+    # replacement at all: the wireframe draws no Media Buying screens
+    # (module 1 is named in its nav and has zero screens), and Business
+    # Intelligence answers to a single Analytics screen rather than its
+    # fourteen boards. Deleting either would remove working tooling and
+    # put nothing in its place, which is not a replacement, it is a loss.
+    # They move to a second group and keep every id, so no link dies.
     _NAV_GROUPS = (("Agent OS", ("oscockpit", "osmkt", "osseo",
-                             "osleads", "oscom", "oscore")),
-                   ("Command", ("cockpit",)),
-                   ("Growth", ("content", "outreach", "media", "sga")),
-                   ("Intelligence", ("bi", "seo")),
-                   ("System", ("riskinfra", "system")))
+                                 "osleads", "oscom", "oscore")),
+                   ("Deep tools", ("media", "bi", "seo", "content",
+                                   "outreach", "sga", "cockpit",
+                                   "riskinfra", "system")))
     _navp = []
     for _glab, _gids in _NAV_GROUPS:
         _navp.append(f"<span class='navgrp'>{_glab}</span>")

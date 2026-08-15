@@ -40,6 +40,40 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session G — the replacement: the Agent OS becomes the dashboard
+2026-08-15
+
+**FINISHED**
+- The Agent OS is now THE dashboard. Its six departments are the first
+  nav group and the OS Cockpit is the page that opens. The deep modules
+  moved to a second group, "Deep tools".
+- Every deep page carries a line naming its Agent OS view, so a reader
+  who lands on the old Content Factory is told where Marketing is.
+- 292 deploy checks, 0 failed. 64 gates.
+
+**WHAT I DID NOT DO, AND WHY**
+- I did not DELETE the deep modules, and the gate now asserts every old
+  page id still resolves. Two of them have no Agent OS replacement at
+  all:
+  * MEDIA BUYING: the wireframe draws ZERO media screens. Module 1 is
+    named seventy times in its own nav and has no screens of its own.
+    Deleting the media page would remove the whole Media Buying OS (16
+    boards, the canonical model, the policy engine, the experiments) and
+    put nothing in its place. Its page now says so out loud rather than
+    implying a replacement exists.
+  * BUSINESS INTELLIGENCE: 14 boards answered by one Analytics screen.
+- That is not a replacement, it is a loss, so it needs the founder to
+  say which specific modules to delete rather than being inferred from
+  "replace fully". Everything else is one nav group away and one line of
+  code from being removed when he decides.
+
+**NEED FROM FOUNDER**
+- Name any deep module you want actually deleted. Media and BI should
+  not be on that list until something replaces them.
+- The three standing items are unchanged.
+
+---
+
 ## Session F — Phase 5 complete + Lane 3c stage 1 (Commerce)
 2026-08-15
 

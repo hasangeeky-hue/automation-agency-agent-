@@ -118,6 +118,24 @@ for _pid in ("oscockpit", "oscore", "osmkt", "osseo", "osleads",
              "oscom"):
     t("%s has a nav link and a page" % _pid,
       ("id='nav-%s'" % _pid) in html and ("id='sec-%s'" % _pid) in html)
+# ---- THE REPLACEMENT, AND WHAT IT DID NOT COST -------------------------
+print("")
+print("B2. THE AGENT OS IS THE DASHBOARD, AND NOTHING WAS LOST")
+t("the Agent OS is the FIRST nav group",
+  ">Agent OS<" in html
+  and html.find(">Agent OS<") < html.find(">Deep tools<"))
+t("and the OS cockpit is the page that opens",
+  "class='page on' id='sec-oscockpit'" in html)
+_old_ids = ("cockpit", "bi", "riskinfra", "content", "outreach", "sga",
+            "seo", "media", "system")
+_gone = [p for p in _old_ids if ("id='sec-%s'" % p) not in html]
+t("EVERY OLD PAGE STILL RESOLVES, so no link the founder has dies",
+  not _gone, str(_gone))
+t("each deep page points at its Agent OS view",
+  html.count("Deep tool.") >= len(_old_ids), str(html.count("Deep tool.")))
+t("AND MEDIA SAYS PLAINLY IT HAS NO REPLACEMENT, rather than implying one",
+  "no Agent OS view of this department" in html)
+
 t("exactly one nav link is marked active",
   html.count("class='navb act'") == 1, str(html.count("class='navb act'")))
 _first = re.search(r"class='navb act' id='nav-([a-z]+)'", html)
