@@ -193,9 +193,25 @@ def lane_seo(store) -> None:
     tot = fed.get("search_totals") or {}
     if tot:
         note("")
+        # THE FIELD IS 'position'. Reading 'avg_position' printed None
+        # over a real 42.2 that the prover shows from the same table.
+        # Third time this harness has reported empty over real data, and
+        # every time the cause was the same: guessing a field name
+        # instead of reading the one the screens read.
         note("clicks=%s impressions=%s ctr=%s avg_position=%s"
-             % (tot.get("clicks"), tot.get("impressions"),
-                tot.get("ctr"), tot.get("avg_position")))
+             % (tot.get("clicks"), tot.get("impressions"), tot.get("ctr"),
+                tot.get("position")
+                if tot.get("position") is not None else "NOT MEASURED"))
+        # A GUESSED FIELD NAME NOW FAILS INSTEAD OF PRINTING None. That
+        # is the whole defence against this recurring: a missing value
+        # and a misspelled key look identical at the call site, and only
+        # one of them is the data's fault.
+        _want = ("clicks", "impressions", "ctr", "position")
+        _absent = [k for k in _want if k not in tot]
+        ok("the totals table carries every field this harness names",
+           not _absent,
+           "this harness reads fields that do not exist: %s. The value is "
+           "not missing, the NAME is wrong." % ", ".join(_absent))
     # The known open question on this box, carried forward by name so it
     # does not quietly become "SEO is fine".
     if tot.get("sessions_note"):

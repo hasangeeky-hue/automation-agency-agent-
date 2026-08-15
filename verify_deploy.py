@@ -343,10 +343,18 @@ try:
             print("       NOTE: " + _age + ". The engines may already be "
                   "fine; this")
             print("       check reads the last STORED probe, not a live "
-                  "call. Re-run:")
+                  "call.")
+            # THE COMMAND HAS TO BE THE ONE THAT PERSISTS. The first
+            # version of this note pointed at live_test.py --probe, which
+            # asks the engines and prints the answers and stores nothing,
+            # so following the instruction changed this check not at all.
+            # An instruction that cannot work is worse than none: it
+            # spends the founder's time and his credit to prove nothing.
+            print("       Re-probe AND SAVE, which is what clears this:")
             print("         docker compose -f deploy/docker-compose.yml "
                   "exec -T api \\")
-            print("           python live_test.py --probe")
+            print("           python -c \"import content_engine_api as A;"
+                  "print(A.api_seo('aeo'))\"")
         for _n, _f2, _k2 in AEO._ENGINES:
             if not AEO._key_present(_k2):
                 continue                      # absent key is a choice, not a bug
