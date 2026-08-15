@@ -1824,8 +1824,16 @@ def _dashboard_kwargs(piece: str = "") -> dict:
         risk_ctx = _FD.merge(risk_ctx, _ch)
     except Exception as e:                            # noqa: BLE001
         log.warning("feeds unavailable, boards keep their old gaps: %s", e)
+    # THE AGENT OS CONTEXT. Built here because this is where the store is;
+    # the dashboard renderer is handed contexts and never fetches its own.
+    try:
+        import content_engine_agentos as _OSC
+        os_ctx = _OSC.build_ctx(get_store())
+    except Exception as e:                                # noqa: BLE001
+        log.warning("the Agent OS context could not be built: %s", e)
+        os_ctx = {}
     return dict(
-        saved_keys=saved_keys,
+        saved_keys=saved_keys, os_ctx=os_ctx,
         seo_ctx=seo_ctx, media_ctx=media_ctx, system_ctx=system_ctx,
         risk_ctx=risk_ctx, bi_ctx=bi_ctx, outreach_ctx=outreach_ctx,
         sga_ctx=sga_ctx, factory_ctx=factory_ctx, cockpit_ctx=cockpit_ctx,

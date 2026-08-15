@@ -40,6 +40,68 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session C — Phase 5, part 1: the wireframe recreated (t13 + t14)
+2026-08-15
+
+**FINISHED**
+- `content_engine_os_kit.py`: the Industry design system and the five
+  reusable objects the whole OS composes from (blueprint card, staffing
+  badge, acv2 agent card with today's report, connector registry row,
+  command panel). Tokens are declared on `.osx` and read only from there,
+  because the last redesign lost a day to `var()` fallbacks resolving to
+  the host shell's dark values.
+- `content_engine_agentos.py`: all 16 screens of turn 13 (Web and Data
+  Core, 11) and turn 14 (Cockpit, 5), screen ids and titles read out of
+  the handoff file rather than invented.
+- Wired into the dashboard as two new pages under an "Agent OS" nav
+  group, bound to /agents, /company/today, /connectors/health and
+  /integrations. Barlow and Barlow Condensed now load, so the DS type is
+  real rather than an Arial Narrow lookalike.
+- `verify_agentos.py` (38 gates) asserts against the ASSEMBLED PAGE, and
+  prover section 21 repeats it on the box. 278 deploy checks.
+
+**COULDN'T**
+- Only 16 of the 54 screens exist. t8, t9, t10, t11 and t12 are not
+  built. The old dashboard pages therefore STAY: removing a working
+  screen before its replacement exists would take capability away from
+  the founder in exchange for a tidier nav. They are retired in the last
+  session, per the agreed order.
+- The same nine suites still exit nonzero. Verified failing at the
+  baseline before this session's changes.
+
+**NEED FROM FOUNDER**
+- Nothing new. The three standing items are unchanged.
+
+**Corrections found while building (10.2)**
+- I OVERWROTE TWO EXISTING MODULES. `content_engine_os_core.py` (916
+  lines, the Engagement OS vocabulary that every OS module imports) and
+  `verify_os.py` (1760 lines, its 526-check gate) already existed, and
+  the new files took their names. The Write tool said "updated", not
+  "created", and I did not read it. Both were restored from HEAD and the
+  new modules renamed to `content_engine_agentos.py` and
+  `verify_agentos.py`. Nothing was lost; both gates pass again. A new
+  module name must be checked against the tree BEFORE writing it.
+- `dashboard_html(st=...)` is the CONNECTOR STATUS DICT, not a store. The
+  first wiring passed it to `build_ctx()`, which wants a store. The name
+  looked like one and the shape was not, which is the same class as the
+  audit key-versus-shape mistake. The renderer now takes `os_ctx` built
+  by the API, matching every other section.
+- The Tool Connection Hub first keyed its inputs by WIRE name. `POST
+  /connect` accepts allow-listed CREDENTIAL KEYS, and no wire-to-key map
+  exists in the engine because presence is computed per adapter. Rather
+  than hand-write a thirty-row mapping that must agree with ninety-three
+  keys, the hub now asks for exactly what the endpoint accepts.
+- Two of the four staffing badges rendered UNSTYLED: the kit's own check
+  listed class names by hand and missed `ox-b-inspector` and
+  `ox-b-architected`. The check now derives the list from the badge
+  vocabulary. A hand-written list of things to check is the same bug as
+  a hand-written list of anything else.
+- The nav's active link was hard-coded to `cockpit`. Adding a page in
+  front of it would have opened one section while a different link
+  looked selected.
+
+---
+
 ## Session B — Phase 2 (memory) + Lane 3a (the Integrations Engineer)
 2026-08-15
 

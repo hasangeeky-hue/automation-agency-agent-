@@ -3216,7 +3216,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                    window_days=30, cms_ctx=None,
                    system_ctx=None, risk_ctx=None, bi_ctx=None,
                    outreach_ctx=None, sga_ctx=None, factory_ctx=None,
-                   cockpit_ctx=None, saved_keys=None):
+                   cockpit_ctx=None, saved_keys=None, os_ctx=None):
     # A card id is a deep link, so it must be unique across the whole PAGE.
     # De-duplication is page-scoped; this is where a page begins.
     import content_engine_seo_boards as _SB
@@ -4507,7 +4507,40 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                      f"{_esc(type(_e4).__name__)}: {_esc(str(_e4))[:300]}</p></div>"
                      + _mod_risk(ctx) + _mod_workforce(ctx) + _mod_infra(ctx))
 
+    # ---- THE AGENT OS (the wireframe, recreated in the kit) --------------
+    # Turn 13 and turn 14 of the handoff. These are the FIRST two of the
+    # seven departments; t8, t9, t10, t11 and t12 follow in later sessions.
+    # The old pages below stay reachable until all 54 screens exist:
+    # deleting a working screen before its replacement is built would take
+    # capability away from the founder in exchange for a tidier nav.
+    # The context is built by the caller, which holds the store. This
+    # function is handed contexts and never reaches for data itself: the
+    # first draft passed `st` here, which is the CONNECTOR STATUS DICT and
+    # not a store at all. The name looked like one; the shape was not.
+    try:
+        import content_engine_agentos as _OSC
+        import content_engine_os_kit as _OSK
+        _OSKIT_CSS, _OSKIT_JS = _OSK.CSS, _OSK.JS
+        _os_ctx = os_ctx if isinstance(os_ctx, dict) else {}
+        _os_core_all = _OSC.core_section(_os_ctx)
+        _os_cockpit_all = _OSC.cockpit_section(_os_ctx)
+    except Exception as _e5:                              # noqa: BLE001
+        log.exception("the Agent OS screens failed to render")
+        _fail = ("<div class='card full' style='border-color:#F5788A'>"
+                 "<p class='ct'>The Agent OS screens failed to render</p>"
+                 f"<p class='cc'>Reason: {_esc(type(_e5).__name__)}: "
+                 f"{_esc(str(_e5))[:300]}</p></div>")
+        _os_core_all = _os_cockpit_all = _fail
+        _OSKIT_CSS = _OSKIT_JS = ""
+
     PAGES = [
+        ("oscockpit", "🧭", "Cockpit", "Cockpit",
+         "Every module at a glance, one approval queue, every employee, and "
+         "the rules that govern all of them. Turn 14 of the Agent OS.",
+         _os_cockpit_all),
+        ("oscore", "🗄", "Web & Data Core", "Web and Data Core",
+         "The wires, the desks that keep them honest, and the map of what "
+         "feeds what. Turn 13 of the Agent OS.", _os_core_all),
         ("cockpit", "🧠", "AI Cockpit", "AI Cockpit",
          "The brain. Every system's signal becomes a decision you can act "
          "on. 268 cards across 15 boards.", _cockpit_all),
@@ -4551,7 +4584,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # Command / Growth / Intelligence / System. Same nine links, same ids,
     # same nav() handler - only the order and the group labels are new.
     _by_id = {pid: (icon, short) for pid, icon, short, _t, _s, _b in PAGES}
-    _NAV_GROUPS = (("Command", ("cockpit",)),
+    _NAV_GROUPS = (("Agent OS", ("oscockpit", "oscore")),
+                   ("Command", ("cockpit",)),
                    ("Growth", ("content", "outreach", "media", "sga")),
                    ("Intelligence", ("bi", "seo")),
                    ("System", ("riskinfra", "system")))
@@ -4561,7 +4595,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         for pid in _gids:
             icon, short = _by_id[pid]
             _navp.append(
-                f"<a class='navb{' act' if pid == 'cockpit' else ''}' "
+                # THE ACTIVE LINK IS THE FIRST PAGE, whatever that is. This
+                # was hard-coded to 'cockpit'; adding a page in front of it
+                # would have opened one section while a different link
+                # looked selected.
+                f"<a class='navb{' act' if pid == PAGES[0][0] else ''}' "
                 f"id='nav-{pid}' href='#{pid}' "
                 f"onclick=\"return nav('{pid}')\">"
                 f"<span class='ic'>{icon}</span>{_esc(short)}"
@@ -4652,8 +4690,18 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "<link rel='stylesheet' href='https://fonts.googleapis.com/css2?"
         "family=Sora:wght@400;500;600;700;800&"
         "family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&"
-        "family=JetBrains+Mono:wght@400;500;600&display=swap'>"
-        "<style>" + CSS+ "</style></head><body>"
+        "family=JetBrains+Mono:wght@400;500;600&"
+        # THE INDUSTRY DS FACES. The Agent OS screens name Barlow Condensed
+        # and Barlow first; without these the browser falls back to Arial
+        # Narrow, which is close enough to look deliberate and wrong enough
+        # to look off. Loading them here is what makes the kit's type real.
+        "family=Barlow:wght@400;500;600;700&"
+        "family=Barlow+Condensed:wght@500;600;700&display=swap'>"
+        "<style>" + CSS + "</style>"
+        # The Agent OS kit ships its own stylesheet. It declares its tokens
+        # on .osx and reads only those, so nothing here inherits a colour
+        # from the shell it is dropped into.
+        "<style>" + _OSKIT_CSS + "</style></head><body>"
         "<div class='top'><div class='brand'><div class='logo'>A</div><div><h1>Anthropos — Control Center</h1><small>Your automation, in plain English</small></div></div>"
         "<div style='display:flex;gap:9px;align-items:center'>"
         # THE REPORTING WINDOW. Three real links, not decoration: the page
@@ -4692,7 +4740,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "<button class='dlgx' id='dlgx' onclick='closeDetails()' "
         "aria-label='Close details'>✕</button></div>"
         "<div class='dlgbody' id='dlgbody'></div></div></div>"
-        + script + "</body></html>")
+        + script
+        # The Agent OS panel handlers. Kept in their own block so a syntax
+        # error in one script cannot silently kill the other: a dead panel
+        # that still renders is exactly the dead-button class the prover
+        # checks for.
+        + "<script>" + _OSKIT_JS + "</script>"
+        + "</body></html>")
 
 
 def dashboard_script(agent_counts: dict) -> str:

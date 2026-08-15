@@ -1454,6 +1454,97 @@ except Exception as exc:                                  # noqa: BLE001
     check("the learning lanes and the Integrations Engineer answered",
           False, repr(exc)[:110])
 
+# --- 21. THE AGENT OS: turn 13 + turn 14, bound to real endpoints ---------
+print("\n21. THE AGENT OS IS ON THE PAGE, AND IT IS BOUND")
+try:
+    import re as _re21
+    import content_engine_contracts as C21
+    import content_engine_dashboard as D21
+    import content_engine_agentos as OS21
+    import content_engine_os_kit as K21
+    import content_engine_roster as R21
+
+    class _S21:
+        def __init__(self):
+            self.d = {"BRAND_NAME": "acme"}
+
+        def get_setting(self, k, d=None):
+            return self.d.get(k, d)
+
+        def set_setting(self, k, v):
+            self.d[k] = v
+
+        def list_jobs(self, status=None):
+            return []
+
+        def daily_cost(self):
+            return 0.0
+
+        def monthly_cost(self):
+            return 0.0
+
+    _st21 = _S21()
+    _ctx21 = OS21.build_ctx(_st21)
+    _h21 = D21.dashboard_html(jobs=[], st={}, health={}, month_spent=0.0,
+                              month_cap=200.0, day_spent=0.0, day_cap=10.0,
+                              taste_skills=[], os_ctx=_ctx21)
+    _sty21 = "".join(_re21.findall(r"<style>(.*?)</style>", _h21, _re21.S))
+
+    check("the Agent OS rendered (no fallback card)",
+          "Agent OS screens failed" not in _h21)
+    _miss21 = [s for s in OS21.SCREENS_13 + OS21.SCREENS_14
+               if ("id='os-%s'" % s) not in _h21]
+    check("all 16 wireframe screens are on the page", not _miss21,
+          "11 in turn 13 + 5 in turn 14")
+    check("and NO screen is rendered twice",
+          not [s for s in OS21.SCREENS_13 + OS21.SCREENS_14
+               if _h21.count("id='os-%s'" % s) > 1])
+    check("both Agent OS pages are reachable from the nav",
+          "id='nav-oscockpit'" in _h21 and "id='nav-oscore'" in _h21)
+    check("exactly one nav link is active",
+          _h21.count("class='navb act'") == 1)
+
+    _osx21 = _h21[_h21.find("<div class='osx'>"):]
+    _used21 = set()
+    for _m21 in _re21.finditer(r"class='(ox-[^']*)'", _osx21):
+        _used21.update(c for c in _m21.group(1).split() if c.startswith("ox-"))
+    _un21 = sorted(c for c in _used21 if ("." + c) not in _sty21)
+    check("EVERY class the OS emits has a CSS rule", not _un21, str(_un21)[:110])
+
+    _hnd21 = set(_re21.findall(r"onclick=\"(os\w+)\(", _h21))
+    _hnd21 |= set(_re21.findall(r"Enter'\)(os\w+)\(", _h21))
+    _dead21 = sorted(h for h in _hnd21 if ("function " + h) not in _h21)
+    check("ZERO DEAD BUTTONS on the OS screens", not _dead21, str(_dead21))
+
+    check("the kit vocabulary equals the contract's",
+          set(K21.BADGE_LABEL) == set(C21.BADGES)
+          and set(K21.STATUS_LABEL) == set(C21.CONNECTOR_STATES))
+    _kc21 = K21.check()
+    check("the kit's own component check passes", _kc21["ok"],
+          str(_kc21["problems"])[:110])
+    check("every employee has a card on the all-agents grid",
+          all(("<div class='ox-ac-id'>%s</div>" % a["id"]) in _h21
+              for a in R21.roster()),
+          "%d employees" % len(R21.roster()))
+    check("a command becomes a PROPOSAL, never a direct action",
+          "'/proposal'" in K21.JS and "if(pink)" in K21.JS)
+    check("decision and blocked stay two separate lists",
+          "Your decision" in _h21 and "Blocked, not yours to approve" in _h21)
+    check("the five permanent gates are named on the control room",
+          all(g in _h21 for g in ("SPEND", "PUBLISH", "SEND", "DEPLOY",
+                                  "CROSS-MODULE COMMAND")))
+    check("a desk with no employee shows no numbers",
+          "Nothing is shown here because nothing produces it" in _h21)
+    # Scoped to what the OS itself emits. Slicing the assembled page from
+    # the first .osx div to the end sweeps in every OTHER section's markup,
+    # so this check failed on someone else's punctuation.
+    _osonly21 = (K21.CSS + K21.JS + OS21.core_section(_ctx21)
+                 + OS21.cockpit_section(_ctx21))
+    check("the OS ships no em-dash (the founder's rule)",
+          "—" not in _osonly21 and "&mdash;" not in _osonly21)
+except Exception as exc:                                  # noqa: BLE001
+    check("the Agent OS answered", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:
