@@ -57,9 +57,16 @@ def head(n: str) -> None:
 
 
 def ok(label: str, cond: bool, detail: str = "") -> bool:
-    """A test with a verdict. Only these two counts decide the exit code."""
+    """A test with a verdict. Only these two counts decide the exit code.
+
+    `detail` is the FAILURE explanation and is printed only on failure.
+    Printing it under an OK produced lines like "OK at least one AI engine
+    is reachable   every engine key is absent", which says the opposite of
+    the verdict beside it. A passing test explains nothing; it passed.
+    """
     (_PASS if cond else _FAIL).append(label)
-    _w(("  OK   " if cond else "  FAIL ") + label + (("   " + detail) if detail else ""))
+    _w(("  OK   " + label) if cond
+       else ("  FAIL " + label + (("   " + detail) if detail else "")))
     return bool(cond)
 
 
@@ -90,9 +97,9 @@ def lane_aeo(store, do_probe: bool) -> None:
             note("%-11s no key, so it was never asked" % name)
             continue
         asked_any = True
-        ok("%-11s answered" % name, bool(row.get("ok")),
-           ("model=%s" % row.get("model_asked_for"))
-           if row.get("ok") else str(row.get("error") or row.get("verdict"))[:150])
+        if ok("%-11s answered" % name, bool(row.get("ok")),
+              str(row.get("error") or row.get("verdict"))[:150]):
+            note("            on %s" % row.get("model_asked_for"))
 
     if not ok("at least one AI engine is reachable", asked_any,
               "every engine key is absent, so AI visibility cannot be measured at all"):
@@ -149,19 +156,41 @@ def lane_seo(store) -> None:
         return
     ok("the SEO bridge builds its context", True)
 
-    # Each of these is a table a screen reads. Absent is reported as
-    # absent: a screen with no rows is not the same as a screen showing
-    # a zero, and this is where that distinction has to survive.
-    for key in ("search_totals", "organic_keywords", "tracked_keywords",
-                "content_rows", "prompts", "sources"):
-        val = live.get(key)
-        n = len(val) if isinstance(val, (list, tuple, dict)) else 0
-        if n:
-            note("%-18s %d row(s)/field(s)" % (key, n))
-        else:
-            note("%-18s NO DATA YET (the screen will say what is missing)" % key)
+    # THE TABLES COME OUT OF THE BRIDGE, NOT OUT OF THE RAW CONTEXT.
+    # Reading build_ctx() directly reported "NO DATA YET" for every table
+    # on a box that had 15 queries, 100 rank rows and 277 content rows.
+    # That is the same false report as a wrong green, pointing the other
+    # way, and it is worse: it sends you to fix a pipeline that works.
+    # enrich() is what the screens themselves read.
+    import content_engine_search_bridge as BR
+    fed = BR.enrich(live)
 
-    tot = (live.get("search_totals") or {})
+    ins = (live.get("insights") or {})
+    gsc, ga4 = (ins.get("gsc") or {}), (ins.get("ga4") or {})
+    note("last Google pull: " + str(ins.get("at") or "never"))
+    note("Search Console: %d queries, %d days"
+         % (len(gsc.get("queries") or []), len(gsc.get("daily") or [])))
+    note("rank tracker rows: %d" % len(live.get("ranks") or []))
+    note("")
+
+    empty = []
+    for key in BR.MAPPING:
+        val = fed.get(key)
+        if val in (None, {}, [], "manual"):
+            empty.append(key)
+            continue
+        size = ("%d row(s)" % len(val) if isinstance(val, list)
+                else "%d field(s)" % len(val) if isinstance(val, dict)
+                else str(val))
+        note("%-18s %s" % (key, size))
+    for key in empty:
+        note("%-18s NO DATA YET (the screen will say what is missing)" % key)
+
+    ok("every screen table the bridge feeds is reachable",
+       len(empty) < len(BR.MAPPING),
+       "not one table has data, which means the bridge is not being fed at all")
+
+    tot = fed.get("search_totals") or {}
     if tot:
         note("")
         note("clicks=%s impressions=%s ctr=%s avg_position=%s"
@@ -209,9 +238,20 @@ def lane_linkedin(store) -> None:
         for k, v2 in sorted(q.items()) if not isinstance(v2, dict)))
     for cname, cst in sorted((q.get("channels") or {}).items()):
         cst = cst or {}
-        note("  %-10s %s"
-             % (cname, "READY TO POST" if cst.get("available") else
-                str(cst.get("reason") or "not available")[:90]))
+        # READY TO POST NEEDS BOTH. `available` only means the poster class
+        # loads and a credential exists; `verified` means the provider
+        # actually accepted it. Reading `available` alone printed
+        # "linkedin READY TO POST" next to a 401, which is the false green
+        # this whole harness exists to catch.
+        ready = bool(cst.get("available")) and bool(cst.get("verified"))
+        if ready:
+            note("  %-10s READY TO POST (credential present AND accepted)" % cname)
+        elif cst.get("available"):
+            note("  %-10s HAS A CREDENTIAL BUT IT IS NOT ACCEPTED: %s"
+                 % (cname, str(cst.get("reason") or "no reason given")[:90]))
+        else:
+            note("  %-10s %s"
+                 % (cname, str(cst.get("reason") or "not available")[:90]))
 
 
 # ---------------------------------------------------- 4. DATA MUTATION
