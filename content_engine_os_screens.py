@@ -1944,7 +1944,7 @@ def build(ctx, live=None) -> str:
             panels.append(f"<div class='os-panel{on}' id='os-p-{pid}'>"
                           f"{body}</div>")
             first = False
-    return ("<div class='osx'>" + CSS_TAG
+    return ("<div class='osxe'>" + CSS_TAG
             + "<style>" + ED.CSS + "</style>"
             + JS + ED.FLOW_JS + ED.BLOCK_JS + band(ctx)
             + "<div class='os-shell'>"
@@ -1958,12 +1958,18 @@ def build(ctx, live=None) -> str:
 
 
 CSS = """
-.osx{--osbg:#FFFFFF;--os2:#F9FAFB;--osln:#E5E7EB;
+/* RENAMED FROM .osx. The Agent OS kit also declares .osx, with the
+   founder's Industry palette, and this rule landed later in the cascade
+   and repainted his ground #f7f8fa and his ink #111827. Two modules
+   owning one class name is the collision this project has now shipped
+   twice: ox-sub was a paragraph class and a subnav class at once. The
+   older surface yields the name; the kit keeps it. */
+.osxe{--osbg:#FFFFFF;--os2:#F9FAFB;--osln:#E5E7EB;
  --ostx:#111827;--osmut:#4B5563;--osdim:#9CA3AF;
  --osac:#2563EB;--osok:#16A34A;--oswarn:#D97706;
  --osbad:#DC2626;font-size:14px;color:var(--ostx);
  background:#F7F8FA;border-radius:12px;padding:14px}
-.osx *{box-sizing:border-box}
+.osxe *{box-sizing:border-box}
 .os-band{display:flex;gap:20px;justify-content:space-between;align-items:flex-start;
  flex-wrap:wrap;background:var(--os2);border:1px solid var(--osln);
  border-radius:10px;padding:18px 20px;margin:0 0 16px}
@@ -2145,11 +2151,11 @@ CSS_TAG = "<style>" + CSS + "</style>"
 
 JS = ("<script>"
       "function osNav(id){"
-      "document.querySelectorAll('.osx .os-panel').forEach(function(p){"
+      "document.querySelectorAll('.osxe .os-panel').forEach(function(p){"
       "p.classList.toggle('on',p.id==='os-p-'+id);});"
-      "document.querySelectorAll('.osx .os-navi').forEach(function(b){"
+      "document.querySelectorAll('.osxe .os-navi').forEach(function(b){"
       "b.classList.toggle('on',b.id==='os-nav-'+id);});"
-      "var m=document.querySelector('.osx .os-main');if(m&&m.scrollIntoView)"
+      "var m=document.querySelector('.osxe .os-main');if(m&&m.scrollIntoView)"
       "m.scrollIntoView({block:'start',behavior:'smooth'});}"
 
       "function osToast(j,fb){var m=(j&&(j.message||j.error))||fb;"

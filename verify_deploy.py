@@ -1957,6 +1957,17 @@ try:
           str(_h21.count("class='ox-rail-head'")))
     check("THE SUPERSEDED EU HARD-BLOCK CLAIM IS NOT REPRODUCED",
           "hard-blocked from cold email" not in _h21)
+    # ONE MODULE OWNS .osx. A second declaration in os_screens repainted
+    # his ground and ink from a later position in the cascade, so the
+    # tokens were correct and the screen was not.
+    _sty21 = "".join(re.findall(r"<style>(.*?)</style>", _h21, re.S))
+    check("ONLY ONE MODULE DECLARES .osx, so his palette survives",
+          _sty21.count(".osx{") == 1, str(_sty21.count(".osx{")))
+    check("and the shell PAINTS his ground, not merely declares it",
+          "background:var(--ox-bg)" in _sty21)
+    check("NO STAFFRAIL REPORTS ACTIVITY NOBODY MEASURED",
+          "crawling 1,240 URLs" not in _h21
+          and "pieces in flight" not in _h21)
     # THE COMPONENT EXISTING IS NOT THE WORK BEING DONE. These asserted
     # only that K.dq and K.chart were callable, and passed for weeks while
     # no screen called either one.

@@ -290,6 +290,19 @@ for _nm, _fn in _shell:
     t("  and its own screens as a subnav", "ox-subnav" in _h5
       and "class='ox-snav" in _h5)
     t("  with the current module marked active", "ox-mod on" in _h5)
+# TWO MODULES MUST NOT OWN ONE CLASS NAME. content_engine_os_screens.py
+# declared its own .osx with a different palette; it landed later in the
+# cascade and repainted his ground #f7f8fa and his ink #111827. Verified
+# in a real browser: one rule now, and the computed colours are his.
+t("ONLY ONE MODULE DECLARES .osx (the kit owns the founder's shell)",
+  styles.count(".osx{") == 1, str(styles.count(".osx{")))
+t("and the shell actually PAINTS his ground, not just declares it",
+  "background:var(--ox-bg)" in styles and "color:var(--ox-ink)" in styles)
+# HIS PROSE WAS SAFE TO COPY. HIS NUMBERS NEVER WERE.
+import content_engine_os_rails as _RL
+_fake = [(sid, h) for sid, secs in _RL.RAILS.items() for h, tx in secs
+         if re.search(r"\d[\d,]{3,}", tx) or re.search(r"●\s*\w+ing", tx)]
+t("NO STAFFRAIL REPORTS ACTIVITY NOBODY MEASURED", not _fake, str(_fake))
 t("the subnav link class does NOT collide with the paragraph class",
   "class='ox-sub " not in OS.core_section(_c5))
 t("every module in the sidebar is one of his seven",

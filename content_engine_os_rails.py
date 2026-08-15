@@ -17,10 +17,16 @@ later why the file and the screen differ:
   states what is actually true: consent and approval are the control.
 """
 
+# TWO RAILS CARRIED HIS PLACEHOLDER METRICS AS LIVE STATUS.
+# 8a read "Technical crawling 1,240 URLs, 22 issues" and 9a "Producer
+# producing 5 pieces in flight". Nothing was crawling and nothing was in
+# flight. His prose was safe to copy; his NUMBERS never were, and the
+# rule that kept his placeholder incidents off the activity cards should
+# have been applied here on the first pass and was not.
 RAILS = {
     '8a': (
         ('SEO department, 5 staff',
-         '🔧 Technical ● crawling 1,240 URLs · 22 issues ✍ Content ● drafting 5 pages · 3 answer-blocks 🧭 Strategist idle 14 opportunities found 🔗 Link idle 8 gaps · 12 mentions 📊 Analyst ● scanning 340 kw + 40 prompts'),
+         'The staff of this department, and what each one is doing now, are on the agents grid below, read from the roster. This rail reports no activity: the wireframe version named counts nobody measured.'),
     ),
     '8b': (
         ('Why this desk',
@@ -52,7 +58,7 @@ RAILS = {
     ),
     '9a': (
         ('Marketing department, 4 staff',
-         '🧠 Strategist ● researching segments + competitor ads 🎬 Creative Dir ● routing 4 briefs incoming 🏭 Producer ● producing 5 pieces in flight 📣 Distributor ● scheduling 6 queued · newsletter draft'),
+         'The staff of this department, and their live state, are on the agents grid below, read from the roster. This rail reports no activity: the wireframe version named work nothing counted.'),
     ),
     '9b': (
         ('Steps 1,2 of the pipeline',
