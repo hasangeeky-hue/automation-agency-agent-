@@ -1917,6 +1917,25 @@ try:
     check("his decision card exists, and demands evidence",
           "ox-dq-rec" in K28.dq("x", "y")
           and "no evidence recorded" in K28.dq("x"))
+    # HIS RIGHT-HAND RAIL, counted against his own wireframe rather than a
+    # number typed here. He drew a rail on 34 of 51 screens and this OS
+    # had none of them: the frame was his, the screen was half his.
+    import content_engine_os_rails as R28
+    check("EVERY STAFFRAIL HE DREW IS ON THE PAGE (%d)" % len(R28.RAILS),
+          _h21.count("class='ox-staffrail'") == len(R28.RAILS),
+          str(_h21.count("class='ox-staffrail'")))
+    # COUNT THE MARKUP, NOT THE CLASS NAME. The bare name also appears in
+    # the stylesheet (.ox-rail-head and .ox-rail-head + .ox-rail-p), so a
+    # substring count over the whole page reads 55 for 53 rendered
+    # sections. Two phantom sections is a small error that would have been
+    # "fixed" by changing the expected number, which would have hidden a
+    # real missing rail forever after.
+    check("and every rail section he wrote, not just the first of each",
+          _h21.count("class='ox-rail-head'")
+          == sum(len(v) for v in R28.RAILS.values()),
+          str(_h21.count("class='ox-rail-head'")))
+    check("THE SUPERSEDED EU HARD-BLOCK CLAIM IS NOT REPRODUCED",
+          "hard-blocked from cold email" not in _h21)
     check("his chart card exists", "ox-hbar-t" in K28.chart("t", [("a", 1)]))
     check("AND AN UNMEASURED BAR IS A GAP, NEVER A ZERO",
           "not measured" in K28.chart("t", [("a", None)]))

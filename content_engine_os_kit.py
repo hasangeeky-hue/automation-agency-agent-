@@ -407,11 +407,33 @@ def screen(sid: str, title: str, sub: str, body: str, *,
         who = ("<div class='ox-staffed'>staffed by <b>%s</b>%s</div>"
                % (_e(staffed_by),
                   (" " + badge(badge_kind)) if badge_kind else ""))
+    # HIS RIGHT-HAND RAIL. He drew one on 34 of his 51 screens and it is
+    # not decoration: it is where the gates that bind THIS screen are
+    # stated, and where a desk points at the module that owns the work it
+    # is not allowed to do. Building the frame without it left the
+    # structure right and the screen half-empty.
+    #
+    # Looked up by screen id rather than passed in, so a screen he drew a
+    # rail on cannot silently lose it when a call site is edited.
+    rail = ""
+    try:
+        import content_engine_os_rails as _R
+        secs = _R.for_screen(sid)
+    except Exception:                                     # noqa: BLE001
+        secs = ()
+    if secs:
+        rail = ("<aside class='ox-staffrail'>"
+                + "".join("<div class='ox-rail-head'>%s</div>"
+                          "<p class='ox-rail-p'>%s</p>" % (_e(h), _e(t))
+                          for h, t in secs)
+                + "</aside>")
     return ("<section class='ox-screen' id='os-%s'>"
             "<div class='ox-sh'><span class='ox-sid'>%s</span>"
             "<div><h3>%s</h3><p class='ox-sub'>%s</p></div>%s</div>"
-            "%s</section>"
-            % (_e(sid), _e(sid), _e(title), _e(sub), who, body))
+            "<div class='ox-scr%s'><div class='ox-scr-main'>%s</div>%s</div>"
+            "</section>"
+            % (_e(sid), _e(sid), _e(title), _e(sub), who,
+               " railed" if rail else "", body, rail))
 
 
 def grid(*cards: str, cols: str = "") -> str:
@@ -626,6 +648,24 @@ CSS = """
 .osx a.ox-snav:hover{color:var(--ox-acd)}
 .osx a.ox-snav.on{color:var(--ox-acd);font-weight:600}
 .osx .ox-main{display:flex;flex-direction:column;gap:24px;min-width:0}
+/* HIS STAFFRAIL. The widths and the divider are from his own styles.css:
+   .mos-staffrail{width:216px;border-left:1px solid neutral-300;padding:14px}
+   A screen he drew no rail on keeps the full width rather than holding an
+   empty column open, which is why the two-column rule is on .railed. */
+.osx .ox-scr{min-width:0}
+.osx .ox-scr.railed{display:grid;grid-template-columns:1fr 216px;gap:14px}
+.osx .ox-scr-main{min-width:0}
+.osx .ox-staffrail{border-left:1px solid var(--ox-ln);padding:0 0 0 14px;
+  align-self:start}
+.osx .ox-rail-head{font-family:'Barlow Condensed',sans-serif;font-weight:600;
+  font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ox-ink);margin:0 0 4px}
+.osx .ox-rail-head + .ox-rail-p{margin-top:0}
+.osx .ox-rail-p{font-size:.72rem;line-height:1.5;color:var(--ox-ink2);
+  margin:0 0 14px}
+@media (max-width:1100px){.osx .ox-scr.railed{grid-template-columns:1fr}
+  .osx .ox-staffrail{border-left:none;border-top:1px solid var(--ox-ln);
+    padding:12px 0 0}}
 .osx .ox-crumb{font-size:.8rem;color:var(--ox-ink3)}
 .osx .ox-crumb b{color:var(--ox-ink)}
 
@@ -824,7 +864,9 @@ def check() -> Dict[str, Any]:
                 "ox-modgroup", "ox-mod", "ox-subnav", "ox-snav", "ox-main",
                 "ox-crumb", "ox-dq", "ox-dq-main", "ox-dq-rec", "ox-dq-ev",
                 "ox-dq-actions", "ox-cc", "ox-cc-title", "ox-hbar",
-                "ox-hbar-l", "ox-hbar-t"]
+                "ox-hbar-l", "ox-hbar-t",
+                "ox-scr", "ox-scr-main", "ox-staffrail", "ox-rail-head",
+                "ox-rail-p"]
     for cls in emitted:
         if ("." + cls) not in CSS:
             problems.append("class %s is emitted with no CSS rule" % cls)

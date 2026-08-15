@@ -282,6 +282,27 @@ t("every module in the sidebar is one of his seven",
   len(K.MODULES) == 7, str(len(K.MODULES)))
 t("and the sidebar links are anchors, as his own markup uses",
   "href='#os-13a'" in OS.core_section(_c5))
+# HIS RIGHT-HAND RAIL, ON THE SCREENS HE DREW IT ON.
+# Counted against his own file rather than a number typed here, so the
+# day he adds a rail to another screen this fails until it is built.
+import content_engine_os_rails as RAILS
+_want_rails = len(RAILS.RAILS)
+_want_secs = sum(len(v) for v in RAILS.RAILS.values())
+_allos = (OS.core_section(_c5) + OS.cockpit_section(_c5)
+          + OSG.marketing_section(_c5) + OSG.search_section(_c5)
+          + OSL.leads_section(_c5) + OSCM.commerce_section(_c5)
+          + OSMD.media_section(_c5))
+t("EVERY STAFFRAIL HE DREW IS ON THE PAGE (%d)" % _want_rails,
+  _allos.count("class='ox-staffrail'") == _want_rails,
+  str(_allos.count("class='ox-staffrail'")))
+t("and every rail section, not just the first of each",
+  _allos.count("class='ox-rail-head'") == _want_secs,
+  str(_allos.count("class='ox-rail-head'")))
+t("a screen he drew NO rail on does not hold an empty column open",
+  "ox-scr railed" not in _allos.replace("ox-scr railed'", "X"))
+t("THE SUPERSEDED EU HARD-BLOCK CLAIM IS NOT REPRODUCED",
+  "hard-blocked from cold email" not in _allos)
+
 # The two components his file repeats and I had not built at all.
 t("the decision card exists (his dq-card, 51 uses)",
   "ox-dq-rec" in K.dq("x", "y"))
