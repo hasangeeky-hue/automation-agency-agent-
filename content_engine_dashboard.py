@@ -116,6 +116,12 @@ color:var(--dim);font-weight:800;padding:10px 11px 2px}
 .page{display:none}.page.on{display:block}
 .ph{margin:0 0 4px;font-size:18px;font-weight:750;letter-spacing:-.01em}
 .psub{color:var(--mut);font-size:12.5px;margin:0 0 16px}
+/* The module's own data boards, under its wireframe screens. One
+   surface: his design on top, his numbers under it. */
+.osdata{margin-top:28px;border-top:2px solid #1d1f20;padding-top:6px}
+.osdata-h{font-family:'Barlow Condensed',sans-serif;font-weight:600;
+  font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+  color:#5d5d60;margin:0 0 12px}
 .grid{display:grid;gap:12px}
 /* Cards lay out ACROSS, not down. The old rule was a fixed 3 columns that a
    max-width:860px query flattened to a single column - so on any window under
@@ -4626,6 +4632,57 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "media": ("osmedia", "Media Buyer"),
     }
 
+    # ------------------------------------------------------------------
+    # THE DATA BOARDS BELONG TO THE MODULE THAT OWNS THEM.
+    #
+    # Taking the old pages off the nav removed the design he asked me to
+    # remove, and took 760,000 characters of his real data with it. The
+    # Search module went from 324,534 characters of Search Console,
+    # keyword and ranking boards to 9,373 of wireframe. He said it
+    # plainly: "all data board are missing". He asked for the old DESIGN
+    # gone and the DATA kept, and I removed both.
+    #
+    # So each Agent OS module now carries its own boards underneath its
+    # wireframe screens. One surface, his design on top, his numbers
+    # under it, and nothing to navigate away to.
+    _OS_DATA = {
+        "osseo": (("Search boards", _seo_all),),
+        "osmkt": (("Content Factory boards", _factory_all),),
+        "osleads": (("Leads and Outreach boards", _outreach_all),),
+        "oscom": (("Commerce and CMS boards", _cms_all),),
+        "osmedia": (("Media Buying boards", _media_all),),
+        "oscockpit": (("AI Cockpit boards", _cockpit_all),),
+        "oscore": (("System and Wiring boards", _system_all),
+                   ("Business Intelligence boards", _bi_all),
+                   ("Risk and Infrastructure boards", _risk_all)),
+    }
+
+    #: every deep id now rendered INSIDE an Agent OS module
+    _OS_DATA_OWNED = {d for parts in _OS_DATA.values() for _lbl, d in parts}
+    _OS_DATA_OWNED = {"seo", "content", "outreach", "sga", "media",
+                      "cockpit", "system", "bi", "riskinfra"}
+
+    def _with_data(pid, body):
+        parts = _OS_DATA.get(pid) or ()
+        if not parts:
+            return body
+        out = [body]
+        for label, deep in parts:
+            out.append(
+                "<div class='osdata'><div class='osdata-h'>%s</div>%s</div>"
+                % (_esc(label), deep))
+        return "".join(out)
+
+    PAGES = [(pid, icon, short, title, sub, _with_data(pid, body))
+             for pid, icon, short, title, sub, body in PAGES]
+    # AND THE STANDALONE PAGES GO. Their boards are inside the module
+    # that owns them now, so keeping the old page too rendered every
+    # board twice and put 988 duplicate element ids on one document.
+    # Duplicate ids break getElementById, which is what every panel
+    # switch and drawer on those boards is built on: the second copy
+    # would have looked right and behaved like the first.
+    PAGES = [p for p in PAGES if p[0] not in _OS_DATA_OWNED]
+
     def _deep_note(pid):
         dest, label = _OS_VIEW.get(pid, ("", ""))
         if dest:
@@ -4850,15 +4907,25 @@ def dashboard_script(agent_counts: dict) -> str:
     import json as _json
     _counts = agent_counts or {}
     return ("<script>window.AGENT_COUNTS=" + _json.dumps(_counts) + ";"
-              "var NAVALIAS={agents:'system',map:'system',overview:'system',risk:'riskinfra',workforce:'riskinfra',infra:'riskinfra',business:'bi',marketing:'bi',sales:'bi',customer:'bi',finance:'bi',budget:'bi',exec:'bi',leads:'outreach',email:'outreach',social:'sga',google:'sga',ads:'sga',mission:'cockpit',ops:'cockpit',appr:'cockpit',learn:'cockpit'};"
+              "var NAVALIAS={seo:'osseo',content:'osmkt',outreach:'osleads',sga:'oscom',media:'osmedia',cockpit:'oscockpit',system:'oscore',bi:'oscore',riskinfra:'oscore',agents:'oscore',map:'oscore',overview:'oscore',risk:'oscore',workforce:'oscore',infra:'oscore',business:'oscore',marketing:'oscore',sales:'oscore',customer:'oscore',finance:'oscore',budget:'oscore',exec:'oscore',leads:'osleads',email:'osleads',social:'oscom',google:'oscom',ads:'oscom',mission:'oscockpit',ops:'oscockpit',appr:'oscockpit',learn:'oscockpit'};"
               # Every section is now ADDRESSABLE. Before this the whole dashboard lived
               # at one URL: no bookmark, no back button, no right-click "open in
               # new tab", no way to send someone a link to a board. quiet=true
               # is used by the restore-on-load path so it does not stack history.
               "window.CURSEC='cockpit';"
               "function nav(id,quiet){id=NAVALIAS[id]||id;"
+              # A TARGET THAT DOES NOT RESOLVE MUST NOT BLANK THE PAGE.
+              # This hid every page and then showed the target only if it
+              # existed, so one stale hash or one renamed id left the
+              # founder looking at nothing at all, with no error and no
+              # clue. Resolve FIRST; if there is nothing to show, keep
+              # showing what is already on screen.
+              "var s=document.getElementById('sec-'+id);"
+              "if(!s){s=document.getElementById('sec-oscockpit');"
+              "id=s?'oscockpit':id;}"
+              "if(!s)return false;"
               "document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));"
-              "var s=document.getElementById('sec-'+id);if(s)s.classList.add('on');"
+              "s.classList.add('on');"
               "document.querySelectorAll('.navb').forEach(b=>b.classList.remove('act'));"
               "var n=document.getElementById('nav-'+id);if(n)n.classList.add('act');"
               "window.CURSEC=id;"

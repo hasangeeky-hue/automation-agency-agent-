@@ -1567,9 +1567,19 @@ try:
     check("THE OLD DASHBOARD IS OFF THE NAV, as the founder asked",
           not [p for p in _old21 if ("id='nav-%s'" % p) in _h21],
           str([p for p in _old21 if ("id='nav-%s'" % p) in _h21]))
-    check("but every old page still resolves, so no bookmark dies",
-          all(("id='sec-%s'" % p) in _h21 for p in _old21),
-          str([p for p in _old21 if ("id='sec-%s'" % p) not in _h21]))
+    # ABSORBED, NOT DELETED: the boards render inside the module that owns
+    # them. Rendering the standalone page too duplicated 988 element ids.
+    check("no old page is rendered separately any more",
+          not [p for p in _old21 if ("id='sec-%s'" % p) in _h21],
+          str([p for p in _old21 if ("id='sec-%s'" % p) in _h21]))
+    check("EVERY OLD BOOKMARK IS ALIASED to the module that owns its data",
+          not [p for p in _old21 if ("%s:'os" % p) not in _h21],
+          str([p for p in _old21 if ("%s:'os" % p) not in _h21]))
+    check("THE DATA BOARDS ARE INSIDE THE OS: Search is the biggest page",
+          len(_h21[_h21.find("id='sec-osseo'"):
+                   _h21.find("id='sec-osleads'")]) > 200000)
+    check("a nav target that does not resolve cannot blank the page",
+          "if(!s)return false;" in _h21)
     check("media no longer claims it has no replacement",
           "no Agent OS view of this department" not in _h21)
     check("every Agent OS page is reachable from the nav",

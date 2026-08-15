@@ -154,9 +154,23 @@ _old_ids = ("cockpit", "bi", "riskinfra", "content", "outreach", "sga",
 _linked = [p for p in _old_ids if ("id='nav-%s'" % p) in html]
 t("NO OLD PAGE IS LINKED FROM THE WIREFRAME'S SHELL", not _linked,
   str(_linked))
-_gone = [p for p in _old_ids if ("id='sec-%s'" % p) not in html]
-t("but every old page still RESOLVES, so no bookmark dies", not _gone,
-  str(_gone))
+# THE OLD PAGES ARE ABSORBED, NOT DELETED. Their boards render inside the
+# Agent OS module that owns them, so the id no longer exists as a page and
+# an old bookmark is routed by NAVALIAS to that module instead. Asserting
+# "the page still resolves" would now be asserting the duplicate render
+# that put 988 duplicate ids on one document.
+_still = [p for p in _old_ids if ("id='sec-%s'" % p) in html]
+t("no old page is rendered SEPARATELY any more", not _still, str(_still))
+_unaliased = [p for p in _old_ids if ("%s:'os" % p) not in html]
+t("BUT EVERY OLD BOOKMARK IS ALIASED to the module that owns its data",
+  not _unaliased, str(_unaliased))
+t("and the OS carries the data: Search is the biggest page, not the thinnest",
+  len(html[html.find("id='sec-osseo'"):html.find("id='sec-osleads'")]) > 200000)
+t("NO DUPLICATE ELEMENT ID anywhere on the assembled document",
+  not [k for k, v in __import__("collections").Counter(
+      re.findall(r"id='([a-zA-Z0-9_-]+)'", html)).items() if v > 1])
+t("a nav target that does not resolve can no longer blank the page",
+  "if(!s)return false;" in html)
 t("MEDIA NO LONGER CLAIMS IT HAS NO REPLACEMENT: nine screens exist",
   "no Agent OS view of this department" not in html)
 
