@@ -1461,6 +1461,7 @@ try:
     import content_engine_contracts as C21
     import content_engine_dashboard as D21
     import content_engine_agentos as OS21
+    import content_engine_agentos_growth as OSG21
     import content_engine_os_kit as K21
     import content_engine_roster as R21
 
@@ -1492,15 +1493,23 @@ try:
 
     check("the Agent OS rendered (no fallback card)",
           "Agent OS screens failed" not in _h21)
-    _miss21 = [s for s in OS21.SCREENS_13 + OS21.SCREENS_14
-               if ("id='os-%s'" % s) not in _h21]
-    check("all 16 wireframe screens are on the page", not _miss21,
-          "11 in turn 13 + 5 in turn 14")
+    _all21 = (OS21.SCREENS_13 + OS21.SCREENS_14
+              + OSG21.SCREENS_9 + OSG21.SCREENS_8)
+    _miss21 = [s for s in _all21 if ("id='os-%s'" % s) not in _h21]
+    check("all %d wireframe screens built so far are on the page" % len(_all21),
+          not _miss21, "t13:11 t14:5 t9:8 t8:8")
     check("and NO screen is rendered twice",
-          not [s for s in OS21.SCREENS_13 + OS21.SCREENS_14
-               if _h21.count("id='os-%s'" % s) > 1])
-    check("both Agent OS pages are reachable from the nav",
-          "id='nav-oscockpit'" in _h21 and "id='nav-oscore'" in _h21)
+          not [s for s in _all21 if _h21.count("id='os-%s'" % s) > 1])
+    check("every Agent OS page is reachable from the nav",
+          all(("id='nav-%s'" % p) in _h21
+              for p in ("oscockpit", "oscore", "osmkt", "osseo")))
+    _gc21 = OSG21.check(_ctx21)
+    check("turns 8 and 9 pass their own check", _gc21["ok"],
+          str(_gc21["problems"])[:110])
+    check("ONE WORKER TWO DESKS is disclosed on 8c and 8e",
+          all("same" in _h21[_h21.find("id='os-%s'" % s):
+                             _h21.find("id='os-%s'" % s) + 4000].lower()
+              for s in ("8c", "8e")))
     check("exactly one nav link is active",
           _h21.count("class='navb act'") == 1)
 
@@ -1539,7 +1548,9 @@ try:
     # the first .osx div to the end sweeps in every OTHER section's markup,
     # so this check failed on someone else's punctuation.
     _osonly21 = (K21.CSS + K21.JS + OS21.core_section(_ctx21)
-                 + OS21.cockpit_section(_ctx21))
+                 + OS21.cockpit_section(_ctx21)
+                 + OSG21.marketing_section(_ctx21)
+                 + OSG21.search_section(_ctx21))
     check("the OS ships no em-dash (the founder's rule)",
           "—" not in _osonly21 and "&mdash;" not in _osonly21)
 except Exception as exc:                                  # noqa: BLE001

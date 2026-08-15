@@ -528,6 +528,23 @@ function osSend(aid){
    })
    .catch(function(e){ osAck(aid,'Could not reach the engine: '+e); });
 }
+function osJobDecision(id, verb){
+  // The approval room's one gate. It calls the SAME routes the old
+  // dashboard uses, so there is exactly one path from "approved" to
+  // "published" in the whole product.
+  fetch('/jobs/'+encodeURIComponent(id)+'/'+verb,{method:'POST'})
+   .then(function(r){return r.json();})
+   .then(function(d){
+     osAck('cockpit', (d && d.ok !== false)
+       ? (verb==='approve' ? 'Approved. It publishes on its next tick.'
+                           : 'Sent back for revision.')
+       : ('Could not '+verb+': '+((d&&(d.error||d.detail))||'unknown')));
+     var row=document.getElementById('osjob-'+id); if(row) row.remove();
+   })
+   .catch(function(e){ osAck('cockpit','Could not reach the engine: '+e); });
+}
+function osApproveJob(id){ osJobDecision(id,'approve'); }
+function osDeclineJob(id){ osJobDecision(id,'decline'); }
 function osSaveKey(key){
   var i=document.getElementById('oskey-'+key); if(!i) return;
   var v=(i.value||'').trim();

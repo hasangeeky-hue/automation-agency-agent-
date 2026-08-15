@@ -4522,8 +4522,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         import content_engine_os_kit as _OSK
         _OSKIT_CSS, _OSKIT_JS = _OSK.CSS, _OSK.JS
         _os_ctx = os_ctx if isinstance(os_ctx, dict) else {}
+        import content_engine_agentos_growth as _OSG
         _os_core_all = _OSC.core_section(_os_ctx)
         _os_cockpit_all = _OSC.cockpit_section(_os_ctx)
+        _os_mkt_all = _OSG.marketing_section(_os_ctx)
+        _os_seo_all = _OSG.search_section(_os_ctx)
     except Exception as _e5:                              # noqa: BLE001
         log.exception("the Agent OS screens failed to render")
         _fail = ("<div class='card full' style='border-color:#F5788A'>"
@@ -4531,6 +4534,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  f"<p class='cc'>Reason: {_esc(type(_e5).__name__)}: "
                  f"{_esc(str(_e5))[:300]}</p></div>")
         _os_core_all = _os_cockpit_all = _fail
+        _os_mkt_all = _os_seo_all = _fail
         _OSKIT_CSS = _OSKIT_JS = ""
 
     PAGES = [
@@ -4541,6 +4545,12 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("oscore", "🗄", "Web & Data Core", "Web and Data Core",
          "The wires, the desks that keep them honest, and the map of what "
          "feeds what. Turn 13 of the Agent OS.", _os_core_all),
+        ("osmkt", "📣", "Marketing", "Marketing and Content",
+         "The pipeline, the four staff who run it, and the one room where "
+         "you approve. Turn 9 of the Agent OS.", _os_mkt_all),
+        ("osseo", "🔍", "Search", "SEO, AEO and GEO",
+         "Four employees across five desks. Turn 8 of the Agent OS.",
+         _os_seo_all),
         ("cockpit", "🧠", "AI Cockpit", "AI Cockpit",
          "The brain. Every system's signal becomes a decision you can act "
          "on. 268 cards across 15 boards.", _cockpit_all),
@@ -4584,7 +4594,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # Command / Growth / Intelligence / System. Same nine links, same ids,
     # same nav() handler - only the order and the group labels are new.
     _by_id = {pid: (icon, short) for pid, icon, short, _t, _s, _b in PAGES}
-    _NAV_GROUPS = (("Agent OS", ("oscockpit", "oscore")),
+    _NAV_GROUPS = (("Agent OS", ("oscockpit", "osmkt", "osseo", "oscore")),
                    ("Command", ("cockpit",)),
                    ("Growth", ("content", "outreach", "media", "sga")),
                    ("Intelligence", ("bi", "seo")),

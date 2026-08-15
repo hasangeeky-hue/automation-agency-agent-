@@ -19,6 +19,7 @@ import sys
 import content_engine_contracts as C
 import content_engine_dashboard as D
 import content_engine_agentos as OS
+import content_engine_agentos_growth as OSG
 import content_engine_os_kit as K
 import content_engine_roster as R
 
@@ -52,7 +53,7 @@ class Store:
 
 
 print("=" * 74)
-print("AGENT OS - TURN 13 AND TURN 14")
+print("AGENT OS - TURNS 8, 9, 13 AND 14")
 print("=" * 74)
 
 st = Store()
@@ -67,21 +68,27 @@ styles = "".join(re.findall(r"<style>(.*?)</style>", html, re.S))
 print("\nA. SIXTEEN SCREENS, ON THE REAL PAGE")
 t("the Agent OS did not fall back to its error card",
   "Agent OS screens failed" not in html)
-missing = [s for s in OS.SCREENS_13 + OS.SCREENS_14
-           if ("id='os-%s'" % s) not in html]
-t("all 16 screens render", not missing, str(missing))
-dupes = [s for s in OS.SCREENS_13 + OS.SCREENS_14
-         if html.count("id='os-%s'" % s) > 1]
+ALL = (OS.SCREENS_13 + OS.SCREENS_14 + OSG.SCREENS_9 + OSG.SCREENS_8)
+missing = [s for s in ALL if ("id='os-%s'" % s) not in html]
+t("all %d screens render" % len(ALL), not missing, str(missing))
+dupes = [s for s in ALL if html.count("id='os-%s'" % s) > 1]
 t("and NONE is rendered twice", not dupes, str(dupes))
 t("turn 13 has its eleven", len(OS.SCREENS_13) == 11, str(len(OS.SCREENS_13)))
 t("turn 14 has its five", len(OS.SCREENS_14) == 5, str(len(OS.SCREENS_14)))
+t("turn 9 has its eight", len(OSG.SCREENS_9) == 8, str(len(OSG.SCREENS_9)))
+t("turn 8 has its eight", len(OSG.SCREENS_8) == 8, str(len(OSG.SCREENS_8)))
+_gc = OSG.check(OS.build_ctx(st))
+t("and the growth turns pass their own check", _gc["ok"], str(_gc["problems"]))
+t("ONE WORKER, TWO DESKS is disclosed on both 8c and 8e",
+  all("same" in html[html.find("id='os-%s'" % s):
+                     html.find("id='os-%s'" % s) + 4000].lower()
+      for s in ("8c", "8e")))
 
 # ---- B. IT IS REACHABLE -------------------------------------------------
 print("\nB. THE FOUNDER CAN GET TO IT")
-t("the cockpit has a nav link", "id='nav-oscockpit'" in html)
-t("the core has a nav link", "id='nav-oscore'" in html)
-t("both are real page sections",
-  "id='sec-oscockpit'" in html and "id='sec-oscore'" in html)
+for _pid in ("oscockpit", "oscore", "osmkt", "osseo"):
+    t("%s has a nav link and a page" % _pid,
+      ("id='nav-%s'" % _pid) in html and ("id='sec-%s'" % _pid) in html)
 t("exactly one nav link is marked active",
   html.count("class='navb act'") == 1, str(html.count("class='navb act'")))
 _first = re.search(r"class='navb act' id='nav-([a-z]+)'", html)
@@ -110,7 +117,8 @@ handlers |= set(re.findall(r"Enter'\)(os\w+)\(", html))
 dead = sorted(h for h in handlers if ("function " + h) not in html)
 t("every OS handler used is defined", not dead, str(dead))
 t("the kit's script block shipped", "function osSend" in html)
-for fn in ("osSend", "osApprove", "osReject", "osPrefill", "osSaveKey"):
+for fn in ("osSend", "osApprove", "osReject", "osPrefill", "osSaveKey",
+           "osApproveJob", "osDeclineJob"):
     t("  %s is defined" % fn, ("function %s" % fn) in html)
 
 # ---- E. THE COMMAND BAR PROPOSES. IT NEVER EXECUTES. --------------------
@@ -160,9 +168,11 @@ t("and it warns that a saved key is still not a working key",
 
 # ---- H. THE FOUNDER'S OWN RULE ------------------------------------------
 print("\nH. NO EM-DASHES ANYWHERE IN THE OS")
+_c = OS.build_ctx(st)
 bad = [n for n, src in (("kit", K.CSS + K.JS),
-                        ("core", OS.core_section(OS.build_ctx(st))
-                         + OS.cockpit_section(OS.build_ctx(st))))
+                        ("core", OS.core_section(_c) + OS.cockpit_section(_c)),
+                        ("growth", OSG.marketing_section(_c)
+                         + OSG.search_section(_c)))
        if "—" in src or "&mdash;" in src]
 t("the OS ships no em-dash", not bad, str(bad))
 

@@ -94,6 +94,11 @@ def build_ctx(store) -> Dict[str, Any]:
         ctx["proposals"] = list(store.get_setting("proposals", []) or [])
     except Exception:                                     # noqa: BLE001
         ctx["proposals"] = []
+    # The jobs themselves, for the pipeline and calendar screens in t8/t9.
+    try:
+        ctx["jobs"] = [dict(j) for j in store.list_jobs(status=None)]
+    except Exception:                                     # noqa: BLE001
+        ctx["jobs"] = []
     return ctx
 
 

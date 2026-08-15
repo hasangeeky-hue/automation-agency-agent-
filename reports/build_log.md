@@ -40,6 +40,43 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session D — Phase 5, part 2: the two departments that produce daily
+2026-08-15
+
+**FINISHED**
+- `content_engine_agentos_growth.py`: turn 9 (Marketing and Content, 8
+  screens) and turn 8 (SEO, AEO and GEO, 8 screens). Titles read out of
+  the handoff file, including 9b which needed a third pass to find.
+- 32 of the 54 screens now exist and are reachable: Cockpit, Marketing,
+  Search and Web and Data Core.
+- The approval room (9c) calls the SAME `/jobs/{id}/approve` route the
+  old dashboard uses, so there is exactly one path from approved to
+  published in the whole product rather than a second one that drifts.
+- `verify_agentos.py` now 45 gates; prover section 21 covers all 32.
+  280 deploy checks, 0 failed.
+
+**THE DISCLOSURE THAT MATTERS**
+- 8c Analyst and 8e Keyword Strategist are ONE employee, `seo.analyst`.
+  The wireframe draws two desks and that is correct: they answer
+  different questions. Letting the founder believe two people are
+  employed would not be. Both screens say so on their face, and the gate
+  FAILS the build if either stops saying it.
+
+**COULDN'T**
+- 22 screens remain: t12 Leads (9), t11 Commerce (9), t10 Publisher (4).
+- Several things the wireframe draws for these departments have no wire
+  and are laid out empty with a [PLANNED] chip and the credential that
+  would fill them: Metricool, newsletter, competitor ad reading, and the
+  backlink data behind the Link Builder's desk.
+- Drive is refusing, so the Producer's "saved to Drive" panel says that
+  rather than drawing a file list.
+- Same nine suites still exit nonzero, all verified failing at baseline.
+
+**NEED FROM FOUNDER**
+- Unchanged.
+
+---
+
 ## Session C — Phase 5, part 1: the wireframe recreated (t13 + t14)
 2026-08-15
 
