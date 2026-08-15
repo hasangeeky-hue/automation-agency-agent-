@@ -3,7 +3,13 @@ anthropos-design/
 # Design assets, not code
 Brand design/
 # Local editor/launch config
-.claude/
+# Ignore the CONTENTS, not the directory itself: git cannot re-include a
+# file whose parent directory is excluded, so `.claude/` would make the
+# negation below silently dead.
+.claude/*
+# The project's own skills are doctrine, not local settings. They travel
+# with the repo, or the next session rebuilds the same mistakes.
+!.claude/skills/
 
 # Python
 __pycache__/
