@@ -1,0 +1,450 @@
+<title>The Data Contract</title>
+<style>
+  :root{
+    --bg:#f2f2f3; --surface:#e9e9ea; --card:#f8f8f9;
+    --ink:#1d1f20; --ink-2:#5d5d60; --ink-3:#7a7a7d;
+    --line:#d4d4d7; --line-2:#b7b7ba;
+    --accent:#5980a6; --accent-deep:#416180; --accent-wash:#e4edf6;
+    --danger:#a3564b; --danger-wash:#f4e6e4;
+    --ok:#4f7a5b; --ok-wash:#e6efe8;
+    --warn:#8a6d3b; --warn-wash:#f5efe2;
+    --display:"Barlow Condensed","Arial Narrow","Roboto Condensed",system-ui,sans-serif;
+    --body:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#191b1c; --surface:#212426; --card:#1f2224;
+      --ink:#e9e9eb; --ink-2:#b0b1b4; --ink-3:#8d8e91;
+      --line:#33373a; --line-2:#454a4e;
+      --accent:#94bce3; --accent-deep:#b5d9fd; --accent-wash:#22303c;
+      --danger:#d9887c; --danger-wash:#3a2724;
+      --ok:#8fbc9c; --ok-wash:#20302a;
+      --warn:#d6b77a; --warn-wash:#332b1d;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#191b1c; --surface:#212426; --card:#1f2224;
+    --ink:#e9e9eb; --ink-2:#b0b1b4; --ink-3:#8d8e91;
+    --line:#33373a; --line-2:#454a4e;
+    --accent:#94bce3; --accent-deep:#b5d9fd; --accent-wash:#22303c;
+    --danger:#d9887c; --danger-wash:#3a2724;
+    --ok:#8fbc9c; --ok-wash:#20302a;
+    --warn:#d6b77a; --warn-wash:#332b1d;
+  }
+  :root[data-theme="light"]{
+    --bg:#f2f2f3; --surface:#e9e9ea; --card:#f8f8f9;
+    --ink:#1d1f20; --ink-2:#5d5d60; --ink-3:#7a7a7d;
+    --line:#d4d4d7; --line-2:#b7b7ba;
+    --accent:#5980a6; --accent-deep:#416180; --accent-wash:#e4edf6;
+    --danger:#a3564b; --danger-wash:#f4e6e4;
+    --ok:#4f7a5b; --ok-wash:#e6efe8;
+    --warn:#8a6d3b; --warn-wash:#f5efe2;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);
+    font-size:16px;line-height:1.55;margin:0;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:40px 24px 96px;
+    display:flex;flex-direction:column;gap:40px}
+  .bp{position:relative;border:1px solid var(--line);background:var(--card);
+    padding:20px 22px}
+  .bp>i{position:absolute;width:9px;height:9px;color:var(--line-2)}
+  .bp>i::before,.bp>i::after{content:"";position:absolute;background:currentColor}
+  .bp>i::before{left:0;top:4px;width:9px;height:1px}
+  .bp>i::after{top:0;left:4px;width:1px;height:9px}
+  .bp>i.tl{left:-5px;top:-5px} .bp>i.tr{right:-5px;top:-5px}
+  .bp>i.bl{left:-5px;bottom:-5px} .bp>i.br{right:-5px;bottom:-5px}
+  h1,h2,h3{font-family:var(--display);font-weight:600;margin:0;
+    text-wrap:balance;letter-spacing:.02em}
+  h1{font-size:clamp(2.3rem,5vw,3.4rem);line-height:1.02;
+    text-transform:uppercase;letter-spacing:.03em}
+  h2{font-size:clamp(1.4rem,3vw,1.9rem);text-transform:uppercase;
+    letter-spacing:.05em;line-height:1.1}
+  h3{font-size:1.1rem}
+  p{margin:0}
+  .eyebrow{font-family:var(--display);text-transform:uppercase;
+    letter-spacing:.16em;font-size:.75rem;color:var(--ink-3);font-weight:600}
+  .lede{font-size:1.1rem;color:var(--ink-2);max-width:68ch}
+  header.head{display:flex;flex-direction:column;gap:14px;
+    border-bottom:2px solid var(--ink);padding-bottom:24px}
+  section{display:flex;flex-direction:column;gap:16px}
+  .sechead{border-bottom:1px solid var(--line);padding-bottom:9px;
+    display:flex;flex-direction:column;gap:6px}
+  .counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:12px}
+  .count .n{font-family:var(--display);font-size:2.7rem;line-height:1;
+    font-variant-numeric:tabular-nums;color:var(--accent-deep)}
+  .count .l{font-family:var(--display);font-size:.76rem;color:var(--ink-3);
+    text-transform:uppercase;letter-spacing:.09em;font-weight:600;margin-top:5px}
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);background:var(--card)}
+  table{border-collapse:collapse;width:100%;min-width:720px;font-size:.9rem}
+  th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--line);
+    vertical-align:top;color:var(--ink-2)}
+  th{font-family:var(--display);text-transform:uppercase;letter-spacing:.07em;
+    font-size:.75rem;color:var(--ink-3);background:var(--surface);font-weight:600}
+  tbody tr:last-child td{border-bottom:none}
+  td b{color:var(--ink);font-weight:600}
+  code{font-family:var(--mono);font-size:.85em;color:var(--ink-2)}
+  .v{display:inline-flex;align-items:center;gap:5px;font-family:var(--display);
+    font-size:.72rem;font-weight:600;text-transform:uppercase;
+    letter-spacing:.07em;padding:2px 8px;border:1px solid var(--line-2);
+    white-space:nowrap}
+  .v.have{color:var(--ok);border-color:var(--ok);background:var(--ok-wash)}
+  .v.part{color:var(--warn);border-color:var(--warn);background:var(--warn-wash)}
+  .v.agent{color:var(--accent-deep);border-color:var(--accent);
+    background:var(--accent-wash)}
+  .v.tool{color:var(--danger);border-color:var(--danger);
+    background:var(--danger-wash);border-style:dashed}
+  .note{border-left:3px solid var(--accent);padding:13px 17px;
+    background:var(--surface);max-width:74ch}
+  .note.big{border-left-color:var(--danger)}
+  ul.clean{margin:0;padding-left:19px;display:flex;flex-direction:column;
+    gap:7px;color:var(--ink-2);max-width:74ch}
+  ul.clean strong{color:var(--ink)}
+  footer{border-top:1px solid var(--line);padding-top:16px;color:var(--ink-3);
+    font-size:.85rem;max-width:74ch}
+</style>
+
+<div class="wrap">
+
+<header class="head">
+  <p class="eyebrow">Anthropos Agent OS &middot; stage 2 &middot; for your approval</p>
+  <h1>The data contract</h1>
+  <p class="lede">Every board in your wireframe, what it draws, and where that
+    data would come from. Read the verdict column: it tells you which rows I
+    can build now, which need an agent to start collecting, and which need a
+    tool you would have to arrange. Nothing gets built from this until you
+    have corrected it.</p>
+</header>
+
+<section>
+  <div class="counts">
+    <div class="bp count"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>
+      <div class="n">93</div><div class="l">Boards in your wireframe</div></div>
+    <div class="bp count"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>
+      <div class="n">561</div><div class="l">Distinct fields drawn</div></div>
+    <div class="bp count"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>
+      <div class="n">1</div><div class="l">Missing input that blocks the most</div></div>
+    <div class="bp count"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>
+      <div class="n">4</div><div class="l">Tools only you can arrange</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="note big">
+    <p><strong>The single most important line in this document.</strong>
+      <b>Your engine has no order data. None.</b> Not from Shopify, not from
+      WooCommerce, not anywhere. That one gap is what empties your top
+      sellers, slow movers, lifecycle stages, revenue attribution, ROAS and
+      most of what you were looking at on <code>#bi</code>. It is one
+      collector, it needs no new tool on a connected shop, and it unblocks
+      more boards than anything else on this page. If you approve one thing,
+      approve that.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sechead">
+    <p class="eyebrow">How to read the verdicts</p>
+    <h2>Four answers, and only four</h2>
+  </div>
+  <div class="tablewrap"><table>
+    <tbody>
+      <tr><td><span class="v have">● Have</span></td>
+        <td>The data exists in the engine today. The board is empty only
+          because nothing renders it yet. I build the screen and it fills.</td></tr>
+      <tr><td><span class="v part">◐ Partial</span></td>
+        <td>Some fields are real, others are not collected. The board renders
+          what is true and says which columns are absent, rather than
+          guessing them.</td></tr>
+      <tr><td><span class="v agent">○ Agent</span></td>
+        <td>Needs a collector I can build with wires you already have. No new
+          tool, no new cost. This is the work of stage 2.</td></tr>
+      <tr><td><span class="v tool">▢ Tool</span></td>
+        <td>Needs a credential or a service you would have to arrange. Named
+          explicitly so you can decide whether it is worth it.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="sechead">
+    <p class="eyebrow">t8 &middot; DESK</p>
+    <h2>Search: the strongest department you have</h2>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Board</th><th>What it draws</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><b>tech</b></td><td>crawl, speed, index, schema, redirects. Rows of
+        severity, pages affected, impact, fix-by</td>
+        <td><code>run_crawl</code>, <code>run_inspect</code>, PageSpeed</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>kw</b></td><td>opportunities, gaps, tracked, cannibalisation.
+        Keyword, position, volume, difficulty, intent</td>
+        <td>Search Console + rank tracker</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>an</b> rankings</td><td>rank movement over time</td>
+        <td><code>run_ranks</code></td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>an</b> citations</td><td>AI-answer citations: prompt, which
+        assistant, how often. Your AEO and GEO edge</td>
+        <td><code>run_aeo</code> / <code>run_geo</code> exist. Whether they
+          currently store per-prompt citations needs one check</td>
+        <td><span class="v part">◐ Partial</span></td></tr>
+      <tr><td><b>an</b> local</td><td>Google Business Profile visibility</td>
+        <td>GBP wire has no credential</td>
+        <td><span class="v tool">▢ Tool</span></td></tr>
+      <tr><td><b>link</b></td><td>backlink profile, gaps, mentions, outreach</td>
+        <td>Backlink wire has no credential. This is why your Link Builder is
+          an inspector</td>
+        <td><span class="v tool">▢ Tool</span></td></tr>
+      <tr><td><b>cont</b> p1&ndash;p4</td><td>per-page score, target, recommendations</td>
+        <td><code>run_fixes</code> + the on-page optimiser</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>ctrl</b></td><td>per-agent autonomy, cap, used, finished,
+        couldn't, need, learned, log</td>
+        <td><code>/agents</code>. This is exactly the contract already built</td>
+        <td><span class="v have">● Have</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="sechead">
+    <p class="eyebrow">t9 &middot; MKT</p>
+    <h2>Marketing: mostly there</h2>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Board</th><th>What it draws</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><b>prod</b> all/text/image/video/voice/print</td>
+        <td>every piece with type, tool, tier, status</td>
+        <td>the jobs table</td><td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>strat</b> segments &amp; concepts</td>
+        <td>who we write for, and the concepts in play</td>
+        <td>business type + the strategist's playbook</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>strat</b> ads (competitor)</td>
+        <td>what competitors are running</td>
+        <td>no ad-library wire. Meta and Google both offer one</td>
+        <td><span class="v tool">▢ Tool</span></td></tr>
+      <tr><td><b>dist</b> schedule</td><td>what posts when, per channel</td>
+        <td>the Social Distributor's queue, built this week</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>dist</b> newsletter / tradefair / bookings</td>
+        <td>list sends, events, meetings booked</td>
+        <td>Cal.com is wired for bookings. Newsletter needs an ESP; trade fair
+          is human work and should say so</td>
+        <td><span class="v part">◐ Partial</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="sechead">
+    <p class="eyebrow">t11 &middot; COMMERCE, ECOM, CHANNELS</p>
+    <h2>Commerce: one missing input, many empty boards</h2>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Board</th><th>What it draws</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><b>inv</b></td><td>stock levels, reorder, SKU integrity</td>
+        <td>catalogue now returns sku, price and stock</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>price</b></td><td>margins, competitor prices, proposals</td>
+        <td>proposals and margin are built. Competitor price has no source</td>
+        <td><span class="v part">◐ Partial</span></td></tr>
+      <tr><td><b>merch</b></td><td><b>top sellers, slow movers</b>, bundles</td>
+        <td><b>needs orders.</b> Both are a ranking by units sold</td>
+        <td><span class="v agent">○ Agent</span></td></tr>
+      <tr><td><b>life</b></td><td>product lifecycle stage</td>
+        <td><b>needs orders</b> over time. Catalogue status alone cannot say
+          whether a product is growing or dying</td>
+        <td><span class="v agent">○ Agent</span></td></tr>
+      <tr><td><b>ECOM</b> woo / shopify</td><td>per-channel dashboards</td>
+        <td>both wire types are supported by the CMS layer</td>
+        <td><span class="v part">◐ Partial</span></td></tr>
+      <tr><td><b>ECOM</b> amazon FBA/FBM, shopware, fb shop, ig shop, tiktok shop</td>
+        <td>six more channel dashboards</td>
+        <td>no wire for any of them. Shopware is marked [PLANNED] in your own
+          design</td>
+        <td><span class="v tool">▢ Tool</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="sechead">
+    <p class="eyebrow">t12 &middot; LEADS</p>
+    <h2>Leads: thirteen boards, almost all feedable</h2>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Board</th><th>What it draws</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><b>funnel</b>, <b>prospectRows</b>, <b>qualifyRows</b></td>
+        <td>the pipeline and the people in it</td>
+        <td>the outreach module</td><td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>cleanRegion</b>, <b>cleanDonut</b></td>
+        <td>where leads are, and what cleaning removed</td>
+        <td>target markets + the suppression list</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>engagement</b>, <b>replies</b>, <b>replyBySegment</b></td>
+        <td>opens, clicks, replies, by segment</td>
+        <td>the inbox lane and tracking. <b>Reply rate is the honest one</b>;
+          opens depend on the tracking switch you keep</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>abTest</b></td><td>subject-line A/B results</td>
+        <td>the outreach writer's playbook records winners, but nothing runs a
+          controlled split yet</td>
+        <td><span class="v agent">○ Agent</span></td></tr>
+      <tr><td><b>scoreHist</b>, <b>scatter</b>, <b>segments</b></td>
+        <td>score distribution and segmentation</td>
+        <td>the qualifier</td><td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>donutSource</b></td><td>which source produced which leads</td>
+        <td>sourcing records the provider per lead</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>EMAIL_PIPE</b> esp / api</td><td>ESP versus platform-native routing</td>
+        <td>SMTP is wired. An ESP is not</td>
+        <td><span class="v tool">▢ Tool</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="sechead">
+    <p class="eyebrow">t13 &middot; MOD13 &middot; thirty-four boards</p>
+    <h2>Web and Data Core: the honest half and the empty half</h2>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Board</th><th>What it draws</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><b>connections</b>, <b>registry</b>, <b>apiNodes</b>, <b>apiEdges</b></td>
+        <td>every wire, its state, what it feeds, the map</td>
+        <td><code>/connectors/health</code>. Already live</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>cockpitModules</b>, <b>cockpitAgents</b>, <b>*AgentCards</b>,
+        <b>todayReport</b>, <b>approvals</b>, <b>blockedItems</b>,
+        <b>systemActivity</b></td>
+        <td>the whole cockpit</td>
+        <td><code>/agents</code>, <code>/company/today</code>. Already live</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>agentHealth</b>, <b>risks</b></td><td>per-agent pulse, risk list</td>
+        <td>the Risk Sentinel and the health monitor</td>
+        <td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>tools</b>, <b>deptCost</b></td><td>cost per tool and per department</td>
+        <td>cost events are recorded per job with a skill name</td>
+        <td><span class="v part">◐ Partial</span></td></tr>
+      <tr><td><b>trafficLine</b>, <b>funnelSteps</b></td><td>sessions and funnel</td>
+        <td>GA4 is wired</td><td><span class="v have">● Have</span></td></tr>
+      <tr><td><b>revByChannel</b></td><td>revenue by channel</td>
+        <td><b>needs orders.</b> This is the board you were looking at on
+          <code>#bi</code></td>
+        <td><span class="v agent">○ Agent</span></td></tr>
+      <tr><td><b>entities</b>, <b>unmapped</b>, <b>distribution</b>,
+        <b>syncVolume</b></td>
+        <td>the shared schema, field mapping, which department reads which
+          entity</td>
+        <td>this is the Data Steward's desk, which is not built. It is code
+          only and costs nothing to run</td>
+        <td><span class="v agent">○ Agent</span></td></tr>
+      <tr><td><b>devQueue</b>, <b>devRequests</b>, <b>devSeo</b>,
+        <b>devDeploys</b></td>
+        <td>the Developer's work queue and deploys</td>
+        <td><b>Deliberately not built.</b> A code-writing agent on your live
+          site is the one thing the five gates cannot make safe</td>
+        <td><span class="v tool">▢ Tool</span></td></tr>
+      <tr><td><b>infraTabs</b>, <b>infraSites</b>, <b>vps</b></td>
+        <td>VPS load, uptime, SSL, DNS</td>
+        <td>the container cannot see the host. Same lesson as the backup: it
+          needs an agent ON the host reporting in, exactly like the backup
+          receipt</td>
+        <td><span class="v agent">○ Agent</span></td></tr>
+      <tr><td><b>chats</b>, <b>commandLog</b>, <b>quick</b>, <b>safeActions</b></td>
+        <td>the command panel and its log</td>
+        <td>built to your section 10.4 scope: a command becomes a proposal</td>
+        <td><span class="v have">● Have</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="sechead">
+    <p class="eyebrow">Module 1 &middot; PLATFORMS</p>
+    <h2>Media: seven platforms, one broken key</h2>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Board</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><b>google</b></td><td>Google Ads refuses the OAuth client. Everything
+        media waits on this one credential</td>
+        <td><span class="v tool">▢ Tool</span></td></tr>
+      <tr><td><b>meta</b>, <b>tiktok</b>, <b>linkedin</b></td>
+        <td>credentials present, never proven. The new verify route can now
+          prove them</td>
+        <td><span class="v part">◐ Partial</span></td></tr>
+      <tr><td><b>amazon</b>, <b>snapchat</b>, <b>pinterest</b></td>
+        <td>drawn in your design, no wire at all</td>
+        <td><span class="v tool">▢ Tool</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="sechead">
+    <p class="eyebrow">What I would build, in this order</p>
+    <h2>The four collectors</h2>
+  </div>
+  <ul class="clean">
+    <li><strong>1. Orders.</strong> Read orders from the connected shop and
+      store them. Unblocks top sellers, slow movers, lifecycle, revenue by
+      channel, ROAS and most of <code>#bi</code>. No new tool. <b>Highest
+      leverage by a wide margin.</b></li>
+    <li><strong>2. The host agent.</strong> A tiny reporter on the VPS that
+      posts load, disk, uptime and SSL expiry, exactly like the backup
+      receipt. Fills the infra boards that a container structurally cannot
+      see. No new tool.</li>
+    <li><strong>3. The Data Steward.</strong> Code-only, $0 to run. Fills
+      entities, unmapped fields and distribution, and it is the desk that
+      keeps every other number honest as sources multiply.</li>
+    <li><strong>4. The A/B split.</strong> A controlled subject-line test so
+      <code>abTest</code> shows a real result rather than a remembered
+      winner.</li>
+  </ul>
+  <div class="note">
+    <p><strong>What I will not build without you saying so:</strong> the
+      Developer desk. Your own spec lists it under "not building, say no
+      honestly", and I agree with that line.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sechead">
+    <p class="eyebrow">Your decisions</p>
+    <h2>What only you can settle</h2>
+  </div>
+  <ul class="clean">
+    <li><strong>Google Ads OAuth.</strong> Media is entirely blocked on it.</li>
+    <li><strong>Backlink data</strong> (Ahrefs, DataForSEO or similar). Without
+      it your Link Builder stays an inspector and four link boards stay
+      empty.</li>
+    <li><strong>An ESP</strong> for newsletter and campaign routing, or we drop
+      those boards.</li>
+    <li><strong>Competitor ad library</strong> and <strong>Google Business
+      Profile</strong>. Both are real APIs; both cost you time to set up.</li>
+    <li><strong>Amazon, Shopware, TikTok Shop, Snapchat, Pinterest.</strong>
+      Six channel dashboards with no wire. Tell me which you actually sell
+      on and I will drop the rest from the OS rather than carry empty
+      frames.</li>
+  </ul>
+</section>
+
+<footer>
+  <p>Board names and field lists in this document were extracted from your own
+    wireframe file: 93 board objects, 354 data loops, 561 distinct bound
+    fields. Where a verdict says a source exists, it names the function or
+    endpoint. Where I was not certain a source stores what a board needs, the
+    verdict is Partial and says which check would settle it, rather than
+    claiming it works.</p>
+</footer>
+
+</div>
