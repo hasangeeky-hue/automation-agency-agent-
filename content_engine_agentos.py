@@ -106,6 +106,24 @@ def build_ctx(store) -> Dict[str, Any]:
         ctx["commerce"] = {"ok": False, "products": [],
                            "why": "the commerce desk raised %s"
                                   % type(exc).__name__, "findings": []}
+    # Stage 2 pricing proposals. These are PINK and they are the only
+    # thing in the OS that can change what a customer pays, so they must
+    # reach the cockpit queue rather than living on one commerce screen.
+    try:
+        import content_engine_pricing as _PX
+        ctx["price_proposals"] = _PX.proposals(store, "pending")
+        ctx["price_applied"] = _PX.proposals(store, "applied")
+        ctx["target_margin_pct"] = _PX.target_margin(store)
+    except Exception as exc:                              # noqa: BLE001
+        ctx["errors"].append("pricing: %s" % type(exc).__name__)
+        ctx["price_proposals"], ctx["price_applied"] = [], []
+    # The social queue: written posts and why they have not gone out.
+    try:
+        import content_engine_social_desk as _SD
+        ctx["social"] = _SD.queue(store)
+    except Exception as exc:                              # noqa: BLE001
+        ctx["errors"].append("social: %s" % type(exc).__name__)
+        ctx["social"] = {}
     # The Risk Sentinel's posture. The backup question is the single most
     # consequential thing on this dashboard, so it is read every render.
     try:
@@ -501,16 +519,36 @@ def _s14b(ctx) -> str:
             nd["_who"] = cd.get("name")
             (decisions if nd.get("kind") == "decision" else blocked).append(nd)
 
+    # PINK ITEMS JOIN THE DECISION LIST, flagged. A price change that
+    # never appears in the cockpit is a proposal nobody sees, and the
+    # whole point of one queue is that nothing waits somewhere else.
+    for pp in _l(ctx.get("price_proposals")):
+        pd = _d(pp)
+        pv = _d(pd.get("preview"))
+        detail = ("margin %s%% to %s%%" % (pv.get("margin_before_pct"),
+                                           pv.get("margin_after_pct"))
+                  if pv.get("margin_known") else _e(pv.get("margin_note")))
+        decisions.append({
+            "_who": "📦 Commerce Analyst", "kind": "decision", "_pink": True,
+            "what": "price %s: %s to %s" % (_e(pd.get("title"))[:40],
+                                            pd.get("price"),
+                                            pd.get("new_price")),
+            "why": "%s. %s" % (_e(pd.get("why")), detail),
+            "action": "/commerce/price/%s/approve" % _e(pd.get("id"))})
+
     def _tbl(items, empty):
         if not items:
             return "<p class='ox-nodata'>%s</p>" % _e(empty)
         return ("<div class='ox-tw'><table class='ox-t'><thead><tr>"
                 "<th>From</th><th>What</th><th>Why</th><th>Where</th>"
                 "</tr></thead><tbody>%s</tbody></table></div>"
-                % "".join("<tr><td>%s</td><td>%s</td><td>%s</td>"
+                % "".join("<tr><td>%s</td><td>%s%s</td><td>%s</td>"
                           "<td class='ox-wire'>%s</td></tr>"
-                          % (_e(i.get("_who")), _e(i.get("what")),
-                             _e(i.get("why")), _e(i.get("action")))
+                          % (_e(i.get("_who")),
+                             ("<span class='ox-pink'>pink: never batch</span> "
+                              if i.get("_pink") else ""),
+                             _e(i.get("what")), _e(i.get("why")),
+                             _e(i.get("action")))
                           for i in items))
     return K.screen(
         "14b", "Unified Approval Queue",

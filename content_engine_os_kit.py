@@ -528,6 +528,38 @@ function osSend(aid){
    })
    .catch(function(e){ osAck(aid,'Could not reach the engine: '+e); });
 }
+function osPriceApprove(id){
+  // A PRICE CHANGE IS THE MOST CONSEQUENTIAL THING HERE. It confirms,
+  // one at a time, and the engine records who said yes.
+  if(!confirm('Approve this price change? It writes the new price to your '
+      + 'shop and is recorded against your name.')) return;
+  fetch('/commerce/price/'+encodeURIComponent(id)+'/approve',
+    {method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({})})
+   .then(function(r){return r.json();})
+   .then(function(d){
+     if(d && d.ok){
+       osAck('commerce.analyst','Applied: '+d.from+' to '+d.to+'.');
+       var row=document.getElementById('ospx-'+id); if(row) row.remove();
+     } else {
+       // A REFUSAL IS INFORMATION, not a glitch. Show the engine's words.
+       osAck('commerce.analyst','Not applied: '+((d&&d.why)||'unknown'));
+     }
+   })
+   .catch(function(e){ osAck('commerce.analyst','Could not reach the engine: '+e); });
+}
+function osPriceDecline(id){
+  fetch('/commerce/price/'+encodeURIComponent(id)+'/decline',
+    {method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({note:'declined from the pricing desk'})})
+   .then(function(r){return r.json();})
+   .then(function(d){
+     osAck('commerce.analyst', d&&d.ok ? 'Declined.' :
+       ('Could not decline: '+((d&&d.why)||'unknown')));
+     var row=document.getElementById('ospx-'+id); if(row && d && d.ok) row.remove();
+   })
+   .catch(function(e){ osAck('commerce.analyst','Could not reach the engine: '+e); });
+}
 function osTracking(on){
   // Open tracking is the real consent control for European markets.
   // Turning it OFF is the safe direction, so it needs no confirmation;

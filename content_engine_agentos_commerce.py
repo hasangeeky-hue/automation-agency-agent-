@@ -37,14 +37,71 @@ _e, _l, _d = K._e, K._l, K._d
 
 AGENT = "commerce.analyst"
 
+try:
+    from content_engine_pricing import MAX_MOVE_PCT as _MAX_MOVE
+except Exception:                                         # noqa: BLE001
+    _MAX_MOVE = 25.0
+
 #: every commerce desk is worked by the same employee
 SHARED_DESKS = ("11b", "11c", "11d", "11e", "11f")
 
-#: what stage 2 adds, per desk, so a missing control is explained
-STAGE_2 = {
-    "11c": "proposing a price change with a margin-impact preview",
-    "11e": "proposing a discount or flash sale with its margin preview",
-}
+#: Stage 2 is BUILT. These screens used to explain a control that did not
+#: exist yet. Describing a shipped lane as future work is the same drift
+#: as describing a missing one as present, so the text moves with the code.
+STAGE_2 = {}
+
+
+def _price_table(ctx) -> str:
+    """Open price proposals, each with the numbers it was computed from
+    and its own approve control. PINK: one at a time, never a batch."""
+    # THE PINK RULE IS STANDING, not conditional on there being rows.
+    # It first lived only in the populated branch, so an empty queue
+    # silently stopped saying how these are approved. A rule stated only
+    # when it happens to apply is a rule the reader never learns.
+    pink_rule = ("<p class='ox-sub'><span class='ox-pink'>pink</span> Every "
+                 "one of these changes what a customer pays. They are "
+                 "approved one at a time, never in a batch, and the name of "
+                 "whoever approves is recorded against the change.</p>")
+    props = _l(_d(ctx).get("price_proposals"))
+    if not props:
+        return ("<p class='ox-nodata'>no price proposals: either the "
+                "catalogue could not be read, or nothing is priced under "
+                "target</p>" + pink_rule)
+    rows = []
+    for p in props:
+        pd = _d(p)
+        pv = _d(pd.get("preview"))
+        if pv.get("margin_known"):
+            margin = ("%s%% to %s%% (%+g pts)"
+                      % (pv.get("margin_before_pct"),
+                         pv.get("margin_after_pct"),
+                         pv.get("margin_delta_pct") or 0))
+        else:
+            margin = ("<span class='ox-nodata'>%s</span>"
+                      % _e(pv.get("margin_note")))
+        rows.append(
+            "<tr id='ospx-" + _e(pd.get("id")) + "'>"
+            "<td class='ox-wire'>" + _e(pd.get("sku") or pd.get("product_id"))
+            + "</td><td>" + _e(pd.get("title"))[:40]
+            + "</td><td>" + _e(pd.get("why"))
+            + "</td><td>" + "%s to %s" % (pd.get("price"), pd.get("new_price"))
+            + "</td><td>" + margin
+            + "</td><td>"
+            "<button type='button' class='ox-btn ox-btn-p' "
+            'onclick="osPriceApprove(&#39;' + _e(pd.get("id")) + '&#39;)">'
+            "Approve</button>"
+            "<button type='button' class='ox-btn' "
+            'onclick="osPriceDecline(&#39;' + _e(pd.get("id")) + '&#39;)">'
+            "Decline</button></td></tr>")
+    return ("<div class='ox-tw'><table class='ox-t'><thead><tr><th>SKU</th>"
+            "<th>Product</th><th>Why</th><th>Price</th><th>Margin</th>"
+            "<th>Decision</th></tr></thead><tbody>" + "".join(rows)
+            + "</tbody></table></div>"
+            "<p class='ox-sub'><span class='ox-pink'>pink</span> Every one "
+            "of these changes what a customer pays. They are approved one "
+            "at a time, never in a batch, and the name of whoever approves "
+            "is recorded against the change.</p>"
+            + K.source_chip("/commerce/prices"))
 
 #: channels the wireframe draws that have no wire in this engine
 PLANNED_CHANNELS = [
@@ -175,16 +232,22 @@ def _s11c(ctx) -> str:
     return _desk(
         ctx, "11c", "Pricing Analyst's desk",
         "Margins, competitor prices, and price proposals.",
-        extra=K.bp("<span class='ox-lbl'>Products with no price</span>"
-                   + _finding_table(ctx, "no_price",
-                                    "every product carries a price")
-                   + "<p class='ox-sub'>Competitor prices need a source this "
-                     "engine does not have yet, so no competitor number is "
-                     "shown. Margin needs a cost price, which no connected "
-                     "platform returns today.</p>"),
-        quick=["Which products have no price?"],
-        note="A price touches money. At stage 2 a change arrives as a gated "
-             "proposal with a margin preview, never as an edit.")
+        extra=K.bp("<span class='ox-lbl'>Price proposals waiting on you</span>"
+                   + _price_table(ctx))
+        + K.bp("<span class='ox-lbl'>Products with no price</span>"
+               + _finding_table(ctx, "no_price",
+                                "every product carries a price")
+               + "<p class='ox-sub'>Cost price comes from Shopify's "
+                 "inventory item. WooCommerce has no native cost field, so "
+                 "against Woo a proposal shows revenue impact only and says "
+                 "margin is unknown, rather than computing one from a cost "
+                 "of zero. Competitor prices need a source this engine does "
+                 "not have.</p>"),
+        quick=["Which products are under target margin?",
+               "What would a 10% rise do to margin?"],
+        note="A price touches money, so a change arrives as a gated proposal "
+             "with its margin preview and is written only after you approve "
+             "it by name. Nothing here edits a price directly.")
 
 
 def _s11d(ctx) -> str:
@@ -208,14 +271,21 @@ def _s11e(ctx) -> str:
         ctx, "11e", "Promotions Manager's desk",
         "Discounts, coupons and flash sales, with a margin preview before "
         "anything runs.",
-        extra=K.bp("<span class='ox-lbl'>Why there is no discount button</span>"
-                   "<p class='ox-sub'>A discount moves money, so it is behind "
-                   "the SPEND gate and belongs to stage 2. Drawing the button "
-                   "now would give you a control that either does nothing or "
-                   "does something ungated. Neither is acceptable.</p>",
-                   cls="ox-plan"),
-        quick=["What would a 10% sale cost in margin?"],
-        note="Nothing on this desk can create a discount today.")
+        extra=K.bp("<span class='ox-lbl'>How a discount happens here</span>"
+                   "<p class='ox-sub'>There is still no button that simply "
+                   "applies a discount, and there never will be. A price move "
+                   "arrives as a proposal carrying its margin impact, you "
+                   "approve it by name, and only then is it written to the "
+                   "shop. That is the SPEND gate, and no autonomy setting "
+                   "opens it.</p>"
+                   "<p class='ox-sub'>A single step may not move a price by "
+                   "more than %g%%. That is not a budget: it is a guard "
+                   "against a decimal point reaching a live shop.</p>"
+                   % _MAX_MOVE)
+        + K.bp("<span class='ox-lbl'>Open proposals</span>"
+               + _price_table(ctx)),
+        quick=["Propose a promotion on slow movers"],
+        note="Approving here records your name against the change.")
 
 
 def _s11f(ctx) -> str:
@@ -369,8 +439,13 @@ def check(ctx: Dict[str, Any] = None) -> Dict[str, Any]:
                 problems.append("%s does not disclose its shared worker" % sid)
     flat = " ".join(html.split())
     # STAGE 1 MUST NOT DRAW A STAGE 2 CONTROL.
-    if "no discount button" not in flat:
-        problems.append("11e no longer explains the absent discount control")
+    # STAGE 2 IS BUILT, so the screens must say HOW a price change
+    # happens rather than that it cannot. The check moves with the text.
+    if "no button that simply" not in flat:
+        problems.append("11e no longer explains how a discount happens")
+    if "approved one at a time, never in a batch" not in flat:
+        problems.append("the pink rule is not stated where prices are "
+                        "approved")
     for word in ("SPEND gate", "margin preview"):
         if word not in flat:
             problems.append("the money rule is not stated: %s missing" % word)

@@ -188,6 +188,57 @@ t("and the broken backup BUTTON now tells the truth",
   and "cannot run from inside the container"
   in _FX._f_backup(None, None)["message"])
 
+# ---- THE NEW LANES REACH THE SCREENS ------------------------------------
+print("")
+print("B4. A SHIPPED LANE IS NEVER DESCRIBED AS FUTURE WORK")
+import content_engine_agentos_commerce as OSCM2
+import content_engine_pricing as PX2
+
+t("stage 2 is built, so no screen still promises it",
+  OSCM2.STAGE_2 == {}, str(OSCM2.STAGE_2))
+t("11e says HOW a discount happens, not that it cannot",
+  "no button that simply" in html)
+t("and the pink rule is stated even when the queue is empty",
+  "approved one at a time, never in a batch" in html)
+t("the one-step bound is shown to the founder, not just enforced",
+  ("%g" % PX2.MAX_MOVE_PCT) in html)
+
+# A PINK PROPOSAL MUST REACH THE COCKPIT. One queue is the whole point.
+class _PxStore:
+    def __init__(self):
+        self.d = {"BRAND_NAME": "acme"}
+
+    def get_setting(self, k, d=None):
+        return self.d.get(k, d)
+
+    def set_setting(self, k, v):
+        self.d[k] = v
+
+    def list_jobs(self, status=None):
+        return []
+
+    def daily_cost(self):
+        return 0.0
+
+
+_ps = _PxStore()
+_ps.set_setting(PX2.PROPOSALS_KEY, [{
+    "id": "px_TEST", "product_id": "9", "sku": "TEST", "title": "A product",
+    "reason": "thin_margin", "why": "its margin is thinner than the target",
+    "price": 100.0, "new_price": 120.0, "pink": True, "status": "pending",
+    "preview": {"margin_known": True, "margin_before_pct": 20.0,
+                "margin_after_pct": 33.3, "margin_delta_pct": 13.3}}])
+_pctx = OS.build_ctx(_ps)
+_pq = OS.cockpit_section(_pctx)
+t("A PINK PRICE PROPOSAL APPEARS IN THE UNIFIED QUEUE",
+  "px_TEST" in _pq or "A product" in _pq)
+t("and it is flagged pink so it can never be batched",
+  "pink: never batch" in _pq)
+t("it sits under YOUR DECISION, not under blocked",
+  _pq.find("A product") > _pq.find("Your decision"))
+t("the approve route is the gated one",
+  "/commerce/price/px_TEST/approve" in _pq)
+
 t("exactly one nav link is marked active",
   html.count("class='navb act'") == 1, str(html.count("class='navb act'")))
 _first = re.search(r"class='navb act' id='nav-([a-z]+)'", html)

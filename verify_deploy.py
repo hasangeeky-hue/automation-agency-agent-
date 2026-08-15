@@ -1699,6 +1699,36 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     check("the pricing lane answered", False, repr(exc)[:110])
 
+# --- 24. THE NEW LANES ARE VISIBLE, NOT JUST BUILT -----------------------
+print("")
+print("24. EVERY BUILT LANE REACHES A SCREEN")
+try:
+    import content_engine_agentos_commerce as OSCM24
+    import content_engine_pricing as PX24
+
+    check("stage 2 is built, so no screen still promises it",
+          OSCM24.STAGE_2 == {}, str(OSCM24.STAGE_2))
+    check("11e explains HOW a discount happens", "no button that simply" in _h21)
+    check("the pink rule is stated even with an empty queue",
+          "approved one at a time, never in a batch" in _h21)
+    _ps24 = _S21()
+    _ps24.set_setting(PX24.PROPOSALS_KEY, [{
+        "id": "px_D", "product_id": "9", "sku": "D", "title": "Deploy probe",
+        "reason": "thin_margin", "why": "thin", "price": 100.0,
+        "new_price": 110.0, "pink": True, "status": "pending",
+        "preview": {"margin_known": False, "margin_note": "no cost"}}])
+    _pq24 = OS21.cockpit_section(OS21.build_ctx(_ps24))
+    check("A PINK PRICE PROPOSAL REACHES THE UNIFIED QUEUE",
+          "Deploy probe" in _pq24)
+    check("flagged pink, so it can never be batch-approved",
+          "pink: never batch" in _pq24)
+    check("the social queue is on the Distributor's desk",
+          "cannot post twice" in _h21)
+    check("and the backup posture is on the Infra desk",
+          "Backup posture" in _h21)
+except Exception as exc:                                  # noqa: BLE001
+    check("the new lanes reached their screens", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

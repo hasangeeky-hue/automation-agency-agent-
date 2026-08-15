@@ -40,6 +40,48 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session K — the new lanes reach the screens
+2026-08-15
+
+**THE DRIFT THIS CLOSES**
+- Stage 2 shipped last session and the screens still said it had not.
+  11e read "there is no discount button... it belongs to stage 2" and
+  11c said "AT stage 2 a change arrives as a gated proposal", in the
+  future tense, about a lane that was already running. Describing a
+  shipped lane as future work is the same class of lie as describing a
+  missing one as present, and it is the drift that makes a dashboard
+  stop being believed.
+- Worse: PINK PRICE PROPOSALS APPEARED NOWHERE IN THE COCKPIT. A price
+  change that never reaches the one queue is a proposal nobody sees, and
+  a unified queue that is missing the most consequential item in the
+  system is not unified.
+
+**FINISHED**
+- 11c and 11e now show the real proposal queue: SKU, why, price before
+  and after, margin before and after with the delta, and approve/decline
+  per row. Approving confirms first and records a name.
+- The unified queue (14b) carries pink price proposals, flagged
+  "pink: never batch", filed under YOUR DECISION, pointing at the gated
+  route. Proven by a gate that injects a proposal and asserts it appears.
+- 9f, the Distributor's desk, shows the social queue: ready, waiting on
+  you, written-with-nowhere-to-go, and the per-channel credential needs.
+- `osPriceApprove` / `osPriceDecline` in the kit. A refusal from the
+  engine is shown in the engine's own words, not swallowed.
+- 322 deploy checks, 0 failed. 82 gates in verify_agentos.
+
+**Correction found while building (10.2)**
+- The pink rule ("approved one at a time, never in a batch") was written
+  only into the populated branch of the price table, so an EMPTY queue
+  silently stopped stating it. A rule stated only when it happens to
+  apply is a rule the reader never learns. It is now unconditional, and
+  the gate asserts it with an empty queue.
+
+**STILL PRE-EXISTING, STILL NOT MINE**
+- `verify_os.py` fails one clock-dependent test depending on the hour it
+  is run. Verified at baseline again this session.
+
+---
+
 ## Session J — Lane 3c STAGE 2: pricing and promotions, the full loop
 2026-08-15
 

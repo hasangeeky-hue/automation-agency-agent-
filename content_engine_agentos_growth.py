@@ -206,16 +206,51 @@ def _s9e(ctx) -> str:
              "site without passing QA and then you.")
 
 
+def _social_queue(ctx) -> str:
+    """What the Social Distributor owes, and why it has not gone out.
+
+    Three separate counts, because "nothing posted" has three different
+    meanings and collapsing them into one number would hide which."""
+    q = _d(_d(ctx).get("social"))
+    if not q:
+        return ""
+    chans = _d(q.get("channels"))
+    live = [c for c, v in chans.items() if _d(v).get("verified")]
+    rows = "".join(
+        "<tr><td class='ox-wire'>%s</td><td>%s</td><td>%s</td></tr>"
+        % (_e(c), _e(_d(v).get("status")),
+           _e(_d(v).get("needs")) if not _d(v).get("verified") else "ready")
+        for c, v in sorted(chans.items()))
+    return (K.grid(
+        K.bp(K.stat(len(_l(q.get("ready"))), "ready to post",
+                    "/social/queue")),
+        K.bp(K.stat(len(_l(q.get("waiting_approval"))), "waiting on you",
+                    "/social/queue")),
+        K.bp(K.stat(len(_l(q.get("blocked"))), "written, nowhere to go",
+                    "/social/queue")),
+        K.bp(K.stat(len(live) or None, "channels verified",
+                    "/connectors/health")))
+        + K.bp("<span class='ox-lbl'>Channels</span>"
+               "<div class='ox-tw'><table class='ox-t'><thead><tr>"
+               "<th>Channel</th><th>State</th><th>Needs</th></tr></thead>"
+               "<tbody>" + rows + "</tbody></table></div>"
+               "<p class='ox-sub'>A post goes out only when the piece is "
+               "approved, the channel is VERIFIED rather than merely "
+               "configured, and that piece has not already been posted "
+               "there. The same list read twice cannot post twice.</p>"))
+
+
 def _s9f(ctx) -> str:
     planned = K.grid(*[K.planned(w, n) for w, n in PLANNED_CHANNELS])
     return _desk(
         ctx, "9f", "Distributor's desk",
         "Scheduling, newsletter, trade fair, bookings and community.",
         "mkt.distributor",
-        extra=K.bp("<span class='ox-lbl'>Channels drawn but not wired</span>"
-                   "<p class='ox-sub'>WordPress publishing is live. The rest "
-                   "of this desk's channels have no credential, so they are "
-                   "laid out and empty rather than filled with samples.</p>")
+        extra=_social_queue(ctx)
+        + K.bp("<span class='ox-lbl'>Channels drawn but not wired</span>"
+               "<p class='ox-sub'>WordPress publishing is live. The rest "
+               "of this desk's channels have no credential, so they are "
+               "laid out and empty rather than filled with samples.</p>")
         + planned,
         quick=["Publish the approved queue", "Which channel refused?"],
         note="Publishing is a permanent gate. This desk ships what you "
@@ -458,6 +493,9 @@ def check(ctx: Dict[str, Any] = None) -> Dict[str, Any]:
     # say so on their face. Only assertable when the worker exists: an
     # empty context renders a "not on the roster" desk, where the question
     # does not arise.
+    # THE SOCIAL LANE EXISTS, so 9f must show its queue and its rule.
+    if _d(ctx).get("social") and "cannot post twice" not in html:
+        problems.append("9f no longer states the never-post-twice rule")
     if _card(ctx, "seo.analyst"):
         for sid in ("8c", "8e"):
             seg = html[html.find("id='os-%s'" % sid):]
