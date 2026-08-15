@@ -1936,6 +1936,20 @@ try:
           str(_h21.count("class='ox-rail-head'")))
     check("THE SUPERSEDED EU HARD-BLOCK CLAIM IS NOT REPRODUCED",
           "hard-blocked from cold email" not in _h21)
+    # THE COMPONENT EXISTING IS NOT THE WORK BEING DONE. These asserted
+    # only that K.dq and K.chart were callable, and passed for weeks while
+    # no screen called either one.
+    import content_engine_os_cards as CD28
+    check("EVERY CHART CARD HE DREW IS RENDERED (%d)"
+          % sum(len(v) for v in CD28.CHARTS.values()),
+          _h21.count("class='ox-cc'")
+          == sum(len(v) for v in CD28.CHARTS.values()),
+          str(_h21.count("class='ox-cc'")))
+    check("and every activity list he drew (%d)" % len(CD28.DQ_SHAPE),
+          _h21.count("class='ox-dq-list'") == len(CD28.DQ_SHAPE),
+          str(_h21.count("class='ox-dq-list'")))
+    check("HIS PLACEHOLDER INCIDENTS ARE NOT SHOWN AS REAL ALERTS",
+          "Shopware sync degraded" not in _h21)
     check("his chart card exists", "ox-hbar-t" in K28.chart("t", [("a", 1)]))
     check("AND AN UNMEASURED BAR IS A GAP, NEVER A ZERO",
           "not measured" in K28.chart("t", [("a", None)]))

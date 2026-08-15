@@ -398,7 +398,9 @@ def chart(title: str, rows: Sequence, *, source: str = "") -> str:
 # SCREEN SCAFFOLD
 # ==========================================================================
 def screen(sid: str, title: str, sub: str, body: str, *,
-           staffed_by: str = "", badge_kind: str = "") -> str:
+           staffed_by: str = "", badge_kind: str = "",
+           series: Optional[Dict[str, Any]] = None,
+           activity: Optional[Sequence] = None) -> str:
     """One lettered screen (13a, 14b...). The header always says WHOSE desk
     this is, because a desk is a view of a lane and the reader must be able
     to see one employee covering several boards."""
@@ -415,6 +417,36 @@ def screen(sid: str, title: str, sub: str, body: str, *,
     #
     # Looked up by screen id rather than passed in, so a screen he drew a
     # rail on cannot silently lose it when a call site is edited.
+    # HIS CHART CARDS AND ACTIVITY LISTS, on the screens he drew them on.
+    # The gate used to assert only that these COMPONENTS existed, and it
+    # passed while not one screen called them. A toolbox is not the work.
+    #
+    # `series` lets a module hand real rows in, keyed by his own title.
+    # Nothing supplied means the chart draws NOT MEASURED rather than an
+    # empty box, so these screens now show him precisely which data his
+    # engine still lacks. That is the question he built the OS to answer.
+    extra = ""
+    try:
+        import content_engine_os_cards as _CD
+        _titles = _CD.charts_for(sid)
+        _act = _CD.has_activity(sid)
+    except Exception:                                     # noqa: BLE001
+        _titles, _act = (), False
+    series = series or {}
+    for _t in _titles:
+        extra += chart(_t, series.get(_t) or [], source=("live" if series.get(_t) else ""))
+    if _act:
+        rows = list(activity or [])
+        if rows:
+            extra += "<div class='ox-dq-list'>" + "".join(rows) + "</div>"
+        else:
+            # NOT his placeholder text. His file says things like "Shopware
+            # sync degraded, token expired 41m ago"; printing that here
+            # would invent an incident. Silence is reported as silence.
+            extra += ("<div class='ox-dq-list'>"
+                      + dq("Nothing recorded on this desk yet")
+                      + "</div>")
+
     rail = ""
     try:
         import content_engine_os_rails as _R
@@ -430,10 +462,10 @@ def screen(sid: str, title: str, sub: str, body: str, *,
     return ("<section class='ox-screen' id='os-%s'>"
             "<div class='ox-sh'><span class='ox-sid'>%s</span>"
             "<div><h3>%s</h3><p class='ox-sub'>%s</p></div>%s</div>"
-            "<div class='ox-scr%s'><div class='ox-scr-main'>%s</div>%s</div>"
+            "<div class='ox-scr%s'><div class='ox-scr-main'>%s%s</div>%s</div>"
             "</section>"
             % (_e(sid), _e(sid), _e(title), _e(sub), who,
-               " railed" if rail else "", body, rail))
+               " railed" if rail else "", body, extra, rail))
 
 
 def grid(*cards: str, cols: str = "") -> str:
@@ -652,6 +684,8 @@ CSS = """
    .mos-staffrail{width:216px;border-left:1px solid neutral-300;padding:14px}
    A screen he drew no rail on keeps the full width rather than holding an
    empty column open, which is why the two-column rule is on .railed. */
+/* his .dq-list{display:flex;flex-direction:column;gap:10px} */
+.osx .ox-dq-list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .osx .ox-scr{min-width:0}
 .osx .ox-scr.railed{display:grid;grid-template-columns:1fr 216px;gap:14px}
 .osx .ox-scr-main{min-width:0}
@@ -866,6 +900,7 @@ def check() -> Dict[str, Any]:
                 "ox-dq-actions", "ox-cc", "ox-cc-title", "ox-hbar",
                 "ox-hbar-l", "ox-hbar-t",
                 "ox-scr", "ox-scr-main", "ox-staffrail", "ox-rail-head",
+                "ox-dq-list",
                 "ox-rail-p"]
     for cls in emitted:
         if ("." + cls) not in CSS:

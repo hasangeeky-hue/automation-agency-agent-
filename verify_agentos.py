@@ -303,6 +303,26 @@ t("a screen he drew NO rail on does not hold an empty column open",
 t("THE SUPERSEDED EU HARD-BLOCK CLAIM IS NOT REPRODUCED",
   "hard-blocked from cold email" not in _allos)
 
+# THE COMPONENT EXISTING IS NOT THE WORK BEING DONE.
+# These two checks used to assert only that K.dq and K.chart could be
+# called. They passed for weeks while not one screen called them: the
+# toolbox was full and the screens were empty. They now count what is
+# actually ON THE PAGE, against his file.
+import content_engine_os_cards as CARDS
+_want_ch = sum(len(v) for v in CARDS.CHARTS.values())
+t("EVERY CHART CARD HE DREW IS RENDERED (%d)" % _want_ch,
+  _allos.count("class='ox-cc'") == _want_ch,
+  str(_allos.count("class='ox-cc'")))
+t("and every screen he drew an activity list on has one (%d)"
+  % len(CARDS.DQ_SHAPE),
+  _allos.count("class='ox-dq-list'") == len(CARDS.DQ_SHAPE),
+  str(_allos.count("class='ox-dq-list'")))
+t("a chart nothing feeds says so, rather than drawing an empty box",
+  "nothing to chart yet" in _allos)
+t("HIS PLACEHOLDER INCIDENTS ARE NOT REPRODUCED AS REAL ALERTS",
+  "Shopware sync degraded" not in _allos
+  and "token expired 41m ago" not in _allos)
+
 # The two components his file repeats and I had not built at all.
 t("the decision card exists (his dq-card, 51 uses)",
   "ox-dq-rec" in K.dq("x", "y"))
