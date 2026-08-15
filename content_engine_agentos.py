@@ -106,6 +106,14 @@ def build_ctx(store) -> Dict[str, Any]:
         ctx["commerce"] = {"ok": False, "products": [],
                            "why": "the commerce desk raised %s"
                                   % type(exc).__name__, "findings": []}
+    # The Risk Sentinel's posture. The backup question is the single most
+    # consequential thing on this dashboard, so it is read every render.
+    try:
+        import content_engine_risk_desk as _RD
+        ctx["risk"] = _RD.inspect(store)
+    except Exception as exc:                              # noqa: BLE001
+        ctx["errors"].append("risk: %s" % type(exc).__name__)
+        ctx["risk"] = {"findings": [], "host_cron": ""}
     # Open tracking: a live compliance state, not a description. The
     # founder keeps Europe in scope, so this switch is the real control.
     try:
@@ -241,14 +249,28 @@ def _s13e(ctx) -> str:
     cards = _cards_for(ctx, "risk")
     body = (K.grid(*[K.agent_card(c) for c in cards]) if cards else
             "<p class='ox-nodata'>the risk desk did not report</p>")
+    rk = _d(ctx.get("risk"))
+    fs = _l(rk.get("findings"))
+    rows = "".join(
+        "<li class='%s'>%s <em>%s</em></li>"
+        % ("bad" if _d(f).get("severity") == "bad" else "ask",
+           _e(_d(f).get("what")), _e(_d(f).get("fix")))
+        for f in fs) or "<li class='ok'>nothing outstanding</li>"
+    age = rk.get("backup_age_days")
     note = K.bp(
-        "<span class='ox-lbl'>What this desk will own</span>"
-        "<ul class='ox-rep'>"
-        "<li>backups run, and a restore is tested into scratch</li>"
-        "<li>credential age, so nothing quietly passes ninety days</li>"
-        "<li>uptime and load, read from the box rather than assumed</li>"
-        "</ul><p class='ox-sub'>The sensors already report. Nothing runs on a "
-        "clock yet, so the badge says inspector and not live.</p>")
+        "<span class='ox-lbl'>Backup posture</span>"
+        + K.stat(age, "days since a proven backup", "/risk/posture")
+        + "<ul class='ox-rep'>" + rows + "</ul>"
+        + ("<p class='ox-sub'>The engine runs in a container with no docker "
+           "CLI and no view of the host disk, so it cannot take a backup or "
+           "see one. It can only be TOLD, with a timestamp. Install this on "
+           "the host once and the proof starts arriving:</p>"
+           "<pre style='overflow-x:auto;font-size:.74rem;white-space:pre-wrap;"
+           "word-break:break-all'>" + _e(rk.get("host_cron")) + "</pre>"
+           if age is None else
+           "<p class='ox-sub'>Proof arrives from the host cron. A backup this "
+           "engine cannot verify is not counted.</p>"),
+        cls="ox-plan" if age is None else "")
     return K.screen(
         "13e", "Infra / SRE Desk",
         "VPS, DNS, SSL, uptime, backups. The sensors report; the lane is "

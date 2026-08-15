@@ -40,6 +40,63 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session H — Lane 3b: the Risk Sentinel, and the backup that never was
+2026-08-15
+
+**THE FINDING**
+- YOU HAVE NO PROVEN BACKUPS, and the reason is structural, not a
+  forgotten cron. Three facts, each verified in the repo:
+  1. `deploy/backup.sh` is a HOST script. It runs `docker compose exec`
+     against /opt/content-engine/deploy/docker-compose.yml.
+  2. The `run_backup` fix action called it with `bash deploy/backup.sh`
+     from INSIDE the api container, which has no docker CLI, no compose
+     file, and no view of the host disk: the compose file mounts only
+     the Postgres data volume.
+  3. The Dockerfile copies requirements, `*.py` and `docs`. It does not
+     copy `deploy/`, so the script is not even in the image.
+- So the button returned "backup failed" or "not in the image", which
+  reads like a transient error and invites a retry. It was never going
+  to work, and the risk board's "no backup is configured" could never
+  be cleared by anything the founder could press.
+
+**FINISHED**
+- `content_engine_risk_desk.py`, lane 3b, stage 1. Free, code only.
+  Reports: proven-backup age, restore-test age, credential rotation age
+  and refusing wires. On the cadence, before the nightly snapshot.
+- PROOF BY RECEIPT, which is the Phase 0 pattern applied to the host: a
+  container cannot prove something about a machine it cannot see, so it
+  stops guessing and asks for evidence. The host cron POSTs to
+  `/risk/backup-receipt` after a real backup, and the desk reports the
+  age of the last receipt. No receipt means no proven backup, said
+  plainly, forever, until one arrives.
+- `GET /risk/posture`. Screen 13e now shows the real posture and prints
+  the exact host cron line that would fix it.
+- `_f_backup` no longer pretends. It returns the command that works.
+- Credentials are now STAMPED when saved, so rotation age becomes a fact
+  over time. Anything saved before today reports "age unknown", never
+  "fresh".
+- 296 deploy checks, 0 failed. 72 gates.
+
+**ALSO FOUND**
+- Lane 3e (SEO on the clock) was ALREADY DONE in an earlier session:
+  `run_seo_due` is called from the cadence. Verified rather than
+  rebuilt.
+
+**COULDN'T**
+- The desk cannot take a backup and does not pretend to. Its badge stays
+  INSPECTOR. It earns live when receipts are arriving, which needs one
+  host cron line the founder installs.
+- Lane 3d (SGA Distributor) is still not built.
+- Same nine suites exit nonzero, all failing at baseline.
+
+**NEED FROM FOUNDER**
+- INSTALL THE CRON. It is one line, printed on screen 13e and in the
+  backup button. Until then the engine has no provable backup of 176
+  posts, 49 pages and every credential in the settings store.
+- The three standing items are unchanged.
+
+---
+
 ## Session G — the replacement: the Agent OS becomes the dashboard
 2026-08-15
 

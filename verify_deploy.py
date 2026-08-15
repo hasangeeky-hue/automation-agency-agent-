@@ -1543,6 +1543,19 @@ try:
     _dk21 = CD21.check()
     check("the Commerce Analyst is stage 1 and cannot write", _dk21["ok"],
           str(_dk21["problems"])[:110])
+    import content_engine_risk_desk as RD21
+    _rk21 = RD21.check()
+    check("the Risk Sentinel cannot claim a backup it cannot take",
+          _rk21["ok"], str(_rk21["problems"])[:110])
+    _pp21 = RD21.inspect(_st21)
+    check("with no receipt it reports NO PROVEN BACKUP",
+          any(f["kind"] == "no_backup_proof" for f in _pp21["findings"]))
+    check("and the host cron it prints reports back to the engine",
+          "backup-receipt" in _pp21["host_cron"])
+    import content_engine_fixes as FX21
+    check("the backup button states it cannot run in-container",
+          "cannot run from inside the container"
+          in FX21._f_backup(None, None)["message"])
     check("Europe stays in scope, as the founder decided",
           "Per-country rules: decided" in _h21)
     check("and open tracking shows its LIVE state with a real switch",

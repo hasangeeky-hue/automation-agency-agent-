@@ -287,18 +287,23 @@ def _f_piece_image(store, arg):
 
 
 def _f_backup(store, arg):
-    import subprocess
-    try:
-        p = subprocess.run(["bash", "deploy/backup.sh"], capture_output=True,
-                           text=True, timeout=240)
-        ok = p.returncode == 0
-        tail = (p.stdout or p.stderr or "").strip().splitlines()
-        return {"ok": ok, "message": tail[-1][:150] if tail else
-                ("backup written" if ok else "backup failed")}
-    except FileNotFoundError:
-        return {"ok": False, "message": "deploy/backup.sh is not in the image"}
-    except Exception as e:
-        return {"ok": False, "message": f"{type(e).__name__}: {e}"[:150]}
+    """THIS BUTTON CANNOT TAKE A BACKUP, AND NOW SAYS SO.
+
+    deploy/backup.sh is a HOST script: it runs `docker compose exec`
+    against /opt/content-engine/deploy/docker-compose.yml. This process
+    is inside the api container, which has no docker CLI, no compose
+    file and no view of the host disk (the compose file mounts only the
+    Postgres data volume). The script is not in the image either.
+
+    It used to shell out and return "backup failed" or "not in the
+    image", which reads like a transient error and invited a retry. It
+    was never going to work. Returning the command that DOES work is
+    more useful than another failure."""
+    import content_engine_risk_desk as RD
+    return {"ok": False, "message":
+            "A backup cannot run from inside the container. Install this "
+            "on the host once, and the engine will start proving it: "
+            + RD.HOST_CRON}
 
 
 def _f_clear_setting(store, arg):

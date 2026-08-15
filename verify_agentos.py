@@ -136,6 +136,51 @@ t("each deep page points at its Agent OS view",
 t("AND MEDIA SAYS PLAINLY IT HAS NO REPLACEMENT, rather than implying one",
   "no Agent OS view of this department" in html)
 
+# ---- LANE 3b: THE BACKUP TRUTH ----------------------------------------
+print("")
+print("B3. THE RISK SENTINEL SAYS THE TRUE THING ABOUT BACKUPS")
+import content_engine_risk_desk as RD
+_rk = RD.check()
+t("the sentinel cannot claim to take a backup it cannot take",
+  _rk["ok"], str(_rk["problems"]))
+_p0 = RD.inspect(st)
+t("with no evidence it says NO BACKUP HAS EVER BEEN PROVEN",
+  any(f["kind"] == "no_backup_proof" for f in _p0["findings"]))
+t("and it prints the host command that would fix it",
+  "backup-receipt" in _p0["host_cron"] and "backup.sh" in _p0["host_cron"])
+
+
+class _RS:
+    def __init__(self):
+        self.d = {}
+
+    def get_setting(self, k, d=None):
+        return self.d.get(k, d)
+
+    def set_setting(self, k, v):
+        self.d[k] = v
+
+
+_rs = _RS()
+RD.record_receipt(_rs, "backup", "engine-x.sql.gz")
+_p1 = RD.inspect(_rs)
+t("A REAL RECEIPT CLEARS IT, and nothing else can",
+  not any(f["kind"] == "no_backup_proof" for f in _p1["findings"]))
+t("but an untested restore is then raised",
+  any(f["kind"] == "restore_untested" for f in _p1["findings"]))
+try:
+    RD.record_receipt(_rs, "vibes")
+    t("an invented receipt kind is refused", False, "it was allowed")
+except ValueError:
+    t("an invented receipt kind is refused", True)
+t("the posture is on the Infra desk, not only in the API",
+  "NO BACKUP HAS EVER BEEN PROVEN" in html)
+import content_engine_fixes as _FX
+t("and the broken backup BUTTON now tells the truth",
+  _FX._f_backup(None, None)["ok"] is False
+  and "cannot run from inside the container"
+  in _FX._f_backup(None, None)["message"])
+
 t("exactly one nav link is marked active",
   html.count("class='navb act'") == 1, str(html.count("class='navb act'")))
 _first = re.search(r"class='navb act' id='nav-([a-z]+)'", html)

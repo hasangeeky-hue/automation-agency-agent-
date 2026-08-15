@@ -555,6 +555,14 @@ def api_connect(values: dict) -> dict:
     store = get_store()
     if not hasattr(store, "set_setting"):
         return {"error": "this store can't save credentials"}
+    # STAMP THE WRITE. Rotation age was unknowable because nothing
+    # recorded when a key was last changed; the Risk Sentinel reports
+    # "age unknown" rather than "fresh" for anything unstamped.
+    try:
+        import content_engine_risk_desk as _RD
+        _stamp_keys = [k for k in (values or {}) if (values or {})[k] not in (None, "")]
+    except Exception:                                 # noqa: BLE001
+        _RD, _stamp_keys = None, []
     import content_engine_connectors as C
     allowed = set(C.CONNECTOR_ENV_KEYS)
     saved, warnings = [], []
@@ -574,6 +582,14 @@ def api_connect(values: dict) -> dict:
                 bad = ""
             if bad:
                 warnings.append(f"{k} {bad}")
+    # Stamp only what was actually written, so the age is the age of the
+    # value in use rather than of the last time the form was opened.
+    if _RD is not None:
+        for _k in saved:
+            try:
+                _RD.stamp_credential(store, _k)
+            except Exception:                             # noqa: BLE001
+                pass
     return {"saved": saved, "warnings": warnings, "status": C.status()}
 
 
@@ -2999,6 +3015,31 @@ def build_app():
                 "counts": {st: sum(1 for r in rows if r["status"] == st)
                            for st in ("verified", "present", "rejected",
                                       "empty")}}
+
+    @app.post("/risk/backup-receipt")
+    async def risk_backup_receipt(request: Request):
+        """The host cron reports a real backup or restore test.
+
+        This is the ONLY way a backup becomes true in this engine. The
+        api container has no docker CLI and no view of the host disk, so
+        it cannot take a backup or see one. It can only be told, with a
+        timestamp, by the thing that did it."""
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        import content_engine_risk_desk as _RD
+        try:
+            return _RD.record_receipt(get_store(),
+                                      (d or {}).get("kind", "backup"),
+                                      (d or {}).get("detail", ""))
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+
+    @app.get("/risk/posture")
+    def risk_posture():
+        import content_engine_risk_desk as _RD
+        return _RD.inspect(get_store())
 
     @app.get("/integrations")
     def integrations_desk():

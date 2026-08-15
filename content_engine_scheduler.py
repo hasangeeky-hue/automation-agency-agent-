@@ -262,6 +262,8 @@ SEO_CADENCE = {
     # LANE 3c stage 1. Free: it reads a catalogue the CMS layer already
     # fetches and does arithmetic on it. No model call, no paid endpoint.
     "commerce": {"every_days": 1, "cost": "free"},
+    # LANE 3b. Free: it reads receipts and stamps and compares dates.
+    "risk": {"every_days": 1, "cost": "free"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }
@@ -712,6 +714,18 @@ def run_due_work(store, now=None) -> dict:
         except Exception as e:
             log.exception("cadence: the commerce analyst failed")
             return {"ran": "commerce", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "risk", now):
+        _stamp(store, state, "risk", now)
+        try:
+            import content_engine_risk_desk as _RD
+            r = _RD.run(store)
+            return {"ran": "risk", "result": {
+                "findings": len(r["result"].get("findings") or []),
+                "backup_age_days": r["result"].get("backup_age_days")}}
+        except Exception as e:
+            log.exception("cadence: the risk sentinel failed")
+            return {"ran": "risk", "error": f"{type(e).__name__}: {e}"}
 
     if _due(state, "snapshot", now):
         _stamp(store, state, "snapshot", now)
