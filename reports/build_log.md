@@ -40,6 +40,51 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session M — the social deadlock, found by the founder's own status line
+2026-08-15
+
+**HOW IT WAS FOUND**
+- The founder posted his VPS status while setting FOUNDER_EMAIL, and the
+  line read `social_linkedin: true`. On my dev box that wire is empty,
+  so lane 3d was built and documented against a world where no social
+  credential existed anywhere. Reading a dev machine and reporting it as
+  the world is the same mistake as any other unverified claim, and this
+  one hid a real bug.
+
+**THE DEADLOCK**
+- The Social Distributor refuses to post to a channel that is not
+  VERIFIED. A wire becomes verified only when a real call is accepted.
+  VERIFIABLE listed five wires and social_linkedin was not among them,
+  so there was no free self-test. The only real call the lane makes is a
+  POST, which it refuses to attempt while unverified.
+- Therefore: the lane could NEVER post to LinkedIn. Not once, ever. It
+  would sit at "creds present" while the queue backed up behind it, and
+  nothing in the engine would have said why.
+
+**THE FIX, WHICH DOES NOT WEAKEN THE RULE**
+- LinkedIn is now verifiable by a READ of its own profile endpoint
+  (/v2/userinfo). It posts nothing, costs nothing, and proves the token
+  is accepted. Verification by a read; never by a post to real people.
+- Any channel holding a credential with no such read is now reported as
+  DEADLOCKED by name, in the daily report, as a blocked item. The four
+  remaining channels are in that state if credentials are ever added, so
+  the next occurrence announces itself instead of failing silently.
+- The gate asserts at least one channel is provable without posting,
+  otherwise the lane is decorative.
+
+**ALSO**
+- FOUNDER_EMAIL added to CONNECTOR_ENV_KEYS. The founder's POST returned
+  `{"saved":[]}` because the allow-list silently drops unknown keys: a
+  key the save route will not accept is a setting he cannot set, and it
+  said nothing about refusing it.
+- 331 deploy checks, 0 failed. 28 gates in verify_social.
+
+**NEED FROM FOUNDER**
+- Deploy, then prove the LinkedIn token with the free read. If it comes
+  back verified, the social lane can post for the first time.
+
+---
+
 ## Session L — the morning briefing: the report finally reaches you
 2026-08-15
 

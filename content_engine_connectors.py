@@ -454,6 +454,10 @@ def detect_bounce(m: dict) -> str:
 # Every credential the dashboard's Connect form is allowed to set (the allow-list
 # the /connect endpoint checks, and the fields the form renders).
 CONNECTOR_ENV_KEYS = [
+    # Where the morning briefing goes. Not a credential, but it is saved
+    # through the same allow-listed route as one, and a key the route
+    # will not accept is a setting the founder cannot set.
+    "FOUNDER_EMAIL",
     # --- APPENDED 2026-07-30: the engines shipped today could not be connected
     # from the browser at all, because /connect rejects anything not on this
     # allow-list. Append-only: nothing above was removed or renamed.
@@ -529,7 +533,15 @@ _AUTH_TTL = 1800                # a rejection older than 30 min is re-tested on 
 # it has no free ping endpoint, and spending a paid search credit on a health
 # check would be a worse bug than the one this fixes.
 VERIFIABLE = ("ads_api", "google_gsc_ga4", "google_sheets", "google_drive",
-              "calcom_bookings")
+              "calcom_bookings",
+              # A POSTING WIRE MUST BE PROVABLE WITHOUT POSTING. The
+              # Social Distributor refuses to post to a channel that is
+              # not verified, and a channel only becomes verified when a
+              # real call is accepted. With no free self-test that was a
+              # deadlock: the lane could never post and nothing said why.
+              # LinkedIn's profile read proves the token, changes
+              # nothing, and costs nothing.
+              "social_linkedin")
 
 
 def note_auth(wire: str, ok: bool, code: int = 0, reason: str = "") -> None:
@@ -712,6 +724,26 @@ def verify_wire(wire: str) -> dict:
             else:
                 note_auth(wire, True)
             return dict(_AUTH_STATE.get(wire, {}))
+        if wire == "social_linkedin":
+            p = LinkedInPoster()
+            if not p.available():
+                return {"ok": False, "code": 0,
+                        "reason": "LinkedIn needs both LINKEDIN_POST_TOKEN "
+                                  "and LINKEDIN_AUTHOR_URN"}
+            rq = _requests()
+            # A READ, NOT A POST. /v2/userinfo returns who the token
+            # belongs to and writes nothing to anyone's feed.
+            r = rq.get("https://api.linkedin.com/v2/userinfo",
+                       headers={"Authorization": "Bearer " + p.token},
+                       timeout=20)
+            ok = r.status_code < 400
+            note_auth(wire, ok, r.status_code,
+                      "" if ok else
+                      ("LinkedIn refused the posting token (%d). It expires "
+                       "after 60 days and must be reissued with "
+                       "w_member_social." % r.status_code))
+            return dict(_AUTH_STATE.get(wire, {}))
+
         if wire == "calcom_bookings":
             c = CalCom()
             if not c.available():

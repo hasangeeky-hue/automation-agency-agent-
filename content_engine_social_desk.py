@@ -4,12 +4,23 @@
 Section 4.4: the content lane already WRITES social posts. Nothing puts
 them out. This desk owns that step.
 
-WHAT IT FOUND ON DAY ONE
-  All five social wires are EMPTY. Not rejected, not stale: no
-  credential has ever been saved for LinkedIn, X, Facebook, Instagram or
-  TikTok, and every poster reports available() == False. So the queue of
-  written posts has nowhere to go, and the honest output of this desk
-  today is the queue plus the exact credential each channel wants.
+WHAT IT FOUND, AND A CORRECTION
+  Built against a dev box where all five wires were empty, this module's
+  first note said no social credential existed anywhere. On the VPS that
+  is false: LinkedIn holds a token. Reading a dev machine and reporting
+  it as the world is the same mistake as any other unverified claim.
+
+  That correction exposed a real deadlock. This desk refuses to post to
+  a channel that is not VERIFIED, and a channel becomes verified only
+  when a real call is accepted. If the only call the lane makes is a
+  POST, a channel with a credential can never be proven and can never be
+  posted to: it sits at "creds present" forever while the queue backs up
+  behind it, and nothing says why.
+
+  The rule is not weakened. LinkedIn is now provable by a READ of its
+  own profile endpoint, which posts nothing and costs nothing. Any
+  channel that holds a credential and has no such read is reported as
+  deadlocked, by name, rather than failing silently.
 
 THE THREE CONDITIONS, AND WHY THEY ARE SEPARATE
   A post goes out only when all three hold:
@@ -105,6 +116,11 @@ def channel_state(store=None) -> Dict[str, Dict[str, Any]]:
         health = {r["wire"]: r for r in CN.health()}
     except Exception:                                     # noqa: BLE001
         CN = None
+    try:
+        import content_engine_connectors as _CNV
+        verifiable = set(getattr(_CNV, "VERIFIABLE", ()) or ())
+    except Exception:                                     # noqa: BLE001
+        verifiable = set()
     out = {}
     for ch, (cls_name, wire) in CHANNELS.items():
         row = _d(health.get(wire))
@@ -115,10 +131,23 @@ def channel_state(store=None) -> Dict[str, Dict[str, Any]]:
             avail = bool(cls().available()) if cls else False
         except Exception:                                 # noqa: BLE001
             avail = False
+        # THE DEADLOCK, MADE VISIBLE.
+        # This desk refuses to post to a channel that is not verified,
+        # and a channel becomes verified only when a real call is
+        # accepted. If the only real call the lane makes is a POST, then
+        # a channel with a credential but no free self-test can never be
+        # proven and can never be posted to: it would sit at "creds
+        # present" forever while the queue backed up behind it, and
+        # nothing would say why. Naming it is the difference between a
+        # blocked lane and a mystery.
+        provable = wire in verifiable
         out[ch] = {"channel": ch, "wire": wire,
                    "status": _s(row.get("status")) or "empty",
                    "verified": _s(row.get("status")) == "verified",
                    "available": avail,
+                   "provable": provable,
+                   "deadlocked": bool(avail and not provable
+                                      and _s(row.get("status")) != "verified"),
                    "reason": _s(row.get("reason")),
                    "needs": CHANNEL_NEEDS.get(ch, "")}
     return out
@@ -260,6 +289,16 @@ def run(store, jobs=None) -> Dict[str, Any]:
     if posted:
         finished.append({"what": "posted %d" % len(posted),
                          "job_ids": [x["job_id"] for x in posted]})
+    stuck = [c for c, s in q["channels"].items() if s.get("deadlocked")]
+    if stuck:
+        needs.append(C.need(
+            what="%s hold a credential that nothing can prove"
+                 % ", ".join(sorted(stuck)),
+            kind="blocked", action="/connect#social_" + sorted(stuck)[0],
+            why="this desk will not post to an unverified channel, and "
+                "these channels have no free self-test, so they can never "
+                "become verified. They need a read-only check added before "
+                "anything can go out through them."))
     live = [c for c, s in q["channels"].items() if s["verified"]]
     if not live:
         # THE HEADLINE FINDING while nothing is wired. Blocked, not a
@@ -318,6 +357,16 @@ def check() -> Dict[str, Any]:
         problems.append("post_one no longer requires a VERIFIED channel")
     if "already posted" not in src:
         problems.append("post_one no longer refuses a second post")
+    # AT LEAST ONE CHANNEL MUST BE PROVABLE WITHOUT POSTING, or this
+    # lane is decorative: it would refuse every channel forever.
+    try:
+        import content_engine_connectors as CN2
+        vf = set(getattr(CN2, "VERIFIABLE", ()) or ())
+        if not any(w in vf for _c, (_p, w) in CHANNELS.items()):
+            problems.append("no channel can be verified without posting, so "
+                            "this lane can never post to any of them")
+    except Exception:                                     # noqa: BLE001
+        problems.append("could not read VERIFIABLE")
     if set(CHANNELS) != set(CHANNEL_NEEDS):
         problems.append("a channel has no stated credential need: %s"
                         % sorted(set(CHANNELS) ^ set(CHANNEL_NEEDS)))

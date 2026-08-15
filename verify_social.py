@@ -151,6 +151,23 @@ t("and says WHY the rest were skipped",
 
 SD.channel_state = _real_state
 
+# ---- F2. THE DEADLOCK THAT WOULD HAVE MADE THIS LANE DECORATIVE --------
+print("")
+print("F2. A CHANNEL MUST BE PROVABLE WITHOUT POSTING")
+import content_engine_connectors as CN2
+
+t("at least one channel can be verified by a read, not a post",
+  any(w in set(CN2.VERIFIABLE) for _c, (_p, w) in SD.CHANNELS.items()))
+t("LinkedIn specifically is provable, and it is the one with a token",
+  "social_linkedin" in CN2.VERIFIABLE)
+_st_ch = SD.channel_state(None)
+t("every channel reports whether it CAN be proven",
+  all("provable" in v for v in _st_ch.values()))
+t("and a channel with creds but no self-test is named DEADLOCKED",
+  all(("deadlocked" in v) for v in _st_ch.values()))
+t("the LinkedIn self-test is a READ, and never a post",
+  "userinfo" in open(CN2.__file__, encoding="utf-8").read())
+
 # ---- G. IT HAS A CLOCK, AND ITS OWN NAME ON IT --------------------------
 print("\nG. A WORKING DAY, UNDER A KEY NOBODY ELSE OWNS")
 import content_engine_roster as R
