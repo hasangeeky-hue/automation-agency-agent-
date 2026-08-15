@@ -2890,6 +2890,18 @@ def build_app():
         n = AEO.set_prompts(get_store(), raw)
         return {"ok": True, "saved": n}
 
+    @app.get("/social/audience")
+    def social_audience():
+        """Follower and post counts per channel, and for the channels this
+        engine cannot read, the exact credential that would fix it."""
+        import content_engine_social_stats as SS
+        return {"ok": True, **SS.context(get_store())}
+
+    @app.post("/social/audience/collect")
+    def social_audience_collect():
+        import content_engine_social_stats as SS
+        return SS.run(get_store())
+
     @app.get("/bookings")
     def bookings_read():
         """Pipeline from Cal.com. Free: stored rows, no call."""

@@ -264,6 +264,10 @@ SEO_CADENCE = {
     # commerce desk and the pricing review should both reason about
     # today's orders rather than yesterday's.
     "orders": {"every_days": 1, "cost": "free"},
+    # STAGE 2, the DATA half of the social wires. The Distributor could
+    # already post; nothing could read. Free: one read per channel, no
+    # model call. It never posts.
+    "social_stats": {"every_days": 1, "cost": "free"},
     # STAGE 2, the revenue path for a business that sells projects rather
     # than products. Free: one Cal.com read. It collects PIPELINE only;
     # nothing here becomes revenue without a named human putting a
@@ -738,6 +742,22 @@ def run_due_work(store, now=None) -> dict:
         except Exception as e:                            # noqa: BLE001
             log.exception("cadence: the orders collector failed")
             return {"ran": "orders", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "social_stats", now):
+        _stamp(store, state, "social_stats", now)
+        try:
+            import content_engine_social_stats as _SS
+            r = _SS.run(store)
+            return {"ran": "social_stats", "result": {
+                "ok": True, "channels": r.get("channels", 0),
+                "read": r.get("read", 0),
+                "with_followers": r.get("with_followers", 0),
+                # Surfaced, not buried: a channel this engine cannot read
+                # at all is a key the founder has to go and get.
+                "note": r.get("note", "")}}
+        except Exception as e:                            # noqa: BLE001
+            log.exception("cadence: the social audience collector failed")
+            return {"ran": "social_stats", "error": f"{type(e).__name__}: {e}"}
 
     if _due(state, "bookings", now):
         _stamp(store, state, "bookings", now)

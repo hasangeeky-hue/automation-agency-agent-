@@ -310,8 +310,13 @@ t("THE SUPERSEDED EU HARD-BLOCK CLAIM IS NOT REPRODUCED",
 # actually ON THE PAGE, against his file.
 import content_engine_os_cards as CARDS
 _want_ch = sum(len(v) for v in CARDS.CHARTS.values())
-t("EVERY CHART CARD HE DREW IS RENDERED (%d)" % _want_ch,
-  _allos.count("class='ox-cc'") == _want_ch,
+# His 25 chart cards, PLUS one inside each of the 40 tab panes. Stated as
+# a sum rather than relaxed to >=, so a genuinely missing chart still fails.
+import content_engine_os_tabs as _TBX
+_tabch = sum(len(v) for v in _TBX.TABS.values())
+t("EVERY CHART CARD HE DREW IS RENDERED (%d his + %d in tab panes)"
+  % (_want_ch, _tabch),
+  _allos.count("class='ox-cc'") == _want_ch + _tabch,
   str(_allos.count("class='ox-cc'")))
 t("and every screen he drew an activity list on has one (%d)"
   % len(CARDS.DQ_SHAPE),
@@ -319,6 +324,25 @@ t("and every screen he drew an activity list on has one (%d)"
   str(_allos.count("class='ox-dq-list'")))
 t("a chart nothing feeds says so, rather than drawing an empty box",
   "nothing to chart yet" in _allos)
+
+# HIS IN-SCREEN TABS: nine desks that are one screen holding several views.
+import content_engine_os_tabs as TABS
+_want_tabs = sum(len(v) for v in TABS.TABS.values())
+t("EVERY DESK THAT SPLITS INTO VIEWS HAS ITS TAB STRIP (%d)" % len(TABS.TABS),
+  _allos.count("class='ox-tabbar'") == len(TABS.TABS),
+  str(_allos.count("class='ox-tabbar'")))
+t("and every view he drew is a tab (%d)" % _want_tabs,
+  _allos.count("<button class='ox-tab") == _want_tabs,
+  str(_allos.count("<button class='ox-tab")))
+t("each tab has a pane, so none is a label over nothing",
+  _allos.count("class='ox-tabpane") == _want_tabs,
+  str(_allos.count("class='ox-tabpane")))
+t("THE TABS REALLY SWITCH: the handler exists, so none is a dead button",
+  "function osTab" in K.JS)
+t("the Technical Engineer keeps all five of his views",
+  len(TABS.tabs_for("8b")) == 5, str(TABS.tabs_for("8b")))
+t("and his placeholder tab COUNTS are not shown as real scores",
+  "This page (68)" not in _allos)
 t("HIS PLACEHOLDER INCIDENTS ARE NOT REPRODUCED AS REAL ALERTS",
   "Shopware sync degraded" not in _allos
   and "token expired 41m ago" not in _allos)

@@ -1940,11 +1940,22 @@ try:
     # only that K.dq and K.chart were callable, and passed for weeks while
     # no screen called either one.
     import content_engine_os_cards as CD28
-    check("EVERY CHART CARD HE DREW IS RENDERED (%d)"
-          % sum(len(v) for v in CD28.CHARTS.values()),
-          _h21.count("class='ox-cc'")
-          == sum(len(v) for v in CD28.CHARTS.values()),
+    import content_engine_os_tabs as TB28
+    _ch28 = sum(len(v) for v in CD28.CHARTS.values())
+    _tb28 = sum(len(v) for v in TB28.TABS.values())
+    check("EVERY CHART CARD HE DREW IS RENDERED (%d his + %d in tab panes)"
+          % (_ch28, _tb28),
+          _h21.count("class='ox-cc'") == _ch28 + _tb28,
           str(_h21.count("class='ox-cc'")))
+    # HIS IN-SCREEN TABS: nine desks that hold several views each.
+    check("EVERY DESK THAT SPLITS HAS ITS TAB STRIP (%d)" % len(TB28.TABS),
+          _h21.count("class='ox-tabbar'") == len(TB28.TABS),
+          str(_h21.count("class='ox-tabbar'")))
+    check("and every view he drew is a tab (%d)" % _tb28,
+          _h21.count("<button class='ox-tab") == _tb28,
+          str(_h21.count("<button class='ox-tab")))
+    check("THE TABS REALLY SWITCH, so none is a dead button",
+          "function osTab" in _h21)
     check("and every activity list he drew (%d)" % len(CD28.DQ_SHAPE),
           _h21.count("class='ox-dq-list'") == len(CD28.DQ_SHAPE),
           str(_h21.count("class='ox-dq-list'")))
@@ -2032,6 +2043,31 @@ try:
     _sids = [d["id"] for d in _seam.get_setting(BI29.DEALS_KEY, [])]
     check("ONE DEALS FEED, TWO OWNERS, NEITHER ERASES THE OTHER",
           "ord-1" in _sids and "book-b9" in _sids, _sids)
+
+    # --- social audience: the DATA half of the social wires -------------
+    import content_engine_social_desk as SD29
+    import content_engine_social_stats as SS29
+    _cs29 = SS29.check()
+    check("the social audience collector passes its own check", _cs29["ok"],
+          ", ".join(c["name"] for c in _cs29["checks"] if not c["pass"]))
+    check("its channels are the Distributor's channels, not a second list",
+          set(SS29.READABLE) == set(SD29.CHANNELS))
+    check("IT CANNOT PUBLISH: a collector that can post is one bug from posting",
+          _cs29["checks"][-1]["pass"])
+    check("social_stats is on the cadence and free",
+          "social_stats" in SCH29.SEO_CADENCE
+          and SCH29.SEO_CADENCE["social_stats"]["cost"] == "free")
+    _ss29 = SS29.collect(A.get_store())
+    print("")
+    print("       social audience: %d channel(s), %d readable, "
+          "%d returned a follower count"
+          % (_ss29["channels"], _ss29["read"], _ss29["with_followers"]))
+    for _r29 in _ss29["rows"]:
+        _f29 = _r29.get("followers")
+        print("       %-10s %-14s %s"
+              % (_r29.get("channel"), _r29.get("state"),
+                 ("%s followers" % _f29) if _f29 is not None
+                 else str(_r29.get("needs") or _r29.get("why") or "")[:64]))
 
     _bctx29 = BK29.context(A.get_store())
     print("")

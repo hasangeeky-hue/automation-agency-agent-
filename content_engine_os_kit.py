@@ -425,7 +425,35 @@ def screen(sid: str, title: str, sub: str, body: str, *,
     # Nothing supplied means the chart draws NOT MEASURED rather than an
     # empty box, so these screens now show him precisely which data his
     # engine still lacks. That is the question he built the OS to answer.
-    extra = ""
+    # HIS IN-SCREEN TABS. Nine of his desks are one screen holding several
+    # views: the Technical Engineer holds Crawl, Speed, Index, Schema and
+    # Redirects. Flattening that into one board buries four views out of
+    # five, which is what this OS did until now.
+    #
+    # They really switch. A strip of labels that does nothing would be a
+    # dead button, and this OS gates against those.
+    tabs_html = ""
+    try:
+        import content_engine_os_tabs as _TB
+        _tabs = _TB.tabs_for(sid)
+    except Exception:                                     # noqa: BLE001
+        _tabs = ()
+    if _tabs:
+        btns, panes = [], []
+        for _i, _lab in enumerate(_tabs):
+            on = " on" if _i == 0 else ""
+            btns.append("<button class='ox-tab%s' id='oxt-%s-%d' "
+                        "onclick=\"osTab('%s',%d)\">%s</button>"
+                        % (on, _e(sid), _i, _e(sid), _i, _e(_lab)))
+            panes.append("<div class='ox-tabpane%s' id='oxp-%s-%d'>%s</div>"
+                         % (on, _e(sid), _i,
+                            # Structure now, numbers when a collector feeds
+                            # it. Saying that is more use than an empty box.
+                            chart(_lab, [], source="")))
+        tabs_html = ("<div class='ox-tabbar'>" + "".join(btns) + "</div>"
+                     + "".join(panes))
+
+    extra = tabs_html
     try:
         import content_engine_os_cards as _CD
         _titles = _CD.charts_for(sid)
@@ -684,6 +712,17 @@ CSS = """
    .mos-staffrail{width:216px;border-left:1px solid neutral-300;padding:14px}
    A screen he drew no rail on keeps the full width rather than holding an
    empty column open, which is why the two-column rule is on .railed. */
+/* his in-screen tab strip: one desk, several views */
+.osx .ox-tabbar{display:flex;flex-wrap:wrap;gap:1px;margin:14px 0 0;
+  border-bottom:1px solid var(--ox-ln)}
+.osx button.ox-tab{background:none;border:none;border-bottom:2px solid transparent;
+  padding:7px 11px;font-family:inherit;font-size:.76rem;color:var(--ox-ink3);
+  cursor:pointer}
+.osx button.ox-tab:hover{color:var(--ox-acd)}
+.osx button.ox-tab.on{color:var(--ox-ink);font-weight:600;
+  border-bottom-color:var(--ox-ac)}
+.osx .ox-tabpane{display:none;padding-top:14px}
+.osx .ox-tabpane.on{display:block}
 /* his .dq-list{display:flex;flex-direction:column;gap:10px} */
 .osx .ox-dq-list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .osx .ox-scr{min-width:0}
@@ -791,6 +830,19 @@ function osPriceDecline(id){
      var row=document.getElementById('ospx-'+id); if(row && d && d.ok) row.remove();
    })
    .catch(function(e){ osAck('commerce.analyst','Could not reach the engine: '+e); });
+}
+function osTab(sid, i){
+  // His desks that hold several views. Switching is local to one screen,
+  // so the id carries the screen: two desks open at once cannot fight.
+  var n = 0;
+  while(document.getElementById('oxt-'+sid+'-'+n)){
+    var b = document.getElementById('oxt-'+sid+'-'+n);
+    var p = document.getElementById('oxp-'+sid+'-'+n);
+    if(b) b.className = 'ox-tab' + (n===i ? ' on' : '');
+    if(p) p.className = 'ox-tabpane' + (n===i ? ' on' : '');
+    n++;
+  }
+  return false;
 }
 function osTracking(on){
   // Open tracking is the real consent control for European markets.
@@ -900,7 +952,7 @@ def check() -> Dict[str, Any]:
                 "ox-dq-actions", "ox-cc", "ox-cc-title", "ox-hbar",
                 "ox-hbar-l", "ox-hbar-t",
                 "ox-scr", "ox-scr-main", "ox-staffrail", "ox-rail-head",
-                "ox-dq-list",
+                "ox-dq-list", "ox-tabbar", "ox-tab", "ox-tabpane",
                 "ox-rail-p"]
     for cls in emitted:
         if ("." + cls) not in CSS:
