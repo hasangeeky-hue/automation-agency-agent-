@@ -88,6 +88,10 @@ t("FOUR WORKERS, NINE DESKS is disclosed on every shared desk",
       for s in OSL.SHARED_DESKS))
 t("and the EU hard block is NOT drawn, because the engine has none",
   "the engine does not have one" in " ".join(html.split()))
+t("Europe stays in scope, as decided",
+  "Per-country rules: decided" in html)
+t("so the LIVE open-tracking state is shown, not merely described",
+  "Open tracking, right now" in html)
 _gc = OSG.check(OS.build_ctx(st))
 t("and the growth turns pass their own check", _gc["ok"], str(_gc["problems"]))
 t("ONE WORKER, TWO DESKS is disclosed on both 8c and 8e",
@@ -129,7 +133,7 @@ dead = sorted(h for h in handlers if ("function " + h) not in html)
 t("every OS handler used is defined", not dead, str(dead))
 t("the kit's script block shipped", "function osSend" in html)
 for fn in ("osSend", "osApprove", "osReject", "osPrefill", "osSaveKey",
-           "osApproveJob", "osDeclineJob"):
+           "osApproveJob", "osDeclineJob", "osTracking"):
     t("  %s is defined" % fn, ("function %s" % fn) in html)
 
 # ---- E. THE COMMAND BAR PROPOSES. IT NEVER EXECUTES. --------------------

@@ -528,6 +528,24 @@ function osSend(aid){
    })
    .catch(function(e){ osAck(aid,'Could not reach the engine: '+e); });
 }
+function osTracking(on){
+  // Open tracking is the real consent control for European markets.
+  // Turning it OFF is the safe direction, so it needs no confirmation;
+  // turning it ON does, because it starts collecting behaviour.
+  if(on && !confirm('Turn open tracking ON? It collects opens and clicks, '
+      + 'which needs consent in Germany and Switzerland.')) return;
+  fetch('/outreach/tracking',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({enabled:!!on})})
+   .then(function(r){return r.json();})
+   .then(function(d){
+     osAck('leads.qualifier', (d && d.error)
+       ? ('Could not change it: '+d.error)
+       : ('Open tracking is now '+(on?'ON':'OFF')+'. Reload to see the '
+          + 'state update everywhere it is shown.'));
+   })
+   .catch(function(e){ osAck('leads.qualifier','Could not reach the engine: '+e); });
+}
 function osJobDecision(id, verb){
   // The approval room's one gate. It calls the SAME routes the old
   // dashboard uses, so there is exactly one path from "approved" to

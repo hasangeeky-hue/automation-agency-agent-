@@ -1517,6 +1517,11 @@ try:
               for s in OSL21.SHARED_DESKS))
     check("NO EU hard block is drawn, because the engine has none",
           "the engine does not have one" in " ".join(_h21.split()))
+    check("Europe stays in scope, as the founder decided",
+          "Per-country rules: decided" in _h21)
+    check("and open tracking shows its LIVE state with a real switch",
+          "Open tracking, right now" in _h21 and "osTracking(" in _h21
+          and "function osTracking" in _h21)
     check("ONE WORKER TWO DESKS is disclosed on 8c and 8e",
           all("same" in _h21[_h21.find("id='os-%s'" % s):
                              _h21.find("id='os-%s'" % s) + 4000].lower()

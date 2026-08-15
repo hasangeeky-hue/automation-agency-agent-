@@ -76,9 +76,16 @@ The builder follows the same doctrine it is building.
   credential named. No numbers.
 - Same nine suites exit nonzero, all failing at baseline.
 
+**DECIDED BY THE FOUNDER (same day)**
+- No per-country outreach exclusion. Europe and Germany stay in scope.
+  No block exists in the engine and none will be added.
+- That moves the whole compliance weight onto open tracking, which is
+  opt-OUT in the engine and therefore ON unless switched off. 12c now
+  shows its LIVE state and offers the switch (POST /outreach/tracking),
+  because a control that is described but not shown is one nobody uses.
+  The gate fails the build if that live state stops being shown.
+
 **NEED FROM FOUNDER**
-- Decide whether you want per-country outreach rules at all, given that
-  two target markets are in the EU.
 - The three standing items are unchanged.
 
 ---

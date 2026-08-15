@@ -24,8 +24,14 @@ THE REGION GATE, HONESTLY
   caps daily volume; and no message leaves without the SEND gate.
 
   Drawing the hard block would be false-green pointing the other way:
-  showing a safety control that does not exist. 12c shows what is
-  enforced and names the gap.
+  showing a safety control that does not exist.
+
+  DECIDED 2026-08-15 by the founder: no per-country exclusion. Europe and
+  Germany stay in scope. That settles the wireframe line, and it moves the
+  whole compliance weight onto open tracking, which is opt-OUT in the
+  engine and therefore ON unless switched off. 12c shows its LIVE state
+  and offers the switch, because a control described but not shown is a
+  control nobody uses.
 """
 from __future__ import annotations
 
@@ -83,6 +89,14 @@ def _consts():
     except Exception:                                     # noqa: BLE001
         pass
     return out
+
+
+def _tracking_on(ctx) -> bool:
+    """True when open tracking is collecting. Defaults to True in the
+    engine (it is opt-OUT), which is exactly why the screen shows the
+    live value rather than describing the switch."""
+    v = _d(ctx).get("tracking_on")
+    return True if v is None else bool(v)
 
 
 def _shared_note(sid: str) -> str:
@@ -183,15 +197,40 @@ def _s12c(ctx) -> str:
         "GDPR matter</li>"
         "<li class='ok'>nothing sends without the permanent SEND gate</li>"
         "</ul>" % markets)
+    # THE FOUNDER'S DECISION, 2026-08-15: no per-country exclusion. Europe
+    # and Germany stay in. That settles the wireframe's "hard-block EU"
+    # line, and it moves the whole compliance weight onto the one control
+    # that is real: open tracking.
+    on = _tracking_on(ctx)
     gap = K.bp(
-        "<span class='ox-lbl'>A difference between the design and the code</span>"
+        "<span class='ox-lbl'>Per-country rules: decided</span>"
         "<p class='ox-sub'>The wireframe describes this desk as hard-blocking "
-        "EU leads from outreach. The engine has no such block, and drawing "
-        "one here would show you a safety control you do not have. If you "
-        "want a per-country block it is a small change, and it needs your "
-        "decision because it would exclude Germany.</p>"
-        "<p class='ox-need'>Needs: <b>your decision on per-country rules</b></p>",
-        cls="ox-plan")
+        "EU leads. The engine has no such block, you have decided you do not "
+        "want one, and Europe and Germany stay in scope. Nothing here "
+        "excludes a country.</p>"
+        "<p class='ox-sub'>That decision puts the entire compliance weight on "
+        "open tracking, because contacting someone in Germany is not the "
+        "issue. Tracking whether they opened it, without consent, is.</p>")
+    track = K.bp(
+        "<span class='ox-lbl'>Open tracking, right now</span>"
+        "<div class='ox-slots'><span class='ox-slot ox-s-%s'><b>%s</b>"
+        "Tracking is %s</span></div>"
+        "<p class='ox-sub'>%s</p>"
+        "<div class='ox-pa-b'>"
+        "<button type='button' class='ox-btn%s' onclick=\"osTracking(false)\">"
+        "Turn tracking off</button>"
+        "<button type='button' class='ox-btn' onclick=\"osTracking(true)\">"
+        "Turn it on</button></div>%s"
+        % ("rejected" if on else "verified", "✕" if on else "●",
+           "ON" if on else "OFF",
+           ("It defaults to on. Two of your five markets are Germany and "
+            "Switzerland, so this is the switch that matters for you."
+            if on else
+            "Opens and clicks are not collected. Reply rate stays the "
+            "honest measure, and it always was."),
+           " ox-btn-p" if on else "", K.source_chip("POST /outreach/tracking")),
+        cls="ox-plan" if on else "")
+    gap = gap + track
     return _desk(
         ctx, "12c", "Data Cleaner's desk",
         "Verify, dedupe, enrich, and the region rule as it really stands.",
@@ -358,6 +397,12 @@ def check(ctx: Dict[str, Any] = None) -> Dict[str, Any]:
                         "absent from the engine")
     if "SEND gate" not in flat:
         problems.append("the send gate is not named on this turn")
+    # The founder keeps Europe in scope, so the tracking switch is the
+    # real control and must be shown live, not described.
+    if "Open tracking, right now" not in flat:
+        problems.append("12c does not show the LIVE open-tracking state")
+    if "osTracking(" not in html:
+        problems.append("the tracking switch is not wired to anything")
     return {"ok": not problems, "problems": problems,
             "screens": len(SCREENS_12), "chars": len(html)}
 
