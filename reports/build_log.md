@@ -89,8 +89,36 @@ The builder follows the same doctrine it is building.
 - Lane 3d (SGA Distributor) is still not built.
 - Same nine suites exit nonzero, all failing at baseline.
 
-**NEED FROM FOUNDER**
-- INSTALL THE CRON. It is one line, printed on screen 13e and in the
+**DONE ON THE BOX, SAME DAY (verified in the founder's terminal)**
+- The cron is installed: daily dump at 03:00, weekly restore proof on
+  Sundays. The old broken line is gone.
+- `bash deploy/backup.sh --verify` wrote a 54MB dump, RESTORED it into a
+  scratch database, and read back 171 settings rows and 135 jobs. Both
+  receipts landed.
+- `/risk/posture` now returns neither no_backup_proof nor
+  restore_untested. The only finding left is credential_age_unknown,
+  which clears itself as keys are re-saved.
+- The receipt POST first came back 401, which was CORRECT: the endpoint
+  sits behind the same auth wall as everything else. An endpoint anyone
+  could POST to would let a stranger assert "backups are fine". The
+  reporting moved into deploy/backup.sh, authenticated with
+  DASHBOARD_PASSWORD from deploy/.env.
+- risk.sentinel promoted INSPECTOR -> LIVE. Earned by two code changes:
+  it runs on the cadence, and it has a real evidence path. It still does
+  not take the backup and its own check fails the build if a live badge
+  stops saying so.
+
+**SECURITY NOTE RAISED TO THE FOUNDER**
+- His dashboard password appeared in a pasted crontab line
+  (`/schedule/run?key=...`). That password is also the API key. Rotating
+  DASHBOARD_PASSWORD in deploy/.env and updating that cron line would
+  close it.
+
+**STILL NEEDED FROM FOUNDER**
+- Copy a dump off the VPS occasionally. The backups sit on the same
+  machine as the database, which covers a bad deploy or a dropped volume
+  and does NOT cover losing the box.
+- OLD ITEM, NOW DONE: install the cron. It is one line, printed on screen 13e and in the
   backup button. Until then the engine has no provable backup of 176
   posts, 49 pages and every credential in the settings store.
 - The three standing items are unchanged.

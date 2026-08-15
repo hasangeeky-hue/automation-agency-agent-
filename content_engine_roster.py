@@ -124,9 +124,12 @@ ROSTER: List[Dict[str, Any]] = [
             "shadowed keys, half-configured groups and stale green; it "
             "proposes fixes and may never mark a wire verified itself"},
     {"id": "risk.sentinel", "name": "🩺 Risk Sentinel",
-     "module": "risk", "badge": "inspector", "cap_key": "PER_DAY_BUDGET_USD",
+     "module": "risk", "badge": "live", "cap_key": "PER_DAY_BUDGET_USD",
      "slots": [],
-     "why": "the sensors report; backups and rotation are not yet its lane"},
+     "why": "runs free on the cadence and reports proven-backup age, "
+            "restore-test age, credential rotation age and refusing wires. "
+            "It does not take the backup, the host cron does; it holds the "
+            "evidence and says plainly when there is none"},
     # ---- ARCHITECTED AND NOT STAFFED (told honestly) ---------------------
     {"id": "media.buyer", "name": "🛒 Media Buyer",
      "module": "media", "badge": "architected", "cap_key": "PER_MONTH_BUDGET_USD",

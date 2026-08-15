@@ -26,10 +26,15 @@ THE FIX IS THE PHASE 0 PATTERN
   until one arrives. Exactly like a connector: creds present is not
   verified, and a script existing is not a backup taken.
 
-STAGE 1, LIKE COMMERCE
-  This desk reports. It does not take a backup, because it cannot. When
-  the founder installs the cron line, the receipts start arriving and
-  the badge can change. Nothing here writes.
+WHAT ITS BADGE MEANS
+  LIVE, since 2026-08-15, and earned by two things changing in the code:
+  it runs on the cadence, and it has a real evidence path. It still does
+  not take a backup, and must never claim to. The host cron takes it;
+  this desk owns the PROOF, and says plainly when there is none. Its own
+  check fails the build if a live badge ever stops saying that.
+
+  The first receipts arrived the same day: a 54MB dump, restored into a
+  scratch database, 171 settings rows and 135 jobs read back.
 """
 from __future__ import annotations
 
@@ -301,13 +306,22 @@ def check() -> Dict[str, Any]:
             problems.append("the receipt is posted unauthenticated")
     except FileNotFoundError:
         problems.append("deploy/backup.sh is missing from the repo")
+    # THE BADGE IS EARNED BY THE CADENCE AND THE EVIDENCE, not by taking
+    # a backup: this desk never takes one and must never claim to. What
+    # it owns is the PROOF, which is a real lane and runs daily.
     try:
         import content_engine_roster as R
-        if R.agent(AGENT_ID).get("badge") == "live":
-            problems.append("badge says live, but nothing here runs a "
-                            "backup; it reports on one the host takes")
+        why = str(R.agent(AGENT_ID).get("why") or "")
+        if R.agent(AGENT_ID).get("badge") == "live" and                 "does not take the backup" not in why:
+            problems.append("a live badge here must say out loud that the "
+                            "host takes the backup and this desk only "
+                            "holds the proof")
+        import content_engine_scheduler as S
+        if "risk" not in getattr(S, "SEO_CADENCE", {}):
+            problems.append("nothing puts this desk on a clock")
     except Exception as exc:                              # noqa: BLE001
-        problems.append("roster unreadable: %s" % type(exc).__name__)
+        problems.append("roster or cadence unreadable: %s"
+                        % type(exc).__name__)
     return {"ok": not problems, "problems": problems}
 
 
