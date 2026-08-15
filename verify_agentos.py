@@ -258,6 +258,36 @@ t("it sits under YOUR DECISION, not under blocked",
 t("the approve route is the gated one",
   "/commerce/price/px_TEST/approve" in _pq)
 
+# ---- HIS STRUCTURE, NOT A FLATTER VERSION OF IT ------------------------
+print("")
+print("B5. EVERY DEPARTMENT SITS IN HIS SHELL")
+_shell = [("core", OS.core_section), ("cockpit", OS.cockpit_section),
+          ("marketing", OSG.marketing_section), ("search", OSG.search_section),
+          ("leads", OSL.leads_section), ("commerce", OSCM.commerce_section),
+          ("media", OSMD.media_section)]
+_c5 = OS.build_ctx(st)
+for _nm, _fn in _shell:
+    _h5 = _fn(_c5)
+    t("%s has the module sidebar" % _nm, "ox-sidebar" in _h5)
+    t("  and its own screens as a subnav", "ox-subnav" in _h5
+      and "class='ox-snav" in _h5)
+    t("  with the current module marked active", "ox-mod on" in _h5)
+t("the subnav link class does NOT collide with the paragraph class",
+  "class='ox-sub " not in OS.core_section(_c5))
+t("every module in the sidebar is one of his seven",
+  len(K.MODULES) == 7, str(len(K.MODULES)))
+t("and the sidebar links are anchors, as his own markup uses",
+  "href='#os-13a'" in OS.core_section(_c5))
+# The two components his file repeats and I had not built at all.
+t("the decision card exists (his dq-card, 51 uses)",
+  "ox-dq-rec" in K.dq("x", "y"))
+t("and it refuses a recommendation with no evidence silently",
+  "no evidence recorded" in K.dq("x"))
+t("the chart card exists (his chart-card + hbar)",
+  "ox-hbar-t" in K.chart("t", [("a", 1)]))
+t("AND A GAP IN A CHART IS NOT A ZERO-LENGTH BAR",
+  "not measured" in K.chart("t", [("a", None)]))
+
 t("exactly one nav link is marked active",
   html.count("class='navb act'") == 1, str(html.count("class='navb act'")))
 _first = re.search(r"class='navb act' id='nav-([a-z]+)'", html)

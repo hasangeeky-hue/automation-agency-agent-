@@ -29,6 +29,14 @@ import content_engine_os_kit as K
 
 _e, _l, _d = K._e, K._l, K._d
 
+#: his subnav for this module: the label, and the screen
+#: it opens. Anchors, exactly as his own markup uses.
+SUBNAV_MARKETING = [('Command Center', '9a'), ('Strategist', '9b'), ('Approval Room', '9c'), ('Creative Director', '9d'), ('Producer', '9e'), ('Distributor', '9f'), ('Calendar', '9g'), ('Tools & Control', '9h')]
+
+#: his subnav for this module: the label, and the screen
+#: it opens. Anchors, exactly as his own markup uses.
+SUBNAV_SEARCH = [('Command Center', '8a'), ('Engineer', '8b'), ('Analyst', '8c'), ('Content Specialist', '8d'), ('Keyword Strategist', '8e'), ('Link Builder', '8f'), ('Data Sources', '8g'), ('Control Room', '8h')]
+
 #: job status -> the plain-English pipeline stage the founder reads
 PIPELINE = [
     ("created", "planned"),
@@ -466,17 +474,37 @@ SCREENS_8 = ("8a", "8b", "8c", "8d", "8e", "8f", "8g", "8h")
 
 
 def marketing_section(ctx: Dict[str, Any]) -> str:
+    """3 · Marketing / Content, in the shell his wireframe uses.
+
+    Sidebar of modules, this module's screens as a subnav
+    nested under it, and the screens stacked in main. His own
+    subnav links are anchors, so stacking is how his prototype
+    navigates rather than a shortcut.
+    """
     ctx = _d(ctx)
-    return ("<div class='osx'>" + _s9a(ctx) + _s9b(ctx) + _s9c(ctx)
-            + _s9d(ctx) + _s9e(ctx) + _s9f(ctx) + _s9g(ctx) + _s9h(ctx)
+    body = (_s9a(ctx) + _s9b(ctx) + _s9c(ctx)
+            + _s9d(ctx) + _s9e(ctx) + _s9f(ctx) + _s9g(ctx) + _s9h(ctx))
+    return ("<div class='osx'>"
+            + K.frame('3 · Marketing / Content', SUBNAV_MARKETING, body)
             + "</div>")
+
 
 
 def search_section(ctx: Dict[str, Any]) -> str:
+    """2 · SEO / AEO / GEO, in the shell his wireframe uses.
+
+    Sidebar of modules, this module's screens as a subnav
+    nested under it, and the screens stacked in main. His own
+    subnav links are anchors, so stacking is how his prototype
+    navigates rather than a shortcut.
+    """
     ctx = _d(ctx)
-    return ("<div class='osx'>" + _s8a(ctx) + _s8b(ctx) + _s8c(ctx)
-            + _s8d(ctx) + _s8e(ctx) + _s8f(ctx) + _s8g(ctx) + _s8h(ctx)
+    body = (_s8a(ctx) + _s8b(ctx) + _s8c(ctx)
+            + _s8d(ctx) + _s8e(ctx) + _s8f(ctx) + _s8g(ctx) + _s8h(ctx))
+    return ("<div class='osx'>"
+            + K.frame('2 · SEO / AEO / GEO', SUBNAV_SEARCH, body)
             + "</div>")
+
 
 
 def check(ctx: Dict[str, Any] = None) -> Dict[str, Any]:

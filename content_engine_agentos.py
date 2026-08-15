@@ -31,6 +31,14 @@ import content_engine_os_kit as K
 
 _e, _l, _d = K._e, K._l, K._d
 
+#: his subnav for this module: the label, and the screen
+#: it opens. Anchors, exactly as his own markup uses.
+SUBNAV_CORE = [('Command Center', '13a'), ('Integrations', '13b'), ('Data Steward', '13c'), ('Developer', '13d'), ('Infra / SRE', '13e'), ('Orchestrator', '13f'), ('Analytics', '13g'), ('Sources & Control', '13h'), ('Tool Hub', '13i'), ('Health & Risk', '13j'), ('Connector Map', '13k')]
+
+#: his subnav for this module: the label, and the screen
+#: it opens. Anchors, exactly as his own markup uses.
+SUBNAV_COCKPIT = [('Cockpit Home', '14a'), ('Approval Queue', '14b'), ('All Agents', '14c'), ('Health & Activity', '14d'), ('Control Room', '14e')]
+
 #: the six departments of the wireframe, and who actually staffs each
 MODULES = [
     ("seo", "🔍 SEO / AEO / GEO", "seo"),
@@ -669,25 +677,41 @@ SCREENS_14 = ("14a", "14b", "14c", "14d", "14e")
 
 
 def core_section(ctx: Dict[str, Any]) -> str:
-    """Turn 13, all eleven screens."""
+    """6 · Web & Data Core, in the shell his wireframe uses.
+
+    Sidebar of modules, this module's screens as a subnav
+    nested under it, and the screens stacked in main. His own
+    subnav links are anchors, so stacking is how his prototype
+    navigates rather than a shortcut.
+    """
     ctx = _d(ctx)
-    return ("<div class='osx'>"
-            + _s13a(ctx) + _s13b(ctx)
+    body = (_s13a(ctx) + _s13b(ctx)
             + _unstaffed_screen("13c", "Data Steward Desk",
                                 "Schema, mapping, quality, distribution.")
             + _unstaffed_screen("13d", "Developer Desk",
                                 "Command to work to gated deploy.")
             + _s13e(ctx) + _s13f(ctx) + _s13g(ctx) + _s13h(ctx)
-            + _s13i(ctx) + _s13j(ctx) + _s13k(ctx)
+            + _s13i(ctx) + _s13j(ctx) + _s13k(ctx))
+    return ("<div class='osx'>"
+            + K.frame('6 · Web & Data Core', SUBNAV_CORE, body)
             + "</div>")
+
 
 
 def cockpit_section(ctx: Dict[str, Any]) -> str:
-    """Turn 14, all five screens."""
+    """Cockpit, in the shell his wireframe uses.
+
+    Sidebar of modules, this module's screens as a subnav
+    nested under it, and the screens stacked in main. His own
+    subnav links are anchors, so stacking is how his prototype
+    navigates rather than a shortcut.
+    """
     ctx = _d(ctx)
+    body = (_s14a(ctx) + _s14b(ctx) + _s14c(ctx) + _s14d(ctx) + _s14e(ctx))
     return ("<div class='osx'>"
-            + _s14a(ctx) + _s14b(ctx) + _s14c(ctx) + _s14d(ctx) + _s14e(ctx)
+            + K.frame('Cockpit', SUBNAV_COCKPIT, body)
             + "</div>")
+
 
 
 def check(ctx: Dict[str, Any] = None) -> Dict[str, Any]:

@@ -41,6 +41,10 @@ import content_engine_os_kit as K
 
 _e, _l, _d = K._e, K._l, K._d
 
+#: his subnav for this module: the label, and the screen
+#: it opens. Anchors, exactly as his own markup uses.
+SUBNAV_LEADS = [('Command Center', '12a'), ('Prospector', '12b'), ('Data Cleaner', '12c'), ('Qualifier', '12d'), ('Outreach Writer', '12e'), ('Sender / Tracker', '12f'), ('Sources & Control', '12g'), ('Campaigns', '12h'), ('Segmentation', '12i')]
+
 STAFF_12 = ("leads.prospector", "leads.qualifier", "leads.outreach_writer",
             "leads.sender")
 
@@ -362,10 +366,21 @@ SCREENS_12 = ("12a", "12b", "12c", "12d", "12e", "12f", "12g", "12h", "12i")
 
 
 def leads_section(ctx: Dict[str, Any]) -> str:
+    """5 · Leads & Outreach, in the shell his wireframe uses.
+
+    Sidebar of modules, this module's screens as a subnav
+    nested under it, and the screens stacked in main. His own
+    subnav links are anchors, so stacking is how his prototype
+    navigates rather than a shortcut.
+    """
     ctx = _d(ctx)
-    return ("<div class='osx'>" + _s12a(ctx) + _s12b(ctx) + _s12c(ctx)
+    body = (_s12a(ctx) + _s12b(ctx) + _s12c(ctx)
             + _s12d(ctx) + _s12e(ctx) + _s12f(ctx) + _s12g(ctx) + _s12h(ctx)
-            + _s12i(ctx) + "</div>")
+            + _s12i(ctx))
+    return ("<div class='osx'>"
+            + K.frame('5 · Leads & Outreach', SUBNAV_LEADS, body)
+            + "</div>")
+
 
 
 def check(ctx: Dict[str, Any] = None) -> Dict[str, Any]:

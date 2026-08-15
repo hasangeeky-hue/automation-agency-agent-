@@ -291,6 +291,110 @@ def cmdchat(agent_id: str, agent_name: str, *,
 
 
 # ==========================================================================
+# THE MODULE SHELL. His structure, not a simplification of it.
+# ==========================================================================
+#: the sidebar, in his order and his labels, with the anchor each opens
+MODULES = (
+    ("1 · Media Buyer", "7a"),
+    ("2 · SEO / AEO / GEO", "8a"),
+    ("3 · Marketing / Content", "9a"),
+    ("4 · Commerce", "11a"),
+    ("5 · Leads & Outreach", "12a"),
+    ("6 · Web & Data Core", "13a"),
+    ("Cockpit", "14a"),
+)
+
+
+def frame(module_label: str, subnav: Sequence, body: str, *,
+          cost: str = "", alerts: str = "") -> str:
+    """One department, in the shell his wireframe actually uses.
+
+    subnav is [(label, screen_id)], rendered INSIDE the sidebar under the
+    active module, exactly as his markup nests it. The links are anchors
+    because that is how his own prototype moves between screens."""
+    mods = []
+    for label, first in MODULES:
+        on = " on" if _e(label) == _e(module_label) else ""
+        mods.append("<a class='ox-mod%s' href='#os-%s'>%s</a>"
+                    % (on, _e(first), _e(label)))
+        if on:
+            subs = "".join(
+                "<a class='ox-snav%s' href='#os-%s'>%s</a>"
+                % (" on" if i == 0 else "", _e(sid), _e(lab))
+                for i, (lab, sid) in enumerate(_l(subnav)))
+            mods.append("<div class='ox-subnav'>%s</div>" % subs)
+    return ("<div class='ox-topbar'><span class='ox-brand'>◆ Mother OS</span>"
+            "<span class='ox-cost'>%s</span><span>%s</span></div>"
+            "<div class='ox-frame'>"
+            "<div class='ox-sidebar'><div class='ox-modgroup'>Modules</div>"
+            "%s</div>"
+            "<div class='ox-main'>%s</div></div>"
+            % (_e(cost), _e(alerts), "".join(mods), body))
+
+
+def crumb(module_label: str, screen_label: str) -> str:
+    """His breadcrumb: module, then the screen, in bold."""
+    return ("<div class='ox-crumb'>%s <span>&#9656;</span> <b>%s</b></div>"
+            % (_e(module_label), _e(screen_label)))
+
+
+def dq(rec: str, evidence: str = "", *, action: str = "",
+       href: str = "", pink: bool = False) -> str:
+    """The decision card: a recommendation, the evidence under it, and
+    what you can do about it. Fifty-one of these in his file; it is the
+    unit his whole decision surface is made from.
+
+    EVIDENCE IS NOT OPTIONAL IN SPIRIT. A recommendation with nothing
+    under it is an opinion, and his own cards always carry the line that
+    justifies them."""
+    act = ""
+    if action:
+        act = ("<div class='ox-dq-actions'><a href='%s'>"
+               "<button type='button' class='ox-btn%s'>%s</button></a></div>"
+               % (_e(href or "#"), " ox-btn-p" if pink else "", _e(action)))
+    return ("<div class='ox-dq%s'><div class='ox-dq-main'>"
+            "<div class='ox-dq-rec'>%s</div>"
+            "<div class='ox-dq-ev'>%s</div></div>%s</div>"
+            % (" pink" if pink else "", _e(rec),
+               _e(evidence) or "<span class='ox-nodata'>no evidence "
+                               "recorded, which is itself worth knowing"
+                               "</span>", act))
+
+
+def chart(title: str, rows: Sequence, *, source: str = "") -> str:
+    """A titled panel of horizontal bars, his chart-card + hbar-row.
+
+    rows is [(label, value, max)] or [(label, value)]. A row whose value
+    is None renders as a GAP, never as a zero-length bar: an unmeasured
+    week and a week of nothing are different facts and a bar chart is
+    where they are most easily confused."""
+    rs = _l(rows)
+    nums = [r[1] for r in rs if len(r) > 1 and isinstance(r[1], (int, float))]
+    top = max(nums) if nums else 0
+    out = []
+    for r in rs:
+        lab = r[0] if r else ""
+        val = r[1] if len(r) > 1 else None
+        mx = r[2] if len(r) > 2 else top
+        if val is None:
+            out.append("<div class='ox-hbar'><span class='ox-hbar-l'>%s</span>"
+                       "<span class='ox-nodata'>not measured</span></div>"
+                       % _e(lab))
+            continue
+        pct = 0
+        try:
+            pct = max(0, min(100, (float(val) / float(mx or 1)) * 100))
+        except Exception:                                 # noqa: BLE001
+            pct = 0
+        out.append("<div class='ox-hbar'><span class='ox-hbar-l'>%s</span>"
+                   "<span class='ox-hbar-t'><i style='width:%.1f%%'></i>"
+                   "</span><b>%s</b></div>" % (_e(lab), pct, _e(val)))
+    body = "".join(out) or ("<p class='ox-nodata'>nothing to chart yet</p>")
+    return ("<div class='ox-cc'><div class='ox-cc-title'>%s</div>%s%s</div>"
+            % (_e(title), body, source_chip(source) if source else ""))
+
+
+# ==========================================================================
 # SCREEN SCAFFOLD
 # ==========================================================================
 def screen(sid: str, title: str, sub: str, body: str, *,
@@ -492,6 +596,57 @@ CSS = """
   font-size:.86rem;border-radius:0}
 .osx .ox-cc-ack{font-size:.82rem;color:var(--ox-acd);min-height:1em}
 
+.osx .ox-topbar{display:flex;align-items:center;gap:14px;
+  border:1px solid var(--ox-ln);background:var(--ox-sf);padding:8px 14px;
+  font-size:.8rem;color:var(--ox-ink2)}
+.osx .ox-brand{font-family:var(--ox-dsp);font-weight:600;letter-spacing:.06em;
+  color:var(--ox-ink)}
+.osx .ox-cost{margin-left:auto;font-variant-numeric:tabular-nums}
+.osx .ox-frame{display:grid;grid-template-columns:210px 1fr;gap:16px;
+  align-items:start}
+@media (max-width:820px){.osx .ox-frame{grid-template-columns:1fr}}
+.osx .ox-sidebar{border:1px solid var(--ox-ln);background:var(--ox-cd);
+  padding:10px;display:flex;flex-direction:column;gap:2px;position:sticky;
+  top:8px}
+.osx .ox-modgroup{font-family:var(--ox-dsp);text-transform:uppercase;
+  letter-spacing:.13em;font-size:.66rem;color:var(--ox-ink3);font-weight:600;
+  padding:2px 6px 6px}
+.osx a.ox-mod{display:block;padding:5px 8px;font-size:.82rem;
+  color:var(--ox-ink2);text-decoration:none;border-left:2px solid transparent}
+.osx a.ox-mod:hover{color:var(--ox-acd);background:var(--ox-sf)}
+.osx a.ox-mod.on{color:var(--ox-ink);font-weight:600;
+  border-left-color:var(--ox-ac);background:var(--ox-acw)}
+.osx .ox-subnav{display:flex;flex-direction:column;gap:1px;
+  margin:2px 0 6px 10px;border-left:1px solid var(--ox-ln);padding-left:8px}
+.osx a.ox-snav{display:block;padding:3px 6px;font-size:.78rem;
+  color:var(--ox-ink3);text-decoration:none}
+.osx a.ox-snav:hover{color:var(--ox-acd)}
+.osx a.ox-snav.on{color:var(--ox-acd);font-weight:600}
+.osx .ox-main{display:flex;flex-direction:column;gap:24px;min-width:0}
+.osx .ox-crumb{font-size:.8rem;color:var(--ox-ink3)}
+.osx .ox-crumb b{color:var(--ox-ink)}
+
+.osx .ox-dq{display:flex;align-items:flex-start;gap:12px;
+  border:1px solid var(--ox-ln);background:var(--ox-cd);padding:9px 12px;
+  margin-bottom:6px}
+.osx .ox-dq.pink{border-left:3px solid var(--ox-dg)}
+.osx .ox-dq-main{flex:1;min-width:0}
+.osx .ox-dq-rec{color:var(--ox-ink);font-weight:600;font-size:.9rem}
+.osx .ox-dq-ev{color:var(--ox-ink3);font-size:.8rem;margin-top:2px}
+.osx .ox-dq-actions{flex-shrink:0}
+.osx .ox-dq-actions a{text-decoration:none}
+
+.osx .ox-cc{border:1px solid var(--ox-ln);background:var(--ox-cd);
+  padding:12px 14px;display:flex;flex-direction:column;gap:7px}
+.osx .ox-cc-title{font-family:var(--ox-dsp);font-weight:600;font-size:.9rem;
+  color:var(--ox-ink);letter-spacing:.02em}
+.osx .ox-hbar{display:grid;grid-template-columns:minmax(90px,150px) 1fr auto;
+  gap:9px;align-items:center;font-size:.82rem;color:var(--ox-ink2)}
+.osx .ox-hbar-l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.osx .ox-hbar-t{display:block;height:9px;background:var(--ox-sf);
+  border:1px solid var(--ox-ln)}
+.osx .ox-hbar-t i{display:block;height:100%;background:var(--ox-ac)}
+.osx .ox-hbar b{font-variant-numeric:tabular-nums;color:var(--ox-ink)}
 .osx .ox-plan{border-style:dashed}
 .osx .ox-pl{font-family:var(--ox-dsp);text-transform:uppercase;
   letter-spacing:.12em;font-size:.68rem;color:var(--ox-ink3);
@@ -662,6 +817,11 @@ def check() -> Dict[str, Any]:
                "ox-q", "ox-cc-bar", "ox-in", "ox-cc-ack", "ox-plan", "ox-pl",
                "ox-planned", "ox-need", "ox-screen", "ox-sh", "ox-sid",
                "ox-sub", "ox-staffed", "ox-grid", "ox-lbl", "ox-pas"]
+    emitted += ["ox-topbar", "ox-brand", "ox-cost", "ox-frame", "ox-sidebar",
+                "ox-modgroup", "ox-mod", "ox-subnav", "ox-snav", "ox-main",
+                "ox-crumb", "ox-dq", "ox-dq-main", "ox-dq-rec", "ox-dq-ev",
+                "ox-dq-actions", "ox-cc", "ox-cc-title", "ox-hbar",
+                "ox-hbar-l", "ox-hbar-t"]
     for cls in emitted:
         if ("." + cls) not in CSS:
             problems.append("class %s is emitted with no CSS rule" % cls)

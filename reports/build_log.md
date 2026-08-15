@@ -40,6 +40,59 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session P — his structure, which I had been compromising
+2026-08-15
+
+**THE INSTRUCTION**
+- "i need ui according to wire frame i dont want to compromise wire frame
+  structure." He was right, and the file proves it.
+
+**WHAT I HAD BUILT vs WHAT HE DREW**
+- I had been rendering flat stacks of cards. His screens are not that.
+  Every one sits in a `mos-frame`: a topbar, a SIDEBAR listing the twelve
+  modules with the CURRENT module's screens nested under it as a subnav,
+  and a main column that opens with a breadcrumb.
+- `mos-sub` is the single most common class in his entire file, 411 uses,
+  and I had built none of it.
+- Two components he repeats and I had not built at all:
+  * `dq-card`, 51 uses: a recommendation, the evidence under it, and the
+    action. The unit his whole decision surface is made from.
+  * `chart-card` with `hbar-row`, 35 and 27 uses: titled panels of
+    horizontal bars.
+
+**FINISHED**
+- `K.frame()`, `K.crumb()`, `K.dq()`, `K.chart()` in the kit, with the
+  Industry styling. All seven departments now render inside the shell,
+  each with its own subnav.
+- His subnav links are ANCHORS (`#13a`, `#13b`), which is why stacking
+  the screens under one frame is faithful rather than a shortcut: that is
+  how his own prototype navigates.
+- 116 gates in verify_agentos, 355 deploy checks, 0 failed.
+
+**A COLLISION CAUGHT BY COUNTING**
+- The new subnav link class was `ox-sub`, which was ALREADY the
+  descriptive-paragraph class used on every screen since the first
+  session. Nine expected subnav links counted as 39. The nav links would
+  have inherited paragraph styling and paragraphs would have taken a nav
+  link's colour. Renamed to `ox-snav`, and the gate now asserts the two
+  never collide again.
+
+**TWO HONESTY RULES BUILT INTO THE NEW COMPONENTS**
+- `dq()` with no evidence renders "no evidence recorded, which is itself
+  worth knowing" rather than an empty line. A recommendation with nothing
+  under it is an opinion.
+- `chart()` renders a row with no value as "not measured", never as a
+  zero-length bar. An unmeasured week and a week of nothing are different
+  facts, and a bar chart is where they are most easily confused.
+
+**Correction found while building (10.2)**
+- My first attempt spliced text into each section's return expression and
+  produced unbalanced parentheses in five modules at once. Restored from
+  backups and rewrote the functions instead. Clever text surgery on code
+  is worse than rewriting the function it is trying to avoid rewriting.
+
+---
+
 ## Session O — Media Buying, built from the founder's wireframe
 2026-08-15
 

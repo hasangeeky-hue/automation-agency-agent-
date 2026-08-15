@@ -1845,6 +1845,28 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     check("the Media department answered", False, repr(exc)[:110])
 
+# --- 28. THE WIREFRAME'S SHELL, not a flatter version of it --------------
+print("")
+print("28. EVERY DEPARTMENT SITS IN HIS SHELL")
+try:
+    import content_engine_os_kit as K28
+
+    check("the module sidebar is on the page", "ox-sidebar" in _h21)
+    check("with each module's screens as a subnav",
+          "ox-subnav" in _h21 and "class='ox-snav" in _h21)
+    check("and the current module marked active", "ox-mod on" in _h21)
+    check("THE SUBNAV CLASS DOES NOT COLLIDE with the paragraph class",
+          "class='ox-sub " not in _h21)
+    check("the sidebar carries all seven modules", len(K28.MODULES) == 7)
+    check("his decision card exists, and demands evidence",
+          "ox-dq-rec" in K28.dq("x", "y")
+          and "no evidence recorded" in K28.dq("x"))
+    check("his chart card exists", "ox-hbar-t" in K28.chart("t", [("a", 1)]))
+    check("AND AN UNMEASURED BAR IS A GAP, NEVER A ZERO",
+          "not measured" in K28.chart("t", [("a", None)]))
+except Exception as exc:                                  # noqa: BLE001
+    check("the shell answered", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

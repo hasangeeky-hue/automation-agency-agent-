@@ -48,6 +48,10 @@ import content_engine_os_kit as K
 
 _e, _l, _d = K._e, K._l, K._d
 
+#: his subnav for this module: the label, and the screen
+#: it opens. Anchors, exactly as his own markup uses.
+SUBNAV_MEDIA = [('Command Center', '7a'), ('Scout', '7b'), ('Creative', '7c'), ('Launch', '7d'), ('Optimizer', '7e'), ('Pacing', '7f'), ('Reporter', '7g'), ('Data Sources', '7h'), ('Agents Room', '7i')]
+
 AGENT = "media.buyer"
 
 #: the founder's own six, verbatim from cockpitAgents.media
@@ -418,10 +422,21 @@ SCREENS_7 = ("7a", "7b", "7c", "7d", "7e", "7f", "7g", "7h", "7i")
 
 
 def media_section(ctx: Dict[str, Any]) -> str:
+    """1 · Media Buyer, in the shell his wireframe uses.
+
+    Sidebar of modules, this module's screens as a subnav
+    nested under it, and the screens stacked in main. His own
+    subnav links are anchors, so stacking is how his prototype
+    navigates rather than a shortcut.
+    """
     ctx = _d(ctx)
-    return ("<div class='osx'>" + _s7a(ctx) + _s7b(ctx) + _s7c(ctx)
+    body = (_s7a(ctx) + _s7b(ctx) + _s7c(ctx)
             + _s7d(ctx) + _s7e(ctx) + _s7f(ctx) + _s7g(ctx) + _s7h(ctx)
-            + _s7i(ctx) + "</div>")
+            + _s7i(ctx))
+    return ("<div class='osx'>"
+            + K.frame('1 · Media Buyer', SUBNAV_MEDIA, body)
+            + "</div>")
+
 
 
 def check(ctx: Dict[str, Any] = None) -> Dict[str, Any]:
