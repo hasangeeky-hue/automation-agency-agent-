@@ -1633,9 +1633,22 @@ try:
     check("EVERY OLD BOOKMARK IS ALIASED to the module that owns its data",
           not [p for p in _old21 if ("%s:'os" % p) not in _h21],
           str([p for p in _old21 if ("%s:'os" % p) not in _h21]))
-    check("THE DATA BOARDS ARE INSIDE THE OS: Search is the biggest page",
-          len(_h21[_h21.find("id='sec-osseo'"):
-                   _h21.find("id='sec-osleads'")]) > 200000)
+    # REPLACED. This asserted Search was over 200,000 characters, true
+    # only because the OLD BOARDS were rendered inside it. He asked for
+    # the DATA kept and the UI cut, and this was measuring the UI: a
+    # green check standing guard over the exact thing he wanted gone.
+    check("NO OLD BOARD IS RENDERED: only his screens are on the page",
+          "class='osdata'" not in _h21
+          and not [p for p in ("seo", "bi", "system", "media", "content",
+                               "outreach", "sga", "cockpit", "riskinfra")
+                   if ("id='sec-%s'" % p) in _h21])
+    check("EVERY SUBNAV LINK SCROLLS instead of navigating away",
+          _h21.count("class='ox-snav")
+          == _h21.count("onclick=\"return osGo("),
+          "%d links, %d handlers" % (_h21.count("class='ox-snav"),
+                                     _h21.count("onclick=\"return osGo(")))
+    check("and no unfilled topbar marker reaches the page",
+          "{{OX_" not in _h21)
     check("a nav target that does not resolve cannot blank the page",
           "if(!s)return false;" in _h21)
     # EVERY SIDEBAR MODULE MUST REACH A PAGE. They were anchors copied

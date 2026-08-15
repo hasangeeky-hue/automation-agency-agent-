@@ -355,17 +355,33 @@ def frame(module_label: str, subnav: Sequence, body: str, *,
         mods.append("<a class='ox-mod%s' %shref='#%s'>%s</a>"
                     % (on, jump, _e(page or ("os-" + first)), _e(label)))
         if on:
+            # A SUBNAV LINK MUST SCROLL, NOT NAVIGATE.
+            #
+            # These were bare anchors to #os-8a. Changing the hash fires
+            # the dashboard's routeFromHash, which calls nav('os-8a');
+            # no PAGE has that id, so the fallback sent every subnav
+            # click to the Cockpit. He described it exactly: "when
+            # clicking sub button its stuck there, does not take me to
+            # the right card". osGo scrolls to the screen inside the
+            # page that is already open and returns false, so the hash
+            # never changes and the router never runs.
             subs = "".join(
-                "<a class='ox-snav%s' href='#os-%s'>%s</a>"
-                % (" on" if i == 0 else "", _e(sid), _e(lab))
+                "<a class='ox-snav%s' href='#os-%s' "
+                "onclick=\"return osGo('%s')\">%s</a>"
+                % (" on" if i == 0 else "", _e(sid), _e(sid), _e(lab))
                 for i, (lab, sid) in enumerate(_l(subnav)))
             mods.append("<div class='ox-subnav'>%s</div>" % subs)
     # The host page hands its live bits in here rather than drawing a
     # second bar around this one. right= is raw HTML on purpose: it
     # carries the engine controls and the sign-out link, which are real
     # markup, not text.
-    _cost = _e(cost) or CHROME["cost"]
-    _al = _e(alerts) or CHROME["alerts"]
+    # A MARKER, NOT A READ. CHROME used to be read here, and the host
+    # computes its controls AFTER the sections are rendered, so a fresh
+    # process produced an empty topbar and a gate that failed for a
+    # reason that had nothing to do with the topbar. The host substitutes
+    # these once, at the end, when everything it needs exists.
+    _cost = _e(cost) or "{{OX_COST}}"
+    _al = _e(alerts) or "{{OX_ALERTS}}"
     return ("<div class='ox-topbar'><span class='ox-brand'>◆ Mother OS</span>"
             "<span class='ox-cost'>%s</span><span>%s</span>"
             "<span class='ox-tools'>%s</span></div>"
@@ -373,7 +389,7 @@ def frame(module_label: str, subnav: Sequence, body: str, *,
             "<div class='ox-sidebar'><div class='ox-modgroup'>Modules</div>"
             "%s</div>"
             "<div class='ox-main'>%s</div></div>"
-            % (_cost, _al, CHROME["right"], "".join(mods), body))
+            % (_cost, _al, "{{OX_TOOLS}}", "".join(mods), body))
 
 
 def crumb(module_label: str, screen_label: str) -> str:
@@ -768,6 +784,9 @@ CSS = """
 .osx .ox-tabpane{display:none;padding-top:14px}
 .osx .ox-tabpane.on{display:block}
 /* his .dq-list{display:flex;flex-direction:column;gap:10px} */
+/* the build stamp, in his topbar: proof of which code is live */
+.osx .ox-build{font-family:var(--ox-mn);font-size:.66rem;
+  color:var(--ox-ink3);border:1px solid var(--ox-ln);padding:2px 6px}
 .osx .ox-tools{margin-left:auto;display:flex;gap:8px;align-items:center}
 .osx .ox-dq-list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .osx .ox-scr{min-width:0}
@@ -875,6 +894,22 @@ function osPriceDecline(id){
      var row=document.getElementById('ospx-'+id); if(row && d && d.ok) row.remove();
    })
    .catch(function(e){ osAck('commerce.analyst','Could not reach the engine: '+e); });
+}
+function osGo(sid){
+  // Scroll to one screen inside the page that is already open, and mark
+  // its subnav link. Returns false so the href never becomes a hash: the
+  // host page routes on hash change and would navigate away instead.
+  var el = document.getElementById('os-' + sid);
+  if(!el) return false;
+  var page = el.closest ? el.closest('.page') : null;
+  if(page){
+    page.querySelectorAll('a.ox-snav').forEach(function(a){
+      a.className = 'ox-snav' +
+        ((a.getAttribute('href') === '#os-' + sid) ? ' on' : '');
+    });
+  }
+  el.scrollIntoView({behavior:'smooth', block:'start'});
+  return false;
 }
 function osTab(sid, i){
   // His desks that hold several views. Switching is local to one screen,

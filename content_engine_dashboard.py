@@ -4645,43 +4645,29 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # So each Agent OS module now carries its own boards underneath its
     # wireframe screens. One surface, his design on top, his numbers
     # under it, and nothing to navigate away to.
-    _OS_DATA = {
-        "osseo": (("Search boards", _seo_all),),
-        "osmkt": (("Content Factory boards", _factory_all),),
-        "osleads": (("Leads and Outreach boards", _outreach_all),),
-        "oscom": (("Commerce and CMS boards", _cms_all),),
-        "osmedia": (("Media Buying boards", _media_all),),
-        "oscockpit": (("AI Cockpit boards", _cockpit_all),),
-        "oscore": (("System and Wiring boards", _system_all),
-                   ("Business Intelligence boards", _bi_all),
-                   ("Risk and Infrastructure boards", _risk_all)),
-    }
-
-    #: every deep id now rendered INSIDE an Agent OS module
-    _OS_DATA_OWNED = {d for parts in _OS_DATA.values() for _lbl, d in parts}
+    # HE SAID: KEEP THE DATA, NOT THE UI. I DID THE OPPOSITE.
+    #
+    # When the old pages came off the nav I put their whole rendered
+    # BOARDS inside each Agent OS module, so opening Search showed his
+    # wireframe screens and then 324,000 characters of the old
+    # dashboard's own visualisation underneath. That is not preserving
+    # data, it is preserving the interface he asked me to delete, and it
+    # is why he still sees "old data dashboard visualisation".
+    #
+    # The DATA was never in that markup. It lives in the store and the
+    # connectors, and his screens already read it through build_ctx. So
+    # the old boards stop rendering entirely. Where one of his screens
+    # has no feed yet it says NOT MEASURED, which is the honest state and
+    # tells him exactly which collector to build next: the whole reason
+    # he drew this OS.
+    _OS_DATA: dict = {}
+    #: THE OLD PAGES ARE DELETED, not merely unlinked. Emptying the map
+    #: above stopped them rendering INSIDE his modules, and then they
+    #: reappeared as standalone sections, because this set is what filters
+    #: them out of PAGES. 750,000 characters of the old interface, off the
+    #: nav but still in the document, is still the old interface.
     _OS_DATA_OWNED = {"seo", "content", "outreach", "sga", "media",
                       "cockpit", "system", "bi", "riskinfra"}
-
-    def _with_data(pid, body):
-        parts = _OS_DATA.get(pid) or ()
-        if not parts:
-            return body
-        out = [body]
-        for label, deep in parts:
-            out.append(
-                "<div class='osdata'><div class='osdata-h'>%s</div>%s</div>"
-                % (_esc(label), deep))
-        return "".join(out)
-
-    PAGES = [(pid, icon, short, title, sub, _with_data(pid, body))
-             for pid, icon, short, title, sub, body in PAGES]
-    # AND THE STANDALONE PAGES GO. Their boards are inside the module
-    # that owns them now, so keeping the old page too rendered every
-    # board twice and put 988 duplicate element ids on one document.
-    # Duplicate ids break getElementById, which is what every panel
-    # switch and drawer on those boards is built on: the second copy
-    # would have looked right and behaved like the first.
-    PAGES = [p for p in PAGES if p[0] not in _OS_DATA_OWNED]
 
     def _deep_note(pid):
         dest, label = _OS_VIEW.get(pid, ("", ""))
@@ -4698,9 +4684,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 "color:#5d5d60'><b style='color:#1d1f20'>Deep tool.</b> "
                 + where + "</div>")
 
-    PAGES = [(pid, icon, short, title, sub,
-              (_deep_note(pid) + body) if pid in _OS_VIEW else body)
-             for pid, icon, short, title, sub, body in PAGES]
+    # THE OLD PAGES ARE DELETED HERE, and this line is the whole of it.
+    # An earlier edit removed it by accident and every old board came
+    # straight back as a standalone section: off the nav, still in the
+    # document, still 750,000 characters of the interface he asked me to
+    # cut. The DATA those boards read is untouched in the store; only
+    # their rendering is gone.
+    PAGES = [p for p in PAGES if p[0] not in _OS_DATA_OWNED]
 
     # THE GLOBAL NAV, grouped the way the cockpit spec groups the OS:
     # Command / Growth / Intelligence / System. Same nine links, same ids,
@@ -4880,7 +4870,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         # K.set_chrome (cost, alerts, the engine controls, sign-out). What
         # was decoration is gone. The page is now his seven modules and
         # nothing else.
-        + pages
+        # THE TOPBAR IS FILLED HERE, once, when everything exists. Doing
+        # it inside frame() meant reading state the host had not computed
+        # yet, because the sections render before the control strip does.
+        + pages.replace("{{OX_TOOLS}}",
+                        ctrl_html + attn_html + onboarding
+                        + "<span class='ox-build'>build "
+                        + _esc(CODE_STAMP) + "</span>" + logout)
+                .replace("{{OX_ALERTS}}",
+                         ("%d connection(s) not wired" % broken) if broken else "")
+                .replace("{{OX_COST}}", "")
         # THE DETAIL WINDOW lives once, at the page root - not once per card.
         # Clicking the backdrop closes it; clicking the panel does not.
         + "<div id='dlgwrap' onclick='if(event.target===this)closeDetails()' "

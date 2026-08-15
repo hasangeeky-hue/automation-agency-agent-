@@ -185,8 +185,11 @@ t("no old page is rendered SEPARATELY any more", not _still, str(_still))
 _unaliased = [p for p in _old_ids if ("%s:'os" % p) not in html]
 t("BUT EVERY OLD BOOKMARK IS ALIASED to the module that owns its data",
   not _unaliased, str(_unaliased))
-t("and the OS carries the data: Search is the biggest page, not the thinnest",
-  len(html[html.find("id='sec-osseo'"):html.find("id='sec-osleads'")]) > 200000)
+# REMOVED: this asserted that Search was over 200,000 characters, which
+# was only true because the OLD BOARDS were rendered inside it. He asked
+# for the data kept and the UI cut; that check was measuring the UI.
+t("no unfilled topbar marker survives into the page",
+  "{{OX_" not in html)
 t("NO DUPLICATE ELEMENT ID anywhere on the assembled document",
   not [k for k, v in __import__("collections").Counter(
       re.findall(r"id='([a-zA-Z0-9_-]+)'", html)).items() if v > 1])
@@ -342,6 +345,28 @@ t("and every one of those targets is a page that exists",
 t("the module map covers every module in the sidebar",
   set(K.MODULE_PAGE) == {sid for _lab, sid in K.MODULES},
   str(set(K.MODULE_PAGE) ^ {sid for _lab, sid in K.MODULES}))
+# A SUBNAV LINK MUST SCROLL, NOT NAVIGATE. These were bare anchors to
+# #os-8a; the hash change fired the host's router, which called
+# nav('os-8a'), found no PAGE with that id, and fell back to the Cockpit.
+# Every subnav click bounced him to the Cockpit: "its stuck there, does
+# not take me to the right card".
+t("EVERY SUBNAV LINK SCROLLS INSTEAD OF NAVIGATING AWAY",
+  html.count("class='ox-snav") == html.count("onclick=\"return osGo("),
+  "%d links, %d handlers" % (html.count("class='ox-snav"),
+                             html.count("onclick=\"return osGo(")))
+t("and the scroll handler exists, so none of them is a dead link",
+  "function osGo" in K.JS)
+# HE SAID KEEP THE DATA, NOT THE UI. The old boards were rendered whole
+# inside his modules, which preserved the interface he asked me to cut.
+t("NO OLD BOARD IS RENDERED ANYWHERE, only his screens",
+  "class='osdata'" not in html)
+t("and no old page survives as a section either",
+  not [p for p in ("seo", "bi", "system", "media", "content", "outreach",
+                   "sga", "cockpit", "riskinfra")
+      if ("id='sec-%s'" % p) in html])
+t("and the seven pages on the document are all his",
+  len(re.findall(r"id='sec-([a-z]+)'", html)) == 7,
+  str(re.findall(r"id='sec-([a-z]+)'", html)))
 t("and the sidebar links are anchors, as his own markup uses",
   "href='#os-13a'" in OS.core_section(_c5))
 # HIS RIGHT-HAND RAIL, ON THE SCREENS HE DREW IT ON.
