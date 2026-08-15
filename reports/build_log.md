@@ -40,6 +40,49 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session E — Phase 5, part 3: Leads and Outreach (turn 12)
+2026-08-15
+
+**FINISHED**
+- `content_engine_agentos_leads.py`: all nine screens of turn 12.
+  41 of the 54 screens now exist across five nav pages.
+- Every constant on these screens is READ from the engine, not retyped:
+  TARGET_MARKETS, ICP_VERTICALS, WARMUP_RAMP and SEQUENCE_TOUCHES from
+  `content_engine_outreach`, ICP_ROTATION from the scheduler.
+- Four employees work nine desks. 12c, 12d and 12i are all
+  `leads.qualifier`; 12f and 12h are both `leads.sender`. Every one of
+  those five screens discloses it, and the gate fails the build if one
+  stops.
+- `verify_agentos.py` now 50 gates; prover 283 checks, 0 failed.
+
+**A SAFETY CLAIM I HAD TO CORRECT**
+- The wireframe describes the Data Cleaner as hard-blocking EU leads from
+  outreach, and I repeated that in the employee spec. THE ENGINE HAS NO
+  SUCH BLOCK, and it should not: Germany and Switzerland are two of the
+  five entries in TARGET_MARKETS, so an EU block would block the
+  business. What is really enforced is the absolute suppression list, the
+  warm-up ramp, the open-tracking consent switch (which is the actual
+  GDPR control in the code) and the permanent SEND gate.
+- Drawing the hard block would have been false-green pointing the other
+  way: showing a safety control that does not exist. 12c states the gap
+  and asks the founder to decide whether per-country rules are wanted.
+  The published employee spec has been corrected to match.
+
+**COULDN'T**
+- 13 screens remain: t11 Commerce (9) and t10 Product Publisher (4).
+  Commerce is last by the agreed order because it needs a commerce lane
+  that nothing creates work for yet.
+- ESP routing (Klaviyo or platform-native bulk) is drawn empty with the
+  credential named. No numbers.
+- Same nine suites exit nonzero, all failing at baseline.
+
+**NEED FROM FOUNDER**
+- Decide whether you want per-country outreach rules at all, given that
+  two target markets are in the EU.
+- The three standing items are unchanged.
+
+---
+
 ## Session D — Phase 5, part 2: the two departments that produce daily
 2026-08-15
 

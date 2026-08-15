@@ -1462,6 +1462,7 @@ try:
     import content_engine_dashboard as D21
     import content_engine_agentos as OS21
     import content_engine_agentos_growth as OSG21
+    import content_engine_agentos_leads as OSL21
     import content_engine_os_kit as K21
     import content_engine_roster as R21
 
@@ -1494,18 +1495,28 @@ try:
     check("the Agent OS rendered (no fallback card)",
           "Agent OS screens failed" not in _h21)
     _all21 = (OS21.SCREENS_13 + OS21.SCREENS_14
-              + OSG21.SCREENS_9 + OSG21.SCREENS_8)
+              + OSG21.SCREENS_9 + OSG21.SCREENS_8 + OSL21.SCREENS_12)
     _miss21 = [s for s in _all21 if ("id='os-%s'" % s) not in _h21]
     check("all %d wireframe screens built so far are on the page" % len(_all21),
-          not _miss21, "t13:11 t14:5 t9:8 t8:8")
+          not _miss21, "t13:11 t14:5 t9:8 t8:8 t12:9")
     check("and NO screen is rendered twice",
           not [s for s in _all21 if _h21.count("id='os-%s'" % s) > 1])
     check("every Agent OS page is reachable from the nav",
           all(("id='nav-%s'" % p) in _h21
-              for p in ("oscockpit", "oscore", "osmkt", "osseo")))
+              for p in ("oscockpit", "oscore", "osmkt", "osseo",
+                        "osleads")))
     _gc21 = OSG21.check(_ctx21)
     check("turns 8 and 9 pass their own check", _gc21["ok"],
           str(_gc21["problems"])[:110])
+    _lc21 = OSL21.check(_ctx21)
+    check("turn 12 passes its own check", _lc21["ok"],
+          str(_lc21["problems"])[:110])
+    check("every shared desk on turn 12 discloses its worker",
+          all("One worker" in _h21[_h21.find("id='os-%s'" % s):
+                                   _h21.find("id='os-%s'" % s) + 6000]
+              for s in OSL21.SHARED_DESKS))
+    check("NO EU hard block is drawn, because the engine has none",
+          "the engine does not have one" in " ".join(_h21.split()))
     check("ONE WORKER TWO DESKS is disclosed on 8c and 8e",
           all("same" in _h21[_h21.find("id='os-%s'" % s):
                              _h21.find("id='os-%s'" % s) + 4000].lower()
@@ -1550,7 +1561,8 @@ try:
     _osonly21 = (K21.CSS + K21.JS + OS21.core_section(_ctx21)
                  + OS21.cockpit_section(_ctx21)
                  + OSG21.marketing_section(_ctx21)
-                 + OSG21.search_section(_ctx21))
+                 + OSG21.search_section(_ctx21)
+                 + OSL21.leads_section(_ctx21))
     check("the OS ships no em-dash (the founder's rule)",
           "—" not in _osonly21 and "&mdash;" not in _osonly21)
 except Exception as exc:                                  # noqa: BLE001
