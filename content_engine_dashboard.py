@@ -4750,11 +4750,16 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 + f"<span class='navcount' id='navcount-{pid}'></span></a>")
     nav = "".join(_navp)
     pages = "".join(
-        f"<section class='page{' on' if i==0 else ''}' id='sec-{pid}'><h2 class='ph'>{_esc(title)}</h2><p class='psub'>{_esc(sub)}</p>{body}</section>"
+        # NO PAGE HEADING ABOVE HIS TOPBAR. His wireframe opens with the
+        # topbar; a title and a subtitle stacked on top of it are the old
+        # dashboard's furniture, and they pushed his shell down the screen
+        # so the first thing he saw was still not his design. The module
+        # name already lives in his sidebar, marked active.
+        f"<section class='page{' on' if i==0 else ''}' id='sec-{pid}'>{body}</section>"
         for i, (pid, icon, short, title, sub, body) in enumerate(PAGES))
 
-    warn = "" if has_password else "<div style='background:#FEF2F2;border:1px solid #DC2626;border-radius:10px;padding:11px 14px;font-size:12.5px;color:#991B1B;margin-bottom:12px'>⚠ <b>No password set.</b> This dashboard has no login — set <b>DASHBOARD_PASSWORD</b> in deploy/.env and rebuild to lock it before sharing the link.</div>"
-    onboarding = warn + ("" if jobs else "<div style='background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:11px 14px;font-size:12.5px;color:var(--mut);margin-bottom:14px'><b style='color:var(--teal)'>Your control center is ready.</b> Numbers fill in as agents run and you connect keys — the <b>System Map</b> page lists exactly what to add.</div>")
+    warn = "" if has_password else "<div style='background:#FEF2F2;border:1px solid #DC2626;border-radius:10px;padding:11px 14px;font-size:12.5px;color:#991B1B;margin-bottom:12px'>⚠ <b>No password set.</b> This dashboard has no login , set <b>DASHBOARD_PASSWORD</b> in deploy/.env and rebuild to lock it before sharing the link.</div>"
+    onboarding = warn
     # ---- attention center + control bar (always visible above the pages) ----
     failed = sum(1 for j in jobs if j.get("status") in ("failed", "halted_budget"))
     broken = total_conn - live_conn
@@ -4788,7 +4793,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                          "onclick=\"if(confirm('Stop the machine? Nothing new is queued, run, published or drafted until you start it again.'))act('/system/stop')\">■ STOP the whole system</button>"
                          "<span class='pill p-live' style='align-self:center'><span class='d' style='background:#16A34A'></span>running</span>"
                          + ("<span class='pill p-need' style='align-self:center;border-color:#DC2626;color:#DC2626'>"
-                            "<span class='d' style='background:#DC2626'></span>AUTONOMOUS — publishes without you</span>"
+                            "<span class='d' style='background:#DC2626'></span>AUTONOMOUS , publishes without you</span>"
                             if autonomy else
                             "<span class='dim' style='align-self:center;font-size:11.5px'>"
                             "supervised · every publish waits for you</span>"))
@@ -4797,8 +4802,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         # which meant anything left unreviewed for 24h published itself. It now
         # says exactly what it does, and autonomy is a separate deliberate act.
         master_switch = ("<button class='cbtn on' style='font-size:15px;font-weight:700;padding:11px 24px' "
-                         "onclick=\"if(confirm('Start the machine?\n\nIt will queue work daily, run the SEO engines on their cadence, and draft replies.\n\nEVERY piece still waits for your approval — nothing publishes or sends until you say so.'))"
-                         "act('/system/start')\">▶ START — supervised</button>"
+                         "onclick=\"if(confirm('Start the machine?\n\nIt will queue work daily, run the SEO engines on their cadence, and draft replies.\n\nEVERY piece still waits for your approval , nothing publishes or sends until you say so.'))"
+                         "act('/system/start')\">▶ START , supervised</button>"
                          "<span class='pill p-need' style='align-self:center'><span class='d' style='background:#D97706'></span>stopped</span>"
                          "<span class='dim' style='align-self:center;font-size:11.5px'>"
                          "Queues and drafts. Publishes nothing without you.</span>")
@@ -4812,6 +4817,23 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # advertises it: the SEMrush screens it was built to carry live HERE now,
     # in the SEO section.
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
+
+    # EVERYTHING LOAD-BEARING MOVES INTO HIS TOPBAR, not around it.
+    # The engine switch, the attention band, the build stamp and sign-out
+    # are real controls and must survive; the brand bar, the window pills
+    # and the second nav were the old design and do not. K.set_chrome is
+    # how the host page speaks into his shell instead of drawing its own.
+    try:
+        import content_engine_os_kit as _KC
+        _KC.set_chrome(
+            cost=("day %s / month %s" % (_money(day_spent), _money(month_spent))
+                  if callable(globals().get("_money")) else ""),
+            alerts=("%d connection(s) not wired" % broken) if broken else "",
+            right=(ctrl_html + attn_html + onboarding
+                   + "<span class='ox-build'>build " + _esc(CODE_STAMP)
+                   + "</span>" + logout))
+    except Exception:                                     # noqa: BLE001
+        pass
     _af = (system_ctx or {}).get("agent_findings") or {}
     _counts = {str((_s or {}).get("section")): len((_s or {}).get("findings") or [])
                for _s in (_af.get("sections") or [])
@@ -4844,38 +4866,24 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         # on .osx and reads only those, so nothing here inherits a colour
         # from the shell it is dropped into.
         "<style>" + _OSKIT_CSS + "</style></head><body>"
-        "<div class='top'><div class='brand'><div class='logo'>A</div><div><h1>Anthropos — Control Center</h1><small>Your automation, in plain English</small></div></div>"
-        "<div style='display:flex;gap:9px;align-items:center'>"
-        # THE REPORTING WINDOW. Three real links, not decoration: the page
-        # re-renders with ?days and every section given the window follows
-        # it. Snapshot boards keep stating their own window on their face.
-        + "<span style='display:inline-flex;border:1px solid var(--line);"
-          "border-radius:99px;overflow:hidden' title='Reporting window for "
-          "sections that measure by day'>"
-        + "".join(
-            "<a href='javascript:void 0' onclick=\"setDays(" + str(_d) + ")\" "
-            "style='font-size:11px;padding:4px 10px;text-decoration:none;"
-            + ("background:var(--teal);color:#FFFFFF"
-               if _d == window_days else "color:var(--mut)")
-            + "'>" + str(_d) + "d</a>"
-            for _d in (7, 30, 90))
-        + "</span>"
-        "<span title='Which build is live right now' style='font-size:11px;color:#6B7280;"
-        # STATE BEFORE STORY. This printed the whole BUILD_TAG - about 600
-        # characters of changelog - as the first thing on the page, so the
-        # opening screen was a narrative rather than what needs your attention.
-        # The badge keeps the part that is actually load-bearing (it proves
-        # which code is live); the story moves behind a disclosure.
-        "border:1px solid #E5E7EB;border-radius:7px;padding:3px 8px'>build "
-        + _esc(CODE_STAMP) + "</span>"
-        "<span class='status'><span class='d' style='background:"
-        + ("#16A34A" if healthy else "#D97706") + "'></span>" + ("All systems nominal" if healthy else "Check health")
-        + "</span>" + logout + "</div></div>"
-        "<div class='shell'><div class='side'>" + nav + "</div><div class='main'>"
-        + ctrl_html + attn_html + onboarding + pages + "</div></div>"
+        # HIS WIREFRAME IS THE UI. NOTHING WRAPS IT.
+        #
+        # This used to draw a brand bar, a reporting-window pill strip, a
+        # build badge, a status dot, a second left nav, the engine control
+        # strip, an attention band and an onboarding banner, and THEN his
+        # shell inside all of it. So his design rendered as an inset panel
+        # and the frame he actually looked at every day was the old OS.
+        # He said it plainly and more than once: "still old system are
+        # there", "nothing change".
+        #
+        # Everything that was load-bearing moved INTO his topbar via
+        # K.set_chrome (cost, alerts, the engine controls, sign-out). What
+        # was decoration is gone. The page is now his seven modules and
+        # nothing else.
+        + pages
         # THE DETAIL WINDOW lives once, at the page root - not once per card.
         # Clicking the backdrop closes it; clicking the panel does not.
-        "<div id='dlgwrap' onclick='if(event.target===this)closeDetails()' "
+        + "<div id='dlgwrap' onclick='if(event.target===this)closeDetails()' "
         "role='dialog' aria-modal='true' aria-labelledby='dlgtitle'>"
         "<div class='dlg'><div class='dlghead'>"
         "<h3 id='dlgtitle'>Details</h3>"

@@ -1592,9 +1592,17 @@ try:
           len(_all21) == 51, str(len(_all21)))
     check("and NO screen is rendered twice",
           not [s for s in _all21 if _h21.count("id='os-%s'" % s) > 1])
-    check("THE AGENT OS IS THE ONLY DASHBOARD (no second nav group)",
-          ">Agent OS<" in _h21 and ">Deep tools<" not in _h21
+    # THE OLD CHROME IS GONE ENTIRELY. It used to draw a brand bar, a
+    # window-pill strip, a second left nav, the engine strip and two
+    # banners, and then his shell INSIDE all of it, so the frame he
+    # looked at every day was still the old OS.
+    check("THE OLD DASHBOARD CHROME IS GONE (no brand bar, no second nav)",
+          "class='top'" not in _h21 and "class='side'" not in _h21
+          and "class='navgrp'" not in _h21
           and "class='page on' id='sec-oscockpit'" in _h21)
+    check("HIS TOPBAR IS THE ONLY TOPBAR (one per module page)",
+          _h21.count("class='ox-topbar'") == 7,
+          str(_h21.count("class='ox-topbar'")))
     _old21 = ("cockpit", "bi", "riskinfra", "content", "outreach", "sga",
               "seo", "media", "system")
     check("THE OLD DASHBOARD IS OFF THE NAV, as the founder asked",
@@ -1626,8 +1634,8 @@ try:
           _tg21 <= _pg21, str(sorted(_tg21 - _pg21)))
     check("media no longer claims it has no replacement",
           "no Agent OS view of this department" not in _h21)
-    check("every Agent OS page is reachable from the nav",
-          all(("id='nav-%s'" % p) in _h21
+    check("every Agent OS page is reachable from HIS sidebar",
+          all(("nav('%s')" % p) in _h21
               for p in ("oscockpit", "oscore", "osmkt", "osseo",
                         "osleads", "oscom")))
     _gc21 = OSG21.check(_ctx21)
@@ -1686,8 +1694,9 @@ try:
           all("same" in _h21[_h21.find("id='os-%s'" % s):
                              _h21.find("id='os-%s'" % s) + 4000].lower()
               for s in ("8c", "8e")))
-    check("exactly one nav link is active",
-          _h21.count("class='navb act'") == 1)
+    check("each page's sidebar marks exactly one module active",
+          _h21.count("class='ox-mod on'") == 7,
+          str(_h21.count("class='ox-mod on'")))
 
     _osx21 = _h21[_h21.find("<div class='osx'>"):]
     _used21 = set()
@@ -1950,8 +1959,8 @@ try:
           "read-only on media by design" in _h21.lower())
     check("attribution is called a model, not a measurement",
           "Attribution is a MODEL" in _h21)
-    check("and it is reachable from the nav",
-          "id='nav-osmedia'" in _h21 and "id='sec-osmedia'" in _h21)
+    check("and it is reachable from HIS sidebar",
+          "nav('osmedia')" in _h21 and "id='sec-osmedia'" in _h21)
 except Exception as exc:                                  # noqa: BLE001
     check("the Media department answered", False, repr(exc)[:110])
 

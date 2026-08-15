@@ -316,6 +316,20 @@ MODULES = (
 #
 # Copying a prototype's navigation into a different document model is
 # how a link that is correct in the source becomes dead in the product.
+#: HIS TOPBAR IS THE ONLY TOPBAR. The dashboard used to wrap this shell in
+# its own brand bar, window pills, engine buttons and banners, so his
+# design rendered INSIDE the old one and the frame he looked at every day
+# never changed. That is what "still old system are there" meant. The
+# dashboard now hands its live bits in here and renders no chrome of its
+# own: one shell, and it is his.
+CHROME = {"cost": "", "alerts": "", "right": ""}
+
+
+def set_chrome(*, cost: str = "", alerts: str = "", right: str = "") -> None:
+    """What the host page wants shown in HIS topbar, not around it."""
+    CHROME["cost"], CHROME["alerts"], CHROME["right"] = cost, alerts, right
+
+
 MODULE_PAGE = {
     "7a": "osmedia", "8a": "osseo", "9a": "osmkt", "11a": "oscom",
     "12a": "osleads", "13a": "oscore", "14a": "oscockpit",
@@ -346,13 +360,20 @@ def frame(module_label: str, subnav: Sequence, body: str, *,
                 % (" on" if i == 0 else "", _e(sid), _e(lab))
                 for i, (lab, sid) in enumerate(_l(subnav)))
             mods.append("<div class='ox-subnav'>%s</div>" % subs)
+    # The host page hands its live bits in here rather than drawing a
+    # second bar around this one. right= is raw HTML on purpose: it
+    # carries the engine controls and the sign-out link, which are real
+    # markup, not text.
+    _cost = _e(cost) or CHROME["cost"]
+    _al = _e(alerts) or CHROME["alerts"]
     return ("<div class='ox-topbar'><span class='ox-brand'>◆ Mother OS</span>"
-            "<span class='ox-cost'>%s</span><span>%s</span></div>"
+            "<span class='ox-cost'>%s</span><span>%s</span>"
+            "<span class='ox-tools'>%s</span></div>"
             "<div class='ox-frame'>"
             "<div class='ox-sidebar'><div class='ox-modgroup'>Modules</div>"
             "%s</div>"
             "<div class='ox-main'>%s</div></div>"
-            % (_e(cost), _e(alerts), "".join(mods), body))
+            % (_cost, _al, CHROME["right"], "".join(mods), body))
 
 
 def crumb(module_label: str, screen_label: str) -> str:
@@ -747,6 +768,7 @@ CSS = """
 .osx .ox-tabpane{display:none;padding-top:14px}
 .osx .ox-tabpane.on{display:block}
 /* his .dq-list{display:flex;flex-direction:column;gap:10px} */
+.osx .ox-tools{margin-left:auto;display:flex;gap:8px;align-items:center}
 .osx .ox-dq-list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .osx .ox-scr{min-width:0}
 .osx .ox-scr.railed{display:grid;grid-template-columns:1fr 216px;gap:14px}
@@ -975,7 +997,7 @@ def check() -> Dict[str, Any]:
                 "ox-dq-actions", "ox-cc", "ox-cc-title", "ox-hbar",
                 "ox-hbar-l", "ox-hbar-t",
                 "ox-scr", "ox-scr-main", "ox-staffrail", "ox-rail-head",
-                "ox-dq-list", "ox-tabbar", "ox-tab", "ox-tabpane",
+                "ox-dq-list", "ox-tabbar", "ox-tab", "ox-tabpane", "ox-tools",
                 "ox-rail-p"]
     for cls in emitted:
         if ("." + cls) not in CSS:

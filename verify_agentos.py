@@ -134,15 +134,26 @@ t("ONE WORKER, TWO DESKS is disclosed on both 8c and 8e",
 
 # ---- B. IT IS REACHABLE -------------------------------------------------
 print("\nB. THE FOUNDER CAN GET TO IT")
+# HIS SIDEBAR IS THE NAVIGATION. The dashboard's own left nav is gone
+# along with the rest of its chrome, so "has a nav link" now means his
+# module sidebar reaches the page, not that a second nav still exists.
 for _pid in ("oscockpit", "oscore", "osmkt", "osseo", "osleads",
              "oscom", "osmedia"):
-    t("%s has a nav link and a page" % _pid,
-      ("id='nav-%s'" % _pid) in html and ("id='sec-%s'" % _pid) in html)
+    t("%s is reachable from HIS sidebar, and has a page" % _pid,
+      ("nav('%s')" % _pid) in html and ("id='sec-%s'" % _pid) in html)
 # ---- THE REPLACEMENT, AND WHAT IT DID NOT COST -------------------------
 print("")
 print("B2. THE AGENT OS IS THE DASHBOARD, AND NOTHING WAS LOST")
-t("the Agent OS is the ONLY nav group", ">Agent OS<" in html
-  and ">Deep tools<" not in html)
+# THE OLD CHROME IS GONE ENTIRELY, not merely reduced to one group.
+t("THE OLD DASHBOARD CHROME IS GONE: no brand bar, no second nav",
+  "class='top'" not in html and "class='side'" not in html
+  and "Anthropos" not in html.split("<body>")[-1][:4000])
+t("and no old nav group survives anywhere",
+  ">Deep tools<" not in html and "class='navgrp'" not in html)
+t("HIS TOPBAR IS THE ONLY TOPBAR", html.count("class='ox-topbar'") == 7,
+  str(html.count("class='ox-topbar'")))
+t("the engine controls survived INTO his shell, not around it",
+  "class='ctrl'" in html and "class='ox-tools'" in html)
 t("and the OS cockpit is the page that opens",
   "class='page on' id='sec-oscockpit'" in html)
 _old_ids = ("cockpit", "bi", "riskinfra", "content", "outreach", "sga",
@@ -398,13 +409,11 @@ t("the chart card exists (his chart-card + hbar)",
 t("AND A GAP IN A CHART IS NOT A ZERO-LENGTH BAR",
   "not measured" in K.chart("t", [("a", None)]))
 
-t("exactly one nav link is marked active",
-  html.count("class='navb act'") == 1, str(html.count("class='navb act'")))
-_first = re.search(r"class='navb act' id='nav-([a-z]+)'", html)
-t("and the active link is the page that is open",
-  bool(_first) and ("id='sec-%s' " % _first.group(1) in html
-                    or "class='page on' id='sec-%s'" % _first.group(1) in html),
-  _first.group(1) if _first else "no active link")
+# ACTIVE STATE LIVES IN HIS SIDEBAR NOW. Each page renders its own frame
+# and marks its own module, so seven pages means seven active markers,
+# one per page, not one across the document.
+t("each page's sidebar marks exactly one module active",
+  html.count("class='ox-mod on'") == 7, str(html.count("class='ox-mod on'")))
 
 # ---- C. NOTHING IS UNSTYLED (the rehoming lesson, three times over) -----
 print("\nC. THE MARKUP TRAVELLED WITH ITS STYLESHEET")
