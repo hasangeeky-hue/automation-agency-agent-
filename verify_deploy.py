@@ -1574,8 +1574,19 @@ try:
           % (len(_h21),
              ", ".join(_re21.findall(r"class='navgrp'>([^<]+)<", _h21))
              or "NONE"))
-    print("       nav links  : %s"
-          % ", ".join(_re21.findall(r"id='nav-([a-z0-9]+)'", _h21)))
+    # HIS SIDEBAR IS THE NAVIGATION. This printed id='nav-...' from the
+    # dashboard's own nav, which is deleted, so it rendered a blank line
+    # where a reader looks for links: a diagnostic that reads like a
+    # failure while everything is fine is its own small lie.
+    # sorted+deduped: every page repeats the sidebar, so the raw list is
+    # seven modules times seven pages and reads like noise.
+    print("       modules    : %s"
+          % (", ".join(sorted(set(
+              _re21.findall(r"return nav\('(os[a-z]+)'\)", _h21)))) or "NONE"))
+    print("       subnav links: %d, of which dead: %d"
+          % (_h21.count("class='ox-snav"),
+             len([1 for _sid in _re21.findall(r"class='ox-snav[^']*' href='#os-([0-9a-z]+)'", _h21)
+                  if ("id='os-%s'" % _sid) not in _h21])))
     print("       pages      : %s"
           % ", ".join(_re21.findall(r"id='sec-([a-z]+)'", _h21)))
     _sty21 = "".join(_re21.findall(r"<style>(.*?)</style>", _h21, _re21.S))
