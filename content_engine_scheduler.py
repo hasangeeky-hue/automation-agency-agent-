@@ -264,6 +264,10 @@ SEO_CADENCE = {
     "commerce": {"every_days": 1, "cost": "free"},
     # LANE 3b. Free: it reads receipts and stamps and compares dates.
     "risk": {"every_days": 1, "cost": "free"},
+    # LANE 3d. NOT "social": that key already belongs to the SEO ops
+    # snapshot engine, and two cadences sharing one name is the bug this
+    # project keeps paying for. This one PUTS POSTS OUT.
+    "social_post": {"every_days": 1, "cost": "free"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }
@@ -726,6 +730,20 @@ def run_due_work(store, now=None) -> dict:
         except Exception as e:
             log.exception("cadence: the risk sentinel failed")
             return {"ran": "risk", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "social_post", now):
+        _stamp(store, state, "social_post", now)
+        try:
+            import content_engine_social_desk as _SD
+            r = _SD.run(store)
+            if r.get("posted"):
+                log.info("cadence: social posted %d", len(r["posted"]))
+            return {"ran": "social_post", "result": {
+                "posted": len(r.get("posted") or []),
+                "skipped": len(r.get("skipped") or [])}}
+        except Exception as e:
+            log.exception("cadence: the social distributor failed")
+            return {"ran": "social_post", "error": f"{type(e).__name__}: {e}"}
 
     if _due(state, "snapshot", now):
         _stamp(store, state, "snapshot", now)

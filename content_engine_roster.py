@@ -137,10 +137,12 @@ ROSTER: List[Dict[str, Any]] = [
      "why": "the state machine is complete and no adapter verifies: Google "
             "refuses the OAuth client (invalid_client)"},
     {"id": "sga.distributor", "name": "📣 Social Distributor",
-     "module": "sga", "badge": "notstaffed", "cap_key": "PER_DAY_BUDGET_USD",
+     "module": "sga", "badge": "architected", "cap_key": "PER_DAY_BUDGET_USD",
      "slots": [("LinkedIn", "social_linkedin")],
-     "why": "the content lane writes the posts; nothing posts them on a "
-            "schedule yet"},
+     "why": "the posting lane is complete and runs daily: approved pieces "
+            "only, verified channels only, never the same piece twice, four "
+            "a day at most. No channel verifies, so nothing goes out and it "
+            "says which credential each one wants"},
     {"id": "commerce.analyst", "name": "📦 Commerce Analyst",
      "module": "commerce", "badge": "inspector", "cap_key": "PER_DAY_BUDGET_USD",
      "slots": [("Shopify", "shopify"), ("WooCommerce", "woocommerce")],

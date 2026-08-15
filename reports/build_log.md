@@ -40,6 +40,63 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session I — Lane 3d: the Social Distributor. Every desk now has a worker.
+2026-08-15
+
+**FINISHED**
+- `content_engine_social_desk.py`, the last lane of Section 4. The
+  content lane writes social posts; this desk puts them out.
+- THREE SEPARATE CONDITIONS, checked and reported separately, because
+  "nothing posted today" has three different meanings:
+  1. the piece is APPROVED (the permanent publish gate)
+  2. the channel is VERIFIED, not merely configured
+  3. that piece has not already gone to that channel
+- IDEMPOTENCE is the whole safety story here. Posting twice is not a
+  retry, it is a second post to real people. The ref is written onto the
+  job the moment a post succeeds, and the gate proves a second run of
+  the same list posts nothing.
+- A ceiling of 4 per run, so one bad plan cannot flood a feed.
+- `verify_social.py`, 23 gates. The interesting half cannot be seen on
+  the box: a fake verified channel and fake poster prove the approval
+  gate, the verified-not-available rule, idempotence and the ceiling
+  NOW, rather than in front of an audience later.
+- Prover section 22. 305 deploy checks, 0 failed.
+
+**WHAT IT FOUND**
+- All five social wires are EMPTY. Not rejected, not stale: no
+  credential has ever been saved for LinkedIn, X, Facebook, Instagram or
+  TikTok, and every poster reports available() False. So written posts
+  have nowhere to go, and the desk reports the queue plus the exact
+  credential each channel wants.
+- The cadence key `social` was ALREADY TAKEN by the SEO ops snapshot
+  engine. Reusing it would have been two cadences under one name, which
+  is the bug class this project keeps paying for. This lane runs under
+  `social_post`, and the gate asserts the two stay distinct.
+
+**BADGES**
+- sga.distributor: notstaffed -> ARCHITECTED. The posting lane is
+  complete and runs daily; no channel verifies, so nothing goes out.
+  That is exactly what architected means, and it is what media.buyer
+  says for the same reason.
+- The roster is now 13 live, 3 inspector, 2 architected, and ZERO
+  unstaffed. Every desk in the wireframe has a worker, and the prover
+  asserts it.
+
+**COULDN'T**
+- Nothing can actually post until a social credential is saved AND a
+  real call is accepted.
+- Commerce stage 2 (pricing and promotions behind the spend gate) is not
+  built. Media is still blocked on the Google Ads OAuth client.
+- Same nine suites exit nonzero, all failing at baseline.
+
+**NEED FROM FOUNDER**
+- A social credential, LinkedIn first: it is the one closest to working
+  and the only channel where your ICP actually reads.
+- Rotate DASHBOARD_PASSWORD (it was pasted in a crontab line).
+- Copy a backup dump off the VPS.
+
+---
+
 ## Session H — Lane 3b: the Risk Sentinel, and the backup that never was
 2026-08-15
 

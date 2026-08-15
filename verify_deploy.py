@@ -1624,6 +1624,40 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     check("the Agent OS answered", False, repr(exc)[:110])
 
+# --- 22. LANE 3d: the Social Distributor ---------------------------------
+print("\n22. THE SOCIAL DISTRIBUTOR POSTS ONLY WHAT IT MAY")
+try:
+    import inspect as _ins22
+
+    import content_engine_roster as R22
+    import content_engine_scheduler as SCH22
+    import content_engine_social_desk as SD22
+
+    _c22 = SD22.check()
+    check("every channel maps to a real poster and a real wire", _c22["ok"],
+          str(_c22["problems"])[:110])
+    _src22 = _ins22.getsource(SD22.post_one)
+    check("an unapproved piece can never be posted",
+          "permanent gate" in _src22 and "approved" in _src22)
+    check("a channel that is merely configured can never be posted to",
+          "not verified" in _src22)
+    check("THE SAME PIECE CANNOT POST TWICE",
+          "second post" in _src22
+          and "published_refs" in _ins22.getsource(SD22._record))
+    check("there is a daily ceiling on how many go out",
+          isinstance(SD22.MAX_PER_RUN, int) and SD22.MAX_PER_RUN > 0,
+          str(SD22.MAX_PER_RUN) + " per run")
+    check("it has its OWN cadence key, not the SEO snapshot's",
+          "social_post" in SCH22.SEO_CADENCE and "social" in SCH22.SEO_CADENCE)
+    _b22 = R22.agent("sga.distributor")
+    check("its badge matches reality", _b22["badge"] in ("architected", "live"),
+          _b22["badge"])
+    check("EVERY DESK NOW HAS A WORKER: none is left unstaffed",
+          not [a for a in R22.roster() if a["badge"] == "notstaffed"],
+          str([a["id"] for a in R22.roster() if a["badge"] == "notstaffed"]))
+except Exception as exc:                                  # noqa: BLE001
+    check("the Social Distributor answered", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:
