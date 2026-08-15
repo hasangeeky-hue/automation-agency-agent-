@@ -119,6 +119,7 @@ if [ "${1:-}" = "--verify" ]; then
            "SELECT count(*) FROM jobs;" 2>/dev/null | tr -d '[:space:]')
 
     if [ "${ROWS:-0}" -gt 0 ]; then
+        RESTORE_PROVEN=1
         echo "    RESTORED — ${ROWS} settings rows, ${JOBS:-0} jobs came back."
         if [ "${ERRS:-0}" -gt 0 ]; then
             # Ownership/role GRANTs routinely fail on a restore into a scratch
@@ -145,6 +146,46 @@ ls -1t "${BACKUP_DIR}"/engine-*.sql.gz 2>/dev/null | tail -n "+$((KEEP + 1))" \
     | xargs -r rm -f
 COUNT=$(ls -1 "${BACKUP_DIR}"/engine-*.sql.gz 2>/dev/null | wc -l)
 echo "==> ${COUNT} backup(s) kept in ${BACKUP_DIR} (keeping newest ${KEEP})"
+
+# ---------------------------------------------------------------------
+# TELL THE ENGINE. A backup nobody recorded is a backup the dashboard
+# cannot prove, and an unprovable backup is the state this whole desk
+# exists to end. The api container has no docker CLI and no view of this
+# directory, so it cannot check for itself: it can only be told, by the
+# thing that did the work, with a timestamp.
+#
+# The receipt is authenticated with the dashboard password, exactly like
+# any other machine caller. An endpoint anyone could POST to would let a
+# stranger assert "backups are fine", which is worse than no endpoint.
+# ---------------------------------------------------------------------
+ENGINE_URL="${ENGINE_URL:-http://localhost:8000}"
+ENV_FILE="${ENV_FILE:-/opt/content-engine/deploy/.env}"
+API_KEY="${DASHBOARD_PASSWORD:-}"
+if [ -z "$API_KEY" ] && [ -r "$ENV_FILE" ]; then
+    API_KEY=$(grep -m1 '^DASHBOARD_PASSWORD=' "$ENV_FILE" | cut -d= -f2-               | tr -d '"'"'"'')
+fi
+
+receipt() {
+    kind="$1"; detail="$2"
+    if [ -z "$API_KEY" ]; then
+        echo "!! no DASHBOARD_PASSWORD found, so the engine was NOT told" >&2
+        echo "   about this ${kind}. It will keep reporting no proof." >&2
+        return 0
+    fi
+    if curl -fsS -m 15 -X POST "${ENGINE_URL}/risk/backup-receipt"          -H 'Content-Type: application/json'          -H "X-API-Key: ${API_KEY}"          -d "{\"kind\":\"${kind}\",\"detail\":\"${detail}\"}" >/dev/null
+    then
+        echo "==> engine recorded the ${kind}"
+    else
+        # A failed receipt must NOT fail the backup. The dump on disk is
+        # the thing that matters; the receipt only makes it provable.
+        echo "!! the ${kind} receipt did not reach ${ENGINE_URL}." >&2
+        echo "   The dump is safe on disk; the dashboard will still say" >&2
+        echo "   there is no proof until a receipt gets through." >&2
+    fi
+}
+
+receipt backup "$(basename "$OUT") $(du -h "$OUT" 2>/dev/null | cut -f1)"
+[ "${RESTORE_PROVEN:-0}" = "1" ] && receipt restore "restored ${ROWS} settings rows"
 
 cat <<'NOTE'
 

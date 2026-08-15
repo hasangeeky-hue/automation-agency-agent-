@@ -13,6 +13,7 @@ after it, and every one of those has happened in this project.
 """
 from __future__ import annotations
 
+import io
 import re
 import sys
 
@@ -146,8 +147,14 @@ t("the sentinel cannot claim to take a backup it cannot take",
 _p0 = RD.inspect(st)
 t("with no evidence it says NO BACKUP HAS EVER BEEN PROVEN",
   any(f["kind"] == "no_backup_proof" for f in _p0["findings"]))
-t("and it prints the host command that would fix it",
-  "backup-receipt" in _p0["host_cron"] and "backup.sh" in _p0["host_cron"])
+t("and it prints the host commands that would fix it",
+  all("backup.sh" in ln for ln in RD.HOST_CRON_LINES)
+  and any("--verify" in ln for ln in RD.HOST_CRON_LINES))
+t("THE SCRIPT ITSELF reports the receipt, so the cron cannot drift",
+  "risk/backup-receipt" in io.open(
+      "deploy/backup.sh", encoding="utf-8").read())
+t("and it posts that receipt authenticated, not open to anyone",
+  "X-API-Key" in io.open("deploy/backup.sh", encoding="utf-8").read())
 
 
 class _RS:

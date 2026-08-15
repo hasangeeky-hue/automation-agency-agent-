@@ -57,11 +57,16 @@ CRED_STAMP_KEY = "credential_set_at"
 
 LANE_LOG_KEY = "lane_log"
 
-#: the one command that actually works, for the screen and the report
-HOST_CRON = ("0 3 * * * BACKUP_DIR=/opt/content-engine-backups "
-             "bash /opt/content-engine/deploy/backup.sh && "
-             "curl -fsS -X POST localhost:8000/risk/backup-receipt "
-             "-H 'Content-Type: application/json' -d '{\"kind\":\"backup\"}'")
+#: The two host lines that actually work. backup.sh now posts its own
+#: receipt (authenticated with DASHBOARD_PASSWORD from deploy/.env), so
+#: the cron stays short and cannot drift out of step with the endpoint.
+#: Daily dump, weekly restore PROOF: a backup nobody has restored is a
+#: hope, and --verify actually loads it into a scratch database.
+HOST_CRON_LINES = (
+    "0 3 * * * bash /opt/content-engine/deploy/backup.sh",
+    "30 3 * * 0 bash /opt/content-engine/deploy/backup.sh --verify",
+)
+HOST_CRON = "\n".join(HOST_CRON_LINES)
 
 
 def _now() -> datetime:
@@ -275,9 +280,27 @@ def check() -> Dict[str, Any]:
         if callable(globals().get(forbidden)):
             problems.append("stage 1 cannot back anything up: %s() exists"
                             % forbidden)
-    if "docker" in HOST_CRON and "curl" not in HOST_CRON:
-        problems.append("the cron takes a backup but never reports it, so "
-                        "the engine still could not prove one happened")
+    # THE CRON AND THE SCRIPT MUST AGREE. The cron only names the script,
+    # so the reporting lives in backup.sh; if that ever loses its receipt
+    # call, the engine goes back to being unable to prove anything and
+    # nothing else would notice.
+    if "backup.sh" not in HOST_CRON:
+        problems.append("the cron does not run the backup script")
+    if "--verify" not in HOST_CRON:
+        problems.append("nothing ever proves the dump restores")
+    try:
+        import os
+        _here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(_here, "deploy", "backup.sh"),
+                  encoding="utf-8") as fh:
+            _sh = fh.read()
+        if "risk/backup-receipt" not in _sh:
+            problems.append("deploy/backup.sh no longer reports its receipt, "
+                            "so a backup could never be proven again")
+        if "X-API-Key" not in _sh:
+            problems.append("the receipt is posted unauthenticated")
+    except FileNotFoundError:
+        problems.append("deploy/backup.sh is missing from the repo")
     try:
         import content_engine_roster as R
         if R.agent(AGENT_ID).get("badge") == "live":

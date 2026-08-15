@@ -1550,8 +1550,19 @@ try:
     _pp21 = RD21.inspect(_st21)
     check("with no receipt it reports NO PROVEN BACKUP",
           any(f["kind"] == "no_backup_proof" for f in _pp21["findings"]))
-    check("and the host cron it prints reports back to the engine",
-          "backup-receipt" in _pp21["host_cron"])
+    check("and the host lines it prints run the script and prove a restore",
+          all("backup.sh" in ln for ln in RD21.HOST_CRON_LINES)
+          and any("--verify" in ln for ln in RD21.HOST_CRON_LINES))
+    try:
+        with open("deploy/backup.sh", encoding="utf-8") as _fh21:
+            _sh21 = _fh21.read()
+        check("THE SCRIPT reports its own receipt, authenticated",
+              "risk/backup-receipt" in _sh21 and "X-API-Key" in _sh21)
+    except FileNotFoundError:
+        # deploy/ is not copied into the image, so this check is a
+        # repo-side one. Say that rather than failing on the box.
+        check("the backup script is a HOST file, not in this image", True,
+              "checked in the repo, not in the container")
     import content_engine_fixes as FX21
     check("the backup button states it cannot run in-container",
           "cannot run from inside the container"
