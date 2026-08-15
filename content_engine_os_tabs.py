@@ -1,17 +1,12 @@
 # -*- coding: utf-8 -*-
-"""His in-screen tab strips: the nine desks that split into views.
+"""His in-screen tab strips, from the FINAL revised wireframe.
 
-From the DESK config in Agent OS Wireframes.dc.html. A desk like the
-Technical Engineer is ONE screen holding five views (Crawl, Speed, Index,
-Schema, Redirects). Rendering it as one flat board loses the structure he
-drew and buries four views out of five.
+A desk like the Technical Engineer is ONE screen holding several
+views. Flattening it into one board buries all but the first.
 
 Labels are his, with two edits: em-dashes normalised, and placeholder
-COUNTS stripped. He wrote a tab as "This page (68)"; the 68 is invented
-sample data, and a fake number on a tab is still a fake number. The tab
-CONTENT is not copied at all, for the same reason his activity cards
-were not: his rows say things like "Missing schema markup, 31 pages",
-and putting that on a live dashboard invents a finding.
+COUNTS stripped, because a fake number on a tab is still a fake
+number. The tab CONTENT is not copied at all, for the same reason.
 """
 
 TABS = {

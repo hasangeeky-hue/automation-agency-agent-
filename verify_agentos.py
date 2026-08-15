@@ -24,6 +24,7 @@ import content_engine_agentos_growth as OSG
 import content_engine_agentos_leads as OSL
 import content_engine_agentos_commerce as OSCM
 import content_engine_agentos_media as OSMD
+import content_engine_agentos_hub as OSHUB
 import content_engine_os_kit as K
 import content_engine_roster as R
 
@@ -74,7 +75,11 @@ t("the Agent OS did not fall back to its error card",
   "Agent OS screens failed" not in html)
 ALL = (OS.SCREENS_13 + OS.SCREENS_14 + OSG.SCREENS_9
        + OSG.SCREENS_8 + OSL.SCREENS_12
-       + OSCM.SCREENS_11 + OSCM.SCREENS_10 + OSMD.SCREENS_7)
+       + OSCM.SCREENS_11 + OSCM.SCREENS_10 + OSMD.SCREENS_7
+       # HIS FINAL REVISION added five. Counted here, or the gate reports
+       # 51 built out of 51 while his file asks for 56, which is a green
+       # check standing exactly where the missing work is.
+       + tuple(OSHUB.ALL_NEW))
 missing = [s for s in ALL if ("id='os-%s'" % s) not in html]
 t("all %d screens render" % len(ALL), not missing, str(missing))
 dupes = [s for s in ALL if html.count("id='os-%s'" % s) > 1]
@@ -87,9 +92,14 @@ t("turn 12 has its nine", len(OSL.SCREENS_12) == 9, str(len(OSL.SCREENS_12)))
 t("turn 11 has its nine", len(OSCM.SCREENS_11) == 9)
 t("turn 10 has its ONE screen, counted from the file, not assumed",
   len(OSCM.SCREENS_10) == 1)
-t("the wireframe's own 51 screens are all built",
-  len([s for s in ALL if not s.startswith("7")]) == 51,
-  str(len(ALL)))
+t("HIS FINAL REVISION IS 56 SCREENS AND ALL 56 ARE BUILT",
+  len([s for s in ALL if not s.startswith("7")]) == 56,
+  str(len([s for s in ALL if not s.startswith("7")])))
+_hc = OSHUB.check(OS.build_ctx(st))
+t("and the five new ones pass their own check", _hc["ok"], str(_hc["problems"]))
+t("each new screen says ARCHITECTED rather than claiming work",
+  all(("id='os-%s'" % s) in html for s in OSHUB.ALL_NEW)
+  and html.count("ox-b-architected") >= len(OSHUB.ALL_NEW))
 # MEDIA IS THE ONE DEPARTMENT THE WIREFRAME NAMES AND DOES NOT DRAW.
 # Its nine screens are derived from the founder's own material: his six
 # agent names verbatim, his "mirrors SEO's data-sources screen" and

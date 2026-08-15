@@ -33,7 +33,10 @@ _e, _l, _d = K._e, K._l, K._d
 
 #: his subnav for this module: the label, and the screen
 #: it opens. Anchors, exactly as his own markup uses.
-SUBNAV_CORE = [('Command Center', '13a'), ('Integrations', '13b'), ('Data Steward', '13c'), ('Developer', '13d'), ('Infra / SRE', '13e'), ('Orchestrator', '13f'), ('Analytics', '13g'), ('Sources & Control', '13h'), ('Tool Hub', '13i'), ('Health & Risk', '13j'), ('Connector Map', '13k')]
+#: HIS FINAL REVISION reordered and renamed this subnav and added
+#: new screens to it. Taken from the 56-screen file, not carried
+#: forward from the 51-screen one.
+SUBNAV_CORE = [('Command Center', '13a'), ('Integrations', '13b'), ('Data Steward', '13c'), ('ERP & Data Hub', '16a'), ('Mutation Ledger', '16b'), ('Developer', '13d'), ('Infra / SRE', '13e'), ('Orchestrator', '13f'), ('Analytics', '13g'), ('Sources & Control', '13h'), ('Tool Hub', '13i'), ('Health & Risk', '13j'), ('Connector Map', '13k')]
 
 #: his subnav for this module: the label, and the screen
 #: it opens. Anchors, exactly as his own markup uses.
@@ -684,6 +687,7 @@ def core_section(ctx: Dict[str, Any]) -> str:
     subnav links are anchors, so stacking is how his prototype
     navigates rather than a shortcut.
     """
+    import content_engine_agentos_hub as HUB
     ctx = _d(ctx)
     body = (_s13a(ctx) + _s13b(ctx)
             + _unstaffed_screen("13c", "Data Steward Desk",
@@ -691,7 +695,9 @@ def core_section(ctx: Dict[str, Any]) -> str:
             + _unstaffed_screen("13d", "Developer Desk",
                                 "Command to work to gated deploy.")
             + _s13e(ctx) + _s13f(ctx) + _s13g(ctx) + _s13h(ctx)
-            + _s13i(ctx) + _s13j(ctx) + _s13k(ctx))
+            + _s13i(ctx) + _s13j(ctx) + _s13k(ctx)
+            # HIS FINAL REVISION: 16a and 16b join this module.
+            + HUB.core_extra(ctx))
     return ("<div class='osx'>"
             + K.frame('6 · Web & Data Core', SUBNAV_CORE, body)
             + "</div>")

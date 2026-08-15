@@ -1582,14 +1582,20 @@ try:
 
     check("the Agent OS rendered (no fallback card)",
           "Agent OS screens failed" not in _h21)
+    import content_engine_agentos_hub as HUB21
     _all21 = (OS21.SCREENS_13 + OS21.SCREENS_14
               + OSG21.SCREENS_9 + OSG21.SCREENS_8 + OSL21.SCREENS_12
-              + OSCM21.SCREENS_11 + OSCM21.SCREENS_10)
+              + OSCM21.SCREENS_11 + OSCM21.SCREENS_10
+              # HIS FINAL REVISION added five: 15a, 15b, 15c, 16a, 16b.
+              # Counted here, or this reports 51 of 51 built while his file
+              # asks for 56, which is a green check standing exactly where
+              # the missing work is.
+              + tuple(HUB21.ALL_NEW))
     _miss21 = [s for s in _all21 if ("id='os-%s'" % s) not in _h21]
     check("all %d wireframe screens built so far are on the page" % len(_all21),
           not _miss21, "t13:11 t14:5 t9:8 t8:8 t12:9 t11:9 t10:1")
-    check("THE WIREFRAME IS 51 SCREENS AND ALL 51 ARE BUILT",
-          len(_all21) == 51, str(len(_all21)))
+    check("HIS FINAL REVISION IS 56 SCREENS AND ALL 56 ARE BUILT",
+          len(_all21) == 56, str(len(_all21)))
     check("and NO screen is rendered twice",
           not [s for s in _all21 if _h21.count("id='os-%s'" % s) > 1])
     # THE OLD CHROME IS GONE ENTIRELY. It used to draw a brand bar, a

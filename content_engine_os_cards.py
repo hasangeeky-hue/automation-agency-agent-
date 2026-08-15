@@ -1,20 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Which screens draw a chart card and an activity list, and what he
-titled them. From Agent OS Wireframes.dc.html.
+"""Chart cards and activity lists, from his FINAL revised wireframe.
 
-THE TITLES ARE HIS. THE NUMBERS ARE NEVER HIS.
-
-A chart title is a label, so copying it is fidelity. The dq cards in
-his file are placeholder DATA ("Shopware sync degraded", "token
-expired 41m ago", "pulled 320 new leads"). Copying those onto a live
-dashboard would not be fidelity, it would be a fabricated alert about
-a system that is fine. So his dq cards give the SHAPE, which screens
-carry an activity list, and the engine supplies every word of the
-content, or says plainly that it has none.
-
-A chart whose series nothing feeds renders as NOT MEASURED rather
-than as an empty box or a zero line. That is the point: the screens
-he designed now show him exactly which data his engine still lacks.
+THE TITLES ARE HIS. THE NUMBERS ARE NEVER HIS. A chart title is a
+label, so copying it is fidelity; his dq cards are placeholder DATA,
+so copying those would put a fabricated incident on a live dashboard.
+His cards give the SHAPE; the engine supplies every word of content,
+or says plainly that it has none.
 """
 
 CHARTS = {
@@ -75,8 +66,6 @@ CHARTS = {
     ),
 }
 
-#: screens where he drew an activity list. The COUNT of his cards is
-#: kept only as the shape he expected, never rendered as content.
 DQ_SHAPE = {
     '8a': 8,
     '8e': 1,
@@ -90,6 +79,9 @@ DQ_SHAPE = {
     '12f': 1,
     '13a': 8,
     '13c': 1,
+    '13e': 1,
+    '13f': 1,
+    '15c': 1,
 }
 
 

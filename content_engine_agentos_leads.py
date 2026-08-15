@@ -43,7 +43,10 @@ _e, _l, _d = K._e, K._l, K._d
 
 #: his subnav for this module: the label, and the screen
 #: it opens. Anchors, exactly as his own markup uses.
-SUBNAV_LEADS = [('Command Center', '12a'), ('Prospector', '12b'), ('Data Cleaner', '12c'), ('Qualifier', '12d'), ('Outreach Writer', '12e'), ('Sender / Tracker', '12f'), ('Sources & Control', '12g'), ('Campaigns', '12h'), ('Segmentation', '12i')]
+#: HIS FINAL REVISION reordered and renamed this subnav and added
+#: new screens to it. Taken from the 56-screen file, not carried
+#: forward from the 51-screen one.
+SUBNAV_LEADS = [('Command Center', '12a'), ('Prospector', '12b'), ('Data Cleaner', '12c'), ('Qualifier', '12d'), ('Outreach Writer', '12e'), ('Sender / Tracker', '12f'), ('Sources & Control', '12g'), ('Campaigns', '12h'), ('Segmentation', '12i'), ('Community Chat', '15a')]
 
 STAFF_12 = ("leads.prospector", "leads.qualifier", "leads.outreach_writer",
             "leads.sender")
@@ -373,10 +376,13 @@ def leads_section(ctx: Dict[str, Any]) -> str:
     subnav links are anchors, so stacking is how his prototype
     navigates rather than a shortcut.
     """
+    import content_engine_agentos_hub as HUB
     ctx = _d(ctx)
     body = (_s12a(ctx) + _s12b(ctx) + _s12c(ctx)
             + _s12d(ctx) + _s12e(ctx) + _s12f(ctx) + _s12g(ctx) + _s12h(ctx)
-            + _s12i(ctx))
+            + _s12i(ctx)
+            # HIS FINAL REVISION: 15a Community Chat joins this module.
+            + HUB.leads_extra(ctx))
     return ("<div class='osx'>"
             + K.frame('5 · Leads & Outreach', SUBNAV_LEADS, body)
             + "</div>")

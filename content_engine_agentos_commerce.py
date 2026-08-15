@@ -37,7 +37,10 @@ _e, _l, _d = K._e, K._l, K._d
 
 #: his subnav for this module: the label, and the screen
 #: it opens. Anchors, exactly as his own markup uses.
-SUBNAV_COMMERCE = [('Command Center', '11a'), ('Inventory', '11b'), ('Pricing', '11c'), ('Merchandiser', '11d'), ('Promotions', '11e'), ('Lifecycle', '11f'), ('Hand-off', '11g'), ('Data & Control', '11h'), ('Sales Channels', '11i'), ('Product Publisher', '10a')]
+#: HIS FINAL REVISION reordered and renamed this subnav and added
+#: new screens to it. Taken from the 56-screen file, not carried
+#: forward from the 51-screen one.
+SUBNAV_COMMERCE = [('Command Center', '11a'), ('Inventory', '11b'), ('Supply Chain', '15b'), ('Pricing', '11c'), ('Market Intel', '15c'), ('Merchandising', '11d'), ('Promotions', '11e'), ('Lifecycle', '11f'), ('Hand-off to Marketing', '11g'), ('Sales Channels', '11i'), ('Control Room', '11h'), ('Product Publisher', '10a')]
 
 AGENT = "commerce.analyst"
 
@@ -426,10 +429,13 @@ def commerce_section(ctx: Dict[str, Any]) -> str:
     subnav links are anchors, so stacking is how his prototype
     navigates rather than a shortcut.
     """
+    import content_engine_agentos_hub as HUB
     ctx = _d(ctx)
     body = (_s11a(ctx) + _s11b(ctx) + _s11c(ctx)
             + _s11d(ctx) + _s11e(ctx) + _s11f(ctx) + _s11g(ctx) + _s11h(ctx)
-            + _s11i(ctx) + _s10a(ctx))
+            + _s11i(ctx) + _s10a(ctx)
+            # HIS FINAL REVISION: 15b and 15c join this module.
+            + HUB.commerce_extra(ctx))
     return ("<div class='osx'>"
             + K.frame('4 · Commerce', SUBNAV_COMMERCE, body)
             + "</div>")
