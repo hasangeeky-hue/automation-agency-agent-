@@ -264,6 +264,12 @@ SEO_CADENCE = {
     # commerce desk and the pricing review should both reason about
     # today's orders rather than yesterday's.
     "orders": {"every_days": 1, "cost": "free"},
+    # STAGE 2, the revenue path for a business that sells projects rather
+    # than products. Free: one Cal.com read. It collects PIPELINE only;
+    # nothing here becomes revenue without a named human putting a
+    # number on it, because the engine cannot know what a project sold
+    # for and a guessed figure on the revenue screen is worse than none.
+    "bookings": {"every_days": 1, "cost": "free"},
     # LANE 3c stage 1. Free: it reads a catalogue the CMS layer already
     # fetches and does arithmetic on it. No model call, no paid endpoint.
     "commerce": {"every_days": 1, "cost": "free"},
@@ -732,6 +738,23 @@ def run_due_work(store, now=None) -> dict:
         except Exception as e:                            # noqa: BLE001
             log.exception("cadence: the orders collector failed")
             return {"ran": "orders", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "bookings", now):
+        _stamp(store, state, "bookings", now)
+        try:
+            import content_engine_bookings as _BK
+            r = _BK.run(store)
+            return {"ran": "bookings", "result": {
+                "ok": bool(r.get("ok")), "why": r.get("why", ""),
+                "total": r.get("total", 0),
+                "accepted": r.get("accepted", 0),
+                # The number worth surfacing: calls that happened and
+                # were never marked won or lost. Nothing else in the
+                # engine was counting them.
+                "awaiting_your_call": r.get("accepted", 0)}}
+        except Exception as e:                            # noqa: BLE001
+            log.exception("cadence: the bookings collector failed")
+            return {"ran": "bookings", "error": f"{type(e).__name__}: {e}"}
 
     if _due(state, "commerce", now):
         _stamp(store, state, "commerce", now)

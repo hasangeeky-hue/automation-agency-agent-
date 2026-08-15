@@ -143,11 +143,34 @@ def fetch_orders(store, platform: str = "", limit: int = 250,
     tell "no orders" from "no answer" without reading prose.
     """
     st = CM.status(store)
+    shops = ("shopify", "woocommerce")
     plat = platform or next((p for p, v in st.items()
-                             if v["connected"] and p in ("shopify", "woocommerce")), "")
+                             if v["connected"] and p in shops), "")
     if not plat:
+        # NAME WHAT IS MISSING. "no shop platform holds all of its keys"
+        # is true and useless: this engine can have a CMS connected and
+        # still have no shop, which is exactly the case when the site is
+        # WordPress. Saying which platform needs which key is the
+        # difference between a dead end and a next step.
+        bits = []
+        for p in shops:
+            v = st.get(p) or {}
+            if v.get("connected"):
+                bits.append("%s is connected" % v.get("label", p))
+            elif v.get("have"):
+                bits.append("%s still needs %s"
+                            % (v.get("label", p), ", ".join(v.get("missing") or [])))
+        other = [ (st.get(p) or {}).get("label", p) for p in st
+                  if p not in shops and (st.get(p) or {}).get("connected") ]
+        why = ("no shop is connected, so there are no orders to read. "
+               + ("; ".join(bits) + ". " if bits else ""))
+        if other:
+            # The likely case, and the confusing one: a CMS that sells
+            # nothing is still a connected CMS.
+            why += ("%s is connected, but it is a site rather than a shop "
+                    "and has no orders to give." % ", ".join(other))
         return {"ok": False, "platform": "", "orders": [], "count": None,
-                "why": "no shop platform holds all of its keys yet"}
+                "why": why.strip()}
     if not st.get(plat, {}).get("connected"):
         return {"ok": False, "platform": plat, "orders": [], "count": None,
                 "why": (CM.PLATFORMS[plat]["label"] + " is missing "
@@ -394,10 +417,17 @@ def run(store) -> Dict[str, Any]:
     deals = to_deals(split["orders"])
 
     # The deals projection is written where BI already looks, so the
-    # revenue and customer screens need no change to come alive. It is
-    # replaced rather than appended: these deals ARE the orders, and
-    # appending would double every figure on the next collect.
-    _set(store, BI.DEALS_KEY, deals[:BI.MAX_DEALS])
+    # revenue and customer screens need no change to come alive.
+    #
+    # THIS FEED HAS TWO OWNERS. The bookings collector writes "book-"
+    # rows here as well. Appending would double every order on the next
+    # collect; replacing the whole key would delete every won booking.
+    # So each owner replaces exactly its own rows, identified by the id
+    # prefix it stamps, and leaves the other owner's alone. Whichever
+    # collector runs last, revenue is the same number.
+    keep = [d for d in _l(_get(store, BI.DEALS_KEY, []))
+            if not _s(_d(d).get("id")).startswith("ord-")]
+    _set(store, BI.DEALS_KEY, (keep + deals)[:BI.MAX_DEALS])
     _set(store, COLLECT_KEY,
          datetime.now(timezone.utc).isoformat(timespec="seconds"))
 

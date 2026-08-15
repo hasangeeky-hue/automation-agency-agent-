@@ -324,13 +324,38 @@ try:
         # differentiator in a run that reported 0 failed. A key that is SET
         # is a promise the engine was asked; an engine that was asked and
         # recorded nothing across every prompt is broken, and says so here.
+        #
+        # THIS JUDGES A STORED SNAPSHOT, NOT TODAY. A snapshot taken while
+        # the wallet was empty keeps failing this check long after the
+        # wallet is full, so the failure has to say which of the two it
+        # is. A stale red is as misleading as a stale green: the founder
+        # topped up, the engines answer, and the board still says broken.
+        _age = ""
+        try:
+            from datetime import datetime, timezone
+            _when = datetime.fromisoformat(str(_aeo.get("at")))
+            _days = (datetime.now(timezone.utc) - _when).days
+            _age = ("this result is %d day(s) old" % _days) if _days >= 1 else ""
+        except Exception:                                 # noqa: BLE001
+            pass
+        if _age:
+            print("")
+            print("       NOTE: " + _age + ". The engines may already be "
+                  "fine; this")
+            print("       check reads the last STORED probe, not a live "
+                  "call. Re-run:")
+            print("         docker compose -f deploy/docker-compose.yml "
+                  "exec -T api \\")
+            print("           python live_test.py --probe")
         for _n, _f2, _k2 in AEO._ENGINES:
             if not AEO._key_present(_k2):
                 continue                      # absent key is a choice, not a bug
             _first = ((_res[0] or {}).get(_n) or {})
             check("AI-visibility: %s was asked and actually answered" % _n,
                   _by.get(_n, 0) > 0,
-                  str(_first.get("reason") or "")[:160])
+                  (str(_first.get("reason") or "")[:160]
+                   + ((" || " + _age + ", so this may already be fixed and "
+                       "simply not re-probed") if _age else "")))
     else:
         print("       nothing probed yet. Use 'Probe AI answers' on the "
               "SEO section, or run the AEO engine.")
@@ -1939,6 +1964,48 @@ try:
     if _ctx29["unmapped_sources"]:
         print("       UNMAPPED CHANNELS (counted as 'other'): "
               + ", ".join(_ctx29["unmapped_sources"]))
+
+    # --- bookings: the revenue path for a business that sells projects ---
+    import content_engine_bookings as BK29
+    _cb29 = BK29.check()
+    check("the bookings collector passes its own check", _cb29["ok"],
+          ", ".join(c["name"] for c in _cb29["checks"] if not c["pass"]))
+    check("A BOOKING IS NOT REVENUE until a named human values it",
+          not BK29.win(None, "x", 500, approved_by="")["ok"])
+    check("bookings is on the cadence and free",
+          "bookings" in SCH29.SEO_CADENCE
+          and SCH29.SEO_CADENCE["bookings"]["cost"] == "free")
+
+    # THE SEAM. Two collectors write one feed; whoever runs last must not
+    # erase the other. Checked on the real modules, not a description of
+    # them, because a one-sided version of this passed while the bug was
+    # still live in the other direction.
+    _seam = BK29._FakeStore({BI29.DEALS_KEY: [
+        {"id": "ord-1", "client": "Shop", "value": 10.0,
+         "at": "2026-08-01", "source": "direct"}],
+        BK29.BOOKINGS_KEY: [{"id": "b9", "client": "B", "at": "2026-08-02"}],
+        BK29.WON_KEY: {}})
+    BK29.win(_seam, "b9", 900, approved_by="Founder", source="referral")
+    _sids = [d["id"] for d in _seam.get_setting(BI29.DEALS_KEY, [])]
+    check("ONE DEALS FEED, TWO OWNERS, NEITHER ERASES THE OTHER",
+          "ord-1" in _sids and "book-b9" in _sids, _sids)
+
+    _bctx29 = BK29.context(A.get_store())
+    print("")
+    print("       last booking collect: "
+          + (_bctx29["last_collect"] or "NEVER RUN"))
+    print("       bookings: %d total | %d accepted | %d converted | "
+          "%d cancelled"
+          % (_bctx29["total"], _bctx29["accepted"], _bctx29["converted"],
+             _bctx29["cancelled"]))
+    _cr29 = _bctx29["conversion_rate"]
+    print("       conversion rate: "
+          + ("%s%%" % _cr29 if _cr29 is not None
+             else "NOT MEASURED (no booking has been decided yet)"))
+    if _bctx29["accepted"]:
+        print("       %d accepted booking(s) are waiting on YOUR call: the"
+              % _bctx29["accepted"])
+        print("       engine cannot know what a project sold for.")
 except Exception as exc:                                  # noqa: BLE001
     check("the orders collector answered", False, repr(exc)[:110])
 

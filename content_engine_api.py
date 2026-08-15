@@ -2890,6 +2890,33 @@ def build_app():
         n = AEO.set_prompts(get_store(), raw)
         return {"ok": True, "saved": n}
 
+    @app.get("/bookings")
+    def bookings_read():
+        """Pipeline from Cal.com. Free: stored rows, no call."""
+        import content_engine_bookings as BK
+        return {"ok": True, **BK.context(get_store())}
+
+    @app.post("/bookings/collect")
+    def bookings_collect():
+        import content_engine_bookings as BK
+        return BK.run(get_store())
+
+    @app.post("/bookings/{booking_id}/won")
+    async def bookings_won(booking_id: str, request: Request):
+        """Record what a booked project was actually worth.
+
+        The ONLY path from a booking to revenue, and it is deliberately
+        a human one: Cal.com knows a call happened, not what was agreed.
+        Needs a value, a source BI knows, and a named approver."""
+        import content_engine_bookings as BK
+        try:
+            data = await request.json()
+        except Exception:                                 # noqa: BLE001
+            data = {}
+        return BK.win(get_store(), booking_id, data.get("value"),
+                      approved_by=str(data.get("approved_by") or ""),
+                      source=str(data.get("source") or "direct"))
+
     @app.get("/orders")
     def orders_read():
         """What the order screens read. Free: no shop call, stored rows only."""
