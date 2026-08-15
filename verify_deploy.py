@@ -1888,6 +1888,60 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     check("the shell answered", False, repr(exc)[:110])
 
+# --- 29. THE ORDERS COLLECTOR, stage 2 of the data contract --------------
+print("")
+print("29. IS THERE ORDER DATA IN THIS ENGINE AT ALL?")
+try:
+    import content_engine_bi as BI29
+    import content_engine_orders as OR29
+    import content_engine_scheduler as SCH29
+
+    _c29 = OR29.check()
+    check("the orders collector passes its own check", _c29["ok"],
+          ", ".join(c["name"] for c in _c29["checks"] if not c["pass"]))
+    check("every channel word it emits is one BI knows",
+          set(OR29.SOURCE_MAP.values()) <= set(BI29.SOURCES))
+    check("it is on the cadence, free, and ahead of commerce",
+          "orders" in SCH29.SEO_CADENCE
+          and SCH29.SEO_CADENCE["orders"]["cost"] == "free"
+          and list(SCH29.SEO_CADENCE).index("orders")
+          < list(SCH29.SEO_CADENCE).index("commerce"))
+    check("IT IS A READ: the collector calls no write verb on a shop",
+          _c29["checks"][-1]["pass"])
+
+    _ctx29 = OR29.context(A.get_store())
+    print("       last order collect: "
+          + (_ctx29["last_collect"] or "NEVER RUN"))
+    print("       orders stored: %d | counted as revenue: %d"
+          % (len(_ctx29["orders"]), _ctx29["counted"]))
+    if _ctx29["orders"]:
+        print("       excluded: %d test, %d cancelled, %d unpaid, "
+              "%d with no total"
+              % (_ctx29["excluded_test"], _ctx29["excluded_cancelled"],
+                 _ctx29["excluded_unpaid"], _ctx29["excluded_no_total"]))
+        for _t29 in _ctx29["top_sellers"][:3]:
+            print("       top seller: %-22s %s units, revenue %s"
+                  % (str(_t29.get("title"))[:22], _t29.get("units"),
+                     _t29.get("revenue")
+                     if _t29.get("revenue") is not None else "NOT MEASURED"))
+        print("       by channel: "
+              + (", ".join("%s=%s" % (k, v)
+                           for k, v in _ctx29["by_channel"]) or "none"))
+    else:
+        # Stated plainly rather than as a failure. No orders collected yet
+        # is a true fact about a new collector, and the founder needs to
+        # know which of the two it is: never run, or run and found none.
+        print("       nothing collected yet. Until this runs, revenue,"
+              " top sellers,")
+        print("       lifecycle and ROAS have no input and every one of"
+              " those screens")
+        print("       is honestly empty rather than wrong.")
+    if _ctx29["unmapped_sources"]:
+        print("       UNMAPPED CHANNELS (counted as 'other'): "
+              + ", ".join(_ctx29["unmapped_sources"]))
+except Exception as exc:                                  # noqa: BLE001
+    check("the orders collector answered", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

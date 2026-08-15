@@ -2890,6 +2890,22 @@ def build_app():
         n = AEO.set_prompts(get_store(), raw)
         return {"ok": True, "saved": n}
 
+    @app.get("/orders")
+    def orders_read():
+        """What the order screens read. Free: no shop call, stored rows only."""
+        import content_engine_orders as OR
+        return {"ok": True, **OR.context(get_store())}
+
+    @app.post("/orders/collect")
+    def orders_collect():
+        """Read the shop's orders and project them into deals.
+
+        A READ of the shop plus a write to our OWN store. It cannot
+        change anything a customer sees, which is why it needs no
+        approval gate: nothing leaves this engine."""
+        import content_engine_orders as OR
+        return OR.run(get_store())
+
     @app.get("/aeo/selftest")
     def aeo_selftest():
         """What each AI engine says when asked a question that cannot be

@@ -259,6 +259,11 @@ SEO_CADENCE = {
     # cannot call a provider, so it cannot cost anything and cannot mark
     # anything verified.
     "integrations": {"every_days": 1, "cost": "free"},
+    # STAGE 2 OF THE DATA CONTRACT. Free: one read of the shop's order
+    # list, no model call. Runs BEFORE commerce below, because the
+    # commerce desk and the pricing review should both reason about
+    # today's orders rather than yesterday's.
+    "orders": {"every_days": 1, "cost": "free"},
     # LANE 3c stage 1. Free: it reads a catalogue the CMS layer already
     # fetches and does arithmetic on it. No model call, no paid endpoint.
     "commerce": {"every_days": 1, "cost": "free"},
@@ -709,6 +714,24 @@ def run_due_work(store, now=None) -> dict:
         except Exception as e:
             log.exception("cadence: the integrations engineer failed")
             return {"ran": "integrations", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "orders", now):
+        _stamp(store, state, "orders", now)
+        try:
+            import content_engine_orders as _OR
+            r = _OR.run(store)
+            return {"ran": "orders", "result": {
+                "ok": bool(r.get("ok")), "why": r.get("why", ""),
+                "counted": r.get("counted", 0),
+                "deals_written": r.get("deals_written", 0),
+                # Surfaced on the cadence result, not buried in the row,
+                # because an unmapped channel silently becomes "other"
+                # and that is exactly the kind of quiet wrongness that
+                # survives for months.
+                "unmapped_sources": r.get("unmapped_sources") or []}}
+        except Exception as e:                            # noqa: BLE001
+            log.exception("cadence: the orders collector failed")
+            return {"ran": "orders", "error": f"{type(e).__name__}: {e}"}
 
     if _due(state, "commerce", now):
         _stamp(store, state, "commerce", now)

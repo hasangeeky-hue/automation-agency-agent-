@@ -34,9 +34,16 @@ PLATFORMS: Dict[str, Dict[str, Any]] = {
     "shopify": {
         "label": "Shopify",
         "keys": ("SHOPIFY_SHOP_DOMAIN", "SHOPIFY_ADMIN_TOKEN"),
-        "reads": "products, collections, and what each one costs",
+        "reads": ("products, collections, what each one costs, "
+                  "and the orders that have already happened"),
+        # BOTH SCOPES ARE NAMED. read_orders is separate from
+        # read_products, so a token created from the old instruction
+        # reads the catalogue perfectly and then refuses every order
+        # call. That failure looks like a broken key rather than a
+        # missing permission, and the screen would have caused it.
         "where": ("Shopify admin, Settings, Apps and sales channels, "
-                  "Develop apps, then a custom app with read_products"),
+                  "Develop apps, then a custom app with read_products "
+                  "AND read_orders"),
     },
     "woocommerce": {
         "label": "WooCommerce",
