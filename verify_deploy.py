@@ -1542,9 +1542,42 @@ try:
 
     _st21 = _S21()
     _ctx21 = OS21.build_ctx(_st21)
-    _h21 = D21.dashboard_html(jobs=[], st={}, health={}, month_spent=0.0,
-                              month_cap=200.0, day_spent=0.0, day_cap=10.0,
-                              taste_skills=[], os_ctx=_ctx21)
+    # ASSERT AGAINST THE PAGE THE ROUTE ACTUALLY SERVES.
+    #
+    # This built its own HTML from hand-written arguments (jobs=[], st={},
+    # health={}...) while GET / serves dashboard_html(**_dashboard_kwargs()),
+    # which reads the live store. So every check here was passing against a
+    # page the founder is never sent, and any failure that only appears with
+    # real data was invisible: 388 green checks and a broken screen are not
+    # a contradiction when they are two different documents.
+    #
+    # The synthetic render is kept only as a fallback, so a store that
+    # cannot be read reports THAT rather than skipping the section.
+    try:
+        _h21 = A.api_dashboard_html()
+        _src21 = "the live route, GET /"
+    except Exception as _e21:                             # noqa: BLE001
+        _h21 = D21.dashboard_html(jobs=[], st={}, health={}, month_spent=0.0,
+                                  month_cap=200.0, day_spent=0.0, day_cap=10.0,
+                                  taste_skills=[], os_ctx=_ctx21)
+        _src21 = ("A SYNTHETIC RENDER: the live route raised %s, so what "
+                  "the founder is actually served has NOT been checked"
+                  % repr(_e21)[:90])
+    print("       page under test: " + _src21)
+    check("the page under test is the one the route serves",
+          _src21.startswith("the live route"), _src21)
+    # WHAT THE SERVER IS ACTUALLY SENDING, printed so it can be compared
+    # with what the browser shows. If these disagree, the difference is
+    # between the container and the screen (cache, proxy, a stale tab),
+    # and no amount of checking in here will find it.
+    print("       served page: %d bytes | nav groups: %s"
+          % (len(_h21),
+             ", ".join(_re21.findall(r"class='navgrp'>([^<]+)<", _h21))
+             or "NONE"))
+    print("       nav links  : %s"
+          % ", ".join(_re21.findall(r"id='nav-([a-z0-9]+)'", _h21)))
+    print("       pages      : %s"
+          % ", ".join(_re21.findall(r"id='sec-([a-z]+)'", _h21)))
     _sty21 = "".join(_re21.findall(r"<style>(.*?)</style>", _h21, _re21.S))
 
     check("the Agent OS rendered (no fallback card)",
