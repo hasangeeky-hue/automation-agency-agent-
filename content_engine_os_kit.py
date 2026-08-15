@@ -304,6 +304,23 @@ MODULES = (
     ("Cockpit", "14a"),
 )
 
+#: EACH MODULE IS A PAGE, NOT AN ANCHOR ON THIS ONE.
+#
+# The sidebar linked every module as href='#os-7a', which is what his
+# prototype does, because in his prototype all 51 screens live on one
+# scrolling document. Here each department is its own dashboard page and
+# the other six are display:none, so those links jumped to an anchor
+# inside a hidden page and did nothing at all. The founder reported it
+# exactly: "except cockpit nothing are opening". Cockpit worked only
+# because it is the page that is already open.
+#
+# Copying a prototype's navigation into a different document model is
+# how a link that is correct in the source becomes dead in the product.
+MODULE_PAGE = {
+    "7a": "osmedia", "8a": "osseo", "9a": "osmkt", "11a": "oscom",
+    "12a": "osleads", "13a": "oscore", "14a": "oscockpit",
+}
+
 
 def frame(module_label: str, subnav: Sequence, body: str, *,
           cost: str = "", alerts: str = "") -> str:
@@ -315,8 +332,14 @@ def frame(module_label: str, subnav: Sequence, body: str, *,
     mods = []
     for label, first in MODULES:
         on = " on" if _e(label) == _e(module_label) else ""
-        mods.append("<a class='ox-mod%s' href='#os-%s'>%s</a>"
-                    % (on, _e(first), _e(label)))
+        # Switch PAGE, then fall back to the anchor if nav() is not there
+        # (the kit is also rendered in gates and previews outside the
+        # dashboard, where nav does not exist).
+        page = MODULE_PAGE.get(first, "")
+        jump = ("onclick=\"if(typeof nav==='function')return nav('%s');\" "
+                % _e(page)) if page else ""
+        mods.append("<a class='ox-mod%s' %shref='#%s'>%s</a>"
+                    % (on, jump, _e(page or ("os-" + first)), _e(label)))
         if on:
             subs = "".join(
                 "<a class='ox-snav%s' href='#os-%s'>%s</a>"

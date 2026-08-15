@@ -1580,6 +1580,17 @@ try:
                    _h21.find("id='sec-osleads'")]) > 200000)
     check("a nav target that does not resolve cannot blank the page",
           "if(!s)return false;" in _h21)
+    # EVERY SIDEBAR MODULE MUST REACH A PAGE. They were anchors copied
+    # from his prototype, where all 51 screens share one document. Here
+    # each department is a page and the rest are display:none, so the
+    # links jumped into hidden pages and nothing opened.
+    import content_engine_os_kit as K21
+    _tg21 = set(re.findall(r"return nav\('(os[a-z]+)'\)", _h21))
+    _pg21 = set(re.findall(r"id='sec-([a-z]+)'", _h21))
+    check("EVERY SIDEBAR MODULE SWITCHES PAGE (%d)" % len(K21.MODULE_PAGE),
+          len(_tg21) == len(K21.MODULE_PAGE), str(sorted(_tg21)))
+    check("and every target is a page that exists on this document",
+          _tg21 <= _pg21, str(sorted(_tg21 - _pg21)))
     check("media no longer claims it has no replacement",
           "no Agent OS view of this department" not in _h21)
     check("every Agent OS page is reachable from the nav",

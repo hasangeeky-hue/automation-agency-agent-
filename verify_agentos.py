@@ -294,6 +294,20 @@ t("the subnav link class does NOT collide with the paragraph class",
   "class='ox-sub " not in OS.core_section(_c5))
 t("every module in the sidebar is one of his seven",
   len(K.MODULES) == 7, str(len(K.MODULES)))
+# EVERY MODULE IN THE SIDEBAR MUST REACH A PAGE THAT EXISTS.
+# They were anchors (#os-7a) copied from his prototype, where all 51
+# screens share one scrolling document. Here each department is its own
+# page and the other six are display:none, so those links jumped into a
+# hidden page and did nothing: "except cockpit nothing are opening".
+_pages = set(re.findall(r"id='sec-([a-z]+)'", html))
+_targets = set(re.findall(r"return nav\('(os[a-z]+)'\)", html))
+t("EVERY SIDEBAR MODULE SWITCHES PAGE, not to an anchor on a hidden one",
+  len(_targets) == len(K.MODULE_PAGE), str(sorted(_targets)))
+t("and every one of those targets is a page that exists",
+  _targets <= _pages, str(sorted(_targets - _pages)))
+t("the module map covers every module in the sidebar",
+  set(K.MODULE_PAGE) == {sid for _lab, sid in K.MODULES},
+  str(set(K.MODULE_PAGE) ^ {sid for _lab, sid in K.MODULES}))
 t("and the sidebar links are anchors, as his own markup uses",
   "href='#os-13a'" in OS.core_section(_c5))
 # HIS RIGHT-HAND RAIL, ON THE SCREENS HE DREW IT ON.
