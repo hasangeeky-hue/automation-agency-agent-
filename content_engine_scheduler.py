@@ -712,9 +712,17 @@ def run_due_work(store, now=None) -> dict:
         try:
             import content_engine_commerce_desk as _CD
             r = _CD.run(store)
+            # STAGE 2 rides the same daily read: propose prices, gated.
+            px = {}
+            try:
+                import content_engine_pricing as _PX
+                px = _PX.run(store)["result"]
+            except Exception:
+                log.exception("cadence: the pricing review failed")
             return {"ran": "commerce", "result": {
                 "ok": bool(r["result"]["ok"]),
-                "findings": len(r["result"].get("findings") or [])}}
+                "findings": len(r["result"].get("findings") or []),
+                "price_proposals": len(px.get("proposals") or [])}}
         except Exception as e:
             log.exception("cadence: the commerce analyst failed")
             return {"ran": "commerce", "error": f"{type(e).__name__}: {e}"}

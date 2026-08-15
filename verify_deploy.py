@@ -1658,6 +1658,47 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     check("the Social Distributor answered", False, repr(exc)[:110])
 
+# --- 23. LANE 3c STAGE 2: the only code that changes a customer's price --
+print("")
+print("23. A PRICE CHANGE NEEDS A NAMED HUMAN, AND HAPPENS ONCE")
+try:
+    import inspect as _ins23
+
+    import content_engine_commerce as CM23
+    import content_engine_pricing as PX23
+    import content_engine_roster as R23
+
+    _c23 = PX23.check()
+    check("the pricing lane passes its own check", _c23["ok"],
+          str(_c23["problems"])[:110])
+    _a23 = _ins23.getsource(PX23.apply_one)
+    check("NO PRICE CHANGES WITHOUT A NAMED APPROVER",
+          "approved_by" in _a23 and "spend gate is permanent" in _a23)
+    check("an already-applied proposal cannot be applied again",
+          "already %s" in _a23)
+    check("and no single step may move a price further than the bound",
+          "MAX_MOVE_PCT" in _a23 and PX23.MAX_MOVE_PCT > 0,
+          str(PX23.MAX_MOVE_PCT) + "%")
+    check("every proposal is pink, so none can batch-approve",
+          '"pink": True' in _ins23.getsource(PX23.propose))
+    check("A MISSING COST IS NEVER READ AS ZERO",
+          not PX23.margin_of(100, None)["known"]
+          and "not guessed" in PX23.margin_of(100, None)["why"])
+    check("the shop write refuses a nonsense price",
+          not CM23.set_price(None, "1", -5)["ok"]
+          and not CM23.set_price(None, "", 10)["ok"])
+    check("set_price is called from ONE place only, behind the gate",
+          len([1 for _n, _f in vars(PX23).items()
+               if callable(_f) and "set_price" in
+               (_ins23.getsource(_f) if _ins23.isfunction(_f) else "")]) == 1)
+    _b23 = R23.agent("commerce.analyst")
+    check("the badge is live, which stage 2 earns", _b23["badge"] == "live",
+          _b23["badge"])
+    check("and it says the approval is recorded with a name",
+          "said yes" in _b23["why"])
+except Exception as exc:                                  # noqa: BLE001
+    check("the pricing lane answered", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

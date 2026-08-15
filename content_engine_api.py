@@ -3016,6 +3016,48 @@ def build_app():
                            for st in ("verified", "present", "rejected",
                                       "empty")}}
 
+    @app.get("/commerce/prices")
+    def commerce_prices():
+        """Open price proposals, each with its margin preview."""
+        import content_engine_pricing as _PX
+        st = get_store()
+        return {"ok": True, "target_margin_pct": _PX.target_margin(st),
+                "pending": _PX.proposals(st, "pending"),
+                "applied": _PX.proposals(st, "applied")}
+
+    @app.post("/commerce/price/{pid}/approve")
+    async def commerce_price_approve(pid: str, request: Request):
+        """Apply an approved price change to the shop.
+
+        The approver is NAMED and recorded. A price change with no name
+        on it is not an approval, it is an anonymous write to a live
+        shop, so this refuses without one."""
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        import content_engine_pricing as _PX
+        who = str((d or {}).get("approved_by") or "").strip()
+        if not who:
+            try:
+                import content_engine_os_tenancy as _TEN
+                u = _TEN.user_from_cookie(
+                    get_store(), request.cookies.get("aa_user"))
+                who = str((u or {}).get("email") or "")
+            except Exception:
+                who = ""
+        who = who or "dashboard owner"
+        return _PX.apply_one(get_store(), pid, approved_by=who)
+
+    @app.post("/commerce/price/{pid}/decline")
+    async def commerce_price_decline(pid: str, request: Request):
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        import content_engine_pricing as _PX
+        return _PX.decline_one(get_store(), pid, (d or {}).get("note", ""))
+
     @app.post("/risk/backup-receipt")
     async def risk_backup_receipt(request: Request):
         """The host cron reports a real backup or restore test.

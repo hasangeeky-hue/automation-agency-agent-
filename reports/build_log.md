@@ -40,6 +40,66 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session J — Lane 3c STAGE 2: pricing and promotions, the full loop
+2026-08-15
+
+**BUILT EXACTLY AS SPECIFIED (4.3 stage 2)**
+- `content_engine_pricing.py`: proposes price changes with a
+  margin-impact preview, every proposal PINK, and an approved proposal
+  is WRITTEN TO THE SHOP and recorded. propose -> preview -> named human
+  approval -> write -> ledger. Not half a loop.
+- `content_engine_commerce.set_price()`: the only function in the engine
+  that changes what a customer pays. Shopify and WooCommerce. It takes
+  no decisions; the caller must already hold the approval.
+- `content_engine_commerce.fetch_costs()`: Shopify keeps cost on the
+  inventory item, so it is a second, BATCHED call. WooCommerce has no
+  native cost field and says so.
+- `GET /commerce/prices`, `POST /commerce/price/{id}/approve`,
+  `POST /commerce/price/{id}/decline`. The approver is NAMED and stored.
+- commerce.analyst: inspector -> LIVE, which is what stage 2 earns.
+- `verify_pricing.py`, 29 gates. Prover section 23. 315 checks, 0 failed.
+
+**THE FOUR REFUSALS, EACH WITH ITS OWN TEST**
+1. no named approver: refused, naming the permanent spend gate
+2. already applied: refused, and the shop is called exactly once
+3. a move larger than 25% in one step: refused (a decimal-point guard,
+   not a budget)
+4. a proposal with no new price: refused, because it is a finding for a
+   human to act on rather than a change to apply
+- And when the shop itself refuses, the proposal STAYS PENDING with the
+  shop's own words. A failed write is never a silent success.
+
+**THE MARGIN RULE**
+- A missing cost is reported as unknown and never read as zero. Cost 0
+  computes to a 100% margin, which would be the most confident wrong
+  number on the dashboard. Where cost is unknown the proposal shows
+  revenue impact only and says why.
+
+**Corrections found while building (10.2)**
+- The stage-1 desk's own check forbade a live badge outright. That was
+  right before stage 2 existed and wrong afterwards. It now allows live
+  ONLY while the stage-2 lane is present and still holding its gate, so
+  deleting stage 2 or removing its approval requirement puts the badge
+  back to a lie that the build catches.
+- One gate line in verify_pricing was `not X or True`, a test that
+  cannot fail. Replaced with three real refusal tests against the
+  unmocked shop write.
+
+**NOT MINE, BUT WORTH KNOWING**
+- `verify_os.py` has a CLOCK-DEPENDENT test ("outside the window nothing
+  leaves") which passes or fails depending on the hour it is run.
+  Verified failing at the baseline commit with this session's changes
+  stashed, so it is pre-existing. A test that depends on wall-clock time
+  is unreliable and should take the clock as a parameter.
+
+**NEED FROM FOUNDER**
+- A shop credential. Nothing here can propose a real price until a
+  catalogue can be read, and nothing can be written until the token
+  carries write scope (Shopify: write_products; Woo: write key).
+- Set COMMERCE_TARGET_MARGIN_PCT if 40% is not your target.
+
+---
+
 ## Session I — Lane 3d: the Social Distributor. Every desk now has a worker.
 2026-08-15
 

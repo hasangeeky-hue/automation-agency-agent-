@@ -221,12 +221,33 @@ def check() -> Dict[str, Any]:
                       "create_promotion"):
         if callable(globals().get(forbidden)):
             problems.append("stage 1 must not write: %s() exists" % forbidden)
+    # THE BADGE RULE, NOW THAT STAGE 2 EXISTS.
+    # This module is still stage 1 and still may not write. What changed
+    # is that a LIVE badge is no longer automatically wrong: it is earned
+    # by content_engine_pricing, which proposes and applies behind the
+    # spend gate. So a live badge is only legitimate while that lane is
+    # present AND still holding its gate. If stage 2 were ever deleted or
+    # its gate removed, this desk would go back to being an inspector and
+    # the badge would be a lie, so the two are checked against each other
+    # rather than each trusting the other.
     try:
         import content_engine_roster as R
         badge = R.agent(AGENT_ID).get("badge")
         if badge == "live":
-            problems.append("badge says live; stage 1 is an inspector "
-                            "(4.3), and only stage 2 earns live")
+            import inspect
+
+            import content_engine_pricing as PX
+            src = inspect.getsource(PX.apply_one)
+            if "spend gate is permanent" not in src or \
+                    "approved_by" not in src:
+                problems.append("the badge says live, but stage 2 no longer "
+                                "requires a named human approval")
+            if not PX.check()["ok"]:
+                problems.append("the badge says live, but stage 2 fails its "
+                                "own check: " + str(PX.check()["problems"]))
+    except ImportError:
+        problems.append("the badge says live with no stage 2 lane present; "
+                        "stage 1 alone is an inspector (4.3)")
     except Exception as exc:                              # noqa: BLE001
         problems.append("roster unreadable: %s" % type(exc).__name__)
     return {"ok": not problems, "problems": problems}

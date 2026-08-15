@@ -386,6 +386,131 @@ def refresh(store) -> Dict[str, Any]:
                         f"confidence): {verdict['why']}")}
 
 
+# ==========================================================================
+# STAGE 2 SUPPORT: cost prices, and the one write that changes a price.
+# ==========================================================================
+def fetch_costs(store, products=None) -> Dict[str, Any]:
+    """Cost price per product, where the platform will give one.
+
+    Shopify keeps cost on the INVENTORY ITEM, not the variant, so it
+    takes a second call; the ids are batched into one request rather
+    than one call per product. WooCommerce has no native cost field at
+    all, so it returns nothing and says so. A missing cost is reported
+    as missing and never as zero: a cost of zero reads as a 100 percent
+    margin, which would be the most confident wrong number on the board.
+    """
+    st = status(store)
+    plat = next((p for p, v in st.items() if v["connected"]), "")
+    if plat != "shopify":
+        return {"ok": False, "costs": {},
+                "why": ("WooCommerce has no native cost field, so margin "
+                        "cannot be computed from it"
+                        if plat == "woocommerce" else
+                        "no shop is connected")}
+    rq = _requests()
+    if rq is None:
+        return {"ok": False, "costs": {}, "why": "requests is not installed"}
+    inv = {}
+    for p in _l(products):
+        pd = _d(p)
+        iid = _s(pd.get("inventory_item_id"))
+        if iid:
+            inv[iid] = _s(pd.get("id"))
+    if not inv:
+        return {"ok": False, "costs": {},
+                "why": "no inventory item ids were read, so no cost can be "
+                       "looked up"}
+    try:
+        base = _env(store, "SHOPIFY_STORE_URL").rstrip("/")
+        r = rq.get(base + "/admin/api/2024-01/inventory_items.json",
+                   headers={"X-Shopify-Access-Token":
+                            _env(store, "SHOPIFY_ADMIN_TOKEN")},
+                   params={"ids": ",".join(list(inv)[:100])}, timeout=25)
+        if r.status_code >= 400:
+            return {"ok": False, "costs": {},
+                    "why": "Shopify refused the cost read (%d). The token "
+                           "needs read_inventory." % r.status_code}
+        out = {}
+        for it in _l(_d(r.json()).get("inventory_items")):
+            d = _d(it)
+            pid = inv.get(_s(d.get("id")))
+            if pid and d.get("cost") not in (None, ""):
+                out[pid] = d.get("cost")
+        return {"ok": True, "costs": out, "why": ""}
+    except Exception as exc:                              # noqa: BLE001
+        return {"ok": False, "costs": {},
+                "why": "the cost read raised %s" % type(exc).__name__}
+
+
+def set_price(store, product_id: str, new_price) -> Dict[str, Any]:
+    """Write ONE price to the connected shop.
+
+    THIS IS THE ONLY FUNCTION IN THE ENGINE THAT CHANGES WHAT A CUSTOMER
+    PAYS. It takes no decisions: the caller must already hold a named
+    human approval (see content_engine_pricing.apply_one, which is the
+    only caller and refuses without one). Everything here is mechanics.
+    """
+    pid = _s(product_id)
+    try:
+        price = float(new_price)
+    except (TypeError, ValueError):
+        return {"ok": False, "why": "%r is not a price" % (new_price,)}
+    if not pid:
+        return {"ok": False, "why": "no product was named"}
+    if price <= 0:
+        return {"ok": False, "why": "a price of zero or less is never a "
+                                    "price change, it is a mistake"}
+    st = status(store)
+    plat = next((p for p, v in st.items() if v["connected"]), "")
+    if not plat:
+        return {"ok": False, "why": "no shop is connected"}
+    rq = _requests()
+    if rq is None:
+        return {"ok": False, "why": "requests is not installed"}
+    try:
+        if plat == "shopify":
+            base = _env(store, "SHOPIFY_STORE_URL").rstrip("/")
+            r = rq.get(base + "/admin/api/2024-01/products/%s.json" % pid,
+                       headers={"X-Shopify-Access-Token":
+                                _env(store, "SHOPIFY_ADMIN_TOKEN")},
+                       timeout=25)
+            if r.status_code >= 400:
+                return {"ok": False, "why": "Shopify could not read %s (%d)"
+                                            % (pid, r.status_code)}
+            variants = _l(_d(_d(r.json()).get("product")).get("variants"))
+            if not variants:
+                return {"ok": False, "why": "%s has no variant to price" % pid}
+            vid = _s(_d(variants[0]).get("id"))
+            w = rq.put(base + "/admin/api/2024-01/variants/%s.json" % vid,
+                       headers={"X-Shopify-Access-Token":
+                                _env(store, "SHOPIFY_ADMIN_TOKEN"),
+                                "Content-Type": "application/json"},
+                       json={"variant": {"id": vid, "price": "%.2f" % price}},
+                       timeout=25)
+            if w.status_code >= 400:
+                return {"ok": False, "why": "Shopify refused the price change "
+                                            "(%d). The token needs "
+                                            "write_products." % w.status_code}
+            return {"ok": True, "platform": plat, "product_id": pid,
+                    "price": round(price, 2)}
+        if plat == "woocommerce":
+            base = _env(store, "WOO_SITE_URL").rstrip("/")
+            w = rq.put(base + "/wp-json/wc/v3/products/%s" % pid,
+                       auth=(_env(store, "WOO_CONSUMER_KEY"),
+                             _env(store, "WOO_CONSUMER_SECRET")),
+                       json={"regular_price": "%.2f" % price}, timeout=25)
+            if w.status_code >= 400:
+                return {"ok": False, "why": "WooCommerce refused the price "
+                                            "change (%d). The key needs "
+                                            "write scope." % w.status_code}
+            return {"ok": True, "platform": plat, "product_id": pid,
+                    "price": round(price, 2)}
+        return {"ok": False, "why": "%s cannot be priced from here" % plat}
+    except Exception as exc:                              # noqa: BLE001
+        return {"ok": False, "why": "the shop write raised %s"
+                                    % type(exc).__name__}
+
+
 if __name__ == "__main__":
     class _S:
         def __init__(self, d=None):

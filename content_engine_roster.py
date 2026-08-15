@@ -144,13 +144,13 @@ ROSTER: List[Dict[str, Any]] = [
             "a day at most. No channel verifies, so nothing goes out and it "
             "says which credential each one wants"},
     {"id": "commerce.analyst", "name": "📦 Commerce Analyst",
-     "module": "commerce", "badge": "inspector", "cap_key": "PER_DAY_BUDGET_USD",
+     "module": "commerce", "badge": "live", "cap_key": "PER_DAY_BUDGET_USD",
      "slots": [("Shopify", "shopify"), ("WooCommerce", "woocommerce")],
-     "why": "stage 1 of 2 (4.3): reads the catalogue daily for free and "
-            "reports dead SKUs, low stock, missing prices and duplicate "
-            "titles. It becomes a LIVE lane only at stage 2, when it "
-            "proposes price and promotion changes with a margin preview "
-            "behind the spend gate"},
+     "why": "stage 2 (4.3): reads the catalogue daily, reports dead SKUs, "
+            "low stock and duplicates, and proposes price changes with a "
+            "margin-impact preview. Every proposal is pink and can never "
+            "batch-approve; an approved one is written to the shop and "
+            "recorded with the name of whoever said yes"},
 ]
 
 BY_ID = {r["id"]: r for r in ROSTER}
