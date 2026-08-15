@@ -141,20 +141,24 @@ for _pid in ("oscockpit", "oscore", "osmkt", "osseo", "osleads",
 # ---- THE REPLACEMENT, AND WHAT IT DID NOT COST -------------------------
 print("")
 print("B2. THE AGENT OS IS THE DASHBOARD, AND NOTHING WAS LOST")
-t("the Agent OS is the FIRST nav group",
-  ">Agent OS<" in html
-  and html.find(">Agent OS<") < html.find(">Deep tools<"))
+t("the Agent OS is the ONLY nav group", ">Agent OS<" in html
+  and ">Deep tools<" not in html)
 t("and the OS cockpit is the page that opens",
   "class='page on' id='sec-oscockpit'" in html)
 _old_ids = ("cockpit", "bi", "riskinfra", "content", "outreach", "sga",
             "seo", "media", "system")
+# THE OLD SURFACE IS OFF THE NAV. Checked by the absence of the LINK,
+# not the absence of the page: an unlinked page that still resolves is
+# exactly the state being asserted, and confusing the two would let a
+# real regression (a dead bookmark) pass as a success.
+_linked = [p for p in _old_ids if ("id='nav-%s'" % p) in html]
+t("NO OLD PAGE IS LINKED FROM THE WIREFRAME'S SHELL", not _linked,
+  str(_linked))
 _gone = [p for p in _old_ids if ("id='sec-%s'" % p) not in html]
-t("EVERY OLD PAGE STILL RESOLVES, so no link the founder has dies",
-  not _gone, str(_gone))
-t("each deep page points at its Agent OS view",
-  html.count("Deep tool.") >= len(_old_ids), str(html.count("Deep tool.")))
-t("AND MEDIA SAYS PLAINLY IT HAS NO REPLACEMENT, rather than implying one",
-  "no Agent OS view of this department" in html)
+t("but every old page still RESOLVES, so no bookmark dies", not _gone,
+  str(_gone))
+t("MEDIA NO LONGER CLAIMS IT HAS NO REPLACEMENT: nine screens exist",
+  "no Agent OS view of this department" not in html)
 
 # ---- LANE 3b: THE BACKUP TRUTH ----------------------------------------
 print("")

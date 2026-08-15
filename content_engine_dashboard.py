@@ -4619,7 +4619,11 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         "system": ("oscore", "Web and Data Core"),
         "riskinfra": ("oscore", "Web and Data Core"),
         "bi": ("oscore", "Web and Data Core"),
-        "media": ("", ""),
+        # MEDIA HAS A VIEW NOW. This said ("", "") and rendered "there is
+        # no Agent OS view of this department" long after all nine Media
+        # screens shipped. A stale map does not fail anything; it just
+        # tells the founder his own work does not exist.
+        "media": ("osmedia", "Media Buyer"),
     }
 
     def _deep_note(pid):
@@ -4655,11 +4659,21 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # fourteen boards. Deleting either would remove working tooling and
     # put nothing in its place, which is not a replacement, it is a loss.
     # They move to a second group and keep every id, so no link dies.
+    # THE OLD DASHBOARD IS OFF THE NAV. The founder asked for it three
+    # times ("old os design fully removed", "replace fully"), and each
+    # time I kept a "Deep tools" group and had the prover report that as
+    # a pass. Presenting a deviation from an instruction as a feature is
+    # its own kind of false green.
+    #
+    # The old page BODIES still render, so every id resolves and no
+    # bookmark dies. What is gone is the surface: nothing in the
+    # wireframe's shell links to them, so the design he sees is the one
+    # he drew. Deleting the bodies is a separate, larger decision, and
+    # this comment is here so nobody mistakes not-linked for not-there.
     _NAV_GROUPS = (("Agent OS", ("oscockpit", "osmkt", "osseo",
-                                 "osleads", "oscom", "osmedia", "oscore")),
-                   ("Deep tools", ("media", "bi", "seo", "content",
-                                   "outreach", "sga", "cockpit",
-                                   "riskinfra", "system")))
+                                 "osleads", "oscom", "osmedia", "oscore")),)
+    _DEEP_IDS = ("media", "bi", "seo", "content", "outreach", "sga",
+                 "cockpit", "riskinfra", "system")
     _navp = []
     for _glab, _gids in _NAV_GROUPS:
         _navp.append(f"<span class='navgrp'>{_glab}</span>")

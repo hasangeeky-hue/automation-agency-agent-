@@ -437,6 +437,9 @@ CSS = """
   --ox-ink:#1d1f20; --ox-ink2:#5d5d60; --ox-ink3:#7a7a7d;
   --ox-ln:#d4d4d7; --ox-ln2:#b7b7ba;
   --ox-ac:#5980a6; --ox-acd:#416180; --ox-acw:#e4edf6;
+  /* his second accent, from the handoff's own styles.css. It was the
+     one token of his nine that this kit did not carry. */
+  --ox-ac2:#728fab;
   --ox-dg:#a3564b; --ox-dgw:#f4e6e4;
   --ox-ok:#4f7a5b; --ox-okw:#e6efe8;
   --ox-wn:#8a6d3b; --ox-wnw:#f5efe2;
