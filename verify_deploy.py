@@ -309,7 +309,28 @@ try:
             for _n, _f2, _k2 in AEO._ENGINES:
                 _e = (_r or {}).get(_n) or {}
                 if not _e.get("connected") and _e.get("reason"):
-                    print("       " + _n + ": " + str(_e.get("reason"))[:96])
+                    # PRINTED WHOLE, ON PURPOSE. The old cap of 96 characters
+                    # cut every provider message off at "Error code: 400":
+                    # the board announced a failure and then withheld the one
+                    # sentence that said why, which is how this survived weeks
+                    # of green deploys.
+                    _why = str(_e.get("reason"))
+                    print("       " + _n + ": " + _why[:110])
+                    for _i in range(110, len(_why), 110):
+                        print("         " + _why[_i:_i + 110])
+
+        # A PROBE THAT NEVER ANSWERS IS A FAILURE, NOT AN ABSENCE OF DATA.
+        # Until now this whole block was prose: it described a broken
+        # differentiator in a run that reported 0 failed. A key that is SET
+        # is a promise the engine was asked; an engine that was asked and
+        # recorded nothing across every prompt is broken, and says so here.
+        for _n, _f2, _k2 in AEO._ENGINES:
+            if not AEO._key_present(_k2):
+                continue                      # absent key is a choice, not a bug
+            _first = ((_res[0] or {}).get(_n) or {})
+            check("AI-visibility: %s was asked and actually answered" % _n,
+                  _by.get(_n, 0) > 0,
+                  str(_first.get("reason") or "")[:160])
     else:
         print("       nothing probed yet. Use 'Probe AI answers' on the "
               "SEO section, or run the AEO engine.")

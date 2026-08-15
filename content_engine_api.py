@@ -2890,6 +2890,14 @@ def build_app():
         n = AEO.set_prompts(get_store(), raw)
         return {"ok": True, "saved": n}
 
+    @app.get("/aeo/selftest")
+    def aeo_selftest():
+        """What each AI engine says when asked a question that cannot be
+        blamed. A read: it stores nothing, and reports the resolved model
+        id plus the provider's own words verbatim."""
+        import content_engine_aeo as AEO
+        return {"ok": True, **AEO.selftest_engines(get_store())}
+
     @app.post("/offpage/scan")
     def offpage_scan():
         return api_seo("offpage")

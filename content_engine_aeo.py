@@ -102,9 +102,9 @@ def _claude_answer(prompt: str, store=None) -> str:
     for a probe that never ran.)
     """
     import os
+    model = os.getenv("CHEAP_MODEL", "claude-haiku-4-5")
     try:
         import content_engine_providers as P
-        model = os.getenv("CHEAP_MODEL", "claude-haiku-4-5")
         client = P._get_anthropic()
         resp = client.messages.create(
             model=model, max_tokens=600,
@@ -124,7 +124,14 @@ def _claude_answer(prompt: str, store=None) -> str:
         return text.strip()
     except Exception as e:
         log.warning("claude probe failed: %s", e)
-        _LAST_ERROR["claude"] = str(e)[:160]
+        # The model id is named because it is the one thing here that is NOT
+        # in this file: CHEAP_MODEL can be set in the environment, so a probe
+        # can fail on a model nobody in the repo ever wrote down. And the
+        # provider's own sentence is kept nearly whole. The old cap of 160
+        # cut the message off after "Error code: 400", which is the reason
+        # this failed silently for weeks: the board reported a failure and
+        # withheld the only sentence that said why.
+        _LAST_ERROR["claude"] = "model=%s :: %s" % (model, str(e)[:400])
         return ""
 
 
@@ -154,25 +161,30 @@ def _openai_answer(prompt: str) -> str:
         key = C._env("OPENAI_API_KEY")
         if not (key and C._requests()):
             return ""
+        model = C._env("OPENAI_AEO_MODEL", "gpt-4o-mini")
+        # _post_json has always been able to hand back the status and the
+        # provider's own sentence; this caller just never asked for them.
+        cap = {}
         j = C._post_json("https://api.openai.com/v1/chat/completions",
-                         {"model": C._env("OPENAI_AEO_MODEL", "gpt-4o-mini"),
+                         {"model": model,
                           "messages": [{"role": "user", "content": prompt}],
                           "max_tokens": 500},
                          headers={"Authorization": f"Bearer {key}",
-                                  "Content-Type": "application/json"})
+                                  "Content-Type": "application/json"},
+                         capture=cap)
         if j is None:
-            # _post_json swallows the HTTP status and returns None, so
-            # without this the board reports "answered with nothing"
-            # over a 401 and no spend line is worth recording either.
-            _LAST_ERROR["openai"] = ("the OpenAI call returned no body "
-                                     "(an HTTP error; the connector log "
-                                     "has the status)")
+            # Name the model for the same reason the Claude probe does: it
+            # comes from the environment, so it can be a value nobody in
+            # this repo ever wrote down.
+            _LAST_ERROR["openai"] = "model=%s :: %s" % (
+                model, cap.get("error")
+                or "no body and no status, which means the request never left")
             return ""
         C.record_api_spend("openai", 0.0004)
         return ((j or {}).get("choices") or [{}])[0].get("message", {}).get("content", "")
     except Exception as e:
         log.warning("openai probe failed: %s", e)
-        _LAST_ERROR["openai"] = str(e)[:160]
+        _LAST_ERROR["openai"] = str(e)[:400]
         return ""
 
 
@@ -270,6 +282,59 @@ _ENGINES = [("claude", "_claude_answer", "ANTHROPIC_API_KEY"),
             ("openai", "_openai_answer", "OPENAI_API_KEY"),
             ("perplexity", "_perplexity_answer", "PERPLEXITY_API_KEY"),
             ("gemini", "_gemini_answer", "GEMINI_API_KEY")]
+
+
+SELFTEST_PROMPT = "Reply with the single word: ok"
+
+
+def selftest_engines(store=None) -> dict:
+    """Ask every keyed engine one trivial question and report what it said.
+
+    This exists because a failing probe was indistinguishable from an
+    unmeasured one. The scheduled probe runs against buyer prompts and
+    stores a score; when it fails there is nothing to read but a truncated
+    sentence in a snapshot. This asks the same call with a KNOWN-GOOD
+    literal prompt, so the answer separates two very different diagnoses:
+
+      the call shape is wrong  -> this fails too, on a prompt that cannot
+                                  be blamed
+      the prompt data is wrong -> this succeeds while the real probe fails
+
+    It reports the RESOLVED model id, because that value comes from the
+    environment and can be something nobody in this repo ever wrote down.
+    It is a read: it asks each provider a question and stores nothing.
+    """
+    import os
+    out = {"prompt": SELFTEST_PROMPT, "engines": {}}
+    models = {"claude": os.getenv("CHEAP_MODEL", "claude-haiku-4-5"),
+              "openai": os.getenv("OPENAI_AEO_MODEL", "gpt-4o-mini")}
+    for name, fname, keyname in _ENGINES:
+        fn = globals().get(fname)
+        row = {"key_present": _key_present(keyname),
+               "model_asked_for": models.get(name, "(engine default)"),
+               "probe_exists": fn is not None}
+        if not row["key_present"]:
+            row["verdict"] = "%s is not set, so this engine was never asked" % keyname
+        elif fn is None:
+            row["verdict"] = "no probe function %s exists in this build" % fname
+        else:
+            _LAST_ERROR.pop(name, None)
+            try:
+                ans = fn(SELFTEST_PROMPT, store) if name == "claude" \
+                    else fn(SELFTEST_PROMPT)
+            except Exception as e:                        # noqa: BLE001
+                ans, _LAST_ERROR[name] = "", str(e)[:400]
+            row["answered_chars"] = len(ans or "")
+            row["excerpt"] = (ans or "")[:120]
+            err = _LAST_ERROR.pop(name, "")
+            row["ok"] = bool(ans)
+            row["error"] = err
+            row["verdict"] = ("answered" if ans else
+                              ("the call failed: " + err if err else
+                               "the engine answered with nothing, and "
+                               "reported no error, which is itself worth knowing"))
+        out["engines"][name] = row
+    return out
 
 
 def probe(prompt: str, *, brand: str, domain: str, rivals=None, store=None) -> dict:
@@ -718,14 +783,58 @@ if __name__ == "__main__":
         assert hasattr(_C, _sym), f"connectors.{_sym} is gone — the probes would fail"
 
     # A failing engine must degrade to not-connected, never to a false zero.
+    # This assertion used to look for "not set or call failed", the old
+    # one-size message that was deliberately replaced by three distinct
+    # sentences, because it sent people to check a key that was fine. The
+    # test kept asserting the retired wording and had been failing ever
+    # since; nothing runs this block, so nobody found out.
     _orig = globals()["_claude_answer"]
     globals()["_claude_answer"] = lambda p, s=None: ""
     try:
         r = probe("q", brand="Anthropos", domain="x.com")
         assert r["claude"]["connected"] is False, r["claude"]
-        assert "not set or call failed" in r["claude"]["reason"], r["claude"]
+        # No key here, so it must say exactly that, and name the key.
+        assert "ANTHROPIC_API_KEY" in r["claude"]["reason"], r["claude"]
+        assert "never asked" in r["claude"]["reason"], r["claude"]
     finally:
         globals()["_claude_answer"] = _orig
+
+    # ---- THE FAILURE THAT SURVIVED A SYMBOL CHECK ----------------------
+    # The block above asserts that every cross-module NAME exists, written
+    # after 18 probes failed in production. It did not stop it happening
+    # again, because the second failure was a live 400 from the provider:
+    # every symbol existed and the call still died. A name check cannot see
+    # that. What makes it visible is carrying the provider's own sentence
+    # back out, so these assert on the evidence rather than the symbols.
+    _orig = globals()["_claude_answer"]
+
+    def _dead(p, s=None):
+        _LAST_ERROR["claude"] = ("model=made-up-model :: Error code: 400 - "
+                                 "{'type': 'invalid_request_error'}")
+        return ""
+    globals()["_claude_answer"] = _dead
+    try:
+        r = probe("q", brand="Anthropos", domain="x.com")
+        _why = r["claude"]["reason"]
+        assert "IS set" in _why or "is not set" in _why, _why
+        if "IS set" in _why:                    # a key was present to fail with
+            assert "made-up-model" in _why, ("the resolved model must be "
+                                             "named: it comes from the "
+                                             "environment", _why)
+            assert "invalid_request_error" in _why, ("the provider's own "
+                                                     "words must survive", _why)
+    finally:
+        globals()["_claude_answer"] = _orig
+
+    # The self-test refuses to invent an answer, and names what it asked for.
+    _st = selftest_engines(None)
+    assert set(_st["engines"]) == {n for n, _f, _k in _ENGINES}, _st["engines"]
+    for _n, _row in _st["engines"].items():
+        assert _row["verdict"], ("every engine must say something", _n)
+        if not _row["key_present"]:
+            assert "never asked" in _row["verdict"], _row
+            assert "ok" not in _row, ("an engine with no key was not asked, "
+                                      "so it has no verdict on working", _row)
 
     # ---- E17 citations ----
     assert extract_citations("See https://anthropos-automation.com/guide-a. Also https://x.com/y",
