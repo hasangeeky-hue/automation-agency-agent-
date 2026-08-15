@@ -40,6 +40,61 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session L — the morning briefing: the report finally reaches you
+2026-08-15
+
+**THE GAP THIS CLOSES**
+- Difference 3 of the doctrine says an employee "works on a schedule and
+  MESSAGES YOU only when a human must decide". Difference 4 says it
+  reports. This engine has done the second since Phase 1 and never the
+  first: the report existed and the founder had to go and look for it. A
+  report nobody reads is the same as no report, and the lecture is blunt
+  about where that ends.
+
+**FINISHED**
+- `content_engine_briefing.py`. Composes the day from the reports that
+  already exist, and mails it to the founder. On the cadence, free,
+  deliberately AFTER the nightly snapshot because it reports the day.
+- `POST /briefing/send`, `GET /briefing/preview`. 23 gates, prover 25.
+  331 deploy checks, 0 failed.
+
+**IT STAYS QUIET, WHICH IS THE POINT**
+- It sends only when something needs a human: a decision waiting, or
+  work that failed. A daily "all fine" trains a person to stop reading,
+  and then the one that mattered goes unread too.
+- A quiet day is still RECORDED, so silence can never be confused with a
+  cron that stopped running. Monday carries a short week in review for
+  the same reason.
+
+**A NOTIFIER, NOT A SEND PATH**
+- No function in the module takes a recipient. The address is read from
+  settings and nowhere else. A briefing whose caller could name the
+  recipient would be an ungated way to email arbitrary people on a
+  schedule, and this engine already has a send path with a gate on it.
+  The gate asserts the absence of that parameter.
+
+**BLOCKED STAYS SEPARATE, IN THE MAIL TOO**
+- The email splits "needs your decision" from "blocked, not yours to
+  approve" and says outright that approving will not fix the second. The
+  inbox is exactly where an outage is most easily mistaken for a to-do.
+- Pending PRICE proposals arrive marked pink, so a price change never
+  sits unlabelled next to "approve a blog post".
+
+**Correction found while building (10.2)**
+- The blocked paragraph first read "Approving nothing here will fix
+  them", a double negative that says the opposite of what was meant. In
+  the one paragraph whose whole job is to stop an outage being mistaken
+  for a to-do, ambiguous wording is a defect, not a style point. The
+  gate caught it.
+- The subject line said "1 need you" because both branches of the
+  pluralisation were the empty string.
+
+**NEED FROM FOUNDER**
+- Set FOUNDER_EMAIL in settings. Without it the briefing has nowhere to
+  go and says so rather than guessing an address.
+
+---
+
 ## Session K — the new lanes reach the screens
 2026-08-15
 

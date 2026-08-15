@@ -3016,6 +3016,26 @@ def build_app():
                            for st in ("verified", "present", "rejected",
                                       "empty")}}
 
+    @app.post("/briefing/send")
+    def briefing_send(force: bool = False):
+        """Send the morning briefing now.
+
+        It writes ONLY to the founder's address from settings; there is
+        no recipient parameter anywhere in that module, by design."""
+        import content_engine_briefing as _BR
+        return _BR.run(get_store(), force=bool(force))
+
+    @app.get("/briefing/preview")
+    def briefing_preview():
+        """What would be sent, without sending it."""
+        import content_engine_briefing as _BR
+        st = get_store()
+        data = _BR.gather(st)
+        msg = _BR.compose(st, data)
+        return {"ok": True, "to": _BR.founder_address(st),
+                "would_send": _BR.should_send(data), "subject": msg["subject"],
+                "body": msg["body"]}
+
     @app.get("/commerce/prices")
     def commerce_prices():
         """Open price proposals, each with its margin preview."""

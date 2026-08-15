@@ -268,6 +268,9 @@ SEO_CADENCE = {
     # snapshot engine, and two cadences sharing one name is the bug this
     # project keeps paying for. This one PUTS POSTS OUT.
     "social_post": {"every_days": 1, "cost": "free"},
+    # THE MORNING BRIEFING. Free. Deliberately LAST on the cadence: it
+    # reports what the other lanes did, so it must run after them.
+    "briefing": {"every_days": 1, "cost": "free"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }
@@ -762,6 +765,19 @@ def run_due_work(store, now=None) -> dict:
         except Exception as e:
             log.exception("cadence: the report snapshot failed")
             return {"ran": "snapshot", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "briefing", now):
+        _stamp(store, state, "briefing", now)
+        try:
+            import content_engine_briefing as _BR
+            r = _BR.run(store)
+            if r.get("sent"):
+                log.info("cadence: briefing sent, %d decision(s) waiting",
+                         r.get("decisions", 0))
+            return {"ran": "briefing", "result": r}
+        except Exception as e:
+            log.exception("cadence: the briefing failed")
+            return {"ran": "briefing", "error": f"{type(e).__name__}: {e}"}
 
     if _due(state, "factory", now):
         _stamp(store, state, "factory", now)

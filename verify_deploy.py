@@ -1729,6 +1729,45 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     check("the new lanes reached their screens", False, repr(exc)[:110])
 
+# --- 25. THE MORNING BRIEFING: the report reaches a human ----------------
+print("")
+print("25. THE REPORT REACHES YOU, AND ONLY YOU")
+try:
+    import content_engine_briefing as BR25
+    import content_engine_scheduler as SCH25
+
+    _c25 = BR25.check()
+    check("no function in the briefing takes a recipient", _c25["ok"],
+          str(_c25["problems"])[:110])
+    check("the address is read from settings, never from a caller",
+          "founder_address" in __import__("inspect").getsource(BR25.run))
+    check("A QUIET DAY SENDS NOTHING",
+          BR25.should_send({"decisions": [], "blocked": [],
+                            "couldnt": []}) is False)
+    check("a day with a decision sends",
+          BR25.should_send({"decisions": [{"what": "x"}], "blocked": [],
+                            "couldnt": []}) is True)
+    check("and a failure alone still sends, because you should know",
+          BR25.should_send({"decisions": [], "blocked": [],
+                            "couldnt": [{"what": "x"}]}) is True)
+    _m25 = BR25.compose(_st21, {
+        "finished_n": 1, "by_agent": [], "couldnt": [],
+        "decisions": [{"what": "approve x", "action": "/jobs/x/approve"}],
+        "blocked": [{"what": "gdrive is refusing", "why": "403"}]})
+    check("BLOCKED IS SEPARATED FROM YOUR DECISIONS in the mail too",
+          "BLOCKED, NOT YOURS TO APPROVE" in _m25["body"]
+          and "Nothing you approve will fix them" in _m25["body"])
+    check("the subject says how many need a human",
+          "1 needs you" in _m25["subject"], _m25["subject"])
+    check("it runs on the cadence, free", "briefing" in SCH25.SEO_CADENCE
+          and SCH25.SEO_CADENCE["briefing"]["cost"] == "free")
+    _s25 = open(SCH25.__file__, encoding="utf-8").read()
+    check("and AFTER the nightly snapshot, because it reports the day",
+          _s25.index('_due(state, "briefing"')
+          > _s25.index('_due(state, "snapshot"'))
+except Exception as exc:                                  # noqa: BLE001
+    check("the morning briefing answered", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:
