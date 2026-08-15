@@ -3016,6 +3016,41 @@ def build_app():
                            for st in ("verified", "present", "rejected",
                                       "empty")}}
 
+    @app.post("/connectors/verify")
+    async def connectors_verify(request: Request):
+        """Prove ONE wire with its free self-test, or every provable one.
+
+        verify_wire() existed from the beginning and NOTHING CALLED IT.
+        The one function that can turn creds-present into verified was
+        unreachable, which is why a channel could hold a good token and
+        never be usable. Body: {"wire": "social_linkedin"} or {} for all.
+
+        Every test here is a READ. None of them posts, sends or spends."""
+        try:
+            d = await request.json()
+        except Exception:
+            d = {}
+        import content_engine_connectors as _CN
+        wire = str((d or {}).get("wire") or "").strip()
+        wires = [wire] if wire else list(_CN.VERIFIABLE)
+        bad = [w for w in wires if w not in _CN.VERIFIABLE]
+        if bad:
+            return {"ok": False,
+                    "error": "%s has no free self-test, so it cannot be "
+                             "proven without a real call that costs or "
+                             "publishes something" % ", ".join(bad),
+                    "provable": list(_CN.VERIFIABLE)}
+        out = {}
+        for w in wires:
+            try:
+                out[w] = _CN.verify_wire(w)
+            except Exception as exc:                      # noqa: BLE001
+                out[w] = {"ok": False, "reason": "%s: %s"
+                                                 % (type(exc).__name__, exc)}
+        return {"ok": True, "tested": len(out), "results": out,
+                "verified": [w for w, r in out.items()
+                             if (r or {}).get("ok")]}
+
     @app.post("/briefing/send")
     def briefing_send(force: bool = False):
         """Send the morning briefing now.

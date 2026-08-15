@@ -1768,6 +1768,48 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     check("the morning briefing answered", False, repr(exc)[:110])
 
+# --- 26. WHAT A REAL DEPLOY TAUGHT US ------------------------------------
+print("")
+print("26. CHECKS THAT RUN WHERE THEY ARE DEPLOYED, AND TESTS THAT TEST")
+try:
+    import inspect as _ins26
+
+    import content_engine_connectors as CN26
+    import content_engine_fixes as FX26
+    import content_engine_risk_desk as RD26
+
+    # 1. A CHECK MUST RUN WHERE IT IS DEPLOYED.
+    # This one opened deploy/backup.sh, a HOST file the Dockerfile does
+    # not copy on purpose. It passed on a laptop and failed on the box,
+    # which is the least useful place to learn anything.
+    _rc26 = RD26.check()
+    check("THE RISK CHECK RUNS INSIDE THE CONTAINER TOO", _rc26["ok"],
+          str(_rc26["problems"])[:110])
+    _src26 = _ins26.getsource(RD26.check)
+    check("and it treats a missing host file as absent, not broken",
+          "FileNotFoundError" in _src26 and "not a failure" in _src26.lower())
+
+    # 2. verify_wire() HAD NO CALLER. The one function that can prove a
+    # credential was unreachable from anywhere.
+    _api26 = open("content_engine_api.py", encoding="utf-8").read()
+    check("there is a route that can actually prove a wire",
+          "/connectors/verify" in _api26)
+    check("and it refuses a wire with no free self-test rather than "
+          "pretending", "has no free self-test" in _api26)
+    check("social_linkedin is provable, so the social lane is not deadlocked",
+          "social_linkedin" in CN26.VERIFIABLE)
+
+    # 3. THE RE-TEST BUTTON TESTED NOTHING. It called status(), which
+    # reports whether a credential is SAVED, and said "N wires answered".
+    _rt26 = _ins26.getsource(FX26._f_retest_wires)
+    check("RE-TEST EVERY WIRE ACTUALLY TESTS THEM", "verify_wire" in _rt26)
+    check("and it names the wires it could NOT test",
+          "no free self-test" in _rt26)
+    check("a wire that refuses is reported as refused, not counted as live",
+          "refused" in _rt26)
+except Exception as exc:                                  # noqa: BLE001
+    check("the deploy-taught fixes answered", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

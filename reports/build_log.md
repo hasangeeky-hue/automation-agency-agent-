@@ -40,6 +40,51 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session N — three things a real deploy taught us
+2026-08-15
+
+**1. A CHECK THAT CANNOT RUN WHERE IT IS DEPLOYED**
+- `verify_deploy` failed ON THE BOX with "the Risk Sentinel cannot claim
+  a backup it cannot take", while passing locally. Cause: that check
+  opens `deploy/backup.sh` to confirm the receipt call is still in it,
+  and the Dockerfile DELIBERATELY does not copy `deploy/` because the
+  script drives docker compose from outside the container.
+- I established that fact myself two sessions earlier and then wrote a
+  check that ignores it. A check that passes on a laptop and fails on
+  the box teaches you nothing where it matters. A missing host file is
+  now treated as absent, not as broken; the repo-side gate still asserts
+  the receipt call.
+
+**2. verify_wire() HAD NO CALLER, ANYWHERE**
+- The one function in the engine that can turn creds-present into
+  verified was unreachable. Its docstring says "for the Test button";
+  there is no such button and no route. That is why LinkedIn held a good
+  token and the social lane could never use it.
+- `POST /connectors/verify` now calls it, for one wire or every provable
+  one. Every test is a READ: none posts, sends or spends. A wire with no
+  free self-test is refused by name rather than silently skipped.
+
+**3. "RE-TEST EVERY WIRE" TESTED NOTHING**
+- `_f_retest_wires` called `status()`, which reports whether a
+  credential is SAVED, then said "N of M wires answered". Nothing was
+  asked anything. A button whose label promises a test and whose body
+  counts settings is false-green with a friendlier face than most.
+- It now calls verify_wire on every provable wire, reports which
+  refused, and NAMES the count that has no free self-test, so "we tested
+  everything" can never mean "we tested the ones that were easy".
+
+**CONFIRMED WORKING ON THE BOX**
+- FOUNDER_EMAIL saved. `/briefing/preview` returns a real briefing:
+  "1 blocked: ads_api is refusing". The morning mail works.
+- 339 deploy checks, 0 failed.
+
+**CONFIRMED PRE-EXISTING**
+- `verify_os.py` PASSED this run and failed the last one, with no change
+  to it in between. That is the clock-dependent test, now demonstrated
+  rather than argued.
+
+---
+
 ## Session M — the social deadlock, found by the founder's own status line
 2026-08-15
 

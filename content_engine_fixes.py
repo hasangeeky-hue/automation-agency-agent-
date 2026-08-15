@@ -270,10 +270,34 @@ def summary() -> dict:
 # Each one is small on purpose: it does one thing and reports what happened.
 # ---------------------------------------------------------------------------
 def _f_retest_wires(store, arg):
+    """Actually re-test the wires that can be tested for free.
+
+    THIS BUTTON USED TO TEST NOTHING. It called status(), which reports
+    whether a credential is SAVED, and then said "N of M wires
+    answered". Nothing was asked anything. A button whose label promises
+    a test and whose body counts settings is false-green with a
+    friendlier face than most.
+
+    Every test here is a read: none of them posts, sends or spends."""
     import content_engine_connectors as C
-    st = C.status()
-    live = len([k for k, v in st.items() if v])
-    return {"ok": True, "message": f"{live} of {len(st)} wires answered"}
+    results = {}
+    for w in C.VERIFIABLE:
+        try:
+            results[w] = bool((C.verify_wire(w) or {}).get("ok"))
+        except Exception:                                 # noqa: BLE001
+            results[w] = False
+    ok = [w for w, v in results.items() if v]
+    bad = [w for w, v in results.items() if not v]
+    msg = "%d of %d provable wires accepted us" % (len(ok), len(results))
+    if bad:
+        msg += " (refused: %s)" % ", ".join(sorted(bad))
+    # The wires with no free self-test are named, so "we tested
+    # everything" never means "we tested the five that were easy".
+    untested = [w for w in C.status() if w not in results]
+    if untested:
+        msg += ". %d wire(s) have no free self-test and were NOT tested" \
+               % len(untested)
+    return {"ok": True, "message": msg, "verified": ok, "refused": bad}
 
 
 def _f_piece_image(store, arg):
