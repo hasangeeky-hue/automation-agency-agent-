@@ -40,6 +40,69 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session F — Phase 5 complete + Lane 3c stage 1 (Commerce)
+2026-08-15
+
+**FINISHED**
+- ALL 51 SCREENS OF THE WIREFRAME ARE BUILT. Turn 11 (Commerce, 9) and
+  turn 10 (Product Publisher, 1) close it out, across six nav pages.
+- Lane 3c stage 1: `content_engine_commerce_desk.py`. Reads the catalogue
+  daily and reports dead SKUs, low stock, missing prices and duplicate
+  titles. Pure code, no model call, no paid endpoint, so it costs $0 like
+  the Integrations Engineer. On the cadence, before the nightly snapshot.
+- `commerce.analyst` promoted notstaffed -> INSPECTOR, with the reason on
+  the badge. It becomes LIVE only at stage 2, when it proposes price and
+  promotion changes with a margin preview behind the spend gate. Its own
+  check fails the build if a write function ever appears in the module.
+- 289 deploy checks, 0 failed. 59 gates in verify_agentos.
+
+**THE COUNT WAS WRONG, AND IS NOW RIGHT**
+- The wireframe is 51 screens, not 54. I had assumed turn 10 ran 10a to
+  10d; the t10 block contains exactly ONE screen id. Counted from the
+  file this time rather than inferred from the pattern. The published
+  employee spec is corrected.
+
+**FIVE DESKS, ONE EMPLOYEE**
+- 11b, 11c, 11d, 11e and 11f are all `commerce.analyst`: Inventory
+  Controller, Pricing Analyst, Merchandiser, Promotions Manager and
+  Lifecycle Analyst. This was the case the whole 18-not-32 argument was
+  built on, and every one of the five screens says so.
+
+**WHAT THE SCREENS REFUSE TO DRAW**
+- No discount button on 11e. A discount moves money, so it is stage 2
+  behind the SPEND gate; a button that does nothing or does something
+  ungated are both unacceptable, so the screen explains its absence.
+- No competitor prices, no margin, no top sellers: those need cost data
+  and order history that no connected platform sends here. Absent, not
+  guessed.
+- Amazon, Shopware 6, TikTok Shop and Meta Shop are laid out empty with
+  the credential that would fill them.
+
+**A REAL EXTENSION TO THE ENGINE**
+- `fetch_catalogue` returned only id, title, type, status and url, so an
+  inventory desk had nothing to inspect. It now also returns sku, price
+  and stock where the platform provides them. Missing stays None and is
+  never read as 0: Woo sends null for stock it is not tracking, and "not
+  tracked" is not "none left".
+
+**COULDN'T**
+- Stage 2 of commerce (the pricing and promotions lane) is not built.
+- The old dashboard pages are still present. Now that all 51 screens
+  exist, retiring them is the next session's work and needs the founder's
+  go, because it removes screens he uses today.
+- Same nine suites exit nonzero, all failing at baseline.
+
+**Corrections found while building (10.2)**
+- The Commerce Analyst's own check grepped its own source for forbidden
+  function names and found them in its own tuple, so it failed the moment
+  it was written. It now asks the module namespace what it defines.
+- `verify_report.py` asserted "a not-staffed desk says so" by NAMING
+  commerce.analyst, and broke the moment that desk was promoted. Replaced
+  with the real invariant: every card carries exactly the roster's badge,
+  derived rather than named, which survives future promotions.
+
+---
+
 ## Session E — Phase 5, part 3: Leads and Outreach (turn 12)
 2026-08-15
 

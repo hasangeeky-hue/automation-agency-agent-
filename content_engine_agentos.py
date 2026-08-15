@@ -94,6 +94,18 @@ def build_ctx(store) -> Dict[str, Any]:
         ctx["proposals"] = list(store.get_setting("proposals", []) or [])
     except Exception:                                     # noqa: BLE001
         ctx["proposals"] = []
+    # The Commerce Analyst's daily inspection, for turn 11 and turn 10.
+    try:
+        import content_engine_commerce_desk as _CD
+        ctx["commerce"] = _CD.inspect(store)
+        import content_engine_commerce as _CM
+        _cat = _CM.fetch_catalogue(store)
+        ctx["commerce"]["products"] = list(_cat.get("products") or [])
+    except Exception as exc:                              # noqa: BLE001
+        ctx["errors"].append("commerce: %s" % type(exc).__name__)
+        ctx["commerce"] = {"ok": False, "products": [],
+                           "why": "the commerce desk raised %s"
+                                  % type(exc).__name__, "findings": []}
     # Open tracking: a live compliance state, not a description. The
     # founder keeps Europe in scope, so this switch is the real control.
     try:

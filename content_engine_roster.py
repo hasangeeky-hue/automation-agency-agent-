@@ -139,10 +139,13 @@ ROSTER: List[Dict[str, Any]] = [
      "why": "the content lane writes the posts; nothing posts them on a "
             "schedule yet"},
     {"id": "commerce.analyst", "name": "📦 Commerce Analyst",
-     "module": "commerce", "badge": "notstaffed", "cap_key": "PER_DAY_BUDGET_USD",
+     "module": "commerce", "badge": "inspector", "cap_key": "PER_DAY_BUDGET_USD",
      "slots": [("Shopify", "shopify"), ("WooCommerce", "woocommerce")],
-     "why": "the CMS layer reads a catalogue; no scheduler makes a commerce "
-            "job, so nobody works this desk"},
+     "why": "stage 1 of 2 (4.3): reads the catalogue daily for free and "
+            "reports dead SKUs, low stock, missing prices and duplicate "
+            "titles. It becomes a LIVE lane only at stage 2, when it "
+            "proposes price and promotion changes with a margin preview "
+            "behind the spend gate"},
 ]
 
 BY_ID = {r["id"]: r for r in ROSTER}

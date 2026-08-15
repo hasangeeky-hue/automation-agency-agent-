@@ -21,6 +21,7 @@ import content_engine_dashboard as D
 import content_engine_agentos as OS
 import content_engine_agentos_growth as OSG
 import content_engine_agentos_leads as OSL
+import content_engine_agentos_commerce as OSCM
 import content_engine_os_kit as K
 import content_engine_roster as R
 
@@ -54,7 +55,7 @@ class Store:
 
 
 print("=" * 74)
-print("AGENT OS - TURNS 8, 9, 12, 13 AND 14")
+print("AGENT OS - ALL SEVEN TURNS")
 print("=" * 74)
 
 st = Store()
@@ -70,7 +71,8 @@ print("\nA. SIXTEEN SCREENS, ON THE REAL PAGE")
 t("the Agent OS did not fall back to its error card",
   "Agent OS screens failed" not in html)
 ALL = (OS.SCREENS_13 + OS.SCREENS_14 + OSG.SCREENS_9
-       + OSG.SCREENS_8 + OSL.SCREENS_12)
+       + OSG.SCREENS_8 + OSL.SCREENS_12
+       + OSCM.SCREENS_11 + OSCM.SCREENS_10)
 missing = [s for s in ALL if ("id='os-%s'" % s) not in html]
 t("all %d screens render" % len(ALL), not missing, str(missing))
 dupes = [s for s in ALL if html.count("id='os-%s'" % s) > 1]
@@ -80,6 +82,17 @@ t("turn 14 has its five", len(OS.SCREENS_14) == 5, str(len(OS.SCREENS_14)))
 t("turn 9 has its eight", len(OSG.SCREENS_9) == 8, str(len(OSG.SCREENS_9)))
 t("turn 8 has its eight", len(OSG.SCREENS_8) == 8, str(len(OSG.SCREENS_8)))
 t("turn 12 has its nine", len(OSL.SCREENS_12) == 9, str(len(OSL.SCREENS_12)))
+t("turn 11 has its nine", len(OSCM.SCREENS_11) == 9)
+t("turn 10 has its ONE screen, counted from the file, not assumed",
+  len(OSCM.SCREENS_10) == 1)
+t("SO THE WIREFRAME IS 51 SCREENS AND ALL 51 ARE BUILT", len(ALL) == 51,
+  str(len(ALL)))
+_cc = OSCM.check(OS.build_ctx(st))
+t("and the commerce turns pass their own check", _cc["ok"], str(_cc["problems"]))
+t("FIVE DESKS, ONE EMPLOYEE is disclosed on every commerce desk",
+  all("One worker, five desks" in html[html.find("id='os-%s'" % s):
+                                       html.find("id='os-%s'" % s) + 7000]
+      for s in OSCM.SHARED_DESKS))
 _lc = OSL.check(OS.build_ctx(st))
 t("and the leads turn passes its own check", _lc["ok"], str(_lc["problems"]))
 t("FOUR WORKERS, NINE DESKS is disclosed on every shared desk",
@@ -101,7 +114,8 @@ t("ONE WORKER, TWO DESKS is disclosed on both 8c and 8e",
 
 # ---- B. IT IS REACHABLE -------------------------------------------------
 print("\nB. THE FOUNDER CAN GET TO IT")
-for _pid in ("oscockpit", "oscore", "osmkt", "osseo", "osleads"):
+for _pid in ("oscockpit", "oscore", "osmkt", "osseo", "osleads",
+             "oscom"):
     t("%s has a nav link and a page" % _pid,
       ("id='nav-%s'" % _pid) in html and ("id='sec-%s'" % _pid) in html)
 t("exactly one nav link is marked active",
@@ -188,7 +202,8 @@ bad = [n for n, src in (("kit", K.CSS + K.JS),
                         ("core", OS.core_section(_c) + OS.cockpit_section(_c)),
                         ("growth", OSG.marketing_section(_c)
                          + OSG.search_section(_c)),
-                        ("leads", OSL.leads_section(_c)))
+                        ("leads", OSL.leads_section(_c)),
+                        ("commerce", OSCM.commerce_section(_c)))
        if "—" in src or "&mdash;" in src]
 t("the OS ships no em-dash", not bad, str(bad))
 

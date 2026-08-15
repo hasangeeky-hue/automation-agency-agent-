@@ -259,6 +259,9 @@ SEO_CADENCE = {
     # cannot call a provider, so it cannot cost anything and cannot mark
     # anything verified.
     "integrations": {"every_days": 1, "cost": "free"},
+    # LANE 3c stage 1. Free: it reads a catalogue the CMS layer already
+    # fetches and does arithmetic on it. No model call, no paid endpoint.
+    "commerce": {"every_days": 1, "cost": "free"},
     "offpage":     {"every_days": 7, "cost": "paid"},
     "prospecting": {"every_days": 7, "cost": "cheap"},
 }
@@ -697,6 +700,18 @@ def run_due_work(store, now=None) -> dict:
         except Exception as e:
             log.exception("cadence: the integrations engineer failed")
             return {"ran": "integrations", "error": f"{type(e).__name__}: {e}"}
+
+    if _due(state, "commerce", now):
+        _stamp(store, state, "commerce", now)
+        try:
+            import content_engine_commerce_desk as _CD
+            r = _CD.run(store)
+            return {"ran": "commerce", "result": {
+                "ok": bool(r["result"]["ok"]),
+                "findings": len(r["result"].get("findings") or [])}}
+        except Exception as e:
+            log.exception("cadence: the commerce analyst failed")
+            return {"ran": "commerce", "error": f"{type(e).__name__}: {e}"}
 
     if _due(state, "snapshot", now):
         _stamp(store, state, "snapshot", now)

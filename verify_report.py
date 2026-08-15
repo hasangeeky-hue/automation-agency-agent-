@@ -124,8 +124,17 @@ t("and the top cause is named", bool(ct["top_causes"]),
 # ---- E. THE CARD IS HONEST ----------------------------------------------
 print("\nE. THE CARD TELLS THE TRUTH ABOUT ITS DESK")
 by_id = {c["id"]: c for c in cards}
-t("a not-staffed desk says so", by_id["commerce.analyst"]["badge"]
-  == "notstaffed")
+# DERIVED, NOT NAMED. This used to assert on commerce.analyst by name and
+# broke the day that desk was promoted to inspector. The invariant is not
+# "commerce is unstaffed", it is "a card never claims more staffing than
+# the roster gives it", and that survives every future promotion.
+_want = {a["id"]: a["badge"] for a in R.roster()}
+_wrong = [c["id"] for c in cards if c["badge"] != _want.get(c["id"])]
+t("every card carries exactly the roster's badge", not _wrong, str(_wrong))
+t("and a not-staffed desk says so",
+  all(by_id[i]["badge"] == "notstaffed"
+      for i, b in _want.items() if b == "notstaffed"),
+  str([i for i, b in _want.items() if b == "notstaffed"]))
 t("an architected desk is not called live",
   by_id["media.buyer"]["badge"] == "architected")
 t("a live lane is marked live", by_id["mkt.producer"]["badge"] == "live")

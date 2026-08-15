@@ -1463,6 +1463,7 @@ try:
     import content_engine_agentos as OS21
     import content_engine_agentos_growth as OSG21
     import content_engine_agentos_leads as OSL21
+    import content_engine_agentos_commerce as OSCM21
     import content_engine_os_kit as K21
     import content_engine_roster as R21
 
@@ -1495,16 +1496,19 @@ try:
     check("the Agent OS rendered (no fallback card)",
           "Agent OS screens failed" not in _h21)
     _all21 = (OS21.SCREENS_13 + OS21.SCREENS_14
-              + OSG21.SCREENS_9 + OSG21.SCREENS_8 + OSL21.SCREENS_12)
+              + OSG21.SCREENS_9 + OSG21.SCREENS_8 + OSL21.SCREENS_12
+              + OSCM21.SCREENS_11 + OSCM21.SCREENS_10)
     _miss21 = [s for s in _all21 if ("id='os-%s'" % s) not in _h21]
     check("all %d wireframe screens built so far are on the page" % len(_all21),
-          not _miss21, "t13:11 t14:5 t9:8 t8:8 t12:9")
+          not _miss21, "t13:11 t14:5 t9:8 t8:8 t12:9 t11:9 t10:1")
+    check("THE WIREFRAME IS 51 SCREENS AND ALL 51 ARE BUILT",
+          len(_all21) == 51, str(len(_all21)))
     check("and NO screen is rendered twice",
           not [s for s in _all21 if _h21.count("id='os-%s'" % s) > 1])
     check("every Agent OS page is reachable from the nav",
           all(("id='nav-%s'" % p) in _h21
               for p in ("oscockpit", "oscore", "osmkt", "osseo",
-                        "osleads")))
+                        "osleads", "oscom")))
     _gc21 = OSG21.check(_ctx21)
     check("turns 8 and 9 pass their own check", _gc21["ok"],
           str(_gc21["problems"])[:110])
@@ -1517,6 +1521,17 @@ try:
               for s in OSL21.SHARED_DESKS))
     check("NO EU hard block is drawn, because the engine has none",
           "the engine does not have one" in " ".join(_h21.split()))
+    _cc21 = OSCM21.check(_ctx21)
+    check("turns 11 and 10 pass their own check", _cc21["ok"],
+          str(_cc21["problems"])[:110])
+    check("every commerce desk discloses its one shared employee",
+          all("One worker, five desks" in _h21[_h21.find("id='os-%s'" % s):
+                                               _h21.find("id='os-%s'" % s) + 7000]
+              for s in OSCM21.SHARED_DESKS))
+    import content_engine_commerce_desk as CD21
+    _dk21 = CD21.check()
+    check("the Commerce Analyst is stage 1 and cannot write", _dk21["ok"],
+          str(_dk21["problems"])[:110])
     check("Europe stays in scope, as the founder decided",
           "Per-country rules: decided" in _h21)
     check("and open tracking shows its LIVE state with a real switch",
@@ -1567,7 +1582,8 @@ try:
                  + OS21.cockpit_section(_ctx21)
                  + OSG21.marketing_section(_ctx21)
                  + OSG21.search_section(_ctx21)
-                 + OSL21.leads_section(_ctx21))
+                 + OSL21.leads_section(_ctx21)
+                 + OSCM21.commerce_section(_ctx21))
     check("the OS ships no em-dash (the founder's rule)",
           "—" not in _osonly21 and "&mdash;" not in _osonly21)
 except Exception as exc:                                  # noqa: BLE001

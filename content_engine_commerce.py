@@ -157,10 +157,22 @@ def fetch_catalogue(store, platform: str = "", limit: int = 100
                         "why": f"Shopify refused the read ({r.status_code}). "
                                "The admin token needs read_products."}
             rows = _l(_d(r.json()).get("products"))
-            items = [{"id": _s(p.get("id")), "title": _s(p.get("title")),
-                      "type": _s(p.get("product_type")),
-                      "status": _s(p.get("status")),
-                      "url": _s(p.get("handle"))} for p in map(_d, rows)]
+            # PRICE AND STOCK COME FROM THE FIRST VARIANT. Without these
+            # the commerce desk has nothing to inspect: a stock warning
+            # needs a stock number, and inventing one is worse than an
+            # empty board. Missing stays None, never 0.
+            def _sv(p):
+                v = _d((_l(p.get("variants")) or [{}])[0])
+                return (_s(v.get("sku")), v.get("price"),
+                        v.get("inventory_quantity"))
+            items = []
+            for p in map(_d, rows):
+                sku, price, stock = _sv(p)
+                items.append({"id": _s(p.get("id")), "title": _s(p.get("title")),
+                              "type": _s(p.get("product_type")),
+                              "status": _s(p.get("status")),
+                              "url": _s(p.get("handle")),
+                              "sku": sku, "price": price, "stock": stock})
         elif plat == "woocommerce":
             base = _env(store, "WOO_SITE_URL").rstrip("/")
             r = rq.get(base + "/wp-json/wc/v3/products",
@@ -175,7 +187,14 @@ def fetch_catalogue(store, platform: str = "", limit: int = 100
                                f"scope and the site must allow REST."}
             items = [{"id": _s(p.get("id")), "title": _s(p.get("name")),
                       "type": _s(p.get("type")), "status": _s(p.get("status")),
-                      "url": _s(p.get("permalink"))}
+                      "url": _s(p.get("permalink")),
+                      "sku": _s(p.get("sku")),
+                      "price": p.get("price"),
+                      # stock_quantity is null when Woo is not tracking
+                      # stock for that product. That is "not tracked",
+                      # not "none left".
+                      "stock": p.get("stock_quantity"),
+                      "stock_status": _s(p.get("stock_status"))}
                      for p in map(_d, _l(r.json()))]
         else:  # wordpress: pages, not products
             base = _env(store, "WP_URL").rstrip("/")
@@ -188,10 +207,13 @@ def fetch_catalogue(store, platform: str = "", limit: int = 100
                         "count": None,
                         "why": f"WordPress refused the read "
                                f"({r.status_code})."}
+            # Pages are not products: price and stock are absent as a
+            # FACT about pages, not as missing data.
             items = [{"id": _s(p.get("id")),
                       "title": _s(_d(p.get("title")).get("rendered")),
                       "type": "page", "status": _s(p.get("status")),
-                      "url": _s(p.get("link"))}
+                      "url": _s(p.get("link")),
+                      "sku": "", "price": None, "stock": None}
                      for p in map(_d, _l(r.json()))]
     except Exception as exc:                          # noqa: BLE001
         return {"ok": False, "platform": plat, "products": [], "count": None,

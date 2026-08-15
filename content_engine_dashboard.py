@@ -4524,11 +4524,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         _os_ctx = os_ctx if isinstance(os_ctx, dict) else {}
         import content_engine_agentos_growth as _OSG
         import content_engine_agentos_leads as _OSL
+        import content_engine_agentos_commerce as _OSCM
         _os_core_all = _OSC.core_section(_os_ctx)
         _os_cockpit_all = _OSC.cockpit_section(_os_ctx)
         _os_mkt_all = _OSG.marketing_section(_os_ctx)
         _os_seo_all = _OSG.search_section(_os_ctx)
         _os_leads_all = _OSL.leads_section(_os_ctx)
+        _os_com_all = _OSCM.commerce_section(_os_ctx)
     except Exception as _e5:                              # noqa: BLE001
         log.exception("the Agent OS screens failed to render")
         _fail = ("<div class='card full' style='border-color:#F5788A'>"
@@ -4537,6 +4539,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  f"{_esc(str(_e5))[:300]}</p></div>")
         _os_core_all = _os_cockpit_all = _fail
         _os_mkt_all = _os_seo_all = _os_leads_all = _fail
+        _os_com_all = _fail
         _OSKIT_CSS = _OSKIT_JS = ""
 
     PAGES = [
@@ -4556,6 +4559,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("osleads", "🎯", "Leads", "Leads and Outreach",
          "Find them, qualify them, write to them, and send only what you "
          "approved. Turn 12 of the Agent OS.", _os_leads_all),
+        ("oscom", "📦", "Commerce", "Commerce and Product Publisher",
+         "One employee across five commerce desks, plus the product "
+         "publisher. Turns 11 and 10 of the Agent OS.", _os_com_all),
         ("cockpit", "🧠", "AI Cockpit", "AI Cockpit",
          "The brain. Every system's signal becomes a decision you can act "
          "on. 268 cards across 15 boards.", _cockpit_all),
@@ -4600,7 +4606,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # same nav() handler - only the order and the group labels are new.
     _by_id = {pid: (icon, short) for pid, icon, short, _t, _s, _b in PAGES}
     _NAV_GROUPS = (("Agent OS", ("oscockpit", "osmkt", "osseo",
-                             "osleads", "oscore")),
+                             "osleads", "oscom", "oscore")),
                    ("Command", ("cockpit",)),
                    ("Growth", ("content", "outreach", "media", "sga")),
                    ("Intelligence", ("bi", "seo")),
