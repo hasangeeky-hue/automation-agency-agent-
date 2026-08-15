@@ -1810,6 +1810,41 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     check("the deploy-taught fixes answered", False, repr(exc)[:110])
 
+# --- 27. MEDIA BUYING: the department the wireframe names but never drew --
+print("")
+print("27. MEDIA IS THE FOUNDER'S DESIGN, NOT MINE")
+try:
+    import content_engine_agentos_media as MD27
+
+    _miss27 = [s for s in MD27.SCREENS_7 if ("id='os-%s'" % s) not in _h21]
+    check("all nine Media screens are on the page", not _miss27, str(_miss27))
+    # THE DESKS ARE HIS, VERBATIM. The wireframe's cockpitAgents.media
+    # list is the source; if this ever drifts the department stops being
+    # his design and becomes mine, which is the one thing he asked
+    # against.
+    check("THE SIX DESKS ARE THE WIREFRAME'S OWN LIST, VERBATIM",
+          [n for _s, _i, n, _dd in MD27.DESKS]
+          == ["Scout", "Creative", "Launch", "Optimizer", "Pacing",
+              "Reporter"],
+          str([n for _s, _i, n, _dd in MD27.DESKS]))
+    check("and its connectors are the ones his design lists for Media",
+          [w for _l27, w in MD27.MEDIA_WIRES]
+          == ["ads_api", "social_facebook", "social_tiktok",
+              "social_linkedin"])
+    _mc27 = MD27.check(_ctx21)
+    check("the department passes its own check", _mc27["ok"],
+          str(_mc27["problems"])[:110])
+    check("the spend gate is stated where a launch would happen",
+          "SPEND is one of the five permanent gates" in _h21)
+    check("agents stay READ-ONLY on media, as the spec requires",
+          "read-only on media by design" in _h21.lower())
+    check("attribution is called a model, not a measurement",
+          "Attribution is a MODEL" in _h21)
+    check("and it is reachable from the nav",
+          "id='nav-osmedia'" in _h21 and "id='sec-osmedia'" in _h21)
+except Exception as exc:                                  # noqa: BLE001
+    check("the Media department answered", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

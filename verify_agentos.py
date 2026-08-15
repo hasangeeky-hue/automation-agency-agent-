@@ -23,6 +23,7 @@ import content_engine_agentos as OS
 import content_engine_agentos_growth as OSG
 import content_engine_agentos_leads as OSL
 import content_engine_agentos_commerce as OSCM
+import content_engine_agentos_media as OSMD
 import content_engine_os_kit as K
 import content_engine_roster as R
 
@@ -73,7 +74,7 @@ t("the Agent OS did not fall back to its error card",
   "Agent OS screens failed" not in html)
 ALL = (OS.SCREENS_13 + OS.SCREENS_14 + OSG.SCREENS_9
        + OSG.SCREENS_8 + OSL.SCREENS_12
-       + OSCM.SCREENS_11 + OSCM.SCREENS_10)
+       + OSCM.SCREENS_11 + OSCM.SCREENS_10 + OSMD.SCREENS_7)
 missing = [s for s in ALL if ("id='os-%s'" % s) not in html]
 t("all %d screens render" % len(ALL), not missing, str(missing))
 dupes = [s for s in ALL if html.count("id='os-%s'" % s) > 1]
@@ -86,8 +87,26 @@ t("turn 12 has its nine", len(OSL.SCREENS_12) == 9, str(len(OSL.SCREENS_12)))
 t("turn 11 has its nine", len(OSCM.SCREENS_11) == 9)
 t("turn 10 has its ONE screen, counted from the file, not assumed",
   len(OSCM.SCREENS_10) == 1)
-t("SO THE WIREFRAME IS 51 SCREENS AND ALL 51 ARE BUILT", len(ALL) == 51,
+t("the wireframe's own 51 screens are all built",
+  len([s for s in ALL if not s.startswith("7")]) == 51,
   str(len(ALL)))
+# MEDIA IS THE ONE DEPARTMENT THE WIREFRAME NAMES AND DOES NOT DRAW.
+# Its nine screens are derived from the founder's own material: his six
+# agent names verbatim, his "mirrors SEO's data-sources screen" and
+# "mirrors Media Buyer's agents room" notes, and his connector list.
+t("plus the nine Media screens the wireframe specifies but never drew",
+  len(OSMD.SCREENS_7) == 9, str(len(OSMD.SCREENS_7)))
+t("THE SIX DESKS ARE THE FOUNDER'S OWN, VERBATIM",
+  [n for _s, _i, n, _d2 in OSMD.DESKS]
+  == ["Scout", "Creative", "Launch", "Optimizer", "Pacing", "Reporter"],
+  str([n for _s, _i, n, _d2 in OSMD.DESKS]))
+_mc = OSMD.check(OS.build_ctx(st))
+t("and the media department passes its own check", _mc["ok"],
+  str(_mc["problems"]))
+t("the spend gate is stated where a launch would happen",
+  "SPEND is one of the five permanent gates" in html)
+t("agents stay READ-ONLY on media, as the spec requires",
+  "read-only on media by design" in html.lower())
 _cc = OSCM.check(OS.build_ctx(st))
 t("and the commerce turns pass their own check", _cc["ok"], str(_cc["problems"]))
 t("FIVE DESKS, ONE EMPLOYEE is disclosed on every commerce desk",
@@ -116,7 +135,7 @@ t("ONE WORKER, TWO DESKS is disclosed on both 8c and 8e",
 # ---- B. IT IS REACHABLE -------------------------------------------------
 print("\nB. THE FOUNDER CAN GET TO IT")
 for _pid in ("oscockpit", "oscore", "osmkt", "osseo", "osleads",
-             "oscom"):
+             "oscom", "osmedia"):
     t("%s has a nav link and a page" % _pid,
       ("id='nav-%s'" % _pid) in html and ("id='sec-%s'" % _pid) in html)
 # ---- THE REPLACEMENT, AND WHAT IT DID NOT COST -------------------------
@@ -324,7 +343,8 @@ bad = [n for n, src in (("kit", K.CSS + K.JS),
                         ("growth", OSG.marketing_section(_c)
                          + OSG.search_section(_c)),
                         ("leads", OSL.leads_section(_c)),
-                        ("commerce", OSCM.commerce_section(_c)))
+                        ("commerce", OSCM.commerce_section(_c)),
+                        ("media", OSMD.media_section(_c)))
        if "—" in src or "&mdash;" in src]
 t("the OS ships no em-dash", not bad, str(bad))
 

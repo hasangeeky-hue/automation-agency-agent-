@@ -4525,12 +4525,14 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         import content_engine_agentos_growth as _OSG
         import content_engine_agentos_leads as _OSL
         import content_engine_agentos_commerce as _OSCM
+        import content_engine_agentos_media as _OSMD
         _os_core_all = _OSC.core_section(_os_ctx)
         _os_cockpit_all = _OSC.cockpit_section(_os_ctx)
         _os_mkt_all = _OSG.marketing_section(_os_ctx)
         _os_seo_all = _OSG.search_section(_os_ctx)
         _os_leads_all = _OSL.leads_section(_os_ctx)
         _os_com_all = _OSCM.commerce_section(_os_ctx)
+        _os_media_all = _OSMD.media_section(_os_ctx)
     except Exception as _e5:                              # noqa: BLE001
         log.exception("the Agent OS screens failed to render")
         _fail = ("<div class='card full' style='border-color:#F5788A'>"
@@ -4539,7 +4541,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                  f"{_esc(str(_e5))[:300]}</p></div>")
         _os_core_all = _os_cockpit_all = _fail
         _os_mkt_all = _os_seo_all = _os_leads_all = _fail
-        _os_com_all = _fail
+        _os_com_all = _os_media_all = _fail
         _OSKIT_CSS = _OSKIT_JS = ""
 
     PAGES = [
@@ -4562,6 +4564,9 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         ("oscom", "📦", "Commerce", "Commerce and Product Publisher",
          "One employee across five commerce desks, plus the product "
          "publisher. Turns 11 and 10 of the Agent OS.", _os_com_all),
+        ("osmedia", "🛒", "Media Buying", "Media Buying",
+         "Module 1: six desks, one buyer, and a spend gate nothing opens. "
+         "Built to the wireframe's own agent list.", _os_media_all),
         ("cockpit", "🧠", "AI Cockpit", "AI Cockpit",
          "The brain. Every system's signal becomes a decision you can act "
          "on. 268 cards across 15 boards.", _cockpit_all),
@@ -4651,7 +4656,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # put nothing in its place, which is not a replacement, it is a loss.
     # They move to a second group and keep every id, so no link dies.
     _NAV_GROUPS = (("Agent OS", ("oscockpit", "osmkt", "osseo",
-                                 "osleads", "oscom", "oscore")),
+                                 "osleads", "oscom", "osmedia", "oscore")),
                    ("Deep tools", ("media", "bi", "seo", "content",
                                    "outreach", "sga", "cockpit",
                                    "riskinfra", "system")))

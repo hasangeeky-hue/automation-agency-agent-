@@ -124,6 +124,15 @@ def build_ctx(store) -> Dict[str, Any]:
     except Exception as exc:                              # noqa: BLE001
         ctx["errors"].append("social: %s" % type(exc).__name__)
         ctx["social"] = {}
+    # The media engine, for module 1's nine screens.
+    try:
+        import content_engine_agentos_media as _MD
+        ctx["media"] = _MD.build_media_ctx(store)
+    except Exception as exc:                              # noqa: BLE001
+        ctx["errors"].append("media: %s" % type(exc).__name__)
+        ctx["media"] = {"ok": False,
+                        "why": "the media reader raised %s"
+                               % type(exc).__name__}
     # The Risk Sentinel's posture. The backup question is the single most
     # consequential thing on this dashboard, so it is read every render.
     try:

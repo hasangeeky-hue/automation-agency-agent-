@@ -40,6 +40,56 @@ The builder follows the same doctrine it is building.
   fix the Google Ads OAuth client (`invalid_client`).
 - Confirm session sizing for the rest, per 10.6.
 
+## Session O — Media Buying, built from the founder's wireframe
+2026-08-15
+
+**THE INSTRUCTION**
+- "you will built my media screen align with my wire frame not yours."
+  The handoff draws no Media screens, so the question was where the
+  design comes from. The answer is that it is all in his file already.
+
+**WHAT WAS READ OUT OF HIS DESIGN, NOT INVENTED**
+- The six desks, verbatim from his own cockpitAgents.media list:
+  Scout, Creative, Launch, Optimizer, Pacing, Reporter. His cockpit card
+  for the module agrees: agents 6.
+- The department SHAPE, from two of his own notes: "Tools layer mirrors
+  SEO's data-sources screen" and "Control Room mirrors Media Buyer's
+  agents room exactly - autonomy level, data access + cost cap, activity
+  log, per employee". His Media agents room is the CANONICAL one every
+  other module copies, so it is built to that sentence.
+- The connectors, from his list of what feeds Media Buyer: Google Ads,
+  Meta, TikTok, LinkedIn.
+- The module's state line, his words: adapters return UNSUPPORTED and
+  Google Ads OAuth is broken.
+- PINK, derived from his own two examples: he marks 'Scale Meta +$50/day'
+  NOT pink and 'Add $300 to TikTok test budget' PINK. The rule that fits
+  both: moving spend inside an approved budget is gated but batchable;
+  raising the total committed budget is pink and goes one at a time.
+
+**THE ONE THING I CHOSE, AND IT IS FILING NOT DESIGN**
+- Screen ids 7a to 7i. His ids come from turn numbers and Media Buying
+  has none: it is "module 1" with no drawn turn. 7 is the free number
+  directly below t8. Renaming is one line.
+
+**FINISHED**
+- Nine screens, reading the real media engine (accounts, capability
+  table, pacing, history, business attribution, creative performance).
+  Every reader is wrapped separately so one broken call cannot blank the
+  department, and a panel that cannot be filled names the call that
+  failed.
+- 60 screens now: his 51 plus these nine. 347 deploy checks, 0 failed.
+  88 gates in verify_agentos, prover section 27.
+- The gate FAILS THE BUILD if the six desk names ever drift from his
+  list, which is the guarantee that this stays his design.
+
+**WHAT THE SCREENS REFUSE TO DO**
+- Nothing launches or spends. Agents are read-only on media by design,
+  the spend gate is stated on the Launch desk, and the Reporter says
+  outright that attribution is a MODEL rather than a measurement and
+  will disagree with the platform's own figure.
+
+---
+
 ## Session N — three things a real deploy taught us
 2026-08-15
 
