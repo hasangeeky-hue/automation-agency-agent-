@@ -4887,6 +4887,13 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         # on .osx and reads only those, so nothing here inherits a colour
         # from the shell it is dropped into.
         "<style>" + _OSKIT_CSS + "</style></head><body>"
+        # DARK MODE, APPLIED BEFORE FIRST PAINT. The kit's JS runs at the
+        # end of the body, and applying the saved theme there paints a
+        # light frame first and then snaps dark: a flash on every load
+        # for anyone living in dark. This one line runs the moment body
+        # opens, so the choice is on before anything is drawn.
+        "<script>try{if(localStorage.getItem('ox-theme')==='dark')"
+        "document.body.classList.add('oxdark')}catch(e){}</script>"
         # HIS WIREFRAME IS THE UI. NOTHING WRAPS IT.
         #
         # This used to draw a brand bar, a reporting-window pill strip, a

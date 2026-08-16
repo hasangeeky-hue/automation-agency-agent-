@@ -327,8 +327,17 @@ for _nm, _fn in _shell:
 # declared its own .osx with a different palette; it landed later in the
 # cascade and repainted his ground #f7f8fa and his ink #111827. Verified
 # in a real browser: one rule now, and the computed colours are his.
-t("ONLY ONE MODULE DECLARES .osx (the kit owns the founder's shell)",
-  styles.count(".osx{") == 1, str(styles.count(".osx{")))
+# The kit now declares .osx TWICE by design: the light tokens and the
+# body.oxdark override for dark mode. Both live in the kit; what this
+# check refuses is a SECOND MODULE declaring the class, which is the
+# collision that once repainted his ground. So the bare declaration must
+# appear exactly once, and the only other one must be the dark override.
+t("ONLY THE KIT DECLARES .osx: light once, dark once, nobody else",
+  styles.count(".osx{") == 2
+  and styles.count("body.oxdark .osx{") == 1,
+  str(styles.count(".osx{")))
+t("and dark redefines TOKENS only, never a component rule",
+  "--ox-bg:#161718" in styles)
 t("and the shell actually PAINTS his ground, not just declares it",
   "background:var(--ox-bg)" in styles and "color:var(--ox-ink)" in styles)
 # HIS PROSE WAS SAFE TO COPY. HIS NUMBERS NEVER WERE.

@@ -2033,8 +2033,13 @@ try:
     # his ground and ink from a later position in the cascade, so the
     # tokens were correct and the screen was not.
     _sty21 = "".join(re.findall(r"<style>(.*?)</style>", _h21, re.S))
-    check("ONLY ONE MODULE DECLARES .osx, so his palette survives",
-          _sty21.count(".osx{") == 1, str(_sty21.count(".osx{")))
+    # Two declarations by design since dark mode landed: the light tokens
+    # and the body.oxdark override, both in the kit. A THIRD is the
+    # collision this check exists to refuse.
+    check("ONLY THE KIT DECLARES .osx: light once, dark once, nobody else",
+          _sty21.count(".osx{") == 2
+          and _sty21.count("body.oxdark .osx{") == 1,
+          str(_sty21.count(".osx{")))
     check("and the shell PAINTS his ground, not merely declares it",
           "background:var(--ox-bg)" in _sty21)
     check("NO STAFFRAIL REPORTS ACTIVITY NOBODY MEASURED",

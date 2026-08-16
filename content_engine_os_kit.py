@@ -390,8 +390,13 @@ def frame(module_label: str, subnav: Sequence, body: str, *,
              "src='https://anthropos-automation.com/wp-content/uploads/"
              "2026/07/cropped-anthropos-logo-mark-transparent-1024-270x270"
              ".png' onerror=\"this.replaceWith('\\u25c6')\">")
+    # The theme toggle is icon PLUS word, like every status in this OS.
+    # It lives in the topbar because that is where a founder looks for it,
+    # and it toggles a body class so all seven module frames flip at once.
+    _theme = ("<button type='button' class='ox-btn ox-theme' "
+              "onclick='osTheme()'>◐ theme</button>")
     return ("<div class='ox-topbar'><span class='ox-brand'>" + _logo
-            + " Mother OS</span>"
+            + " Mother OS</span>" + _theme +
             "<span class='ox-cost'>%s</span><span>%s</span>"
             "<span class='ox-tools'>%s</span></div>"
             "<div class='ox-frame'>"
@@ -601,6 +606,22 @@ CSS = """
   font-family:var(--ox-bdy); font-size:14px; line-height:1.5;
   padding:18px; display:flex; flex-direction:column; gap:26px;
 }
+/* DARK, derived from his own system, not a new palette: the grounds are
+   his ink family inverted, the steel accent is lightened just enough to
+   read on a dark card, and every wash swaps from tint to shade. Only
+   tokens change here. A component that painted a colour of its own would
+   escape this block, which is why the kit has none. */
+body.oxdark .osx{
+  --ox-bg:#161718; --ox-sf:#1f2122; --ox-cd:#1b1d1e;
+  --ox-ink:#e8e8e9; --ox-ink2:#ababae; --ox-ink3:#8b8b8e;
+  --ox-ln:#33363a; --ox-ln2:#4a4d51;
+  --ox-ac:#7fa3c7; --ox-acd:#a8c4de; --ox-acw:#233240;
+  --ox-ac2:#8ba3bd;
+  --ox-dg:#c47c72; --ox-dgw:#3a2523;
+  --ox-ok:#7ba387; --ox-okw:#223026;
+  --ox-wn:#c2a166; --ox-wnw:#332b1c;
+}
+body.oxdark{background:#161718}
 .osx h3,.osx h4{font-family:var(--ox-dsp);font-weight:600;margin:0;
   letter-spacing:.02em;color:var(--ox-ink)}
 .osx h3{font-size:1.22rem;text-transform:uppercase;letter-spacing:.05em}
@@ -756,6 +777,7 @@ CSS = """
 .osx .ox-brand{font-family:var(--ox-dsp);font-weight:600;letter-spacing:.06em;
   color:var(--ox-ink);display:flex;align-items:center;gap:7px}
 .osx .ox-logo{height:20px;width:20px;object-fit:contain;display:block}
+.osx .ox-theme{margin-left:14px;font-size:.72rem}
 .osx .ox-cost{margin-left:auto;font-variant-numeric:tabular-nums}
 .osx .ox-frame{display:grid;grid-template-columns:210px 1fr;gap:16px;
   align-items:start}
@@ -987,6 +1009,10 @@ function osSaveKey(key){
        : (key+' saved. It stays amber until a real call is accepted.'));
    })
    .catch(function(e){ osAck('cockpit','Could not reach the engine: '+e); });
+}
+function osTheme(){
+  var d=document.body.classList.toggle('oxdark');
+  try{localStorage.setItem('ox-theme', d?'dark':'light');}catch(e){}
 }
 function osMemberAdd(){
   var e=document.getElementById('os-adm-email');
