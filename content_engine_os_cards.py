@@ -66,22 +66,26 @@ CHARTS = {
     ),
 }
 
+# Counted from the corrected 58-screen file, never typed from memory:
+# the first generation drifted by one on 8a and 9a, missed 8d and 11i,
+# and invented one on 15c. His file draws 49; this draws 49.
 DQ_SHAPE = {
-    '8a': 8,
+    '8a': 7,
+    '8d': 1,
     '8e': 1,
     '8f': 1,
-    '9a': 7,
+    '9a': 6,
     '9b': 1,
     '9f': 1,
     '11a': 9,
     '11g': 3,
+    '11i': 1,
     '12a': 6,
     '12f': 1,
     '13a': 8,
     '13c': 1,
     '13e': 1,
     '13f': 1,
-    '15c': 1,
 }
 
 

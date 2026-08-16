@@ -40,27 +40,26 @@ SCREENS_15_COMMERCE = ("15b", "15c")
 SCREENS_16 = ("16a", "16b")
 ALL_NEW = SCREENS_15_LEADS + SCREENS_15_COMMERCE + SCREENS_16
 
-#: title and subtitle, from his own screen labels
+#: title and subtitle, from the crumbs of his CORRECTED file. He renamed
+#: three of these in the revision (Community Chat Desk became Community
+#: Manager, Supply Chain's crumb reads Inventory Controller, ERP and
+#: Universal Data Hub became Data Hub), so the crumbs are copied, not
+#: remembered. The subnav labels stay his too, and they differ from the
+#: crumbs on 15b by his own hand: the subnav says Supply Chain, the
+#: screen says Inventory Controller.
 TITLES = {
-    "15a": ("Community Chat Desk",
-            "The bot's real conversation surfaces per channel: public "
-            "comments against private inbox and DM. WhatsApp connects via a "
-            "verified phone number."),
-    "15b": ("Supply Chain",
-            "Supplier to Amazon FC via the real Send-to-Amazon workflow, "
-            "Fulfilled-by-TikTok inbound, and multi-channel inventory sync "
-            "across Shopify and WooCommerce."),
+    "15a": ("Community Manager",
+            "One chat bot, five channels, wired only to surfaces each "
+            "platform really offers."),
+    "15b": ("Inventory Controller",
+            "Where the units physically are, right now."),
     "15c": ("Market Intelligence",
-            "The agent pulls each platform's OWN workspace reports "
-            "(Opportunity Explorer, Seller Center insights, Admin "
-            "analytics) through their APIs and organises them in one place."),
-    "16a": ("ERP and Universal Data Hub",
-            "Add any ERP, webshop, social platform or marketplace that has a "
-            "public and private API key. The hub pulls, normalises and "
-            "distributes to every agent."),
-    "16b": ("Data Mutation Ledger",
-            "Every change: which data mutated, where it came from, where it "
-            "went, and which department and agent touched it."),
+            "What competitors charge, and what to sell next, per channel."),
+    "16a": ("Data Hub",
+            "One intake for every system, ERP, web, social, marketplaces, "
+            "custom."),
+    "16b": ("Mutation Ledger",
+            "Who changed what, where, and with whose approval."),
 }
 
 #: what each screen needs before it can carry a number. Named, because

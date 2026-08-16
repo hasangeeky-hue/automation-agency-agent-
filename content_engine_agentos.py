@@ -36,11 +36,11 @@ _e, _l, _d = K._e, K._l, K._d
 #: HIS FINAL REVISION reordered and renamed this subnav and added
 #: new screens to it. Taken from the 56-screen file, not carried
 #: forward from the 51-screen one.
-SUBNAV_CORE = [('Command Center', '13a'), ('Integrations', '13b'), ('Data Steward', '13c'), ('ERP & Data Hub', '16a'), ('Mutation Ledger', '16b'), ('Developer', '13d'), ('Infra / SRE', '13e'), ('Orchestrator', '13f'), ('Analytics', '13g'), ('Sources & Control', '13h'), ('Tool Hub', '13i'), ('Health & Risk', '13j'), ('Connector Map', '13k')]
+SUBNAV_CORE = [('Command Center', '13a'), ('Integrations', '13b'), ('Data Steward', '13c'), ('ERP & Data Hub', '16a'), ('Connect & Track', '17a'), ('Mutation Ledger', '16b'), ('Developer', '13d'), ('Infra / SRE', '13e'), ('Orchestrator', '13f'), ('Analytics', '13g'), ('Sources & Control', '13h'), ('Tool Hub', '13i'), ('Health & Risk', '13j'), ('Connector Map', '13k')]
 
 #: his subnav for this module: the label, and the screen
 #: it opens. Anchors, exactly as his own markup uses.
-SUBNAV_COCKPIT = [('Cockpit Home', '14a'), ('Approval Queue', '14b'), ('All Agents', '14c'), ('Health & Activity', '14d'), ('Control Room', '14e')]
+SUBNAV_COCKPIT = [('Cockpit Home', '14a'), ('Unified Approvals', '14b'), ('All Agents', '14c'), ('Health & Activity', '14d'), ('System Control Room', '14e'), ('User Admin', '18a')]
 
 #: the six departments of the wireframe, and who actually staffs each
 MODULES = [
@@ -674,9 +674,193 @@ def _s14e(ctx) -> str:
 # ==========================================================================
 # ASSEMBLY
 # ==========================================================================
+# ==========================================================================
+# 17a  CONNECT & TRACK, from his corrected file.
+#
+# His words on the screen: "add a tool from here, sign in or paste a key,
+# the dashboard builds itself", and the empty state: "Nothing connected
+# yet, connect a source above and its panel appears here." The panels are
+# driven by the ENGINE's wire state, never drawn as connected: his own
+# file marks this desk ARCHITECTED, and the honest version of "the
+# dashboard builds itself" is a panel that appears when the wire it names
+# is actually live.
+# ==========================================================================
+
+#: the four tracking sources his screen names, with who reads each. The
+#: "used by" lines are his. state() answers live / saved / absent for the
+#: two that have wires, and notbuilt for the two that do not, naming the
+#: exact field a key would go into so absent is a next step, not a shrug.
+TRACK_SOURCES = (
+    {"id": "gsc", "icon": "🔎", "name": "Search Console",
+     "wire": "google_gsc_ga4", "field": "GSC_SITE_URL",
+     "feeds": "SEO Analyst, Strategist, Analytics"},
+    {"id": "ga4", "icon": "📈", "name": "Google Analytics 4",
+     "wire": "google_gsc_ga4", "field": "GA4_PROPERTY_ID",
+     "feeds": "SEO Analyst, Media Buyer, Strategist, Analytics"},
+    {"id": "gtm", "icon": "🏷", "name": "Google Tag Manager",
+     "wire": "", "field": "GTM_ACCOUNT_ID + GTM_CONTAINER_ID",
+     "feeds": "Strategist, Analytics"},
+    {"id": "pixels", "icon": "🎯", "name": "Ad pixels (Google, Meta)",
+     "wire": "", "field": "META_PIXEL_ID and the Ads conversion tag",
+     "feeds": "Media Buyer, Analytics"},
+)
+
+
+def _s17a(ctx) -> str:
+    try:
+        import content_engine_connectors as CN
+        st = {k: bool(v) for k, v in _d(CN.status()).items()}
+        have = CN._env
+    except Exception:                                     # noqa: BLE001
+        st, have = {}, (lambda k, d="": "")
+    cards, live_n = [], 0
+    for s in TRACK_SOURCES:
+        if not s["wire"]:
+            word, dot = "NOT BUILT", "▢"
+            note = ("no wire exists in this engine yet. Building one "
+                    "starts with a read connector and the field(s) %s."
+                    % s["field"])
+        elif st.get(s["wire"]) and have(s["field"]):
+            word, dot = "LIVE", "●"
+            live_n += 1
+            note = ("the wire holds its credentials and %s is set. Its "
+                    "numbers render on 13g Analytics; this panel is the "
+                    "connection's health, not a second copy of them."
+                    % s["field"])
+        elif st.get(s["wire"]):
+            word, dot = "PARTIAL", "◐"
+            note = ("the shared Google wire is up but %s is empty, so "
+                    "this source reads nothing yet." % s["field"])
+        else:
+            word, dot = "NOT CONNECTED", "○"
+            note = ("needs the Google service account JSON plus %s, "
+                    "entered on the Tool Hub (13i)." % s["field"])
+        cards.append(K.bp(
+            "<span class='ox-lbl'>%s %s</span>"
+            "<p class='ox-sub'><b>%s %s</b>. %s</p>"
+            "<p class='ox-sub'>used by: %s</p>"
+            % (_e(s["icon"]), _e(s["name"]), dot, word, _e(note),
+               _e(s["feeds"]))))
+    intro = K.bp(
+        "<div class='ox-sh'>" + K.badge(
+            "architected",
+            "his file draws sign-in here; keys are entered on 13i today")
+        + "</div>"
+        + "<p class='ox-sub'>Add a tool from here: sign in or paste a key, "
+          "and the dashboard builds itself. All credential fields live in "
+          "the <b>Tool Hub (13i)</b> with states and Test buttons; this "
+          "desk shows what a connected tracking source unlocks."
+          "</p>"
+        + ("" if live_n else
+           "<p class='ox-sub'>Nothing connected yet, connect a source "
+           "and its panel appears here.</p>"))
+    return K.screen(
+        "17a", "Connect & Track",
+        "add a tool from here, sign in or paste a key, the dashboard "
+        "builds itself",
+        intro + K.grid(*cards),
+        staffed_by="🔌 Integrations Engineer", badge_kind="live")
+
+
+# ==========================================================================
+# 18a  USER ADMIN, from his corrected file.
+#
+# The one new screen that is LIVE on arrival, because the membership layer
+# under it already exists: workspaces, members, roles with grants, the
+# admin-gated /os/member endpoints, and an owner who cannot be removed
+# (refused in code, not in the UI). What his drawing has that this engine
+# does not is 2FA and the ledger write; both are said in words rather
+# than drawn as working.
+# ==========================================================================
+
+#: his four permission rows, restated against the ENGINE's real grants.
+#: His role names are Owner/Admin/Operator/Viewer; the engine's third
+#: role is called member. Same seat, his label kept beside ours.
+ROLE_ROWS = (
+    ("See every dashboard", ("read",)),
+    ("Command agents and edit drafts", ("write",)),
+    ("Approve and reject at gates", ("send",)),
+    ("Connect tools, manage people", ("admin",)),
+)
+
+
+def _s18a(ctx) -> str:
+    import content_engine_os_core as CORE
+    rows_html, who = [], []
+    try:
+        import content_engine_api as API
+        import content_engine_os_tenancy as TEN
+        store = API.get_store()
+        TEN.ensure_home(store)
+        who = TEN.members(store, CORE.DEFAULT_WORKSPACE)
+        logins = _d(TEN.people_with_logins(store, CORE.DEFAULT_WORKSPACE))
+    except Exception:                                     # noqa: BLE001
+        who, logins = [], {}
+    withpw = set(_l(logins.get("with_password")))
+    for m in who:
+        em = str(m.get("email") or "")
+        role = str(m.get("role") or "")
+        act = ("<span class='ox-sub'>owner, cannot be removed (the "
+               "endpoint refuses, not just this page)</span>"
+               if role == "owner" else
+               "<button type='button' class='ox-btn' "
+               "onclick=\"osMemberRemove('%s')\">Remove</button>" % _e(em))
+        rows_html.append(
+            "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+            "</tr>"
+            % (_e(em), _e(role), _e(m.get("grants") or ""),
+               "password set" if em in withpw else "no password yet",
+               act))
+    users_tbl = (
+        "<div class='ox-tw'><table class='ox-t'><thead><tr>"
+        "<th>User</th><th>Role</th><th>May</th><th>Login</th><th></th>"
+        "</tr></thead><tbody>%s</tbody></table></div>"
+        % ("".join(rows_html)
+           or "<tr><td colspan='5'>no members are stored yet</td></tr>"))
+    invite = K.bp(
+        "<span class='ox-lbl'>Invite a user</span>"
+        "<div class='ox-tw'><table class='ox-t'><tbody>"
+        "<tr><td>Work email</td>"
+        "<td><input class='ox-in' id='os-adm-email' "
+        "placeholder='name@company.com'></td>"
+        "<td><select class='ox-in' id='os-adm-role'>%s</select></td>"
+        "<td><button type='button' class='ox-btn' "
+        "onclick='osMemberAdd()'>Add member</button></td></tr>"
+        "</tbody></table></div>"
+        "<p class='ox-sub'>Adding a member is an ADMIN action: the "
+        "endpoint checks your grant before it writes. No invite email is "
+        "sent, because no invite mailer exists; the row appears below and "
+        "a password is set from this screen's endpoint.</p>"
+        % "".join("<option value='%s'>%s</option>" % (r, r)
+                  for r in CORE.ROLES if r != "owner"))
+    role_rows = "".join(
+        "<tr><td>%s</td>%s</tr>" % (label, "".join(
+            "<td>%s</td>" % ("✓" if grant in CORE.ROLE_GRANTS[r] else "no")
+            for r in CORE.ROLES))
+        for label, (grant,) in ROLE_ROWS)
+    roles_tbl = K.bp(
+        "<span class='ox-lbl'>Roles, checked at the gate, not in the UI"
+        "</span>"
+        "<div class='ox-tw'><table class='ox-t'><thead>"
+        "<tr><th>Permission</th>%s</tr></thead><tbody>%s</tbody></table>"
+        "</div>"
+        "<p class='ox-sub'>His drawing calls the third seat Operator; "
+        "this engine calls it member. Same seat. Two things his drawing "
+        "has that this engine does not, said plainly: there is no 2FA "
+        "yet, and admin actions do not land in the Mutation Ledger until "
+        "the ledger has a writer (16b names the same gap).</p>"
+        % ("".join("<th>%s</th>" % r for r in CORE.ROLES), role_rows))
+    return K.screen(
+        "18a", "User Admin",
+        "the humans, who may command, approve, connect and spend",
+        invite + K.bp("<span class='ox-lbl'>Users</span>" + users_tbl)
+        + roles_tbl,
+        staffed_by="🔌 Integrations Engineer", badge_kind="live")
+
+
 SCREENS_13 = ("13a", "13b", "13c", "13d", "13e", "13f", "13g", "13h", "13i",
-              "13j", "13k")
-SCREENS_14 = ("14a", "14b", "14c", "14d", "14e")
+              "13j", "13k", "17a")
+SCREENS_14 = ("14a", "14b", "14c", "14d", "14e", "18a")
 
 
 def core_section(ctx: Dict[str, Any]) -> str:
@@ -696,8 +880,9 @@ def core_section(ctx: Dict[str, Any]) -> str:
                                 "Command to work to gated deploy.")
             + _s13e(ctx) + _s13f(ctx) + _s13g(ctx) + _s13h(ctx)
             + _s13i(ctx) + _s13j(ctx) + _s13k(ctx)
-            # HIS FINAL REVISION: 16a and 16b join this module.
-            + HUB.core_extra(ctx))
+            # HIS FINAL REVISION: 16a and 16b join this module, and the
+            # corrected file adds 17a Connect & Track beside them.
+            + _s17a(ctx) + HUB.core_extra(ctx))
     return ("<div class='osx'>"
             + K.frame('6 · Web & Data Core', SUBNAV_CORE, body)
             + "</div>")
@@ -713,7 +898,9 @@ def cockpit_section(ctx: Dict[str, Any]) -> str:
     navigates rather than a shortcut.
     """
     ctx = _d(ctx)
-    body = (_s14a(ctx) + _s14b(ctx) + _s14c(ctx) + _s14d(ctx) + _s14e(ctx))
+    body = (_s14a(ctx) + _s14b(ctx) + _s14c(ctx) + _s14d(ctx) + _s14e(ctx)
+            # the corrected file adds User Admin to the Cockpit.
+            + _s18a(ctx))
     return ("<div class='osx'>"
             + K.frame('Cockpit', SUBNAV_COCKPIT, body)
             + "</div>")

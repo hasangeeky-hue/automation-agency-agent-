@@ -84,16 +84,18 @@ missing = [s for s in ALL if ("id='os-%s'" % s) not in html]
 t("all %d screens render" % len(ALL), not missing, str(missing))
 dupes = [s for s in ALL if html.count("id='os-%s'" % s) > 1]
 t("and NONE is rendered twice", not dupes, str(dupes))
-t("turn 13 has its eleven", len(OS.SCREENS_13) == 11, str(len(OS.SCREENS_13)))
-t("turn 14 has its five", len(OS.SCREENS_14) == 5, str(len(OS.SCREENS_14)))
+t("turn 13 has its twelve (17a joined it)", len(OS.SCREENS_13) == 12,
+  str(len(OS.SCREENS_13)))
+t("turn 14 has its six (18a joined it)", len(OS.SCREENS_14) == 6,
+  str(len(OS.SCREENS_14)))
 t("turn 9 has its eight", len(OSG.SCREENS_9) == 8, str(len(OSG.SCREENS_9)))
 t("turn 8 has its eight", len(OSG.SCREENS_8) == 8, str(len(OSG.SCREENS_8)))
 t("turn 12 has its nine", len(OSL.SCREENS_12) == 9, str(len(OSL.SCREENS_12)))
 t("turn 11 has its nine", len(OSCM.SCREENS_11) == 9)
 t("turn 10 has its ONE screen, counted from the file, not assumed",
   len(OSCM.SCREENS_10) == 1)
-t("HIS FINAL REVISION IS 56 SCREENS AND ALL 56 ARE BUILT",
-  len([s for s in ALL if not s.startswith("7")]) == 56,
+t("HIS CORRECTED FILE IS 58 SCREENS AND ALL 58 ARE BUILT",
+  len([s for s in ALL if not s.startswith("7")]) == 58,
   str(len([s for s in ALL if not s.startswith("7")])))
 _hc = OSHUB.check(OS.build_ctx(st))
 t("and the five new ones pass their own check", _hc["ok"], str(_hc["problems"]))
@@ -155,9 +157,13 @@ for _pid in ("oscockpit", "oscore", "osmkt", "osseo", "osleads",
 print("")
 print("B2. THE AGENT OS IS THE DASHBOARD, AND NOTHING WAS LOST")
 # THE OLD CHROME IS GONE ENTIRELY, not merely reduced to one group.
+# "Anthropos" may now appear exactly one way: as the alt text of his
+# logo in his own topbar. Any OTHER appearance in the shell is the old
+# chrome leaking back.
 t("THE OLD DASHBOARD CHROME IS GONE: no brand bar, no second nav",
   "class='top'" not in html and "class='side'" not in html
-  and "Anthropos" not in html.split("<body>")[-1][:4000])
+  and "Anthropos" not in html.split("<body>")[-1][:4000]
+      .replace("alt='Anthropos'", ""))
 t("and no old nav group survives anywhere",
   ">Deep tools<" not in html and "class='navgrp'" not in html)
 t("HIS TOPBAR IS THE ONLY TOPBAR", html.count("class='ox-topbar'") == 7,

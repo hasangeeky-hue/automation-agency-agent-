@@ -46,7 +46,7 @@ _e, _l, _d = K._e, K._l, K._d
 #: HIS FINAL REVISION reordered and renamed this subnav and added
 #: new screens to it. Taken from the 56-screen file, not carried
 #: forward from the 51-screen one.
-SUBNAV_LEADS = [('Command Center', '12a'), ('Prospector', '12b'), ('Data Cleaner', '12c'), ('Qualifier', '12d'), ('Outreach Writer', '12e'), ('Sender / Tracker', '12f'), ('Sources & Control', '12g'), ('Campaigns', '12h'), ('Segmentation', '12i'), ('Community Chat', '15a')]
+SUBNAV_LEADS = [('Command Center', '12a'), ('Prospector', '12b'), ('Data Cleaner', '12c'), ('Qualifier', '12d'), ('Outreach Writer', '12e'), ('Sender / Tracker', '12f'), ('Sources & Control', '12g'), ('Email Preview', '12h'), ('Segmentation', '12i'), ('Community Chat', '15a')]
 
 STAFF_12 = ("leads.prospector", "leads.qualifier", "leads.outreach_writer",
             "leads.sender")

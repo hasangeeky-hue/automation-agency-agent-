@@ -382,7 +382,16 @@ def frame(module_label: str, subnav: Sequence, body: str, *,
     # these once, at the end, when everything it needs exists.
     _cost = _e(cost) or "{{OX_COST}}"
     _al = _e(alerts) or "{{OX_ALERTS}}"
-    return ("<div class='ox-topbar'><span class='ox-brand'>◆ Mother OS</span>"
+    # HIS LOGO, from the old OS. The wireframe's ◆ glyph was a placeholder;
+    # the mark the old dashboard already served is the brand. The glyph
+    # stays as the fallback painted by onerror, so a box with no internet
+    # still shows a brand instead of a broken-image icon.
+    _logo = ("<img class='ox-logo' alt='Anthropos' "
+             "src='https://anthropos-automation.com/wp-content/uploads/"
+             "2026/07/cropped-anthropos-logo-mark-transparent-1024-270x270"
+             ".png' onerror=\"this.replaceWith('\\u25c6')\">")
+    return ("<div class='ox-topbar'><span class='ox-brand'>" + _logo
+            + " Mother OS</span>"
             "<span class='ox-cost'>%s</span><span>%s</span>"
             "<span class='ox-tools'>%s</span></div>"
             "<div class='ox-frame'>"
@@ -745,7 +754,8 @@ CSS = """
   border:1px solid var(--ox-ln);background:var(--ox-sf);padding:8px 14px;
   font-size:.8rem;color:var(--ox-ink2)}
 .osx .ox-brand{font-family:var(--ox-dsp);font-weight:600;letter-spacing:.06em;
-  color:var(--ox-ink)}
+  color:var(--ox-ink);display:flex;align-items:center;gap:7px}
+.osx .ox-logo{height:20px;width:20px;object-fit:contain;display:block}
 .osx .ox-cost{margin-left:auto;font-variant-numeric:tabular-nums}
 .osx .ox-frame{display:grid;grid-template-columns:210px 1fr;gap:16px;
   align-items:start}
@@ -977,6 +987,36 @@ function osSaveKey(key){
        : (key+' saved. It stays amber until a real call is accepted.'));
    })
    .catch(function(e){ osAck('cockpit','Could not reach the engine: '+e); });
+}
+function osMemberAdd(){
+  var e=document.getElementById('os-adm-email');
+  var r=document.getElementById('os-adm-role');
+  var em=(e&&e.value||'').trim();
+  if(!em){ osAck('cockpit','No email typed.'); return; }
+  fetch('/os/member/add',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email:em, role:(r&&r.value)||'member'})})
+   .then(function(x){return x.json();})
+   .then(function(d){
+     // the endpoint is the authority: it checks the admin grant and
+     // refuses; this page only repeats what it said.
+     osAck('cockpit',(d&&d.ok===false)?('Refused: '+(d.message||'no reason given'))
+       :(em+' added. Reload to see the row.'));
+     if(e) e.value='';
+   })
+   .catch(function(err){ osAck('cockpit','Could not reach the engine: '+err); });
+}
+function osMemberRemove(em){
+  if(!window.confirm('Remove '+em+' from this workspace?')) return;
+  fetch('/os/member/remove',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email:em})})
+   .then(function(x){return x.json();})
+   .then(function(d){
+     osAck('cockpit',(d&&d.ok)?(em+' removed. Reload to see the list.')
+       :('Refused: '+((d&&d.message)||'no reason given')));
+   })
+   .catch(function(err){ osAck('cockpit','Could not reach the engine: '+err); });
 }
 function osApprove(aid, item, pink){
   // A PINK ACTION NEVER APPROVES FROM HERE. The prototype short-circuited

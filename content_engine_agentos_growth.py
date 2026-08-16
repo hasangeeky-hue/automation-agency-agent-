@@ -35,7 +35,9 @@ SUBNAV_MARKETING = [('Command Center', '9a'), ('Strategist', '9b'), ('Approval R
 
 #: his subnav for this module: the label, and the screen
 #: it opens. Anchors, exactly as his own markup uses.
-SUBNAV_SEARCH = [('Command Center', '8a'), ('Engineer', '8b'), ('Analyst', '8c'), ('Content Specialist', '8d'), ('Keyword Strategist', '8e'), ('Link Builder', '8f'), ('Data Sources', '8g'), ('Control Room', '8h')]
+# His corrected file reorders this and shortens the labels: Content and
+# Keywords now sit BEFORE Analytics. The order is his, not alphabetical.
+SUBNAV_SEARCH = [('Command Center', '8a'), ('Technical', '8b'), ('Content', '8d'), ('Keywords', '8e'), ('Links', '8f'), ('Analytics', '8c'), ('Data Sources', '8g'), ('Control Room', '8h')]
 
 #: job status -> the plain-English pipeline stage the founder reads
 PIPELINE = [

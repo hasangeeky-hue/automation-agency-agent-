@@ -1605,8 +1605,8 @@ try:
     _miss21 = [s for s in _all21 if ("id='os-%s'" % s) not in _h21]
     check("all %d wireframe screens built so far are on the page" % len(_all21),
           not _miss21, "t13:11 t14:5 t9:8 t8:8 t12:9 t11:9 t10:1")
-    check("HIS FINAL REVISION IS 56 SCREENS AND ALL 56 ARE BUILT",
-          len(_all21) == 56, str(len(_all21)))
+    check("HIS CORRECTED FILE IS 58 SCREENS AND ALL 58 ARE BUILT",
+          len(_all21) == 58, str(len(_all21)))
     check("and NO screen is rendered twice",
           not [s for s in _all21 if _h21.count("id='os-%s'" % s) > 1])
     # THE OLD CHROME IS GONE ENTIRELY. It used to draw a brand bar, a

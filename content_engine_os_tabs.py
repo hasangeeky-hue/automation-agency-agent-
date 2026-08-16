@@ -62,6 +62,15 @@ TABS = {
         'Bookings',
         'Community',
     ),
+    # the corrected file draws a per-staff strip on the SEO Control Room
+    # too, mirroring 9h. It was missed in the first generation.
+    '8h': (
+        '🔧 Technical',
+        '✍ Content',
+        '🧭 Strategist',
+        '🔗 Link',
+        '📊 Analyst',
+    ),
     '9h': (
         '🧠 Strategist',
         '🎬 Creative Dir',
