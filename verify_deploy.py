@@ -2192,6 +2192,54 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     check("the orders collector answered", False, repr(exc)[:110])
 
+# ==========================================================================
+# 30  THE COMMERCE WIRES EXIST, AND THE FEEDER NAMES ONLY REAL WIRES
+# ==========================================================================
+# shopify and woocommerce were declared in _FEEDS, named by the Commerce
+# Analyst's tool slots and grouped by _group_of, and status() never
+# returned them. So the Tool Hub, the connector map, health propagation and
+# the risk score all read NOT CONNECTED no matter what the founder entered,
+# and nothing anywhere said why. The same silence would swallow any feed
+# that names a wire status() does not report: it skips forever with a tidy
+# reason. Both agreements are asserted here instead of trusted.
+try:
+    import content_engine_commerce as CM30
+    import content_engine_connectors as C30
+    import feed_data as FD30
+
+    _st30 = C30.status()
+    for _w30 in ("shopify", "woocommerce", "wordpress_cms"):
+        check("status() reports the %s wire" % _w30, _w30 in _st30)
+
+    # DERIVED, NOT TYPED. If a platform is added to the commerce registry
+    # tomorrow, this fails until status() reports it too.
+    _want30 = {("wordpress_cms" if p == "wordpress" else p)
+               for p in CM30.PLATFORMS}
+    check("every commerce platform has a wire in status()",
+          _want30 <= set(_st30), str(sorted(_want30 - set(_st30))))
+
+    _fed30 = [w for w in getattr(C30, "_FEEDS", {}) if w not in _st30]
+    check("no wire feeds a module without existing in status()",
+          not _fed30, str(_fed30))
+
+    _c30 = FD30.check()
+    check("the feeder names only wires that exist", _c30["ok"],
+          "; ".join(_c30["problems"]))
+    check("the feeder holds a collector for every free feed", _c30["ok"])
+
+    # THE FEEDER MUST NOT BE ABLE TO SEND. A collector that can post is one
+    # bug away from posting, and this one runs unattended by design.
+    _src30 = open("feed_data.py", encoding="utf-8").read()
+    check("THE FEEDER CANNOT PUBLISH, SEND OR SPEND",
+          not any(_b30 in _src30 for _b30 in
+                  ("post_social(", "SEND_FN", "PUBLISH_FN", ".publish(",
+                   ".send(", "set_price(")))
+    print("")
+    print("       %d wire(s) in status(), %d free feed(s), %d paid and "
+          "not run" % (_c30["wires"], _c30["free"], _c30["paid"]))
+except Exception as exc:                                  # noqa: BLE001
+    check("the commerce wires and the feeder agree", False, repr(exc)[:110])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

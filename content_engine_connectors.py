@@ -4203,9 +4203,42 @@ class GoogleAds:
 # ---------------------------------------------------------------------------
 # Wiring + status
 # ---------------------------------------------------------------------------
+def _cms_wires() -> dict:
+    """The shop and CMS read wires, DERIVED from the commerce registry.
+
+    These belong in status() and were missing from it. _FEEDS above has
+    always declared that shopify and woocommerce feed the commerce module,
+    the Commerce Analyst names both as its tool slots, and _group_of puts
+    them in a commerce group - but status() never returned them. So the
+    Tool Hub, the connector map, health propagation and the risk score all
+    behaved as though the wires did not exist. Connect a shop and every one
+    of those surfaces would still have read NOT CONNECTED, with nothing
+    anywhere saying why.
+
+    The key names are read out of content_engine_commerce.PLATFORMS rather
+    than typed here. Two hand-written lists that must agree is the bug this
+    engine keeps shipping, and this is exactly that shape: the keys already
+    exist in one place, so this asks that place.
+
+    wordpress_cms is NOT wordpress_publish. Publishing uses WORDPRESS_URL /
+    USER / APP_PASSWORD; reading the catalogue uses WP_URL / WP_USER /
+    WP_APP_PASSWORD. They are different credentials for different jobs, and
+    collapsing them would make one of them impossible to diagnose."""
+    try:
+        import content_engine_commerce as CM
+    except Exception:                                  # noqa: BLE001
+        return {}
+    out = {}
+    for pid, spec in dict(getattr(CM, "PLATFORMS", {})).items():
+        wire = "wordpress_cms" if pid == "wordpress" else pid
+        keys = tuple(dict(spec).get("keys") or ())
+        out[wire] = bool(keys) and all(_env(k) for k in keys)
+    return out
+
+
 def status() -> dict:
     """What's live right now (creds present) vs offline."""
-    return {
+    return dict(_cms_wires()) | {
         "claude_api": bool(_env("ANTHROPIC_API_KEY")),   # the engine's brain
         "wordpress_publish": WordPress().available(),
         "social_linkedin": LinkedInPoster().available(),
