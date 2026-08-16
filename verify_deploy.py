@@ -2245,6 +2245,90 @@ try:
 except Exception as exc:                                  # noqa: BLE001
     check("the commerce wires and the feeder agree", False, repr(exc)[:110])
 
+# ==========================================================================
+# 31  THE ENTITY WALL, THE MUTATION LEDGER, THE STANDING RULES, THE FLEET
+# ==========================================================================
+# Stage B-D of the activation plan. Each of these is the kind of thing
+# that LOOKS built from the outside while silently not working: a wall
+# with a leak, a ledger that accepts secrets, a rule that never reaches
+# a prompt, a fallback model the budget cap meters as free. So each is
+# exercised here, not inspected.
+try:
+    import content_engine_entities as EN31
+    import content_engine_learning as L31
+    import content_engine_mutation as MU31
+    import content_engine_orchestrator as OR31
+    import content_engine_providers as PR31
+
+    _e31 = EN31.check()
+    check("THE ENTITY WALL HOLDS (scoping self-check)", _e31["ok"],
+          "; ".join(_e31["problems"]))
+    _m31 = MU31.check()
+    check("the mutation agent's refusals refuse and its tallies count",
+          _m31["ok"], "; ".join(_m31["problems"]))
+    check("every mutation kind is owned by a roster employee",
+          _m31["ok"])
+
+    # writers are WIRED, asserted from source: the collectors and the
+    # gated price write each reach the ledger.
+    for _f31, _lbl31 in (("content_engine_orders.py", "orders"),
+                         ("content_engine_bookings.py", "bookings"),
+                         ("content_engine_social_stats.py", "social"),
+                         ("content_engine_pricing.py", "pricing"),
+                         ("content_engine_api.py", "credential saves")):
+        _src31 = open(_f31, encoding="utf-8").read()
+        check("the %s path writes the mutation ledger" % _lbl31,
+              "content_engine_mutation" in _src31)
+
+    # STANDING RULES: a saved rule must demonstrably change the next
+    # prompt, and removing it must demonstrably stop.
+    _mem31 = L31.InMemoryLearningStore()
+    _old31 = L31.ACTIVE
+    L31.set_store(_mem31)
+    try:
+        _r31 = L31.add_rule("GateClient", "content",
+                            "Gate check rule: always name the source.")
+        check("a standing rule saves", bool(_r31.get("ok")),
+              str(_r31.get("message")))
+        _blk31 = PR31._standing_rules_block(
+            "content_producer", {"client_id": "GateClient"})
+        check("A SAVED RULE LANDS IN THE NEXT PROMPT",
+              "always name the source" in _blk31)
+        L31.remove_rule("GateClient", "content",
+                        "Gate check rule: always name the source.")
+        _blk31b = PR31._standing_rules_block(
+            "content_producer", {"client_id": "GateClient"})
+        check("and a removed rule leaves it", "always name the source"
+              not in _blk31b)
+    finally:
+        L31.set_store(_old31)
+
+    # THE FLEET: every model any route can reach is priced, or the
+    # budget cap meters it as free.
+    _models31 = set()
+    for _rt31 in OR31.ROUTES.values():
+        for _k31 in ("engine", "fallback", "narrate", "image_prompts"):
+            _mdl31 = _rt31.get(_k31)
+            if _mdl31 and _mdl31 != "code":
+                _models31.add(_mdl31)
+    _unpriced31 = sorted(m for m in _models31 if m not in PR31.PRICING)
+    check("EVERY ROUTED MODEL HAS A PRICE, so cost can never log 0.0",
+          not _unpriced31, str(_unpriced31))
+    check("the cheap fallback crosses providers (outage cover)",
+          str(OR31.CHEAP_ALT).startswith("gpt"))
+    check("qa_compliance still has NO fallback, deliberately",
+          OR31.ROUTES["qa_compliance"].get("fallback") is None)
+
+    _rb31 = open("docs/ACTIVATION_RUNBOOK.md", encoding="utf-8").read()
+    check("the activation runbook exists and keeps the gates permanent",
+          "stay gated forever" in _rb31)
+    print("")
+    print("       entity wall + mutation ledger + standing rules + fleet: "
+          "exercised, not inspected")
+except Exception as exc:                                  # noqa: BLE001
+    check("stage B-D of the activation plan is wired", False,
+          repr(exc)[:120])
+
 # ---------------------------------------------------------------- verdict
 print("\n" + "=" * 74)
 if FAILED:

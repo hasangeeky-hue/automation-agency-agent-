@@ -590,6 +590,17 @@ def api_connect(values: dict) -> dict:
                 _RD.stamp_credential(store, _k)
             except Exception:                             # noqa: BLE001
                 pass
+    # THE MUTATION LEDGER (16b): a credential change mutates what every
+    # wire can do. The row carries the key NAME only; record() refuses
+    # anything that looks like a value, and none is passed.
+    if saved:
+        try:
+            import content_engine_mutation as MU
+            MU.record(store, source="tool hub", kind="credential_set",
+                      what="key(s) set: " + ", ".join(sorted(saved)),
+                      actor="founder")
+        except Exception:                                 # noqa: BLE001
+            pass
     return {"saved": saved, "warnings": warnings, "status": C.status()}
 
 
@@ -3934,10 +3945,16 @@ def build_app():
         if not got["ok"]:
             return {"ok": False, "message": got["message"]}
         if d.get("clear"):
-            return _TEN.clear_password(store, got["workspace_id"],
-                                       d.get("email"))
-        return _TEN.set_password(store, got["workspace_id"], d.get("email"),
-                                 d.get("password"))
+            out = _TEN.clear_password(store, got["workspace_id"],
+                                      d.get("email"))
+        else:
+            out = _TEN.set_password(store, got["workspace_id"],
+                                    d.get("email"), d.get("password"))
+        if out.get("ok", True):
+            _admin_ledger(store, "password %s for %s"
+                          % ("cleared" if d.get("clear") else "set",
+                             d.get("email")))
+        return out
 
     @app.post("/os/conversion")
     async def os_conversion(request: Request):
@@ -4055,6 +4072,38 @@ def build_app():
                      samesite="lax")
         return r
 
+    def _rules_client() -> str:
+        """The client id rules are saved under. It MUST be the same id the
+        jobs run under (their brand_name), or rules would be saved into a
+        playbook no prompt ever reads. Read from the brand module, which
+        is where the jobs' brand comes from too: one source, not two."""
+        try:
+            import content_engine_brand as B
+            return str(B.get_ci().get("brand_name") or "")
+        except Exception:                                 # noqa: BLE001
+            return ""
+
+    def _require_admin_or_write(store, request):
+        import content_engine_os_tenancy as TEN
+        got = TEN.require(store, _ws(request), grant="write")
+        if not got.get("ok"):
+            return {"ok": False, "message": got.get("message")}
+        try:
+            em = TEN.owner_email(store)
+        except Exception:                                 # noqa: BLE001
+            em = ""
+        return {"ok": True, "email": em}
+
+    def _admin_ledger(store, what: str) -> None:
+        """18a's promise: every human admin action lands in the ledger.
+        Best-effort; the action itself must never fail on the record."""
+        try:
+            import content_engine_mutation as MU
+            MU.record(store, source="user admin", kind="user_admin",
+                      what=what, actor="founder")
+        except Exception:                                 # noqa: BLE001
+            pass
+
     @app.post("/os/member/add")
     async def os_member_add(request: Request):
         d = await _body(request)
@@ -4063,8 +4112,12 @@ def build_app():
         got = TEN.require(store, _ws(request), grant="admin")
         if not got["ok"]:
             return {"ok": False, "message": got["message"]}
-        return TEN.add_member(store, got["workspace_id"], d.get("email"),
-                              d.get("role", "member"))
+        out = TEN.add_member(store, got["workspace_id"], d.get("email"),
+                             d.get("role", "member"))
+        if out.get("ok", True):
+            _admin_ledger(store, "member added: %s as %s"
+                          % (d.get("email"), d.get("role", "member")))
+        return out
 
     @app.post("/os/member/remove")
     async def os_member_remove(request: Request):
@@ -4074,7 +4127,48 @@ def build_app():
         got = TEN.require(store, _ws(request), grant="admin")
         if not got["ok"]:
             return {"ok": False, "message": got["message"]}
-        return TEN.remove_member(store, got["workspace_id"], d.get("email"))
+        out = TEN.remove_member(store, got["workspace_id"], d.get("email"))
+        if out.get("ok"):
+            _admin_ledger(store, "member removed: %s" % d.get("email"))
+        return out
+
+    @app.post("/os/rule/add")
+    async def os_rule_add(request: Request):
+        """Save a STANDING RULE: a correction that applies to every future
+        piece in its lane, not just one rewrite. Doctrine Upgrade 2."""
+        d = await _body(request)
+        import content_engine_learning as L
+        _OS, store, _ = _os()
+        got = _require_admin_or_write(store, request)
+        if not got["ok"]:
+            return got
+        try:
+            out = L.add_rule(_rules_client(), d.get("lane", "content"),
+                             d.get("text", ""), author=got.get("email", ""))
+        except ValueError as exc:
+            return {"ok": False, "message": str(exc)}
+        if out.get("ok"):
+            _admin_ledger(store, "standing rule saved for %s lane"
+                          % d.get("lane", "content"))
+        return out
+
+    @app.post("/os/rule/remove")
+    async def os_rule_remove(request: Request):
+        d = await _body(request)
+        import content_engine_learning as L
+        _OS, store, _ = _os()
+        got = _require_admin_or_write(store, request)
+        if not got["ok"]:
+            return got
+        return L.remove_rule(_rules_client(), d.get("lane", "content"),
+                             d.get("text", ""))
+
+    @app.get("/os/rules")
+    def os_rules(lane: str = ""):
+        import content_engine_learning as L
+        lanes = [lane] if lane else list(L.LANES)
+        return {"rules": {ln: L.rules_for(_rules_client(), ln)
+                          for ln in lanes}}
 
     @app.post("/os/provider/test")
     async def os_provider_test(request: Request):

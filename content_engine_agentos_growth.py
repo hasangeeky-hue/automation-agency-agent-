@@ -178,7 +178,26 @@ def _s9c(ctx) -> str:
                "<p class='ox-sub'>Publishing is one of the five permanent "
                "gates. QA can hold a piece back and can never pass one "
                "through on your behalf, so everything written arrives "
-               "here.</p>"),
+               "here.</p>")
+        # DOCTRINE UPGRADE 2, RULES. 'Send back' fixes ONE piece; a
+        # standing rule fixes every future one. Both start in this room
+        # because this room is where you notice what needs saying.
+        + K.bp("<span class='ox-lbl'>Save a standing rule</span>"
+               "<p class='ox-sub'>A correction that applies to every "
+               "future piece in a lane, injected into every prompt until "
+               "you remove it. 'Send back' fixes one piece; this fixes "
+               "all of them.</p>"
+               "<div class='ox-tw'><table class='ox-t'><tbody><tr>"
+               "<td><input class='ox-in' id='os-rule-text' maxlength='300' "
+               "placeholder='e.g. Never mention prices in blog posts'></td>"
+               "<td><select class='ox-in' id='os-rule-lane'>"
+               + "".join("<option value='%s'>%s</option>" % (l, l)
+                         for l in ("content", "outreach", "seo", "media",
+                                   "commerce", "sga", "bi"))
+               + "</select></td>"
+               "<td><button type='button' class='ox-btn' "
+               "onclick='osRuleAdd()'>Save rule</button></td></tr></tbody>"
+               "</table></div>" + K.source_chip("POST /os/rule/add")),
         staffed_by="you", badge_kind="")
 
 

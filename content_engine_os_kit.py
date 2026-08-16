@@ -1014,6 +1014,23 @@ function osTheme(){
   var d=document.body.classList.toggle('oxdark');
   try{localStorage.setItem('ox-theme', d?'dark':'light');}catch(e){}
 }
+function osRuleAdd(){
+  var t=document.getElementById('os-rule-text');
+  var l=document.getElementById('os-rule-lane');
+  var txt=(t&&t.value||'').trim();
+  if(!txt){ osAck('cockpit','No rule typed.'); return; }
+  fetch('/os/rule/add',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({text:txt, lane:(l&&l.value)||'content'})})
+   .then(function(x){return x.json();})
+   .then(function(d){
+     osAck('cockpit',(d&&d.ok)?('Rule saved to the '+((l&&l.value)||'content')
+       +' lane. Every future prompt in that lane carries it.')
+       :('Refused: '+((d&&d.message)||'no reason given')));
+     if(d&&d.ok&&t) t.value='';
+   })
+   .catch(function(err){ osAck('cockpit','Could not reach the engine: '+err); });
+}
 function osMemberAdd(){
   var e=document.getElementById('os-adm-email');
   var r=document.getElementById('os-adm-role');

@@ -75,8 +75,9 @@ NEEDS = {
     "16a": ("nothing new: the hub is the place where the keys for every "
             "other system are entered, and the Tool Hub on 13i already "
             "accepts them"),
-    "16b": ("nothing new: the ledger records what the engine already does, "
-            "so it needs a writer on the mutation paths rather than a key"),
+    "16b": ("nothing new: the writer exists and records orders, bookings, "
+            "social snapshots, credential saves, user admin and applied "
+            "prices. Publishes and sends join it when those lanes run"),
 }
 
 
@@ -142,12 +143,39 @@ def _state(sid: str, ctx: Dict[str, Any]) -> str:
                 "The hub is the one intake for the rest: one form, one "
                 "normaliser, one distribution to every agent, instead of a "
                 "new connector written per system.</p>" % (live, tot))
-    # 16b
-    return ("<p class='ox-sub'>No mutation has been recorded, because "
-            "nothing writes this ledger yet. Every gated write in the engine "
-            "already knows its own approver and reason (a price change, a "
-            "post, a publish), so the ledger needs a writer on those paths, "
-            "not a new source of truth.</p>")
+    # 16b: the ledger HAS a writer now. Orders, bookings, social
+    # snapshots, credential saves, user admin and applied prices all
+    # record here, each with its entity decided from who holds the keys.
+    try:
+        import content_engine_api as API
+        import content_engine_mutation as MU
+        _st = API.get_store()
+        t = MU.tallies(_st)
+        recent = MU.ledger(_st, limit=8)
+        nparked = len(MU.parked(_st))
+    except Exception:                                     # noqa: BLE001
+        t, recent, nparked = {"total": 0, "by_source": []}, [], 0
+    if not t["total"] and not recent:
+        return ("<p class='ox-sub'>The ledger has its writer: collectors, "
+                "credential saves, user admin and applied prices all "
+                "record here. No mutation is recorded YET because none of "
+                "those paths has run on this box, which is the difference "
+                "between empty and broken.</p>")
+    rows = "".join(
+        "<tr><td class='ox-wire'>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+        "<td>%s</td></tr>"
+        % (_e(_d(r).get("at"))[:16], _e(_d(r).get("source")),
+           _e(_d(r).get("kind")), _e(_d(r).get("what"))[:60],
+           _e(_d(r).get("approved_by") or _d(r).get("actor")))
+        for r in recent)
+    srcs = " · ".join("%s %d" % (s, n) for s, n in t["by_source"][:6])
+    return ("<p class='ox-sub'>%d mutation(s) today%s.%s</p>"
+            "<div class='ox-tw'><table class='ox-t'><thead><tr><th>when</th>"
+            "<th>source</th><th>kind</th><th>what</th><th>by</th></tr>"
+            "</thead><tbody>%s</tbody></table></div>"
+            % (t["total"], (": " + srcs) if srcs else "",
+               (" %d row(s) PARKED: the router refused to guess their "
+                "entity." % nparked) if nparked else "", rows))
 
 
 def _screen(sid: str, ctx: Dict[str, Any]) -> str:

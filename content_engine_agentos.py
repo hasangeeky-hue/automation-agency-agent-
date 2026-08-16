@@ -845,10 +845,11 @@ def _s18a(ctx) -> str:
         "<tr><th>Permission</th>%s</tr></thead><tbody>%s</tbody></table>"
         "</div>"
         "<p class='ox-sub'>His drawing calls the third seat Operator; "
-        "this engine calls it member. Same seat. Two things his drawing "
-        "has that this engine does not, said plainly: there is no 2FA "
-        "yet, and admin actions do not land in the Mutation Ledger until "
-        "the ledger has a writer (16b names the same gap).</p>"
+        "this engine calls it member. Same seat. Every action on this "
+        "screen (invite, remove, password) now lands in the Mutation "
+        "Ledger (16b) with you as the actor. What his drawing has that "
+        "this engine still does not, said plainly: there is no 2FA "
+        "yet.</p>"
         % ("".join("<th>%s</th>" % r for r in CORE.ROLES), role_rows))
     return K.screen(
         "18a", "User Admin",

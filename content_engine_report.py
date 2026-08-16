@@ -166,6 +166,12 @@ def learned_lines(store, agent_id: str) -> List[str]:
     except Exception:                                 # noqa: BLE001
         pb = {}
     lines: List[str] = []
+    # STANDING RULES FIRST: a correction the founder saved outranks what
+    # the optimizer noticed, and the card should read that way.
+    for r in _l(pb.get("standing_rules"))[:2]:
+        t = r.get("text") if isinstance(r, dict) else r
+        if _s(t).strip():
+            lines.append("rule: " + _s(t)[:70])
     for key, prefix in (("winning_topics", "winning: "),
                         ("double_down", "do more: "),
                         ("observations", "noted: "),

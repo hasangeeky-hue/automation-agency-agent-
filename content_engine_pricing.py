@@ -294,6 +294,20 @@ def apply_one(store, proposal_id: str, *, approved_by: str = "") -> Dict[str, An
         "at": C.today(), "from": old, "to": new_price,
         "approved_by": approved_by, "reason": _s(p.get("reason"))}
     _set(store, APPLIED_KEY, led)
+    # THE MUTATION LEDGER (16b). A price change is the sharpest mutation
+    # this engine can make, so it is the first thing the ledger records.
+    # Best-effort: a ledger failure must never unwind an applied price.
+    try:
+        import content_engine_mutation as MU
+        MU.route_and_record(
+            store, platform=_s(p.get("platform")) or "shop",
+            kind="price_change",
+            what="%s: %s -> %s" % (_s(p.get("sku")) or _s(p.get("product_id")),
+                                   old, new_price),
+            actor="pricing.analyst", why=_s(p.get("reason"))[:120],
+            approved_by=approved_by)
+    except Exception:                                     # noqa: BLE001
+        pass
     return {"ok": True, "id": proposal_id, "from": old, "to": new_price,
             "approved_by": approved_by}
 

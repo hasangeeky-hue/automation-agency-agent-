@@ -90,12 +90,19 @@ log = logging.getLogger("content_engine")
 # ---------------------------------------------------------------------------
 FRONTIER_MODEL = "claude-opus-4-8"
 CHEAP_MODEL    = "claude-haiku-4-5"
-# Claude-only fallback: on validation failure the pipeline escalates to a
-# different (stronger) Claude model, using the same ANTHROPIC_API_KEY. No
-# second provider, no OpenAI account. (Trade-off: no cross-provider outage
-# cover; kept the escalation-tier benefit.)
+# Frontier fallback stays Claude: judgment escalates to a stronger Claude
+# tier on validation failure, same key, same behaviour.
 FRONTIER_ALT   = "claude-sonnet-5"
-CHEAP_ALT      = "claude-sonnet-5"
+# THE CHEAP FALLBACK CROSSES PROVIDERS on purpose. When the Anthropic
+# balance ran dry this engine stopped ENTIRELY, because every fallback
+# was another Claude model behind the same exhausted key. The mechanical
+# skills (labels, rewrites, narration) now fall back to OpenAI, whose
+# key is already on the allow-list for the AEO probes, so one provider
+# outage degrades quality instead of halting the machine. gpt-5-mini has
+# a PRICING row in providers.py; a model without one logs cost 0.0 and
+# blinds the budget cap, which is why the deploy gate checks every model
+# named here is priced.
+CHEAP_ALT      = "gpt-5-mini"
 
 ROUTES = {
     "site_intelligence":  {"engine": "code", "narrate": CHEAP_MODEL},

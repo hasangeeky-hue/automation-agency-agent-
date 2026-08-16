@@ -234,6 +234,17 @@ def save(store, rows) -> int:
                      "posts": r.get("posts"), "handle": _s(r.get("handle"))})
     keep = sorted(keep, key=lambda x: _s(x.get("at")))[-MAX_SNAPSHOTS:]
     _set(store, STATS_KEY, keep)
+    # the mutation ledger (16b), best-effort, only when a channel answered
+    read_now = [r for r in rows if _d(r).get("state") == "read"]
+    if read_now:
+        try:
+            import content_engine_mutation as MU
+            MU.route_and_record(
+                store, platform="social channels", kind="social_snapshot",
+                what="%d channel snapshot(s) stored for %s"
+                     % (len(read_now), day))
+        except Exception:                                 # noqa: BLE001
+            pass
     return len(keep)
 
 

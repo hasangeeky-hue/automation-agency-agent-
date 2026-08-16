@@ -138,6 +138,15 @@ def save(store, bookings) -> Dict[str, Any]:
     rows = sorted(have.values(), key=lambda b: _s(b.get("at")), reverse=True)
     rows = rows[:MAX_BOOKINGS]
     _set(store, BOOKINGS_KEY, rows)
+    # the mutation ledger (16b), best-effort, only when something changed
+    if added or updated:
+        try:
+            import content_engine_mutation as MU
+            MU.route_and_record(
+                store, platform="calcom", kind="booking_sync",
+                what="%d booking(s) added, %d updated" % (added, updated))
+        except Exception:                                 # noqa: BLE001
+            pass
     return {"stored": len(rows), "added": added, "updated": updated}
 
 

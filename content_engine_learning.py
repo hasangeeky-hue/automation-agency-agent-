@@ -42,6 +42,13 @@ def _empty_playbook() -> dict:
         # history, which nothing reads, so a lane could record thirty
         # cycles and still have nothing to say for itself.
         "observations": [],
+        # DOCTRINE UPGRADE 2, RULES: corrections the founder saved that
+        # apply to EVERY future piece in this lane, not one rewrite.
+        # api_decline's note drives a single rewrite and is folded into
+        # 'avoid'; a standing rule is a different thing: it is injected
+        # verbatim into every prompt this lane runs, forever, until
+        # removed. Each entry: {"text", "at", "author"}.
+        "standing_rules": [],
     }
 
 
@@ -154,6 +161,10 @@ class InMemoryLearningStore:
         self._d[client_id] = _apply_outcome(rec, kind, item, at)
         return self._d[client_id]
 
+    def save_record(self, client_id: str, rec: dict) -> dict:
+        self._d[client_id] = rec
+        return rec
+
 
 class PgLearningStore:
     """Postgres-backed learning store. Requires psycopg (lazy import)."""
@@ -219,6 +230,23 @@ class PgLearningStore:
                     playbook=EXCLUDED.playbook, history=EXCLUDED.history, updated_at=now()
             """, (client_id, json.dumps(rec["playbook"]),
                   json.dumps(rec["history"]), rec.get("cycles", 0)))
+        self._conn.commit()
+        return rec
+
+    def save_record(self, client_id: str, rec: dict) -> dict:
+        """Persist an edited record as-is. The standing-rules editor needs
+        a write that does not pretend a learning cycle happened."""
+        import json
+        with self._conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO learnings (client_id, playbook, history, cycles, updated_at)
+                VALUES (%s, %s, %s, %s, now())
+                ON CONFLICT (client_id) DO UPDATE SET
+                    playbook=EXCLUDED.playbook, history=EXCLUDED.history,
+                    cycles=EXCLUDED.cycles, updated_at=now()
+            """, (client_id, json.dumps(rec.get("playbook") or {}),
+                  json.dumps(rec.get("history") or []),
+                  int(rec.get("cycles") or 0)))
         self._conn.commit()
         return rec
 
@@ -301,6 +329,70 @@ def lanes_learned(client_id: str) -> dict:
             out[lane] = int(get_playbook(client_id, lane).get("cycles") or 0)
         except Exception:                                     # noqa: BLE001
             out[lane] = 0
+    return out
+
+
+# ---------------------------------------------------------------------------
+# STANDING RULES (doctrine Upgrade 2, RULES)
+# ---------------------------------------------------------------------------
+MAX_RULES = 40
+
+
+def add_rule(client_id: str, lane: str, text: str, author: str = "") -> dict:
+    """Save one standing rule into a lane's playbook.
+
+    Stored through record_lane_cycle's own store path so the rule lands
+    in the SAME record every prompt reads; a separate rules store would
+    be a second source of truth that drifts."""
+    text = (text or "").strip()
+    if not text:
+        return {"ok": False, "message": "an empty rule teaches nothing"}
+    if len(text) > 300:
+        return {"ok": False, "message": "a rule longer than 300 characters "
+                                        "is a document, not a rule"}
+    key = _lane_key(client_id, lane)   # raises ValueError on unknown lane
+    rec = ACTIVE.get(key)
+    pb = rec.setdefault("playbook", _empty_playbook())
+    rules = [r for r in (pb.get("standing_rules") or [])]
+    if any((r.get("text") if isinstance(r, dict) else r) == text
+           for r in rules):
+        return {"ok": False, "message": "that rule is already saved"}
+    from datetime import datetime, timezone
+    rules.append({"text": text,
+                  "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                  "author": author or "founder"})
+    pb["standing_rules"] = rules[-MAX_RULES:]
+    ACTIVE.save_record(key, rec)
+    return {"ok": True, "lane": lane, "rules": len(pb["standing_rules"])}
+
+
+def remove_rule(client_id: str, lane: str, text: str) -> dict:
+    key = _lane_key(client_id, lane)
+    rec = ACTIVE.get(key)
+    pb = rec.setdefault("playbook", _empty_playbook())
+    before = list(pb.get("standing_rules") or [])
+    after = [r for r in before
+             if (r.get("text") if isinstance(r, dict) else r) != (text or "").strip()]
+    if len(after) == len(before):
+        return {"ok": False, "message": "no such rule in the %s lane" % lane}
+    pb["standing_rules"] = after
+    ACTIVE.save_record(key, rec)
+    return {"ok": True, "lane": lane, "rules": len(after)}
+
+
+def rules_for(client_id: str, lane: str = "content") -> list:
+    """The lane's standing rules as plain text, oldest first. This is the
+    list build_prompt injects; keep it strings so a prompt cannot leak
+    the metadata."""
+    try:
+        pb = get_playbook(client_id, lane)
+    except Exception:                                         # noqa: BLE001
+        return []
+    out = []
+    for r in pb.get("standing_rules") or []:
+        t = (r.get("text") if isinstance(r, dict) else str(r)).strip()
+        if t:
+            out.append(t)
     return out
 
 

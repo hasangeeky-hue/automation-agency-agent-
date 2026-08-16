@@ -431,6 +431,18 @@ def run(store) -> Dict[str, Any]:
     _set(store, COLLECT_KEY,
          datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
+    # THE MUTATION LEDGER (16b): this collect changed stored data, so it
+    # is recorded with its entity decided from who holds the shop's keys.
+    # Best-effort: the ledger must never fail a working collect.
+    try:
+        import content_engine_mutation as MU
+        MU.route_and_record(
+            store, platform=got.get("platform") or "shop", kind="order_sync",
+            what="%s order(s) fetched, %s deal(s) projected"
+                 % (got.get("count"), len(deals[:BI.MAX_DEALS])))
+    except Exception:                                     # noqa: BLE001
+        pass
+
     unmapped = unmapped_sources(all_orders)
     return {"ok": True, "platform": got.get("platform"),
             "fetched": got.get("count"), **saved, **split,

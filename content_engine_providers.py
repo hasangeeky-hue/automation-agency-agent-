@@ -79,6 +79,10 @@ PRICING = {
     "claude-opus-4-8":  {"in": 5.00, "out": 25.00},
     "claude-sonnet-5":  {"in": 2.00, "out": 10.00},   # intro pricing thru 2026-08-31
     "claude-haiku-4-5": {"in": 1.00, "out": 5.00},
+    # the cross-provider cheap fallback. Priced BEFORE first use, because
+    # _compute_cost logs an unpriced model as 0.0 and the budget cap
+    # would then meter an outage-day workload as free.
+    "gpt-5-mini":       {"in": 0.25, "out": 2.00},
 }
 _CACHE_WRITE_MULT = 1.25   # 5-minute ephemeral cache write premium
 _CACHE_READ_MULT = 0.10    # cache read discount
@@ -349,6 +353,34 @@ def _is_credit_exhaustion(msg: str) -> bool:
     return "credit balance is too low" in str(msg).lower()
 
 
+def _standing_rules_block(skill_name: str, job: dict) -> str:
+    """DOCTRINE UPGRADE 2, RULES: the founder's saved corrections, injected
+    into every prompt of the lane they belong to.
+
+    The lane comes from the roster's own attribution (skill -> employee ->
+    lane), never from a second hand-written map: two lists that must agree
+    is this project's oldest bug. A skill the roster does not attribute
+    falls back to the content lane, which is also where an unknown desk's
+    lessons already file."""
+    try:
+        import content_engine_learning as L
+        import content_engine_roster as R
+        owner = R.owner_of(skill_name)
+        lane = R.lane_of(owner) if owner and not owner.startswith("*") \
+            else "content"
+        client = job.get("client_id") or (job.get("brand") or {}).get(
+            "brand_name", "")
+        rules = L.rules_for(client, lane)
+    except Exception:                                     # noqa: BLE001
+        rules = []
+    if not rules:
+        return ""
+    return ("STANDING RULES. The founder saved these corrections; they "
+            "apply to every piece and are never broken:\n"
+            + "\n".join("%d. %s" % (i + 1, r)
+                        for i, r in enumerate(rules[:40])))
+
+
 def build_prompt(skill_name: str, job: dict) -> PromptSpec:
     """Assemble the cached prefix + uncached payload for one skill call."""
     skill_prompt = SKILL_PROMPTS.get(skill_name)
@@ -357,11 +389,16 @@ def build_prompt(skill_name: str, job: dict) -> PromptSpec:
 
     payload = job.get("payload", {}) or {}
 
-    # Cached prefix = three stable text blocks. cache_control on the LAST one
-    # caches all three together (render order: system before messages).
+    # Cached prefix = four stable text blocks. cache_control on the LAST one
+    # caches all of them together (render order: system before messages).
+    # The rules block sits in the CACHED prefix on purpose: rules change
+    # rarely, and when one is added the prefix changes, so the cache
+    # misses exactly once and every call after that carries the rule for
+    # a tenth of the price.
     system_blocks = [
         {"type": "text", "text": SHARED_OUTPUT_RULES},         # SECTION 6
         {"type": "text", "text": _render_brand(job)},          # SECTION 7 (per client)
+        {"type": "text", "text": _standing_rules_block(skill_name, job)},
         {"type": "text", "text": skill_prompt,                 # SECTION 8 (per skill)
          "cache_control": {"type": "ephemeral"}},
     ]

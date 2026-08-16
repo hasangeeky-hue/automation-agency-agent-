@@ -268,7 +268,9 @@ if __name__ == "__main__":
     assert owner_of("optimizer").startswith("*")
     assert owner_of("no_such_step") == ""
     st = {s["module"]: s["badge"] for s in staffing_all()}
-    assert st["commerce"] == "notstaffed" and st["media"] == "architected"
+    # commerce was staffed in stage 2 (the analyst went live); this line
+    # asserted the OLD state and failed on every direct run since.
+    assert st["commerce"] == "live" and st["media"] == "architected"
     assert st["content"] == "live"
     print("OK - roster: %d employees, every FLOWS step attributed, "
           "badges justified (%s)" % (r["agents"], st))
