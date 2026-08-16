@@ -434,7 +434,14 @@ def _s8g(ctx) -> str:
                "<p class='ox-sub'>Rank and search data can come from more "
                "than one vendor. The slot is the thing an employee owns; the "
                "provider behind it is swappable, and swapping one does not "
-               "change what any desk is allowed to do.</p>"),
+               "change what any desk is allowed to do.</p>"
+               # HIS DRAWING HAS AN ASSIGN BUTTON PER ROW. Stated, not
+               # silently dropped.
+               "<p class='ox-sub'>His wireframe draws an Assign button "
+               "per slot. It is not rendered, deliberately: a slot's "
+               "provider follows which credential is live (a key on 13i "
+               "assigns the vendor), and a button that picked one "
+               "without a key behind it would be a control that lies.</p>"),
         staffed_by="🔌 Integrations Engineer", badge_kind="live")
 
 

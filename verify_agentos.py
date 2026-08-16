@@ -157,13 +157,16 @@ for _pid in ("oscockpit", "oscore", "osmkt", "osseo", "osleads",
 print("")
 print("B2. THE AGENT OS IS THE DASHBOARD, AND NOTHING WAS LOST")
 # THE OLD CHROME IS GONE ENTIRELY, not merely reduced to one group.
-# "Anthropos" may now appear exactly one way: as the alt text of his
-# logo in his own topbar. Any OTHER appearance in the shell is the old
-# chrome leaking back.
+# "Anthropos" may now appear exactly two ways, both inside HIS topbar:
+# the alt text of his logo, and the workspace name his brand switcher
+# shows (the audit's finding 1). Any OTHER appearance in the shell is
+# the old chrome leaking back.
 t("THE OLD DASHBOARD CHROME IS GONE: no brand bar, no second nav",
   "class='top'" not in html and "class='side'" not in html
   and "Anthropos" not in html.split("<body>")[-1][:4000]
-      .replace("alt='Anthropos'", ""))
+      .replace("alt='Anthropos'", "")
+      .replace(">Anthropos Automation</span>", "></span>")
+      .replace(">Anthropos Automation</option>", "></option>"))
 t("and no old nav group survives anywhere",
   ">Deep tools<" not in html and "class='navgrp'" not in html)
 t("HIS TOPBAR IS THE ONLY TOPBAR", html.count("class='ox-topbar'") == 7,
@@ -526,6 +529,22 @@ t("and it warns that a saved key is still not a working key",
   "still amber" in html or "stays amber" in html)
 
 # ---- H. THE FOUNDER'S OWN RULE ------------------------------------------
+print("\nG2. THE COMPONENT AUDIT'S THREE FINDINGS STAY FIXED")
+# From the founder's "check you really missed any component" audit
+# (2026-08-16). Three findings were real; each is pinned here.
+# 1. His topbar draws a brand switcher and the backend (ce_ws honoured by
+#    require()) predates the control. One workspace renders a label, more
+#    render a select; either way the shell mentions the workspace.
+t("THE WORKSPACE HIS TOPBAR DRAWS IS IN THE SHELL",
+  "ce_ws=" in html or "aria-label='Switch workspace'" in html
+  or "Anthropos Automation" in html)
+# 2 and 3. A drawn control this OS deliberately does not render must say
+#    so ON THE SCREEN, or the founder reads the gap as a build error.
+t("10a SAYS why his compose form is not rendered",
+  "second compose path" in OSCM.commerce_section(_c5))
+t("8g SAYS why his Assign buttons are not rendered",
+  "Assign button" in OSG.search_section(_c5))
+
 print("\nH. NO EM-DASHES ANYWHERE IN THE OS")
 _c = OS.build_ctx(st)
 bad = [n for n, src in (("kit", K.CSS + K.JS),

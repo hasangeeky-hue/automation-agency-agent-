@@ -398,6 +398,14 @@ def _s10a(ctx) -> str:
         "the Publisher. It uses the same pipeline and the same approval "
         "room as every other piece: a second publishing path would be a "
         "second thing to keep in agreement.</p>"
+        # HIS DRAWING HAS A COMPOSE FORM HERE. Stated, not silently
+        # dropped: a form on this screen would be a second door into
+        # publishing, standing exactly where the gate is not.
+        "<p class='ox-sub'>His wireframe draws a compose form on this "
+        "desk. It is not rendered, deliberately: a piece is composed in "
+        "the factory and approved in the Approval Room (9c), and a "
+        "second compose path here would bypass the one gate every "
+        "publish must pass.</p>"
         + K.source_chip("/jobs"))
     return K.screen(
         "10a", "Product Publisher",

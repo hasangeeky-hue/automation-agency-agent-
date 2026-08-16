@@ -4808,6 +4808,37 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
     # in the SEO section.
     logout = "<a class='logout' href='/logout'>Sign out</a>" if has_password else ""
 
+    # HIS TOPBAR DRAWS A BRAND SWITCHER ("Acme Brand |v"). The backend for
+    # it has existed since the tenancy layer landed: require() honours the
+    # ce_ws cookie and falls back to the owner's workspace, so the drawn
+    # control was the only missing half. One workspace renders as a plain
+    # label, because a dropdown with one option is a control that does
+    # nothing. His "Last 7d" range chip is NOT built: no engine-wide time
+    # range exists to bind it to, and a dead dropdown would be worse than
+    # an absent one.
+    ws_switch = ""
+    try:
+        import content_engine_api as _API
+        import content_engine_os_tenancy as _TEN
+        _st = _API.get_store()
+        _TEN.ensure_home(_st)
+        _wss = _TEN.workspaces_for(_st)
+        if len(_wss) > 1:
+            ws_switch = (
+                "<select class='ox-in' style='max-width:150px' "
+                "onchange=\"document.cookie='ce_ws='+this.value"
+                "+';path=/;max-age=31536000';location.reload()\" "
+                "aria-label='Switch workspace'>"
+                + "".join("<option value='%s'>%s</option>"
+                          % (_esc(w.get("id")), _esc(w.get("name") or w.get("id")))
+                          for w in _wss)
+                + "</select>")
+        elif _wss:
+            ws_switch = ("<span class='dim' style='font-size:11.5px'>"
+                         + _esc(_wss[0].get("name") or "") + "</span>")
+    except Exception:                                     # noqa: BLE001
+        ws_switch = ""
+
     # EVERYTHING LOAD-BEARING MOVES INTO HIS TOPBAR, not around it.
     # The engine switch, the attention band, the build stamp and sign-out
     # are real controls and must survive; the brand bar, the window pills
@@ -4874,7 +4905,7 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         # it inside frame() meant reading state the host had not computed
         # yet, because the sections render before the control strip does.
         + pages.replace("{{OX_TOOLS}}",
-                        ctrl_html + attn_html + onboarding
+                        ws_switch + ctrl_html + attn_html + onboarding
                         + "<span class='ox-build'>build "
                         + _esc(CODE_STAMP) + "</span>" + logout)
                 .replace("{{OX_ALERTS}}",
