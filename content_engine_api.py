@@ -4163,12 +4163,33 @@ def build_app():
         return L.remove_rule(_rules_client(), d.get("lane", "content"),
                              d.get("text", ""))
 
-    @app.get("/os/rules")
-    def os_rules(lane: str = ""):
+    # AUDIT A3: this was GET /os/rules, colliding with the send-window
+    # endpoint of the same name above: one path, two unrelated meanings,
+    # the exact shared-vocabulary bug this project keeps meeting.
+    @app.get("/os/rule/list")
+    def os_rule_list(lane: str = ""):
         import content_engine_learning as L
         lanes = [lane] if lane else list(L.LANES)
         return {"rules": {ln: L.rules_for(_rules_client(), ln)
                           for ln in lanes}}
+
+    @app.post("/os/entity/key")
+    async def os_entity_key(request: Request):
+        """Save ONE entity-scoped credential (audit A1/B4). Admin-gated,
+        allow-listed and shape-checked inside set_entity_key, and the
+        ledger records the key NAME only, never a value."""
+        d = await _body(request)
+        import content_engine_entities as EN
+        _OS, store, _ = _os()
+        got = _require_admin_or_write(store, request)
+        if not got["ok"]:
+            return got
+        out = EN.set_entity_key(store, d.get("entity"), d.get("key"),
+                                d.get("value"))
+        if out.get("ok"):
+            _admin_ledger(store, "entity key set: %s for %s"
+                          % (d.get("key"), d.get("entity")))
+        return out
 
     @app.post("/os/provider/test")
     async def os_provider_test(request: Request):

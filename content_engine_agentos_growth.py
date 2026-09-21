@@ -197,8 +197,47 @@ def _s9c(ctx) -> str:
                + "</select></td>"
                "<td><button type='button' class='ox-btn' "
                "onclick='osRuleAdd()'>Save rule</button></td></tr></tbody>"
-               "</table></div>" + K.source_chip("POST /os/rule/add")),
+               "</table></div>" + K.source_chip("POST /os/rule/add"))
+        # AUDIT A4: a rule could be saved and never seen again. This
+        # lists every standing rule with its Remove, per lane.
+        + _rules_manager(),
         staffed_by="you", badge_kind="")
+
+
+def _rules_manager() -> str:
+    import base64
+    rows = []
+    try:
+        import content_engine_brand as B
+        import content_engine_learning as L
+        client = str(B.get_ci().get("brand_name") or "")
+        for lane in L.LANES:
+            for text in L.rules_for(client, lane):
+                rid = base64.b64encode(text.encode("utf-8")).decode()[:16]
+                rows.append(
+                    "<tr id='osrule-%s-%s'><td class='ox-wire'>%s</td>"
+                    "<td>%s</td><td><button type='button' class='ox-btn' "
+                    "onclick=\"osRuleRemove('%s', %s)\">Remove</button>"
+                    "</td></tr>"
+                    % (_e(lane), rid, _e(lane), _e(text), _e(lane),
+                       _js_str(text)))
+    except Exception:                                     # noqa: BLE001
+        rows = []
+    body = (("<div class='ox-tw'><table class='ox-t'><thead><tr>"
+             "<th>Lane</th><th>Rule</th><th></th></tr></thead><tbody>%s"
+             "</tbody></table></div>" % "".join(rows)) if rows else
+            "<p class='ox-nodata'>no standing rules saved yet. The first "
+            "one you save appears here with its Remove button.</p>")
+    return K.bp("<span class='ox-lbl'>Standing rules in force (%d)</span>"
+                % len(rows) + body + K.source_chip("GET /os/rule/list"))
+
+
+def _js_str(s: str) -> str:
+    """A string safe to inline as a JS argument inside a double-quoted
+    HTML attribute: JSON-escaped, then HTML-escaped by the caller's _e
+    would break the quotes, so the quotes here are &#39; entities."""
+    return "'" + (str(s).replace("\\", "\\\\").replace("'", "\\'")
+                  .replace('"', "&quot;")) + "'"
 
 
 def _s9d(ctx) -> str:
@@ -336,7 +375,15 @@ def _s9h(ctx) -> str:
         + K.bp("<span class='ox-lbl'>Autonomy cannot open a gate</span>"
                "<p class='ox-sub'>Raising autonomy widens what runs without "
                "asking inside the low-stakes band. Publish, send and spend "
-               "stay gated at every setting, including the highest.</p>"),
+               "stay gated at every setting, including the highest.</p>"
+               # audit C1, stated rather than faked: his file draws more
+               # controls here than the engine has settings for.
+               "<p class='ox-sub'>His drawing adds per-desk sliders this "
+               "engine has no settings behind yet. The controls that are "
+               "real live where their write paths are: the daily counts "
+               "come from the deploy environment, the spend caps are on "
+               "13h, and the one master switch is in the topbar. A slider "
+               "wired to nothing would be a control that lies.</p>"),
         staffed_by="you", badge_kind="")
 
 
@@ -490,8 +537,33 @@ def _s8h(ctx) -> str:
         + K.bp("<span class='ox-lbl'>Today's activity</span>"
                + ("<ul class='ox-rep'>%s</ul>" % "".join(logs[:12]) if logs
                   else "<p class='ox-nodata'>nothing recorded today</p>")
-               + K.source_chip("/agents/{id}/report")),
+               + K.source_chip("/agents/{id}/report"))
+        # AUDIT C1: his file draws a control form here, and the SEO
+        # autonomy level has had a real write path all along.
+        + _seo_auto_form(),
         staffed_by="you", badge_kind="")
+
+
+def _seo_auto_form() -> str:
+    level = "off"
+    try:
+        import content_engine_api as API
+        import content_engine_scheduler as SCH
+        level = str(SCH.seo_auto_level(API.get_store()) or "off")
+    except Exception:                                     # noqa: BLE001
+        level = "off"
+    btn = ("<button type='button' class='ox-btn%s' "
+           "onclick=\"osSeoAuto('%s')\">%s</button>")
+    return K.bp(
+        "<span class='ox-lbl'>Unattended technical SEO, now: %s</span>"
+        "<p class='ox-sub'>off runs nothing alone. safe runs the free, "
+        "machine-readable fixes (schema, alt text, redirects). all adds "
+        "the cheap rewrites. Publishing an article is a different gate "
+        "and none of these opens it.</p>"
+        % _e(level)
+        + "".join(btn % (" ox-btn-p" if level == lv else "", lv, lv)
+                  for lv in ("off", "safe", "all"))
+        + K.source_chip("POST /seo/auto"))
 
 
 # ==========================================================================

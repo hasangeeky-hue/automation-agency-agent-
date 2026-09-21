@@ -357,7 +357,16 @@ def _s11h(ctx) -> str:
                  "the low-stakes band and can never open a gate.</p>"),
             cols="two")
         + K.bp("<span class='ox-lbl'>Stage 1 of 2</span>"
-               "<p class='ox-sub'>%s</p>" % _e(card.get("why"))),
+               "<p class='ox-sub'>%s</p>" % _e(card.get("why")))
+        # audit C1, stated rather than faked, same as 9h: no dead controls.
+        + K.bp("<span class='ox-lbl'>Where this room's real controls "
+               "live</span>"
+               "<p class='ox-sub'>His drawing puts a settings panel here. "
+               "The settings that exist have their forms where their write "
+               "paths are: spend caps on 13h, the price-move ceiling is a "
+               "hard constant the UI may not relax, and every price change "
+               "is a proposal on 11c. A control drawn here without a "
+               "setting behind it would lie, so it is not drawn.</p>"),
         staffed_by="you", badge_kind="")
 
 

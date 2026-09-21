@@ -94,6 +94,37 @@ def _env(store, key: str) -> str:
     return _s(os.getenv(key, "")).strip()
 
 
+def _shop_base(store) -> str:
+    """The Shopify admin base URL, from the ONE domain key everyone can
+    actually set. Found in the audit's wake: the cost read and the price
+    write built their URL from SHOPIFY_STORE_URL, a key on no allow-list
+    and no platform spec, so nobody could ever have set it and the only
+    write this engine makes to a shop could never have worked. The
+    catalogue path always used SHOPIFY_SHOP_DOMAIN; now all three do."""
+    dom = _penv(store, "shopify", "SHOPIFY_SHOP_DOMAIN")
+    dom = dom.replace("https://", "").replace("http://", "").strip("/")
+    return ("https://" + dom) if dom else ""
+
+
+def _penv(store, platform: str, key: str) -> str:
+    """A PLATFORM credential, resolved through the entity that owns the
+    platform (audit A1: the entity wall finally has a consumer).
+
+    One resolver, not two: entities.platform_env goes entity-first, falls
+    back to the global pot itself, and returns NOTHING for an ambiguous
+    platform, which this function honours rather than papering over with
+    a global read: an ambiguous shop key read globally is a guess with
+    revenue attached. Only when the entity layer itself cannot be
+    imported does this fall back to the plain resolver, so a broken
+    module degrades to the single-business behaviour instead of a dead
+    shop."""
+    try:
+        import content_engine_entities as EN
+        return EN.platform_env(store, platform, key)
+    except Exception:                                 # noqa: BLE001
+        return _env(store, key)
+
+
 # ==========================================================================
 # CONNECT
 # ==========================================================================
@@ -101,7 +132,7 @@ def status(store) -> Dict[str, Any]:
     """Which CMS platforms hold every key they need. Presence only."""
     out = {}
     for pid, spec in PLATFORMS.items():
-        have = [k for k in spec["keys"] if _env(store, k)]
+        have = [k for k in spec["keys"] if _penv(store, pid, k)]
         out[pid] = {
             "label": spec["label"],
             "connected": len(have) == len(spec["keys"]),
@@ -153,8 +184,8 @@ def fetch_catalogue(store, platform: str = "", limit: int = 100
                 "why": "the requests library is not installed in this image"}
     try:
         if plat == "shopify":
-            dom = _env(store, "SHOPIFY_SHOP_DOMAIN").replace("https://", "")
-            tok = _env(store, "SHOPIFY_ADMIN_TOKEN")
+            dom = _penv(store, "shopify", "SHOPIFY_SHOP_DOMAIN").replace("https://", "")
+            tok = _penv(store, "shopify", "SHOPIFY_ADMIN_TOKEN")
             r = rq.get(f"https://{dom}/admin/api/2024-10/products.json",
                        headers={"X-Shopify-Access-Token": tok},
                        params={"limit": min(int(limit), 250)}, timeout=25)
@@ -181,10 +212,10 @@ def fetch_catalogue(store, platform: str = "", limit: int = 100
                               "url": _s(p.get("handle")),
                               "sku": sku, "price": price, "stock": stock})
         elif plat == "woocommerce":
-            base = _env(store, "WOO_SITE_URL").rstrip("/")
+            base = _penv(store, "woocommerce", "WOO_SITE_URL").rstrip("/")
             r = rq.get(base + "/wp-json/wc/v3/products",
-                       auth=(_env(store, "WOO_CONSUMER_KEY"),
-                             _env(store, "WOO_CONSUMER_SECRET")),
+                       auth=(_penv(store, "woocommerce", "WOO_CONSUMER_KEY"),
+                             _penv(store, "woocommerce", "WOO_CONSUMER_SECRET")),
                        params={"per_page": min(int(limit), 100)}, timeout=25)
             if r.status_code >= 400:
                 return {"ok": False, "platform": plat, "products": [],
@@ -204,10 +235,10 @@ def fetch_catalogue(store, platform: str = "", limit: int = 100
                       "stock_status": _s(p.get("stock_status"))}
                      for p in map(_d, _l(r.json()))]
         else:  # wordpress: pages, not products
-            base = _env(store, "WP_URL").rstrip("/")
+            base = _penv(store, "wordpress", "WP_URL").rstrip("/")
             r = rq.get(base + "/wp-json/wp/v2/pages",
-                       auth=(_env(store, "WP_USER"),
-                             _env(store, "WP_APP_PASSWORD")),
+                       auth=(_penv(store, "wordpress", "WP_USER"),
+                             _penv(store, "wordpress", "WP_APP_PASSWORD")),
                        params={"per_page": min(int(limit), 100)}, timeout=25)
             if r.status_code >= 400:
                 return {"ok": False, "platform": plat, "products": [],
@@ -428,10 +459,10 @@ def fetch_costs(store, products=None) -> Dict[str, Any]:
                 "why": "no inventory item ids were read, so no cost can be "
                        "looked up"}
     try:
-        base = _env(store, "SHOPIFY_STORE_URL").rstrip("/")
+        base = _shop_base(store)
         r = rq.get(base + "/admin/api/2024-01/inventory_items.json",
                    headers={"X-Shopify-Access-Token":
-                            _env(store, "SHOPIFY_ADMIN_TOKEN")},
+                            _penv(store, "shopify", "SHOPIFY_ADMIN_TOKEN")},
                    params={"ids": ",".join(list(inv)[:100])}, timeout=25)
         if r.status_code >= 400:
             return {"ok": False, "costs": {},
@@ -476,10 +507,10 @@ def set_price(store, product_id: str, new_price) -> Dict[str, Any]:
         return {"ok": False, "why": "requests is not installed"}
     try:
         if plat == "shopify":
-            base = _env(store, "SHOPIFY_STORE_URL").rstrip("/")
+            base = _shop_base(store)
             r = rq.get(base + "/admin/api/2024-01/products/%s.json" % pid,
                        headers={"X-Shopify-Access-Token":
-                                _env(store, "SHOPIFY_ADMIN_TOKEN")},
+                                _penv(store, "shopify", "SHOPIFY_ADMIN_TOKEN")},
                        timeout=25)
             if r.status_code >= 400:
                 return {"ok": False, "why": "Shopify could not read %s (%d)"
@@ -490,7 +521,7 @@ def set_price(store, product_id: str, new_price) -> Dict[str, Any]:
             vid = _s(_d(variants[0]).get("id"))
             w = rq.put(base + "/admin/api/2024-01/variants/%s.json" % vid,
                        headers={"X-Shopify-Access-Token":
-                                _env(store, "SHOPIFY_ADMIN_TOKEN"),
+                                _penv(store, "shopify", "SHOPIFY_ADMIN_TOKEN"),
                                 "Content-Type": "application/json"},
                        json={"variant": {"id": vid, "price": "%.2f" % price}},
                        timeout=25)
@@ -501,10 +532,10 @@ def set_price(store, product_id: str, new_price) -> Dict[str, Any]:
             return {"ok": True, "platform": plat, "product_id": pid,
                     "price": round(price, 2)}
         if plat == "woocommerce":
-            base = _env(store, "WOO_SITE_URL").rstrip("/")
+            base = _penv(store, "woocommerce", "WOO_SITE_URL").rstrip("/")
             w = rq.put(base + "/wp-json/wc/v3/products/%s" % pid,
-                       auth=(_env(store, "WOO_CONSUMER_KEY"),
-                             _env(store, "WOO_CONSUMER_SECRET")),
+                       auth=(_penv(store, "woocommerce", "WOO_CONSUMER_KEY"),
+                             _penv(store, "woocommerce", "WOO_CONSUMER_SECRET")),
                        json={"regular_price": "%.2f" % price}, timeout=25)
             if w.status_code >= 400:
                 return {"ok": False, "why": "WooCommerce refused the price "

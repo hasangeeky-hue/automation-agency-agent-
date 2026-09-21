@@ -327,8 +327,37 @@ def _s12g(ctx) -> str:
                "<li>SEND is a permanent gate. Autonomy cannot open it.</li>"
                "<li>The suppression list is absolute.</li>"
                "<li>Paid sourcing respects the daily cap and parks the job "
-               "when it is reached, reporting the cap by name.</li></ul>"),
+               "when it is reached, reporting the cap by name.</li></ul>")
+        # AUDIT C1: the send-window form his file draws here. The write
+        # path (POST /os/rules, settings-first) predates this screen.
+        + _send_window_form(),
         staffed_by="you", badge_kind="")
+
+
+def _send_window_form() -> str:
+    w, hourly = {}, ""
+    try:
+        import content_engine_api as API
+        import content_engine_os_schedule as SCH
+        store = API.get_store()
+        w = _d(SCH.window(store))
+        hourly = store.get_setting(SCH.HOURLY_KEY, "") or ""
+    except Exception:                                     # noqa: BLE001
+        w, hourly = {}, ""
+    row = ("<tr><td>%s</td><td><input class='ox-in' id='%s' type='number' "
+           "min='0' max='23' value='%s'></td></tr>")
+    return K.bp(
+        "<span class='ox-lbl'>Sending window</span>"
+        "<p class='ox-sub'>The Sender only sends inside these hours "
+        "(weekdays), and never more than the hourly cap. Outside the "
+        "window everything queues; nothing is lost.</p>"
+        "<div class='ox-tw'><table class='ox-t'><tbody>"
+        + row % ("from hour", "os-sw-from", _e(w.get("from_hour", 9)))
+        + row % ("to hour", "os-sw-to", _e(w.get("to_hour", 17)))
+        + row % ("hourly cap", "os-sw-hourly", _e(hourly))
+        + "</tbody></table></div>"
+        "<button type='button' class='ox-btn' onclick='osSendWindow()'>"
+        "Save window</button>" + K.source_chip("POST /os/rules"))
 
 
 def _s12h(ctx) -> str:

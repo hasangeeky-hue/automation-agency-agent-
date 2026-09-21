@@ -40,7 +40,10 @@ SUBNAV_CORE = [('Command Center', '13a'), ('Integrations', '13b'), ('Data Stewar
 
 #: his subnav for this module: the label, and the screen
 #: it opens. Anchors, exactly as his own markup uses.
-SUBNAV_COCKPIT = [('Cockpit Home', '14a'), ('Unified Approvals', '14b'), ('All Agents', '14c'), ('Health & Activity', '14d'), ('System Control Room', '14e'), ('User Admin', '18a')]
+# {{OX_APPR}} is substituted by the host with the live waiting count,
+# exactly as OX_COST and OX_ALERTS are: his file draws the number in the
+# label, and the count is data the sections cannot know at render time.
+SUBNAV_COCKPIT = [('Cockpit Home', '14a'), ('Unified Approvals {{OX_APPR}}', '14b'), ('All Agents', '14c'), ('Health & Activity', '14d'), ('System Control Room', '14e'), ('User Admin', '18a')]
 
 #: the six departments of the wireframe, and who actually staffs each
 MODULES = [
@@ -377,8 +380,104 @@ def _s13h(ctx) -> str:
         + K.bp("<span class='ox-lbl'>Rule</span><p class='ox-sub'>An employee "
                "may only touch the wires named on its own row. A command sent "
                "from any panel is scoped to that one desk, which is why the "
-               "panel header names it.</p>"),
+               "panel header names it.</p>")
+        # AUDIT C1: his file draws a settings form on this Control Room,
+        # and the write path (/budget, settings-first) has existed all
+        # along. Current values are the caps IN FORCE, read live.
+        + _budget_form(),
         staffed_by="🔌 Integrations Engineer", badge_kind="live")
+
+
+def _budget_form() -> str:
+    caps = {}
+    try:
+        import content_engine_api as API
+        import content_engine_orchestrator as ORC
+        caps = _d(ORC.budget_caps(API.get_store()))
+    except Exception:                                     # noqa: BLE001
+        caps = {}
+    row = ("<tr><td>%s</td><td><input class='ox-in' id='os-cap-%s' "
+           "type='number' step='0.05' min='0' value='%s'></td>"
+           "<td class='ox-sub'>USD</td></tr>")
+    return K.bp(
+        "<span class='ox-lbl'>Spend caps, in force right now</span>"
+        "<p class='ox-sub'>Settings-first: a change here applies on the "
+        "worker's next loop, no restart. The monthly cap is the hard "
+        "ceiling; the engine pauses new model calls at it rather than "
+        "overspending.</p>"
+        "<div class='ox-tw'><table class='ox-t'><tbody>"
+        + row % ("per job", "job", _e(caps.get("per_job")))
+        + row % ("per day", "day", _e(caps.get("per_day")))
+        + row % ("per month", "month", _e(caps.get("per_month")))
+        + "</tbody></table></div>"
+        "<button type='button' class='ox-btn' onclick='osBudgetSave()'>"
+        "Save caps</button>" + K.source_chip("POST /budget"))
+
+
+#: THE NAMED TOOL CARDS (audit C2). One card per TOOL, in the founder's
+#: words, instead of 94 raw variable names: label, wire, the fields it
+#: needs, and where the credential is issued. The wire names and field
+#: names are CHECKED against status() and the connect allow-list in
+#: check(), because a card naming a field the endpoint refuses would be
+#: a form that silently drops what he types.
+TOOL_CARDS = (
+    ("🧠 Anthropic", "claude_api", ("ANTHROPIC_API_KEY",),
+     "console.anthropic.com, API keys"),
+    ("🖼 OpenAI (images + probe)", "image_gen",
+     ("IMAGE_API_KEY", "OPENAI_API_KEY"), "platform.openai.com, API keys"),
+    ("🔎 Perplexity probe", "", ("PERPLEXITY_API_KEY",),
+     "perplexity.ai, Settings, API"),
+    ("✨ Gemini probe", "", ("GEMINI_API_KEY",), "aistudio.google.com"),
+    ("📰 WordPress publish", "wordpress_publish",
+     ("WORDPRESS_URL", "WORDPRESS_USER", "WORDPRESS_APP_PASSWORD"),
+     "WP user profile, Application Passwords"),
+    ("🛒 Shopify", "shopify", ("SHOPIFY_SHOP_DOMAIN", "SHOPIFY_ADMIN_TOKEN"),
+     "Shopify admin, Develop apps, read_products AND read_orders"),
+    ("🛍 WooCommerce", "woocommerce",
+     ("WOO_SITE_URL", "WOO_CONSUMER_KEY", "WOO_CONSUMER_SECRET"),
+     "Woo, Settings, Advanced, REST API"),
+    ("📖 WordPress read (CMS)", "wordpress_cms",
+     ("WP_URL", "WP_USER", "WP_APP_PASSWORD"),
+     "NOT the publish fields: this one reads the catalogue"),
+    ("🔗 Google service account", "google_gsc_ga4",
+     ("GOOGLE_SERVICE_ACCOUNT_JSON", "GSC_SITE_URL", "GA4_PROPERTY_ID"),
+     "one key powers GSC, GA4, Sheets, Drive and Inspection"),
+    ("📊 Google Sheets + Drive", "google_sheets",
+     ("GOOGLE_SHEETS_ID", "GDRIVE_FOLDER_ID"),
+     "share both with the service account"),
+    ("📣 Google Ads", "ads_api",
+     ("GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CLIENT_ID",
+      "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_REFRESH_TOKEN",
+      "GOOGLE_ADS_CUSTOMER_ID"),
+     "ads.google.com, API Center; the refresh token is what 401s today"),
+    ("📍 Google Business Profile", "seo_gbp",
+     ("GBP_ACCESS_TOKEN", "GBP_ACCOUNT_ID", "GBP_LOCATION_ID"),
+     "business.google.com"),
+    ("💼 LinkedIn posting", "social_linkedin",
+     ("LINKEDIN_POST_TOKEN", "LINKEDIN_AUTHOR_URN"),
+     "an OAuth token with w_member_social"),
+    ("📘 Meta page + Instagram", "social_facebook",
+     ("META_PAGE_ID", "META_PAGE_TOKEN", "IG_USER_ID"),
+     "developers.facebook.com, page token with pages_manage_posts"),
+    ("🎵 TikTok", "social_tiktok", ("TIKTOK_ACCESS_TOKEN",),
+     "TikTok for Business"),
+    ("📮 Email out (SMTP)", "email_send",
+     ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM"),
+     "your Workspace SMTP; the password is an app password"),
+    ("📥 Email in (IMAP)", "email_reply_inbound",
+     ("IMAP_HOST", "IMAP_PORT", "IMAP_USER", "IMAP_PASSWORD"),
+     "same inbox, IMAP enabled"),
+    ("🗓 Cal.com", "calcom_bookings", ("CALCOM_API_KEY",),
+     "Cal.com, Settings, Developer, API keys"),
+    ("🔍 Serper (search + ranks)", "serper_search", ("SERPER_API_KEY",),
+     "serper.dev; paid per search"),
+    ("🕸 Prospeo leads", "linkedin_leads", ("PROSPEO_API_KEY",),
+     "prospeo.io; paid per credit"),
+    ("🔗 DataForSEO backlinks", "seo_backlinks",
+     ("DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD"), "dataforseo.com"),
+    ("⚡ IndexNow", "seo_indexnow", ("INDEXNOW_KEY",),
+     "any string key, served at the site root"),
+)
 
 
 def _s13i(ctx) -> str:
@@ -417,6 +516,50 @@ def _s13i(ctx) -> str:
             "<div class='ox-tw'><table class='ox-t'><thead><tr>"
             "<th>Credential key</th><th>Value</th><th></th></tr></thead>"
             "<tbody>%s</tbody></table></div>" % (_e(g), rows)))
+    # THE NAMED CARDS (audit C2), above the raw list. State per card is
+    # the ENGINE's: live when its wire reports, refusing with the
+    # provider's reason, saved-unproven, or not connected. Test fires the
+    # wire's free self-test where one exists.
+    try:
+        import content_engine_connectors as CN2
+        st = {k: bool(v) for k, v in _d(CN2.status()).items()}
+        reasons = _d(CN2.auth_reasons())
+        verifiable = set(getattr(CN2, "VERIFIABLE", ()))
+        have = CN2._env
+    except Exception:                                     # noqa: BLE001
+        st, reasons, verifiable, have = {}, {}, set(), (lambda k, d="": "")
+    tcards = []
+    for label, wire, tkeys, where in TOOL_CARDS:
+        nset = sum(1 for k in tkeys if have(k))
+        why = str(reasons.get(wire) or "")
+        if wire and st.get(wire):
+            word = "● LIVE"
+        elif why:
+            word = "✕ REFUSED: " + why[:70]
+        elif nset == len(tkeys):
+            word = "◐ SAVED, unproven"
+        elif nset:
+            word = "◐ PARTIAL, %d of %d field(s)" % (nset, len(tkeys))
+        else:
+            word = "○ NOT CONNECTED"
+        keyrows = "".join(
+            "<tr><td class='ox-wire'>%s</td>"
+            "<td><input class='ox-in' type='password' autocomplete='off' "
+            "placeholder='%s' id='oskeyc-%s'></td>"
+            "<td><button type='button' class='ox-btn' "
+            "onclick=\"osSaveKey('%s','oskeyc-%s')\">Save</button></td></tr>"
+            % (_e(k), "set, paste to replace" if have(k) else "paste to set",
+               _e(k), _e(k), _e(k)) for k in tkeys)
+        test = ("<button type='button' class='ox-btn' "
+                "onclick=\"osWireTest('%s')\">Test</button>" % _e(wire)
+                if wire in verifiable else "")
+        tcards.append(K.bp(
+            "<span class='ox-lbl'>%s</span>"
+            "<p class='ox-sub'><b>%s</b></p>"
+            "<p class='ox-sub'>where: %s</p>"
+            "<div class='ox-tw'><table class='ox-t'><tbody>%s</tbody>"
+            "</table></div>%s"
+            % (_e(label), _e(word), _e(where), keyrows, test)))
     return K.screen(
         "13i", "Tool Connection Hub",
         "Plug-and-play credentials. The engine stores keys and never reads "
@@ -429,8 +572,13 @@ def _s13i(ctx) -> str:
              "is amber on purpose, and it is the whole reason this OS can "
              "be trusted about what is connected.</p>"
              + K.source_chip("POST /connect"))
+        + K.grid(*tcards)
         + K.connector_table(_l(ctx.get("health")))
-        + K.grid(*blocks),
+        # the complete raw list stays reachable, so no field the cards do
+        # not name becomes unreachable from the browser
+        + "<details><summary class='ox-sub' style='cursor:pointer'>every "
+          "credential field, A to Z (the full allow-list)</summary>"
+        + K.grid(*blocks) + "</details>",
         staffed_by="🔌 Integrations Engineer", badge_kind="live")
 
 
@@ -489,6 +637,64 @@ def _s13k(ctx) -> str:
 # ==========================================================================
 # TURN 14 - THE COCKPIT
 # ==========================================================================
+def _setup_card(ctx) -> str:
+    """GETTING STARTED (audit D4). The activation runbook lived only in
+    the repo, so the dashboard never said what to do next. This card is
+    Stage A as a live checklist: each row is read from the engine at
+    render time, and the whole card collapses to one quiet line once
+    everything on it is done."""
+    try:
+        import content_engine_api as API
+        import content_engine_connectors as CN
+        store = API.get_store()
+        have = CN._env
+    except Exception:                                     # noqa: BLE001
+        return ""
+
+    def _get(key):
+        try:
+            return store.get_setting(key, None)
+        except Exception:                                 # noqa: BLE001
+            return None
+
+    paused = bool(_get("paused"))
+    items = [
+        ("The brain has credit",
+         bool(have("ANTHROPIC_API_KEY")), "paste ANTHROPIC_API_KEY on 13i"),
+        ("LinkedIn token (frees the Social Distributor)",
+         bool(have("LINKEDIN_POST_TOKEN")), "13i, LinkedIn posting card"),
+        ("Google Ads refresh token (frees the Media Buyer)",
+         bool(have("GOOGLE_ADS_REFRESH_TOKEN")), "13i, Google Ads card"),
+        ("Meta page token (posting + Community desk)",
+         bool(have("META_PAGE_TOKEN")), "13i, Meta card"),
+        ("Cal.com key (the bookings pipeline)",
+         bool(have("CALCOM_API_KEY")), "13i, Cal.com card"),
+        ("Orders have been collected at least once",
+         bool(_get("orders_last_collect")),
+         "run feed_data.py, or connect a shop first"),
+        ("Bookings have been collected at least once",
+         bool(_get("bookings_last_collect")), "run feed_data.py"),
+        ("The clock is running (observe mode)",
+         not paused if _get("paused") is not None else False,
+         "press START, supervised, in the topbar"),
+    ]
+    todo = [i for i in items if not i[1]]
+    if not todo:
+        return K.bp("<span class='ox-lbl'>Setup</span><p class='ox-sub'>"
+                    "✓ Stage A is complete and the clock is running. The "
+                    "runbook's next stage is one lane to its gate.</p>")
+    rows = "".join(
+        "<tr><td>%s</td><td>%s</td><td class='ox-sub'>%s</td></tr>"
+        % ("✓" if ok else "○", _e(label), "" if ok else _e(nxt))
+        for label, ok, nxt in items)
+    return K.bp(
+        "<span class='ox-lbl'>Getting started, %d step(s) left</span>"
+        "<p class='ox-sub'>The engine builds nothing here: every row is "
+        "read live, and the card disappears when the list is done.</p>"
+        "<div class='ox-tw'><table class='ox-t'><tbody>%s</tbody></table>"
+        "</div>" % (len(todo), rows))
+
+
 def _s14a(ctx) -> str:
     co = _d(ctx.get("company"))
     staffing = {_d(s).get("module"): _d(s) for s in _l(ctx.get("staffing"))}
@@ -508,7 +714,7 @@ def _s14a(ctx) -> str:
                                   _e(st.get("why") or "")),
                fin, ned, len(mcards), _e(st.get("why") or ""),
                K.source_chip("/agents"))))
-    top = K.grid(
+    top = _setup_card(ctx) + K.grid(
         K.bp(K.stat(co.get("finished_n"), "finished across the company",
                     "/company/today")),
         K.bp(K.stat(co.get("couldnt_n"), "couldn't", "/company/today")),

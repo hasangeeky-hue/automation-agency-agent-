@@ -4766,6 +4766,21 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
         alerts.append(("#DC2626", "🔌", f"API top-up: {api_warnings[0]}", "budget"))
     if failed:
         alerts.append(("#DC2626", "✕", f"{failed} job(s) failed or paused", "agents"))
+    # AUDIT C6: a parked mutation is a row the router refused to place
+    # rather than guess its business entity. It was visible only on 16b;
+    # a refusal the founder has to go looking for is a refusal that
+    # never gets decided.
+    _parked_n = 0
+    try:
+        import content_engine_api as _APIp
+        import content_engine_mutation as _MUp
+        _parked_n = len(_MUp.parked(_APIp.get_store()))
+    except Exception:                                     # noqa: BLE001
+        _parked_n = 0
+    if _parked_n:
+        alerts.append(("#D97706", "🧭",
+                       f"{_parked_n} data row(s) parked: the router would "
+                       f"not guess their business", "oscore"))
     if not alerts:
         alerts.append(("#16A34A", "✓", "All clear — nothing needs you right now", ""))
     aparts = []
@@ -4918,6 +4933,8 @@ def dashboard_html(*, jobs, st, health, month_spent, month_cap, day_spent, day_c
                 .replace("{{OX_ALERTS}}",
                          ("%d connection(s) not wired" % broken) if broken else "")
                 .replace("{{OX_COST}}", "")
+                # audit C4: his file draws the live count in the label
+                .replace("{{OX_APPR}}", ("(%d)" % waiting) if waiting else "")
         # THE DETAIL WINDOW lives once, at the page root - not once per card.
         # Clicking the backdrop closes it; clicking the panel does not.
         + "<div id='dlgwrap' onclick='if(event.target===this)closeDetails()' "

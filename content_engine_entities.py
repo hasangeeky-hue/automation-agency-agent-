@@ -150,6 +150,22 @@ def set_entity_key(store, entity_id: str, key: str, value: str) -> Dict[str, Any
     return {"ok": True, "key": key, "entity": entity_id}
 
 
+def platform_env(store, platform: str, key: str, default: str = "") -> str:
+    """Resolve a platform credential through the entity that owns it.
+
+    THE AUDIT'S A1: entity_env existed and nothing called it, so the wall
+    was inert. This is the consumer: a collector asking for a shop key
+    goes entity-first when exactly one entity owns that platform, global
+    otherwise, and NEVER reads across the wall. An ambiguous platform
+    (two entities hold its keys) resolves to nothing on purpose: reading
+    one of them would be a guess with someone's revenue attached."""
+    got = entity_of_platform(store, platform)
+    eid = _s(got.get("entity"))
+    if not eid:
+        return default
+    return entity_env(store, eid, key, default)
+
+
 # ==========================================================================
 # WHICH ENTITY OWNS A PLATFORM (the router's first decision)
 # ==========================================================================

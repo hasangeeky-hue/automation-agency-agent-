@@ -778,6 +778,44 @@ body.oxdark{background:#161718}
   color:var(--ox-ink);display:flex;align-items:center;gap:7px}
 .osx .ox-logo{height:20px;width:20px;object-fit:contain;display:block}
 .osx .ox-theme{margin-left:14px;font-size:.72rem}
+/* THE FLOATING TOAST (audit A2). Fixed so it is visible from every screen;
+   outside .osx so one element serves all seven module pages. */
+#ox-toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);
+  background:#1d1f20;color:#e9e9ea;border:1px solid #5980a6;
+  font:500 13px "Barlow",system-ui,sans-serif;padding:10px 18px;
+  max-width:min(560px,86vw);opacity:0;pointer-events:none;z-index:9999;
+  transition:opacity .2s,transform .2s}
+#ox-toast.on{opacity:1;transform:translate(-50%,0)}
+body.oxdark #ox-toast{background:#e8e8e9;color:#1d1f20}
+/* DARK MODE FOR THE HOST CONTROLS IN THE TOPBAR (audit D5). The engine's
+   own buttons and pills kept their light styling inside a dark shell. */
+body.oxdark .osx .ctrl .cbtn{background:#1f2122;color:#e8e8e9;
+  border-color:#4a4d51}
+body.oxdark .osx .attn .alert{background:#1f2122;color:#e8e8e9;
+  border-color:#33363a}
+body.oxdark .osx .pill{background:#1f2122;border-color:#4a4d51;color:#ababae}
+body.oxdark .osx .dim{color:#8b8b8e}
+/* MOBILE (audit D1). Below 900px the three-column shell cannot fit: the
+   sidebar becomes a horizontal strip, the staffrail drops below the main
+   column full-width, and nothing scrolls sideways. Not a redesign, a
+   survival layout: every control stays reachable on a phone. */
+@media (max-width: 900px){
+  [class~='osx']{padding:10px;gap:16px}
+  .osx .ox-frame{flex-direction:column}
+  .osx .ox-sidebar{width:auto;display:flex;flex-wrap:wrap;gap:4px;
+    border-right:none;border-bottom:2px solid var(--ox-ink);
+    padding-bottom:8px}
+  .osx .ox-sidebar .ox-modgroup{width:100%}
+  .osx .ox-snav{display:none}
+  .osx .ox-mod.on + .ox-snav{display:flex;flex-wrap:wrap;width:100%;gap:2px}
+  .osx .ox-staffrail{width:auto;border-left:none;
+    border-top:1px solid var(--ox-ln);margin-top:10px}
+  .osx .ox-scr{flex-direction:column}
+  .osx .ox-topbar{flex-wrap:wrap;row-gap:6px}
+  .osx .ox-cost{margin-left:0}
+  .osx .ox-grid,.osx .ox-grid2{grid-template-columns:1fr}
+  .osx .ox-tw{overflow-x:auto}
+}
 .osx .ox-cost{margin-left:auto;font-variant-numeric:tabular-nums}
 .osx .ox-frame{display:grid;grid-template-columns:210px 1fr;gap:16px;
   align-items:start}
@@ -877,7 +915,20 @@ function osPrefill(aid, btn){
   if(i){ i.value=btn.textContent; i.focus(); }
 }
 function osAck(aid, msg){
-  var a=document.getElementById('osack-'+aid); if(a) a.textContent=msg;
+  // THE AUDIT'S A2: every helper acked into 'osack-cockpit', an element on
+  // the HIDDEN Cockpit page, so saving a key on 13i showed nothing at all.
+  // The per-desk element is still preferred WHEN IT IS VISIBLE; anything
+  // else falls back to a floating toast that is visible from any screen.
+  var a=document.getElementById('osack-'+aid);
+  if(a && a.offsetParent!==null){ a.textContent=msg; return; }
+  var t=document.getElementById('ox-toast');
+  if(!t){
+    t=document.createElement('div'); t.id='ox-toast';
+    document.body.appendChild(t);
+  }
+  t.textContent=msg; t.className='on';
+  clearTimeout(window._oxToastT);
+  window._oxToastT=setTimeout(function(){ t.className=''; }, 6000);
 }
 function osSend(aid){
   var i=document.getElementById('oscmd-'+aid); if(!i) return;
@@ -991,8 +1042,8 @@ function osJobDecision(id, verb){
 }
 function osApproveJob(id){ osJobDecision(id,'approve'); }
 function osDeclineJob(id){ osJobDecision(id,'decline'); }
-function osSaveKey(key){
-  var i=document.getElementById('oskey-'+key); if(!i) return;
+function osSaveKey(key, elId){
+  var i=document.getElementById(elId||('oskey-'+key)); if(!i) return;
   var v=(i.value||'').trim();
   if(!v){ osAck('cockpit','Nothing typed for '+key+'.'); return; }
   var body={}; body[key]=v;
@@ -1013,6 +1064,62 @@ function osSaveKey(key){
 function osTheme(){
   var d=document.body.classList.toggle('oxdark');
   try{localStorage.setItem('ox-theme', d?'dark':'light');}catch(e){}
+}
+function osPost(url, body, okMsg){
+  fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body||{})})
+   .then(function(x){return x.json();})
+   .then(function(d){
+     var bad=(d&&(d.ok===false||d.error));
+     osAck('cockpit', bad?('Refused: '+(d.message||d.why||d.error||'no reason given'))
+       :(okMsg||'Done.'));
+     if(!bad && window._oxAfterPost){ window._oxAfterPost(url,d); }
+   })
+   .catch(function(e){ osAck('cockpit','Could not reach the engine: '+e); });
+}
+function osRuleRemove(lane, text){
+  if(!window.confirm('Remove this rule from the '+lane+' lane? '+text)) return;
+  osPost('/os/rule/remove',{lane:lane,text:text},'Rule removed. It leaves every prompt from the next call on.');
+  var r=document.getElementById('osrule-'+lane+'-'+btoa(unescape(encodeURIComponent(text))).slice(0,16));
+  if(r) r.remove();
+}
+function osEntityCreate(){
+  var n=document.getElementById('os-ent-name');
+  var v=(n&&n.value||'').trim();
+  if(!v){ osAck('cockpit','No entity name typed.'); return; }
+  osPost('/os/workspace/create',{name:v}, v+' created. Reload to see it in the lists.');
+}
+function osEntityKey(){
+  var e=document.getElementById('os-ent-pick'), k=document.getElementById('os-ent-key'),
+      v=document.getElementById('os-ent-val');
+  var val=(v&&v.value||'').trim();
+  if(!val){ osAck('cockpit','No value pasted.'); return; }
+  osPost('/os/entity/key',{entity:e?e.value:'',key:k?k.value:'',value:val},
+    (k?k.value:'key')+' saved for '+(e?e.value:'?')+'. It wins over the global value for that entity only.');
+  if(v) v.value='';
+}
+function osWireTest(wire){
+  osAck('cockpit','Testing '+wire+' with one real read...');
+  osPost('/connectors/verify',{wire:wire},'Test sent. The dot on this card is the verdict after reload.');
+}
+function osSendWindow(){
+  var f=document.getElementById('os-sw-from'), t=document.getElementById('os-sw-to'),
+      h=document.getElementById('os-sw-hourly');
+  osPost('/os/rules',{from_hour:parseInt(f&&f.value||9,10),
+    to_hour:parseInt(t&&t.value||17,10), weekdays_only:true,
+    hourly:parseInt(h&&h.value||0,10)||null},
+    'Send window saved. The Sender obeys it from the next cycle.');
+}
+function osBudgetSave(){
+  var j=document.getElementById('os-cap-job'), d=document.getElementById('os-cap-day'),
+      m=document.getElementById('os-cap-month');
+  osPost('/budget',{per_job:parseFloat(j&&j.value||0)||null,
+    per_day:parseFloat(d&&d.value||0)||null,
+    per_month:parseFloat(m&&m.value||0)||null},
+    'Caps saved. They apply on the very next budget check, no restart.');
+}
+function osSeoAuto(level){
+  osPost('/seo/auto',{level:level},'SEO autonomy set to '+level+'.');
 }
 function osRuleAdd(){
   var t=document.getElementById('os-rule-text');

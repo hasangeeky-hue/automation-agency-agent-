@@ -554,6 +554,54 @@ t("10a SAYS why his compose form is not rendered",
 t("8g SAYS why his Assign buttons are not rendered",
   "Assign button" in OSG.search_section(_c5))
 
+print("\nG3. THE SEPTEMBER AUDIT'S FIXES STAY FIXED")
+# From the founder's "where are the gaps" audit (2026-09-21). Each of
+# these was a finding; each is pinned against the assembled output.
+_kit_src = open("content_engine_os_kit.py", encoding="utf-8").read()
+t("A2: the toast fallback exists, so an ack is never invisible",
+  "ox-toast" in _kit_src and "offsetParent" in _kit_src)
+# THE WHOLE-BLOCK KILLER, pinned. The kit's JS lives in a non-raw Python
+# string, so a \n typed inside a JS string literal becomes a REAL newline
+# and one SyntaxError undefines every function on the page: every button
+# dead at once, silently. Found only by clicking in a real browser.
+# A single-quoted JS string that spans a newline is that error's shape.
+t("NO SINGLE-QUOTED JS STRING SPANS A NEWLINE (one typo kills every "
+  "button)",
+  not re.search(r"\('[^'\n]*\n", K.JS)
+  and "\\n\\n'+text" not in K.JS)
+t("D1: the shell has a phone layout", "@media (max-width: 900px)" in _kit_src)
+t("D5: dark mode covers the host controls in the topbar",
+  "body.oxdark .osx .ctrl" in _kit_src)
+# C2: the named tool cards may only name real vocabulary. DERIVED check:
+# every field is on the connect allow-list and every wire is one
+# status() reports, or the card is a form that silently drops input.
+import content_engine_commerce as _CM3
+import content_engine_connectors as _CN3
+_allow3 = set(_CN3.CONNECTOR_ENV_KEYS) | set(_CM3.connector_keys())
+_st3 = set(_CN3.status())
+_badk = [k for _l3, _w3, ks, _wh in OS.TOOL_CARDS for k in ks
+         if k not in _allow3]
+_badw = [w for _l3, w, _k3, _wh in OS.TOOL_CARDS if w and w not in _st3]
+t("C2: every tool-card FIELD is on the connect allow-list", not _badk,
+  str(_badk))
+t("C2: every tool-card WIRE is one status() reports", not _badw, str(_badw))
+_core3 = OS.core_section(_c5)
+_ck3 = OS.cockpit_section(_c5)
+_g3 = OSG.marketing_section(_c5) + OSG.search_section(_c5)
+t("C2: the named cards render on 13i", "oskeyc-ANTHROPIC_API_KEY" in _core3)
+t("A4: the standing-rules manager renders on 9c",
+  "Standing rules in force" in _g3)
+t("A1/B4: the entity manager renders on 16a",
+  "Business entities" in _core3 and "os-ent-name" in _core3)
+t("D4: the getting-started card renders on the Cockpit",
+  "Getting started" in _ck3 or "Stage A is complete" in _ck3)
+t("C1: the budget-caps form is on 13h", "os-cap-job" in _core3)
+t("C1: the send-window form is on 12g",
+  "os-sw-from" in OSL.leads_section(_c5))
+t("C1: the SEO autonomy control is on 8h", "osSeoAuto(" in _g3)
+t("C4: the approvals label carries the live-count marker",
+  "{{OX_APPR}}" in _ck3)
+
 print("\nH. NO EM-DASHES ANYWHERE IN THE OS")
 _c = OS.build_ctx(st)
 bad = [n for n, src in (("kit", K.CSS + K.JS),

@@ -2322,6 +2322,78 @@ try:
     _rb31 = open("docs/ACTIVATION_RUNBOOK.md", encoding="utf-8").read()
     check("the activation runbook exists and keeps the gates permanent",
           "stay gated forever" in _rb31)
+
+    # ---- the September audit's engine-side fixes -----------------------
+    # A1: the entity wall finally has a CONSUMER. Commerce resolves every
+    # platform credential through the entity that owns the platform, and
+    # the price-write path no longer builds its URL from a key nobody
+    # could set (SHOPIFY_STORE_URL is on no allow-list).
+    _cm31 = open("content_engine_commerce.py", encoding="utf-8").read()
+    check("A1: commerce reads platform keys through the entity wall",
+          "_penv(store, \"shopify\"" in _cm31
+          and "platform_env" in _cm31)
+    check("A1: no platform credential bypasses the wall in commerce",
+          "_env(store, \"SHOPIFY" not in _cm31
+          and "_env(store, \"WOO" not in _cm31
+          and "_env(store, \"WP_" not in _cm31)
+    # the NAME may appear in the comment recording the bug; the READ may not.
+    check("the STORE_URL ghost key is no longer read anywhere",
+          '_env(store, "SHOPIFY_STORE_URL"' not in _cm31
+          and '_penv(store, "shopify", "SHOPIFY_STORE_URL"' not in _cm31)
+    # THE WALL, exercised end to end through commerce itself: an entity's
+    # scoped domain must be the one the shop status reads, and a second
+    # entity claiming the same platform must force UNDECIDED, not a guess.
+    import content_engine_commerce as CM31
+    import content_engine_entities as EN31b
+
+    class _St31:
+        def __init__(self):
+            self.d = {}
+
+        def get_setting(self, k, dflt=None):
+            return self.d.get(k, dflt)
+
+        def set_setting(self, k, v):
+            self.d[k] = v
+    _s31 = _St31()
+    # the stub founder OWNS the workspaces, or workspaces_for filters
+    # them out and the wall test passes trivially on an empty list: the
+    # first version of this check did exactly that.
+    _s31.d["os_owner_email"] = "f@x"
+    _s31.d["ws:shopA:SHOPIFY_SHOP_DOMAIN"] = "a.myshopify.com"
+    _s31.d["ws:shopA:SHOPIFY_ADMIN_TOKEN"] = "shpat_x"
+    import content_engine_os_core as _OC31
+    import content_engine_os_store as _OS31
+    _r31 = _OS31.repo_for(_s31, _OC31.DEFAULT_WORKSPACE)
+    _r31.put("workspaces", {"id": _OC31.DEFAULT_WORKSPACE,
+                            "name": "home", "owner_email": "f@x"})
+    _r31.put("workspaces", {"id": "shopA", "name": "Shop A",
+                            "owner_email": "f@x"})
+    check("A1 EXERCISED: the scoped shop domain reaches commerce",
+          CM31._penv(_s31, "shopify", "SHOPIFY_SHOP_DOMAIN")
+          == "a.myshopify.com")
+    _s31.d["ws:shopB:SHOPIFY_SHOP_DOMAIN"] = "b.myshopify.com"
+    _s31.d["ws:shopB:SHOPIFY_ADMIN_TOKEN"] = "shpat_y"
+    _r31.put("workspaces", {"id": "shopB", "name": "Shop B",
+                            "owner_email": "f@x"})
+    check("A1 EXERCISED: two claimants force UNDECIDED, never a guess",
+          CM31._penv(_s31, "shopify", "SHOPIFY_SHOP_DOMAIN") == "")
+    # A3: one path no longer has two meanings.
+    _api31 = open("content_engine_api.py", encoding="utf-8").read()
+    check("A3: GET /os/rules is renamed; the path has one meaning again",
+          '@app.get("/os/rules")' not in _api31
+          and '@app.get("/os/rule/list")' in _api31)
+    check("B4: the entity-key endpoint exists and is admin-gated",
+          '@app.post("/os/entity/key")' in _api31)
+    # C4: the marker is substituted on the ASSEMBLED page the route
+    # serves; a leftover marker would mean the host stopped replacing it.
+    import content_engine_api as A31
+    _pg31 = A31.api_dashboard_html()
+    check("C4: no unsubstituted approvals marker reaches the page",
+          "{{OX_APPR}}" not in _pg31)
+    check("C6: the parked-rows chip logic is in the host",
+          "parked" in open("content_engine_dashboard.py",
+                           encoding="utf-8").read())
     print("")
     print("       entity wall + mutation ledger + standing rules + fleet: "
           "exercised, not inspected")

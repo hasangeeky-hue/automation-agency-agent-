@@ -178,6 +178,77 @@ def _state(sid: str, ctx: Dict[str, Any]) -> str:
                 "entity." % nparked) if nparked else "", rows))
 
 
+def _entity_manager(ctx) -> str:
+    """THE ENTITY MANAGER (audit A1/B4). The wall existed with no door:
+    no screen created a second business or entered its keys. This is the
+    door, on the Data Hub, because the hub is his 'one intake for every
+    system'. Everything here rides existing machinery: workspaces are
+    the entities, /os/workspace/create and /os/entity/key are the writes,
+    and ownership is computed by the same function the router uses."""
+    try:
+        import content_engine_api as API
+        import content_engine_entities as EN
+        store = API.get_store()
+        ents = EN.entities(store)
+        default = EN.default_entity()
+        own = {p: EN.entity_of_platform(store, p)
+               for p in ("shopify", "woocommerce", "wordpress")}
+        keys = EN.scopable()
+    except Exception:                                     # noqa: BLE001
+        return ""
+    ent_rows = "".join(
+        "<tr><td>%s</td><td class='ox-wire'>%s</td><td>%s</td></tr>"
+        % (_e(e.get("name")), _e(e.get("id")),
+           "the default: global keys belong to it"
+           if e.get("id") == default else "scoped keys only")
+        for e in ents)
+    own_rows = "".join(
+        "<tr><td>%s</td><td class='ox-wire'>%s</td>"
+        "<td class='ox-sub'>%s</td></tr>"
+        % (_e(p), _e(_d(g).get("entity") or "UNDECIDED"),
+           _e(_d(g).get("how")))
+        for p, g in own.items())
+    opts_e = "".join("<option value='%s'>%s</option>"
+                     % (_e(e.get("id")), _e(e.get("name") or e.get("id")))
+                     for e in ents if e.get("id") != default)
+    opts_k = "".join("<option>%s</option>" % _e(k) for k in keys)
+    return (K.bp(
+        "<span class='ox-lbl'>Business entities</span>"
+        "<p class='ox-sub'>Two businesses, one engine, a wall between "
+        "them: an entity's keys win for its own platforms and are "
+        "unreadable to every other entity. A platform two entities both "
+        "claim is UNDECIDED, and its rows park rather than guess.</p>"
+        "<div class='ox-tw'><table class='ox-t'><thead><tr><th>Entity</th>"
+        "<th>Id</th><th>Keys</th></tr></thead><tbody>" + ent_rows
+        + "</tbody></table></div>"
+        "<div class='ox-tw'><table class='ox-t'><thead><tr>"
+        "<th>Platform</th><th>Owned by</th><th>Decided how</th></tr>"
+        "</thead><tbody>" + own_rows + "</tbody></table></div>")
+        + K.bp(
+        "<span class='ox-lbl'>Add an entity</span>"
+        "<div class='ox-tw'><table class='ox-t'><tbody><tr>"
+        "<td><input class='ox-in' id='os-ent-name' "
+        "placeholder='e.g. My Shop GmbH'></td>"
+        "<td><button type='button' class='ox-btn' "
+        "onclick='osEntityCreate()'>Create</button></td></tr></tbody>"
+        "</table></div>"
+        + (("<span class='ox-lbl'>Give an entity its own key</span>"
+            "<div class='ox-tw'><table class='ox-t'><tbody><tr>"
+            "<td><select class='ox-in' id='os-ent-pick'>%s</select></td>"
+            "<td><select class='ox-in' id='os-ent-key'>%s</select></td>"
+            "<td><input class='ox-in' id='os-ent-val' type='password' "
+            "autocomplete='off' placeholder='paste the value'></td>"
+            "<td><button type='button' class='ox-btn' "
+            "onclick='osEntityKey()'>Save</button></td></tr></tbody>"
+            "</table></div>") % (opts_e, opts_k)
+           if opts_e else
+           "<p class='ox-sub'>Create a second entity above and the "
+           "scoped-key form appears here: only a non-default entity "
+           "holds scoped keys, because the default owns the global "
+           "pot.</p>")
+        + K.source_chip("POST /os/entity/key")))
+
+
 def _screen(sid: str, ctx: Dict[str, Any]) -> str:
     title, sub = TITLES[sid]
     # NO EMPLOYEE, SO NO staffed_by. His rule: a desk with no employee
@@ -192,6 +263,10 @@ def _screen(sid: str, ctx: Dict[str, Any]) -> str:
                    "<p class='ox-sub'>" + _e(NEEDS[sid]) + "</p>"
                  + K.planned(title, NEEDS[sid]))
             )
+    # 16a carries the entity manager: real forms over real endpoints,
+    # beside the architected statement, not instead of it.
+    if sid == "16a":
+        body += _entity_manager(ctx)
     # staffrail, chart cards and tab strips attach by id inside screen()
     return K.screen(sid, title, sub, body)
 
