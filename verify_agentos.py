@@ -199,9 +199,16 @@ t("BUT EVERY OLD BOOKMARK IS ALIASED to the module that owns its data",
 # for the data kept and the UI cut; that check was measuring the UI.
 t("no unfilled topbar marker survives into the page",
   "{{OX_" not in html)
+# The character class here once excluded '.', so every id carrying an
+# agent id (osack-seo.analyst) was INVISIBLE to this check, and shared
+# desks shipped duplicate command-box ids that broke Send on the second
+# copy. A validity gate with a blind spot is worse than none: it
+# certifies exactly the thing it cannot see.
+_dom_only = re.sub(r"<script>.*?</script>", "", html, flags=re.S)
+_dupes = [k for k, v in __import__("collections").Counter(
+    re.findall(r"id='([^']+)'", _dom_only)).items() if v > 1]
 t("NO DUPLICATE ELEMENT ID anywhere on the assembled document",
-  not [k for k, v in __import__("collections").Counter(
-      re.findall(r"id='([a-zA-Z0-9_-]+)'", html)).items() if v > 1])
+  not _dupes, str(_dupes[:6]))
 t("a nav target that does not resolve can no longer blank the page",
   "if(!s)return false;" in html)
 t("MEDIA NO LONGER CLAIMS IT HAS NO REPLACEMENT: nine screens exist",
@@ -601,6 +608,26 @@ t("C1: the send-window form is on 12g",
 t("C1: the SEO autonomy control is on 8h", "osSeoAuto(" in _g3)
 t("C4: the approvals label carries the live-count marker",
   "{{OX_APPR}}" in _ck3)
+# The pre-deploy recheck's pins:
+_kit3 = open("content_engine_os_kit.py", encoding="utf-8").read()
+t("the mobile rule targets the wrapper his markup actually has "
+  "(ox-subnav), not the links inside it",
+  ".ox-subnav{display:none}" in _kit3
+  and ".ox-mod.on + .ox-subnav{" in _kit3)
+t("a command box's DOM id is per PANEL, so a shared desk's second box "
+  "still sends", "_cc_uid" in _kit3 and "osSend(aid, elId)" in _kit3)
+_api3 = open("content_engine_api.py", encoding="utf-8").read()
+
+
+def _admin_gated(route: str) -> bool:
+    i = _api3.find(route)
+    return i > 0 and 'grant="admin"' in _api3[i:i + 900]
+
+
+t("setting an entity key is an ADMIN act, checked at the gate",
+  _admin_gated('@app.post("/os/entity/key")'))
+t("creating an entity is an ADMIN act, checked at the gate",
+  _admin_gated('@app.post("/os/workspace/create")'))
 
 print("\nH. NO EM-DASHES ANYWHERE IN THE OS")
 _c = OS.build_ctx(st)

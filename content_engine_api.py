@@ -4053,6 +4053,12 @@ def build_app():
         d = await _body(request)
         import content_engine_os_tenancy as TEN
         _OS, store, _ = _os()
+        # found by the pre-deploy recheck: this endpoint predates the
+        # entity manager and carried no grant check at all. Creating a
+        # business entity is an admin act, checked at the gate.
+        gate = TEN.require(store, _ws(request), grant="admin")
+        if not gate.get("ok"):
+            return {"ok": False, "message": gate.get("message")}
         return TEN.create_workspace(store, d.get("name"))
 
     @app.post("/os/workspace/switch")
@@ -4181,9 +4187,10 @@ def build_app():
         d = await _body(request)
         import content_engine_entities as EN
         _OS, store, _ = _os()
-        got = _require_admin_or_write(store, request)
-        if not got["ok"]:
-            return got
+        import content_engine_os_tenancy as TEN
+        gate = TEN.require(store, _ws(request), grant="admin")
+        if not gate.get("ok"):
+            return {"ok": False, "message": gate.get("message")}
         out = EN.set_entity_key(store, d.get("entity"), d.get("key"),
                                 d.get("value"))
         if out.get("ok"):

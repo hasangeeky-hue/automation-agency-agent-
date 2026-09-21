@@ -231,6 +231,20 @@ def connector_table(rows: Sequence[Dict[str, Any]]) -> str:
 # ==========================================================================
 # 5. THE COMMAND PANEL  (Section 10.4 scope, deliberately not a chat agent)
 # ==========================================================================
+#: per-render instance counter for command-panel DOM ids. Reset per
+#: process is fine: uniqueness is only needed within one document.
+_CC_SEQ = {"n": 0, "last": ""}
+
+
+def _cc_uid(agent_id: str, same: bool = False) -> str:
+    """A DOM-unique id for one command panel instance. same=True returns
+    the id just issued, so the input and its two buttons agree."""
+    if not same:
+        _CC_SEQ["n"] += 1
+        _CC_SEQ["last"] = "%s-%d" % (agent_id, _CC_SEQ["n"])
+    return _CC_SEQ["last"]
+
+
 def cmdchat(agent_id: str, agent_name: str, *,
             pending: Optional[Sequence[Dict[str, Any]]] = None,
             quick: Optional[Sequence[str]] = None,
@@ -277,16 +291,25 @@ def cmdchat(agent_id: str, agent_name: str, *,
         "<div class='ox-cc-bar'>"
         "<input class='ox-in' id='oscmd-%s' type='text' "
         "placeholder='Tell %s what to do. It becomes a proposal, not an action.' "
-        "onkeydown=\"if(event.key==='Enter')osSend('%s')\">"
+        "onkeydown=\"if(event.key==='Enter')osSend('%s','oscmd-%s')\">"
         "<button type='button' class='ox-btn ox-btn-p' "
-        "onclick=\"osSend('%s')\">Send</button></div>"
+        "onclick=\"osSend('%s','oscmd-%s')\">Send</button></div>"
         "<p class='ox-cc-ack' id='osack-%s'></p>"
+        # THE DOM ID IS PER PANEL; THE AGENT ID IS PER DESK. A shared desk
+        # (one employee on two screens) rendered two inputs with the SAME
+        # id, and getElementById always returned the first, a hidden one:
+        # typing into the visible box and pressing Send read the empty
+        # hidden twin and answered 'Type a command first.' Found by the
+        # pre-deploy recheck, invisible to the duplicate-id gate because
+        # its regex could not match an id containing a dot.
         % (_e(agent_name),
            ("<p class='ox-cc-note'>%s</p>" % _e(context_note))
            if context_note else "",
            plist, qs or "<span class='ox-nodata'>none</span>",
-           _e(agent_id), _e(agent_name), _e(agent_id), _e(agent_id),
-           _e(agent_id)),
+           _e(_cc_uid(agent_id)), _e(agent_name),
+           _e(agent_id), _e(_cc_uid(agent_id, same=True)),
+           _e(agent_id), _e(_cc_uid(agent_id, same=True)),
+           _e(_cc_uid(agent_id, same=True))),
         cls="ox-cc")
 
 
@@ -806,8 +829,8 @@ body.oxdark .osx .dim{color:#8b8b8e}
     border-right:none;border-bottom:2px solid var(--ox-ink);
     padding-bottom:8px}
   .osx .ox-sidebar .ox-modgroup{width:100%}
-  .osx .ox-snav{display:none}
-  .osx .ox-mod.on + .ox-snav{display:flex;flex-wrap:wrap;width:100%;gap:2px}
+  .osx .ox-subnav{display:none}
+  .osx .ox-mod.on + .ox-subnav{display:flex;flex-wrap:wrap;width:100%;gap:2px}
   .osx .ox-staffrail{width:auto;border-left:none;
     border-top:1px solid var(--ox-ln);margin-top:10px}
   .osx .ox-scr{flex-direction:column}
@@ -915,6 +938,13 @@ function osPrefill(aid, btn){
   if(i){ i.value=btn.textContent; i.focus(); }
 }
 function osAck(aid, msg){
+  // aid may be a desk id ('seo.analyst') or a full element id
+  // ('osack-seo.analyst-3'); both resolve, and anything hidden or
+  // missing falls through to the floating toast.
+  if(aid && aid.indexOf('osack-')===0){
+    var el=document.getElementById(aid);
+    if(el && el.offsetParent!==null){ el.textContent=msg; return; }
+  }
   // THE AUDIT'S A2: every helper acked into 'osack-cockpit', an element on
   // the HIDDEN Cockpit page, so saving a key on 13i showed nothing at all.
   // The per-desk element is still preferred WHEN IT IS VISIBLE; anything
@@ -930,21 +960,22 @@ function osAck(aid, msg){
   clearTimeout(window._oxToastT);
   window._oxToastT=setTimeout(function(){ t.className=''; }, 6000);
 }
-function osSend(aid){
-  var i=document.getElementById('oscmd-'+aid); if(!i) return;
-  var text=(i.value||'').trim(); if(!text){ osAck(aid,'Type a command first.');
+function osSend(aid, elId){
+  var i=document.getElementById(elId||('oscmd-'+aid)); if(!i) return;
+  var ackId=elId? elId.replace('oscmd-','osack-') : aid;
+  var text=(i.value||'').trim(); if(!text){ osAck(ackId,'Type a command first.');
     return; }
-  osAck(aid,'Sending...');
+  osAck(ackId,'Sending...');
   fetch('/proposal',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({agent:aid,text:text,source:'cmdchat'})})
    .then(function(r){return r.json();})
    .then(function(d){
      i.value='';
-     osAck(aid, d && d.ok
+     osAck(ackId, d && d.ok
        ? 'Queued as a proposal for you to approve. Nothing has run.'
        : 'Could not queue that: '+((d&&(d.error||d.detail))||'unknown'));
    })
-   .catch(function(e){ osAck(aid,'Could not reach the engine: '+e); });
+   .catch(function(e){ osAck(ackId,'Could not reach the engine: '+e); });
 }
 function osPriceApprove(id){
   // A PRICE CHANGE IS THE MOST CONSEQUENTIAL THING HERE. It confirms,
